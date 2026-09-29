@@ -14,7 +14,7 @@ from typing import Any
 import torch
 from torch import Tensor, nn
 
-from .base import TUCKER_UNSUPPORTED, AdapterModule, compute_scale, resolve_kernel
+from .base import AdapterModule, compute_scale, resolve_kernel
 
 
 class _HadaWeight(torch.autograd.Function):
@@ -88,7 +88,7 @@ class LoHa(AdapterModule):
         mask = self._rank_mask(self.rank, self.w1_a.device, self.w1_a.dtype)
         w1_a = self.w1_a if mask is None else self.w1_a * mask
         w = _HadaWeight.apply(w1_a, self.w1_b, self.w2_a, self.w2_b)
-        return self._as_weight(w * (self.scale * self.effective_scalar))
+        return self._as_weight(self._scaled(w))
 
     def delta_apply(self, x: Tensor) -> Tensor:
         return self._output_dropout(super().delta_apply(x))
@@ -117,10 +117,7 @@ class LoHa(AdapterModule):
     def from_tensors(
         cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any
     ) -> LoHa:
-        if "hada_t1" in tensors or "hada_t2" in tensors:
-            raise ValueError(TUCKER_UNSUPPORTED)
         w1_a, w1_b = tensors["hada_w1_a"], tensors["hada_w1_b"]
-        # w1_b flattens a convolution's kernel, so the metadata or the caller names it.
         kernel = resolve_kernel(meta, kwargs)
         rank = int(w1_a.shape[1])
         alpha_file = float(tensors["alpha"].item()) if "alpha" in tensors else float(rank)

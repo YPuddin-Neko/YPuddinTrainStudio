@@ -9,6 +9,7 @@ from torch import Tensor
 from ypuddin.adapters import modules_from_tensors
 from ypuddin.adapters.dora import decompose
 from ypuddin.adapters.frozen import FP8_DTYPES, quantize_fp8
+from ypuddin.adapters.linear import merged_bias
 
 CONTAINER_PREFIXES = ("net.", "model.diffusion_model.", "diffusion_model.", "transformer.")
 
@@ -46,24 +47,13 @@ def merge_into_state_dict(
             stripped_to_key.setdefault(_strip_container_prefix(k)[: -len(".weight")], k[: -len(".weight")])
     names = module_names or list(stripped_to_key)
     table = {n.replace(".", "_"): n for n in names}
-
-    def target(key: str) -> str | None:
-        dotted_stripped = table.get(key[len(prefix) + 1 :])
-        dotted = stripped_to_key.get(dotted_stripped) if dotted_stripped is not None else None
-        return dotted if dotted is not None and f"{dotted}.weight" in base else None
-
-    # Files keep a low-rank convolution's kernel only inside flattened factors; the base weight names it.
-    kernels = {}
-    for key in {k.partition(".")[0] for k in adapter_tensors}:
-        dotted = target(key)
-        if dotted is not None:
-            kernels[key] = tuple(base[f"{dotted}.weight"].shape[2:])
-    mods = modules_from_tensors(adapter_tensors, metadata or {}, prefix=prefix, kernels=kernels)
+    mods = modules_from_tensors(adapter_tensors, metadata or {}, prefix=prefix)
     merged = dict(base)
     unmatched: list[str] = []
     for i, (key, (mod, dora)) in enumerate(mods.items()):
-        dotted = target(key)
-        if dotted is None:
+        dotted_stripped = table.get(key[len(prefix) + 1 :])
+        dotted = stripped_to_key.get(dotted_stripped) if dotted_stripped is not None else None
+        if dotted is None or f"{dotted}.weight" not in base:
             unmatched.append(key)
             continue
         wkey = f"{dotted}.weight"
@@ -81,18 +71,17 @@ def merge_into_state_dict(
             if delta.numel() != w32.numel():
                 unmatched.append(key)
                 continue
-            delta = delta.reshape(w32.shape)  # e.g. a 1×1 kernel for a linear layer
+            # A convolution's flattened factors, or a 1×1 kernel for a linear layer.
+            delta = delta.reshape(w32.shape)
         new = w32 + strength * delta
         if dora is not None:
             new = decompose(new, dora)  # along the axis the stored magnitude's shape names
-        delta_bias = getattr(mod, "delta_bias", None)
-        bias_delta = delta_bias() if callable(delta_bias) else None
-        if bias_delta is not None:
+        if mod.delta_bias() is not None:
             bkey = f"{dotted}.bias"
             if bkey not in base:
                 unmatched.append(key)
                 continue
-            merged[bkey] = (base[bkey].float() + strength * bias_delta.float()).to(base[bkey].dtype)
+            merged[bkey] = merged_bias(base[bkey], mod, strength, base[bkey].dtype)
         if w.dtype in FP8_DTYPES.values() or requantize_fp8:
             kind = requantize_fp8 or next(k for k, v in FP8_DTYPES.items() if v == w.dtype)
             q, s = quantize_fp8(new, kind)

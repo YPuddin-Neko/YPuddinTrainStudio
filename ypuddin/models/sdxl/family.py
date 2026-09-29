@@ -8,7 +8,7 @@ from typing import Any
 import torch
 from torch import Tensor, nn
 
-from ypuddin.adapters import TargetPreset
+from ypuddin.adapters import TargetPreset, adaptable_modules
 from ypuddin.config import MemoryConfig, ModelConfig, ObjectiveConfig, TrainConfig
 from ypuddin.models.base import (
     LatentSpec,
@@ -315,19 +315,11 @@ class SDXLFamily(ModelFamily):
         return UNet2DConditionModel.from_config(component_config(path, "unet"))
 
     def linear_module_names(self) -> list[str]:
-        with torch.device("meta"):
-            model = self.meta_backbone(ModelConfig(family="sdxl"))
-        return [name for name, module in model.named_modules() if isinstance(module, nn.Linear)]
+        return [name for name, kernel in self.adaptable_modules().items() if not kernel]
 
-    def conv_module_kernels(self) -> dict[str, tuple[int, ...]]:
-        """Kernel size of every convolution the UNet trains adapters on."""
+    def adaptable_modules(self) -> dict[str, tuple[int, ...]]:
         with torch.device("meta"):
-            model = self.meta_backbone(ModelConfig(family="sdxl"))
-        return {
-            name: tuple(module.kernel_size)
-            for name, module in model.named_modules()
-            if isinstance(module, nn.Conv2d)
-        }
+            return adaptable_modules(self.meta_backbone(ModelConfig(family="sdxl")))
 
 
 register("sdxl", SDXLFamily)

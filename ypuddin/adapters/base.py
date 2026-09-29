@@ -85,6 +85,8 @@ class ConvGeometry:
 class AdapterModule(nn.Module, ABC):
     kind: str = "base"
     supports_bypass: bool = False
+    # Masks that differ per sample cannot be merged into one weight.
+    needs_bypass: bool = False
 
     def __init__(
         self,
@@ -138,13 +140,46 @@ class AdapterModule(nn.Module, ABC):
         return self.geometry
 
     def _as_weight(self, flat: Tensor) -> Tensor:
-        """``(out, in·k…)`` as the layer's weight shape; linear layers keep their matrix."""
-        return flat.view(self.weight_shape) if self.kernel else flat
+        """``(out, in·k…)`` as the layer's weight shape."""
+        return flat.view(self.weight_shape)
+
+    # ----------------------------------------------------------------- layer operations
+    def _rank_in(self, x: Tensor, factor: Tensor) -> Tensor:
+        """``x`` through an ``(r, in·k…)`` factor as the layer computes: ``x @ fᵀ``, or its convolution."""
+        if not self.kernel:
+            return x @ factor.transpose(0, 1)
+        return self._geometry().conv(x, factor.view(factor.shape[0], self.in_features, *self.kernel))
+
+    def _rank_out(self, h: Tensor, factor: Tensor) -> Tensor:
+        """The channels of ``h`` mixed by an ``(n, r)`` factor: ``h @ fᵀ``, or a 1×1 convolution."""
+        return self._geometry().pointwise(h, factor) if self.kernel else h @ factor.transpose(0, 1)
+
+    def _per_rank(self, h: Tensor, values: Tensor) -> Tensor:
+        """``h`` scaled per rank by ``(r,)`` values, or per sample and rank by ``(batch, r)``."""
+        if self.kernel:
+            return h * self._geometry().channels(values)
+        if values.dim() == 2:
+            values = values.view(values.shape[0], *(1,) * (h.dim() - 2), values.shape[1])
+        return h * values
 
     # ----------------------------------------------------------------- scaling
     @property
     def effective_scalar(self) -> Tensor | float:
         return self.scalar if self.scalar is not None else 1.0
+
+    def _gain(self) -> Tensor | float:
+        return self.scale * self.effective_scalar
+
+    def _scaled(self, t: Tensor) -> Tensor:
+        """``t`` times the gain; a gain of exactly 1 costs nothing."""
+        gain = self._gain()
+        if isinstance(gain, Tensor):
+            return t * gain.to(t.dtype)
+        return t if gain == 1.0 else t * gain
+
+    def _finish(self, y: Tensor) -> Tensor:
+        """A bypass output: scaled, then the output dropout."""
+        return self._output_dropout(self._scaled(y))
 
     def _rank_mask(self, rank: int, device: torch.device, dtype: torch.dtype) -> Tensor | None:
         """Mask over the rank axis (compensated by ``1/(1-p)``), only while training."""
@@ -168,9 +203,21 @@ class AdapterModule(nn.Module, ABC):
         weight = self.delta_weight().to(x.dtype)
         return self._geometry().conv(x, weight) if self.kernel else F.linear(x, weight)
 
+    def delta_bias(self) -> Tensor | None:
+        """``Δb`` for adapters that train the layer bias (LyCORIS Full)."""
+        return None
+
     @abstractmethod
     def export_tensors(self) -> dict[str, Tensor]:
         """Kohya/LyCORIS key suffix -> tensor, with ``scalar`` folded in and ``alpha`` encoded."""
+
+    def _lora_export(self, down: Tensor, up: Tensor, alpha: float) -> dict[str, Tensor]:
+        """Plain LoRA tensors; a convolution's ``down`` keeps its kernel and ``up`` is 1×1 (LoCon)."""
+        return {
+            "lora_down.weight": down.reshape(down.shape[0], self.in_features, *self.kernel),
+            "lora_up.weight": up.reshape(*up.shape, *(1,) * len(self.kernel)),
+            "alpha": torch.tensor(float(alpha), dtype=torch.float32),
+        }
 
     @abstractmethod
     def extra_metadata(self) -> dict[str, Any]:
@@ -187,11 +234,8 @@ class AdapterModule(nn.Module, ABC):
     def from_tensors(
         cls, tensors: dict[str, Tensor], meta: dict[str, Any] | None = None, **kwargs: Any
     ) -> AdapterModule:
-        """Rebuild a module from exported tensors (+ optional explicit metadata).
-
-        ``kernel`` names the target layer's kernel when the caller knows it (``()`` for a linear
-        layer); otherwise it comes from the metadata or from the tensors themselves.
-        """
+        """Rebuild a module from exported tensors (+ optional explicit metadata); ``kwargs`` may name
+        the layer's ``kernel`` (see :func:`resolve_kernel`)."""
 
     def param_kinds(self) -> dict[str, str]:
         """Parameter name -> kind label used by ``lr_scale`` / weight-decay rules (e.g. ``w1``, ``up``)."""
@@ -201,13 +245,20 @@ class AdapterModule(nn.Module, ABC):
         return sum(p.numel() for p in self.parameters())
 
 
-TUCKER_UNSUPPORTED = "文件使用 Tucker 分解（lora_mid / lokr_t2 / hada_t1），当前不支持读取"
+TUCKER_KEYS = frozenset({"lora_mid.weight", "lokr_t1", "lokr_t2", "hada_t1", "hada_t2"})
+
+
+def refuse_tucker(tensors: dict[str, Tensor]) -> None:
+    """Files with Tucker-decomposed convolutions cannot be read."""
+    if TUCKER_KEYS & tensors.keys():
+        raise ValueError("文件使用 Tucker 分解（lora_mid / lokr_t2 / hada_t1），当前不支持读取")
 
 
 def resolve_kernel(
     meta: dict[str, Any] | None, kwargs: dict[str, Any], fallback: tuple[int, ...] = ()
 ) -> tuple[int, ...]:
-    """The target kernel: the caller's (popped from ``kwargs``), the file metadata's, else ``fallback``."""
+    """The target layer's kernel: the caller's (popped from ``kwargs``), the file metadata's, else
+    ``fallback``. Files keep a low-rank convolution's kernel only inside its flattened factors."""
     kernel = kwargs.pop("kernel", None)
     if kernel is None and meta and meta.get("kernel") is not None:
         kernel = meta["kernel"]

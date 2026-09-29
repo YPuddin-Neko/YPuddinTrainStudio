@@ -4053,11 +4053,6 @@ export interface components {
             /** Layers */
             layers: number;
             /**
-             * Conv
-             * @default []
-             */
-            conv: string[];
-            /**
              * Layers With Conv
              * @default 0
              */

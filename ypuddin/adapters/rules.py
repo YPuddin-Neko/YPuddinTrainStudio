@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import itertools
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -65,23 +66,23 @@ def trains_convolutions(cfg: AdapterConfig, preset: TargetPreset) -> bool:
 
 
 def resolve_targets(
-    module_names: list[str],
+    modules: Mapping[str, tuple[int, ...]] | Iterable[str],
     cfg: AdapterConfig,
     preset: TargetPreset,
     *,
     extra_exclude: tuple[str, ...] = (),
-    conv_kernels: dict[str, tuple[int, ...]] | None = None,
 ) -> list[ResolvedTarget]:
     """Decide, for every candidate module, whether and how it is adapted.
 
-    ``module_names`` lists linear layers and, with ``conv_kernels`` naming their kernels, convolution
-    layers. Order of precedence per module: first matching user rule (if any) > preset. A rule may
-    include a module the preset would not have selected; ``algo="none"`` excludes it. Convolutions are
-    candidates only when the configuration trains them and the preset has a convolution scope; a
-    convolution with a kernel larger than 1×1 takes ``conv_rank``/``conv_alpha``, as kohya and LyCORIS
-    use ``conv_dim``/``conv_alpha``, while 1×1 convolutions take the linear rank.
+    ``modules`` maps each candidate layer to its kernel size, ``()`` for a linear layer; a plain list
+    names linear layers. Order of precedence per module: first matching user rule (if any) > preset. A
+    rule may include a module the preset would not have selected; ``algo="none"`` excludes it.
+    Convolutions are candidates only when the configuration trains them and the preset has a
+    convolution scope; a kernel larger than 1×1 takes ``conv_rank``/``conv_alpha`` (kohya and LyCORIS
+    ``conv_dim``/``conv_alpha``), a 1×1 convolution the linear rank.
     """
-    conv_kernels = conv_kernels or {}
+    if not isinstance(modules, Mapping):
+        modules = dict.fromkeys(modules, ())
     conv = trains_convolutions(cfg, preset)
     defaults: dict[str, Any] = {
         "rank": cfg.rank,
@@ -103,16 +104,15 @@ def resolve_targets(
     linear_patterns = preset.include + (preset.conv if conv else ())
     excluded = (*preset.exclude, *extra_exclude)
     out: list[ResolvedTarget] = []
-    for name in module_names:
-        kernel = conv_kernels.get(name)
-        if kernel is not None and not conv:
+    for name, kernel in modules.items():
+        if kernel and not conv:
             continue
         rule = next((r for r in cfg.rules if match_name(r.match, name)), None)
-        patterns = linear_patterns if kernel is None else preset.conv
+        patterns = preset.conv if kernel else linear_patterns
         in_preset = any(match_name(p, name) for p in patterns) and not any(
             match_name(p, name) for p in excluded
         )
-        base = kernel_defaults if kernel is not None and any(size != 1 for size in kernel) else defaults
+        base = kernel_defaults if any(size != 1 for size in kernel) else defaults
         if rule is None:
             if not in_preset:
                 continue

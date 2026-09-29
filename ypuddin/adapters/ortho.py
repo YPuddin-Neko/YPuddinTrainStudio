@@ -114,30 +114,17 @@ class OrthoLoRA(AdapterModule):
         dt = self.basis_out.dtype
         keep = self._rank_mask(self.rank, self.basis_out.device, dt)
         left = self.basis_out if keep is None else self.basis_out * keep
-        return self._as_weight(((left @ self._core().to(dt)) * self.singular) @ self.basis_in * self.scale)
+        return self._as_weight(self._scaled(((left @ self._core().to(dt)) * self.singular) @ self.basis_in))
 
     def delta_apply(self, x: Tensor) -> Tensor:
         self._ensure_ready()
-        if self.kernel:
-            return self._conv_apply(x)
         dt = x.dtype
-        h = (x @ self.basis_in.to(dt).transpose(0, 1)) * self.singular.to(dt)
-        h = h @ self._core().to(dt).transpose(0, 1)
+        h = self._per_rank(self._rank_in(x, self.basis_in.to(dt)), self.singular.to(dt))
+        h = self._rank_out(h, self._core().to(dt))
         keep = self._rank_mask(self.rank, x.device, dt)
         if keep is not None:
-            h = h * keep
-        return self._output_dropout((h @ self.basis_out.to(dt).transpose(0, 1)) * self.scale)
-
-    def _conv_apply(self, x: Tensor) -> Tensor:
-        dt = x.dtype
-        geometry = self._geometry()
-        basis_in = self.basis_in.to(dt).view(self.rank, self.in_features, *self.kernel)
-        h = geometry.conv(x, basis_in) * geometry.channels(self.singular.to(dt))
-        h = geometry.pointwise(h, self._core().to(dt))
-        keep = self._rank_mask(self.rank, x.device, dt)
-        if keep is not None:
-            h = h * geometry.channels(keep)
-        return self._output_dropout(geometry.pointwise(h, self.basis_out.to(dt)) * self.scale)
+            h = self._per_rank(h, keep)
+        return self._finish(self._rank_out(h, self.basis_out.to(dt)))
 
     # ----------------------------------------------------------------- io
     @torch.no_grad()
@@ -147,14 +134,7 @@ class OrthoLoRA(AdapterModule):
         root = self.singular.float().abs().sqrt()
         up = (self.basis_out.float() @ self._core()) * root[None, :] * self.scale
         down = root[:, None] * self.basis_in.float()
-        if self.kernel:
-            down = down.view(self.rank, self.in_features, *self.kernel)
-            up = up.view(self.out_features, self.rank, *(1,) * len(self.kernel))
-        return {
-            "lora_down.weight": down,
-            "lora_up.weight": up,
-            "alpha": torch.tensor(float(self.rank), dtype=torch.float32),
-        }
+        return self._lora_export(down, up, self.rank)
 
     def extra_metadata(self) -> dict[str, Any]:
         """Describes the exported layer, a plain LoRA, so any LoRA reader rebuilds it."""

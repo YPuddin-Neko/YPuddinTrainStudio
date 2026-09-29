@@ -14,7 +14,7 @@ from torch import Tensor
 
 import ypuddin
 
-from .base import AdapterModule
+from .base import AdapterModule, refuse_tucker
 from .full import Full
 from .loha import LoHa
 from .lokr import LoKr
@@ -89,8 +89,7 @@ def build_metadata(
     if adapter_cfg.get("dora"):
         args += ("dora_axis",)
     network_args = {k: adapter_cfg.get(k) for k in args}
-    # kohya and LyCORIS name the rank and alpha of kernels larger than 1×1 conv_dim / conv_alpha;
-    # LyCORIS Full layers have neither.
+    # kohya's conv_dim / conv_alpha: the rank and alpha of kernels larger than 1×1 (Full layers have none).
     if any(
         layer.get("algo") != "full" and any(size != 1 for size in layer.get("kernel") or ())
         for layer in targets.values()
@@ -187,8 +186,7 @@ def modules_from_tensors(
 ) -> dict[str, tuple[AdapterModule, Tensor | None]]:
     """Rebuild standalone adapter modules keyed by canonical-ish name (underscored kohya name).
 
-    ``kernels`` names each target layer's kernel (``()`` for a linear layer) where the caller knows
-    the model: files keep a low-rank convolution's kernel only inside flattened factors.
+    ``kernels`` names each target layer's kernel (``()`` for a linear layer) where the caller knows the model.
     """
     targets_meta = parse_targets_metadata(metadata or {})
     by_underscored = {k.replace(".", "_"): v for k, v in targets_meta.items()}
@@ -200,6 +198,7 @@ def modules_from_tensors(
         if algo is None:
             continue
         dora = sub.pop("dora_scale", None)
+        refuse_tucker(sub)
         if "lora_A.weight" in sub:  # PEFT-style naming
             sub["lora_down.weight"] = sub.pop("lora_A.weight")
             sub["lora_up.weight"] = sub.pop("lora_B.weight")

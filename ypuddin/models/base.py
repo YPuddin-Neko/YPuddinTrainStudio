@@ -283,6 +283,15 @@ class ModelFamily(ABC):
     def default_preset(self) -> str:
         return "attn-mlp"
 
+    def linear_module_names(self) -> list[str]:
+        """Dotted names of the backbone's linear layers on the official geometry (built on the meta device)."""
+        return []
+
+    def adaptable_modules(self) -> dict[str, tuple[int, ...]]:
+        """The backbone layers adapters can train on the official geometry: kernel size by dotted name,
+        ``()`` for a linear layer."""
+        return dict.fromkeys(self.linear_module_names(), ())
+
     def memory_layout(self, loaded: LoadedModel) -> MemoryLayout:
         return MemoryLayout()
 

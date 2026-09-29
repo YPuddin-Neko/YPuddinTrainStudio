@@ -460,8 +460,7 @@ class FamilyPreset(_Out):
     include: list[str]
     exclude: list[str]
     layers: int  # Linear modules matched on the official geometry (0 when the family has no meta backbone)
-    # What training convolutions as well adds, and the layer counts then; empty and 0 without convolutions.
-    conv: list[str] = []
+    # With convolutions trained too: all adapted layers, and how many are convolutions (0 without any).
     layers_with_conv: int = 0
     conv_layers: int = 0
 

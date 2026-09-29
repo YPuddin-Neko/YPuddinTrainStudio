@@ -4,7 +4,7 @@ from .dora import DoRA
 from .factorize import factorization
 from .frozen import FrozenLinear, quantize_fp8
 from .full import Full
-from .inject import ALGOS, AdapterSet, build_adapter, inject, kohya_key
+from .inject import ALGOS, AdapterSet, adaptable_modules, build_adapter, inject, kohya_key
 from .io import (
     build_metadata,
     detect_algo,
@@ -38,6 +38,7 @@ __all__ = [
     "ResolvedTarget",
     "TLoRA",
     "TargetPreset",
+    "adaptable_modules",
     "build_adapter",
     "build_metadata",
     "detect_algo",

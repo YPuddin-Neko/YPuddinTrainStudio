@@ -12331,14 +12331,6 @@
             "type": "integer",
             "title": "Layers"
           },
-          "conv": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Conv",
-            "default": []
-          },
           "layers_with_conv": {
             "type": "integer",
             "title": "Layers With Conv",

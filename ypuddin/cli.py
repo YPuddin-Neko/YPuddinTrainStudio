@@ -143,10 +143,7 @@ def cmd_convert(args: argparse.Namespace) -> int:
 
     tensors, meta = modernize_text_keys(*load_adapter_file(args.file))
     if args.to == "comfyui":
-        fam = get_family(args.family)
-        names = fam.linear_module_names() if hasattr(fam, "linear_module_names") else []
-        names += list(fam.conv_module_kernels()) if hasattr(fam, "conv_module_kernels") else []
-        out = kohya_to_comfy(tensors, names)
+        out = kohya_to_comfy(tensors, list(get_family(args.family).adaptable_modules()))
     elif args.to == "kohya":
         out = comfy_to_kohya(lycoris_to_kohya(tensors))
     else:
@@ -219,10 +216,7 @@ def cmd_merge(args: argparse.Namespace) -> int:
     if args.family:
         from ypuddin.models import get_family
 
-        fam = get_family(args.family)
-        names = fam.linear_module_names() if hasattr(fam, "linear_module_names") else None
-        if names is not None and hasattr(fam, "conv_module_kernels"):
-            names += list(fam.conv_module_kernels())
+        names = list(get_family(args.family).adaptable_modules())
     merged, unmatched = merge_into_state_dict(
         base,
         tensors,

@@ -26,9 +26,7 @@ class Full(AdapterModule):
         *,
         kernel: tuple[int, ...] = (),
         bias: bool = False,
-        base_weight: Tensor | None = None,
         dtype: torch.dtype = torch.float32,
-        **_: Any,
     ) -> None:
         super().__init__(out_features, in_features, kernel=kernel, dtype=dtype)
         self.weight = nn.Parameter(torch.zeros(self.weight_shape, dtype=dtype))
@@ -40,41 +38,31 @@ class Full(AdapterModule):
             self.register_parameter("bias", None)
             self.register_buffer("base_bias", None, persistent=False)
         self._pending_diff = False
-        if base_weight is not None:
-            self.bind_base(base_weight)
 
     @torch.no_grad()
     def bind_base(self, base_weight: Tensor, bias: Tensor | None = None) -> None:
         """Snapshot ``W₀`` (and ``b₀``); start from them, or from them plus a loaded diff."""
-        w = (
-            base_weight.detach()
-            .to(device=self.weight.device, dtype=self.param_dtype)
-            .reshape(self.weight_shape)
-        )
-        self.base_weight = w.clone()
-        b = None
-        if self.bias is not None:
-            if bias is None:
-                raise ValueError("LyCORIS Full trains the layer bias, but the layer has none")
-            b = bias.detach().to(device=self.bias.device, dtype=self.param_dtype)
-            self.base_bias = b.clone()
-        if self._pending_diff:
-            self.weight.add_(w)
-            if b is not None:
-                self.bias.add_(b)
-            self._pending_diff = False
-        else:
-            self.weight.copy_(w)
-            if b is not None:
-                self.bias.copy_(b)
+        if self.bias is not None and bias is None:
+            raise ValueError("LyCORIS Full trains the layer bias, but the layer has none")
+        for param, snapshot, value in (
+            (self.weight, "base_weight", base_weight.reshape(self.weight_shape)),
+            (self.bias, "base_bias", bias),
+        ):
+            if param is None:
+                continue
+            value = value.detach().to(device=param.device, dtype=self.param_dtype)
+            setattr(self, snapshot, value.clone())
+            if self._pending_diff:
+                param.add_(value)
+            else:
+                param.copy_(value)
+        self._pending_diff = False
 
     def delta_weight(self) -> Tensor:
         return self.weight - self.base_weight.to(self.weight.device)
 
     def delta_bias(self) -> Tensor | None:
-        if self.bias is None:
-            return None
-        return self.bias - self.base_bias.to(self.bias.device)
+        return None if self.bias is None else self.bias - self.base_bias.to(self.bias.device)
 
     @torch.no_grad()
     def export_tensors(self) -> dict[str, Tensor]:
@@ -84,7 +72,7 @@ class Full(AdapterModule):
         return out
 
     def extra_metadata(self) -> dict[str, Any]:
-        return {"algo": "full", "bias": self.bias is not None, **self._shape_metadata()}
+        return {"algo": "full", **self._shape_metadata()}
 
     @classmethod
     def from_tensors(

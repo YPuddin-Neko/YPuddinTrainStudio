@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -11,7 +12,7 @@ from torch import Tensor, nn
 
 from ypuddin.config import AdapterConfig
 
-from .base import AdapterModule
+from .base import AdapterModule, refuse_tucker
 from .conv import CONV_TYPES, AdaptedConv
 from .frozen import FrozenLinear
 from .full import Full
@@ -223,6 +224,7 @@ class AdapterSet:
                 missing.append(name)
                 continue
             dora = sub.pop("dora_scale", None)
+            refuse_tucker(sub)
             rebuilt = type(layer.adapter).from_tensors(
                 sub,
                 layer.adapter.extra_metadata(),
@@ -230,9 +232,7 @@ class AdapterSet:
                 kernel=layer.adapter.kernel,
             )
             if isinstance(rebuilt, Full):
-                rebuilt.bind_base(
-                    layer.frozen_weight(torch.float32), bias=layer.bias if rebuilt.bias is not None else None
-                )
+                rebuilt.bind_base(layer.frozen_weight(torch.float32), bias=layer.bias)
             layer.adapter.load_state_dict(rebuilt.state_dict(), strict=False)
             # Inference files fold scalar into a factor. A warm start uses that factor with gain 1;
             # exact training resume uses load_training_state instead.
@@ -251,9 +251,7 @@ class AdapterSet:
         for name, layer in self.layers.items():
             parent, attr = _locate(self.model, name)
             original = (self._originals or {}).get(name)
-            if original is None:
-                original = layer.base if isinstance(layer, AdaptedConv) else layer.base.to_linear()
-            setattr(parent, attr, original)
+            setattr(parent, attr, layer.unwrapped() if original is None else original)
         self.layers.clear()
 
     def summary(self) -> dict[str, Any]:
@@ -275,6 +273,18 @@ class AdapterSet:
 # run's DoRA off there, as LyCORIS does: its Full files carry no dora_scale, T-LoRA cannot merge per
 # sample. Choosing such an algorithm for the whole run together with DoRA is still refused.
 DORA_ALGOS = frozenset({"lora", "loha", "lokr", "ortho"})
+
+
+def adaptable_modules(model: nn.Module) -> dict[str, tuple[int, ...]]:
+    """Every layer adapters can train, in module order: its kernel size, ``()`` for a linear layer.
+
+    Linear layers include those a loader already froze (fp8_scaled checkpoints keep their own scales).
+    """
+    return {
+        name: tuple(module.kernel_size) if isinstance(module, CONV_TYPES) else ()
+        for name, module in model.named_modules()
+        if isinstance(module, (nn.Linear, FrozenLinear, *CONV_TYPES))
+    }
 
 
 def _locate(model: nn.Module, name: str) -> tuple[nn.Module, str]:
@@ -300,16 +310,8 @@ def inject(
     ``base_precision`` controls the storage of frozen linear base weights (``keep``/``bf16``/``fp8_e4m3``...);
     a convolution keeps its own module and dtype.
     """
-    names: list[str] = []
-    conv_kernels: dict[str, tuple[int, ...]] = {}
-    for name, module in model.named_modules():
-        # plain Linears plus layers a loader already froze (e.g. fp8_scaled checkpoints keep their own scales)
-        if isinstance(module, (nn.Linear, FrozenLinear)):
-            names.append(name)
-        elif preset.conv and isinstance(module, CONV_TYPES):
-            names.append(name)
-            conv_kernels[name] = tuple(module.kernel_size)
-    targets = resolve_targets(names, cfg, preset, extra_exclude=extra_exclude, conv_kernels=conv_kernels)
+    modules = adaptable_modules(model)
+    targets = resolve_targets(modules, cfg, preset, extra_exclude=extra_exclude)
     if not targets:
         raise ValueError(f"no modules matched preset {preset.name!r} and rules")
     dtype = PARAM_DTYPES[cfg.param_dtype]
@@ -318,45 +320,36 @@ def inject(
     for t in targets:
         parent, attr = _locate(model, t.name)
         module = getattr(parent, attr)
-        dora = cfg.dora and (t.algo in DORA_ALGOS or t.algo == cfg.algo)
-        if isinstance(module, CONV_TYPES):
+        kernel = modules[t.name]
+        out_features, in_features = module.weight.shape[:2]  # a grouped convolution's per-group inputs
+        # Planning injects into a meta-device model; its adapters need no real storage.
+        with torch.device("meta") if module.weight.is_meta else contextlib.nullcontext():
             adapter = build_adapter(
                 t.algo,
-                module.out_channels,
-                module.in_channels // module.groups,
+                int(out_features),
+                int(in_features),
                 t.params,
                 dtype,
-                kernel=tuple(module.kernel_size),
+                kernel=kernel,
                 bias=module.bias is not None,
             )
-            adapter.to(module.weight.device)
-            layer: AdaptedLinear | AdaptedConv = AdaptedConv(
-                module,
-                adapter,
-                mode=cfg.mode,
-                dora=dora,
-                dora_axis=cfg.dora_axis,
-                module_dropout=cfg.module_dropout,
-                name=t.name,
-            )
+        adapter.to(module.weight.device)
+        if kernel:
+            base, wrapper = module, AdaptedConv
         else:
-            if isinstance(module, FrozenLinear):
-                frozen = module  # already frozen (fp8 weight + scale from the checkpoint): keep as-is
-            else:
-                frozen = FrozenLinear.from_linear(module, precision=base_precision)
-            adapter = build_adapter(
-                t.algo, module.out_features, module.in_features, t.params, dtype, bias=module.bias is not None
-            )
-            adapter.to(module.weight.device)
-            layer = AdaptedLinear(
-                frozen,
-                adapter,
-                mode=cfg.mode,
-                dora=dora,
-                dora_axis=cfg.dora_axis,
-                module_dropout=cfg.module_dropout,
-                name=t.name,
-            )
+            # A layer a loader already froze (fp8 weight + scale from the checkpoint) is kept as-is.
+            frozen = isinstance(module, FrozenLinear)
+            base = module if frozen else FrozenLinear.from_linear(module, precision=base_precision)
+            wrapper = AdaptedLinear
+        layer = wrapper(
+            base,
+            adapter,
+            mode=cfg.mode,
+            dora=cfg.dora and (t.algo in DORA_ALGOS or t.algo == cfg.algo),
+            dora_axis=cfg.dora_axis,
+            module_dropout=cfg.module_dropout,
+            name=t.name,
+        )
         setattr(parent, attr, layer)
         layers[t.name] = layer
         if keep_originals:

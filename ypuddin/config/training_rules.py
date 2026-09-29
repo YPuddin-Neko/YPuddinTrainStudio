@@ -18,21 +18,19 @@ def training_capabilities(family: str) -> dict:
 
 
 def trains_conv_adapters(cfg) -> bool:
-    """Whether an adapter run adds adapters to convolution layers of the main model.
-
-    Only a scope whose model has convolutions (SDXL) offers them, so the selected preset decides.
-    """
+    """Whether an adapter run adds adapters to convolution layers of the main model."""
     if cfg.training.mode != "adapter" or not cfg.training.train_backbone:
         return False
     if cfg.adapter.layer_types != "linear_conv":
         return False
     try:
+        from ypuddin.adapters.rules import trains_convolutions
         from ypuddin.models import get_family
 
         preset = get_family(cfg.model.family).presets().get(cfg.adapter.preset)
     except Exception:  # noqa: BLE001 - an unknown family or preset fails elsewhere; assume convolutions
         return True
-    return preset is None or bool(preset.conv)
+    return preset is None or trains_convolutions(cfg.adapter, preset)
 
 
 def training_errors(cfg) -> list[dict[str, str]]:

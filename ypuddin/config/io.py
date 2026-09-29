@@ -107,59 +107,41 @@ def load_config(
     return TrainConfig.model_validate(data)
 
 
+# Fields added after checkpoints already existed, at the value those checkpoints trained with. At that
+# value a field is left out of the hash, so older checkpoints still authenticate their config.
+_LEGACY_VALUES: dict[str, dict[str, Any]] = {
+    # Optional export and save settings, off.
+    "checkpoint": {"save_state_every_epochs": None, "save_training_metadata": False, "state_dir": None},
+    "logging": {"output_dir": None},
+    # Center keeps the pixel geometry of older checkpoints.
+    "dataset": {"crop_anchor": "center"},
+    # SDXL's original single CLIP context and cache behavior.
+    "model": {"sdxl_max_token_length": 75},
+    # Without the switch, runs used nondeterministic kernels; true stays visible.
+    "loop": {"deterministic": False},
+    # Optional DDPM loss modifiers, off.
+    "objective": {
+        "scale_v_pred_loss_like_noise_pred": False,
+        "v_pred_like_loss": 0.0,
+        "debiased_estimation_loss": False,
+    },
+    # Linear layers only, with no separate convolution rank.
+    "adapter": {"layer_types": "linear", "conv_rank": None, "conv_alpha": None},
+}
+
+
 def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
     data = config.to_dict() if isinstance(config, TrainConfig) else dict(config)
-    # Disabled optional export/save settings preserve pre-existing checkpoint hashes.
-    checkpoint = data.get("checkpoint")
-    if isinstance(checkpoint, Mapping):
-        data["checkpoint"] = {
-            key: value
-            for key, value in checkpoint.items()
-            if not (key == "save_state_every_epochs" and value is None)
-            and not (key == "save_training_metadata" and value is False)
-            and not (key == "state_dir" and value is None)
-        }
-    logging = data.get("logging")
-    if isinstance(logging, Mapping) and logging.get("output_dir") is None:
-        data["logging"] = {key: value for key, value in logging.items() if key != "output_dir"}
-    # Center preserves the pixel geometry and config hashes of older checkpoints.
-    dataset = data.get("dataset")
-    if isinstance(dataset, Mapping) and dataset.get("crop_anchor") == "center":
-        data["dataset"] = {key: value for key, value in dataset.items() if key != "crop_anchor"}
-    # The default retains SDXL's original single CLIP context and cache behavior.
-    # Authenticate old checkpoint configs without inventing a new semantic change.
-    model = data.get("model")
-    if isinstance(model, Mapping) and model.get("sdxl_max_token_length") == 75:
-        data["model"] = {key: value for key, value in model.items() if key != "sdxl_max_token_length"}
-    # A config without this switch runs nondeterministic kernels. Explicit false
-    # keeps that fingerprint; true and all other configuration changes
-    # remain visible to the checkpoint compatibility check.
-    loop = data.get("loop")
-    if isinstance(loop, Mapping) and loop.get("deterministic") is False:
-        data["loop"] = {key: value for key, value in loop.items() if key != "deterministic"}
-    # Full-state checkpoints may predate these optional DDPM modifiers. Disabled
-    # defaults must not break authentication of their original config.toml.
-    objective = data.get("objective")
-    if isinstance(objective, Mapping):
-        inactive = {
-            "scale_v_pred_loss_like_noise_pred": False,
-            "v_pred_like_loss": 0.0,
-            "debiased_estimation_loss": False,
-        }
-        data["objective"] = {
-            key: value for key, value in objective.items() if key not in inactive or value != inactive[key]
-        }
+    for section, legacy in _LEGACY_VALUES.items():
+        values = data.get(section)
+        if isinstance(values, Mapping):
+            data[section] = {
+                key: value for key, value in values.items() if key not in legacy or value != legacy[key]
+            }
     # Checkpoints from before the DoRA axis option trained the output axis; without DoRA it does nothing.
-    # Checkpoints from before convolution training trained linear layers only, with no separate conv rank.
     adapter = data.get("adapter")
-    if isinstance(adapter, Mapping):
-        inactive = {"layer_types": "linear", "conv_rank": None, "conv_alpha": None}
-        data["adapter"] = {
-            key: value
-            for key, value in adapter.items()
-            if not (key == "dora_axis" and (value == "output" or not adapter.get("dora")))
-            and not (key in inactive and value == inactive[key])
-        }
+    if isinstance(adapter, Mapping) and (adapter.get("dora_axis") == "output" or not adapter.get("dora")):
+        data["adapter"] = {key: value for key, value in adapter.items() if key != "dora_axis"}
     blob = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.blake2b(blob, digest_size=8).hexdigest()
 
