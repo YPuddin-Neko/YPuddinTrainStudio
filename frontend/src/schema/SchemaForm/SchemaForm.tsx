@@ -65,8 +65,8 @@ export interface ValidationError {
   loc?: string;
   msg: string;
   /** Pydantic's error kind and bound, when the value itself failed validation. */
-  type?: string;
-  ctx?: Record<string, unknown>;
+  type?: string | null;
+  ctx?: Record<string, unknown> | null;
 }
 
 /** A value the trainer accepts but rounds; `fix` replaces it with one that is used as written. */
