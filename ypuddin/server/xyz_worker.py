@@ -85,26 +85,6 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
         text_export_root,
     )
     from ypuddin.adapters.dora import magnitude_axis
-    from ypuddin.adapters.linear import merged_bias
-
-    class Strength:
-        """DoRA's rescale is not linear in ΔW, so a strength below 1 blends the adapted and base outputs."""
-
-        def forward(self, x):
-            if self.dora is None:
-                return super().forward(x)
-            base = self.base(x)
-            if self.multiplier == 0:
-                return base
-            weight = self.dora.rescale(self.frozen_weight() + self.adapter.delta_weight().float())
-            bias = merged_bias(self.base.bias, self.adapter, 1.0, x.dtype)
-            return base + self.multiplier * (self._layer_op(x, weight.to(x.dtype), bias) - base)
-
-    class ScaledAdapter(Strength, AdaptedLinear):
-        pass
-
-    class ScaledConvAdapter(Strength, AdaptedConv):
-        pass
 
     tensors, metadata = load_adapter_file(path)
     if metadata.get("ypuddin.family", family) != family:
@@ -148,10 +128,10 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
                 raise ValueError(f"Checkpoint target shape differs from the sampling model: {name}")
             axis = "output" if dora is None else magnitude_axis(dora)
             if layers[name]:
-                base, wrapper_type = original, ScaledConvAdapter
+                base, wrapper_type = original, AdaptedConv
             else:
                 base = original if isinstance(original, FrozenLinear) else FrozenLinear.from_linear(original)
-                wrapper_type = ScaledAdapter
+                wrapper_type = AdaptedLinear
             wrapper = wrapper_type(base, adapter, dora=dora is not None, dora_axis=axis, name=name)
             wrapper.component = component
             if dora is not None:

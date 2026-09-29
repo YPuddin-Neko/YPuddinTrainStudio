@@ -100,18 +100,23 @@ class AdaptedLayer(nn.Module):
     # ----------------------------------------------------------------- forward
     def merged_weight(self, dtype: torch.dtype | None = None) -> Tensor:
         delta = self.adapter().float()
-        if self.multiplier != 1.0:
+        if self.dora is None and self.multiplier != 1.0:
             delta = delta * self.multiplier
         # Adding the stored weight to the FP32 delta promotes it without an FP32 copy.
         w = self.frozen_weight() + delta
         if self.dora is not None:
             w = self.dora(w)
+            if self.multiplier != 1.0:
+                # DoRA's rescale is not linear in ΔW: a strength moves from the base weight toward the
+                # full DoRA weight, as ComfyUI and A1111 apply it.
+                base = self.frozen_weight().float()
+                w = base + self.multiplier * (w - base)
         return w if dtype is None else w.to(dtype)
 
     def forward(self, x: Tensor) -> Tensor:
         if self.module_dropout_p > 0 and self.training and torch.rand(()).item() < self.module_dropout_p:
             return self.base(x)
-        if self.multiplier == 0.0 and self.dora is None:
+        if self.multiplier == 0.0:
             return self.base(x)
         if self.mode == "bypass":
             delta = self.adapter(x)

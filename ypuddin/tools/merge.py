@@ -73,9 +73,14 @@ def merge_into_state_dict(
                 continue
             # A convolution's flattened factors, or a 1×1 kernel for a linear layer.
             delta = delta.reshape(w32.shape)
-        new = w32 + strength * delta
-        if dora is not None:
-            new = decompose(new, dora)  # along the axis the stored magnitude's shape names
+        if dora is None:
+            new = w32 + strength * delta
+        else:
+            # Along the axis the stored magnitude's shape names; a strength moves from the base weight
+            # toward the full DoRA weight, as ComfyUI and A1111 apply it.
+            new = decompose(w32 + delta, dora)
+            if strength != 1.0:
+                new = w32 + strength * (new - w32)
         if mod.delta_bias() is not None:
             bkey = f"{dotted}.bias"
             if bkey not in base:
