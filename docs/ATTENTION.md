@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | PyTorch SDPA | CUDA、DTK、MPS、CPU | 随 PyTorch 提供；DTK 部分路径另有厂商动态库依赖 |
 | xFormers | CUDA、DTK | 构建需匹配 PyTorch 与设备；DTK 使用厂商包 |
-| FlashAttention 2 | CUDA、DTK | 使用对应平台的扩展包 |
-| SageAttention | CUDA | 按模型范围用于无梯度采样；训练反向使用 SDPA |
+| FlashAttention 2 | CUDA、DTK | 使用对应平台的扩展包；SDXL 不提供 |
+| SageAttention | CUDA | 可在运行环境页安装；参数页不提供，Anima、Krea 2 的配置文件指定 `sage` 时只用于预览、验证等无梯度计算，训练计算使用 SDPA |
 | Metal FlashAttention | Apple Silicon | 使用匹配版本的 `mtlattn` 预编译包 |
 
 安装成功不等于设备内核可用。运行环境页显示导入与计算检测结果；失败时按具体原因处理。

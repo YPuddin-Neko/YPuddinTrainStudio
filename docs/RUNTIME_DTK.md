@@ -14,6 +14,10 @@
 
 驱动和 DTK 运行库由服务器维护人员安装。训练器不执行系统驱动安装。不同 DTK 小版本按厂商配套关系选择，不能仅凭相近版本号混用。
 
+## DTK 安装指南
+
+“设置 → 运行环境 → DTK 安装指南”显示当前系统、DTK、Python、PyTorch 和驱动版本。服务器为 Ubuntu 22.04 x86_64、Python 3.11 时推荐 DTK 26.04（要求驱动 6.3.30-V1.4.1a），并给出 DTK 安装包、校验文件和 PyTorch、TorchVision、Triton、FlashAttention 的下载链接；其他系统从页面上的 DTK 版本目录、驱动下载目录和驱动配套表中选择。页面只提供下载，DTK 和驱动需在服务器上安装。
+
 ## 厂商包组合
 
 项目内置目录包含以下 DTK 26.04 组合，适用于对应的 Linux x86_64 / Python 3.11 环境：
@@ -24,6 +28,7 @@
 | TorchVision | `0.22.0+das.opt1.dtk2604.torch271` |
 | Triton | `3.1.0+das.opt1.dtk2604.torch271` |
 | FlashAttention | `2.8.3+das.opt1.dtk2604.torch271` |
+| xFormers | `0.0.33+das.opt1.dtk2604.torch251`（纯 Python 包，需要 Torch 2.5 及以上和 FlashAttention） |
 
 Torch、TorchVision、Triton 和其依赖放在同一 wheel 目录。其他版本需使用相应的厂商配套构建。普通 PyPI CUDA 包不能替代 HIP 版 Torch。
 
@@ -66,7 +71,7 @@ python -m pip download --only-binary=:all: --no-deps pip --dest pip-wheel
 
 ## 运行库路径
 
-`DTK_ROOT` 默认是 `/opt/dtk`。启动脚本将该路径传给 `DTKROOT`、`ROCM_PATH` 和 `HIP_PATH`，并将已存在的运行库、编译器及头文件目录加入当前进程环境。
+`DTK_ROOT` 默认是 `/opt/dtk`。启动脚本把 `DTKROOT`、`ROCM_PATH` 设为该路径，`HIP_PATH` 设为其下的 `hip` 目录，并将已存在的运行库、编译器及头文件目录加入当前进程环境。
 
 DTK 26.04 的 OpenMP 库位于 `dcc/lib`，启动脚本会同时处理该目录。环境变量只作用于训练器及其子进程，不修改系统库配置。
 
@@ -90,6 +95,12 @@ HIP 版 PyTorch 沿用 `torch.cuda` 接口，`cuda:0` 在此环境中表示第�
 缺少 SDPA 所需的厂商动态库时，可能出现 `no matching libraries found for flash_attn_2_cuda`。应安装对应厂商包后重新检测。安装后的设备检测与导入状态分别显示。
 
 Klein 显式选择 FlashAttention 时，通过专用处理器调用厂商 `flash_attn_func`，要求 HIP GPU 和一致的 FP16 / BF16 输入，不接受注意力 mask。该后端记录在训练状态中，不能与 SDPA 状态互相精确恢复。
+
+## 可复现训练
+
+开启“可复现训练”后，Anima、SDXL、Krea 2、Klein 的部分组合（主模型 LoRA / LoKr、文本编码器 LoRA、全量微调）使用固定计算配方：关闭 TF32，注意力改用 SDPA 的数学实现（Klein 选择 FlashAttention 时保留该后端），部分线性层和卷积改用 FP32 计算。Anima、SDXL、Krea 2 的主模型全量微调不符合 BF16 配方时，改为 FP32 计算并关闭混合精度。开启后固定的取值显示在对应字段。
+
+配方记入训练状态，续训时须一致。“训练层类型”为“线性层和卷积层”的任务和开启 DoRA 的任务不使用这些配方；开启 DoRA 时“可复现训练”关闭并置灰。
 
 ## 网络与多卡
 

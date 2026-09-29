@@ -26,7 +26,9 @@
 
 新环境保存在数据目录的 `environment/<平台>/runtimes/`。原环境保留，可通过“恢复原环境并重启”切回。准备阶段会检查依赖、服务导入及设备计算；准备失败时不能切换。
 
-xFormers、FlashAttention、SageAttention、bitsandbytes 等扩展需要与新环境重新匹配。海光基础框架按 [DTK 部署](RUNTIME_DTK.md) 安装。
+xFormers、FlashAttention、SageAttention、bitsandbytes 等扩展需要与新环境重新匹配。
+
+海光环境的这一栏为“DTK 安装指南”，显示系统、驱动与 DTK 版本并给出配套下载，不提供版本切换；基础框架按 [DTK 部署](RUNTIME_DTK.md#dtk-安装指南) 安装。
 
 ## 扩展安装
 
@@ -34,7 +36,7 @@ xFormers、FlashAttention、SageAttention、bitsandbytes 等扩展需要与新�
 
 扩展更新后需重启服务。具体后端的版本要求和计算限制见 [注意力后端](ATTENTION.md)。
 
-每个扩展的“云端版本”是当前 Python（和 PyTorch）能安装的最新正式版本，从安装时使用的来源查询：bitsandbytes 和 ONNX Runtime 查“软件下载源”中的 Python 依赖包来源，xFormers 查与 CUDA 版本对应的 PyTorch 来源，按顺序尝试，前一个来源不可用或没有兼容构建时换下一个。结果保留一小时，更换下载源后重新查询。每个扩展的操作按钮均为“管理”，展开后安装、重装或卸载。
+每个扩展的“云端版本”是当前 Python（和 PyTorch）能安装的最新正式版本，从安装时使用的来源查询：bitsandbytes 和 ONNX Runtime 查“软件下载源”中的 Python 依赖包来源，xFormers 查与 CUDA 版本对应的 PyTorch 来源，按顺序尝试，前一个来源不可用或没有兼容构建时换下一个；FlashAttention 2 查社区预编译包，海光环境的 xFormers、FlashAttention 和 bitsandbytes 查内置的厂商构建目录，Metal FlashAttention 显示安装器固定的“兼容版本”。结果保留一小时，更换下载源后重新查询。每个扩展的操作按钮均为“管理”，展开后安装、重装或卸载。
 
 ## LoRA 环境
 
