@@ -7660,34 +7660,16 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** StoragePart */
-        StoragePart: {
-            /**
-             * Group
-             * @enum {string}
-             */
-            group: "trainer" | "projects" | "models" | "other";
-            /** Key */
-            key: string;
-            /**
-             * Name
-             * @default
-             */
-            name: string;
-            /** Project Id */
-            project_id?: string | null;
-            /** Project Name */
-            project_name?: string | null;
-            /** Version Id */
-            version_id?: string | null;
-            /** Kind */
-            kind?: ("products" | "resume" | "data" | "cache" | "other" | "external") | null;
-            /** Bytes */
-            bytes: number;
-            /** By Volume */
-            by_volume: {
-                [key: string]: number;
-            };
+        /** StorageGroups */
+        StorageGroups: {
+            /** Trainer */
+            trainer: number;
+            /** Projects */
+            projects: number;
+            /** Models */
+            models: number;
+            /** Other */
+            other: number;
         } & {
             [key: string]: unknown;
         };
@@ -7702,30 +7684,27 @@ export interface components {
         };
         /**
          * StorageUsage
-         * @description What the studio's parts take on the disks they are on; each file is counted once.
+         * @description What the studio's own files take on disk; each file is counted once, in the most specific part.
          */
         StorageUsage: {
             /** Scanned At */
             scanned_at: number;
-            /** Volumes */
-            volumes: components["schemas"]["StorageVolume"][];
-            /** Parts */
-            parts: components["schemas"]["StoragePart"][];
+            groups: components["schemas"]["StorageGroups"];
+            /** Versions */
+            versions: components["schemas"]["StorageVersion"][];
         } & {
             [key: string]: unknown;
         };
-        /** StorageVolume */
-        StorageVolume: {
-            /** Id */
-            id: string;
-            /** Path */
-            path: string;
-            /** Total */
-            total: number;
-            /** Used */
-            used: number;
-            /** Free */
-            free: number;
+        /** StorageVersion */
+        StorageVersion: {
+            /** Version Id */
+            version_id: string;
+            /** Name */
+            name: string;
+            /** Project Name */
+            project_name: string;
+            /** Bytes */
+            bytes: number;
         } & {
             [key: string]: unknown;
         };

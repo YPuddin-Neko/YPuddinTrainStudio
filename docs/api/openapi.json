@@ -22009,100 +22009,34 @@
         ],
         "title": "StorageDefaults"
       },
-      "StoragePart": {
+      "StorageGroups": {
         "properties": {
-          "group": {
-            "type": "string",
-            "enum": [
-              "trainer",
-              "projects",
-              "models",
-              "other"
-            ],
-            "title": "Group"
-          },
-          "key": {
-            "type": "string",
-            "title": "Key"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "default": ""
-          },
-          "project_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Project Id"
-          },
-          "project_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Project Name"
-          },
-          "version_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version Id"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "products",
-                  "resume",
-                  "data",
-                  "cache",
-                  "other",
-                  "external"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kind"
-          },
-          "bytes": {
+          "trainer": {
             "type": "integer",
-            "title": "Bytes"
+            "title": "Trainer"
           },
-          "by_volume": {
-            "additionalProperties": {
-              "type": "integer"
-            },
-            "type": "object",
-            "title": "By Volume"
+          "projects": {
+            "type": "integer",
+            "title": "Projects"
+          },
+          "models": {
+            "type": "integer",
+            "title": "Models"
+          },
+          "other": {
+            "type": "integer",
+            "title": "Other"
           }
         },
         "additionalProperties": true,
         "type": "object",
         "required": [
-          "group",
-          "key",
-          "bytes",
-          "by_volume"
+          "trainer",
+          "projects",
+          "models",
+          "other"
         ],
-        "title": "StoragePart"
+        "title": "StorageGroups"
       },
       "StoragePathPreview": {
         "properties": {
@@ -22129,64 +22063,55 @@
             "type": "number",
             "title": "Scanned At"
           },
-          "volumes": {
-            "items": {
-              "$ref": "#/components/schemas/StorageVolume"
-            },
-            "type": "array",
-            "title": "Volumes"
+          "groups": {
+            "$ref": "#/components/schemas/StorageGroups"
           },
-          "parts": {
+          "versions": {
             "items": {
-              "$ref": "#/components/schemas/StoragePart"
+              "$ref": "#/components/schemas/StorageVersion"
             },
             "type": "array",
-            "title": "Parts"
+            "title": "Versions"
           }
         },
         "additionalProperties": true,
         "type": "object",
         "required": [
           "scanned_at",
-          "volumes",
-          "parts"
+          "groups",
+          "versions"
         ],
         "title": "StorageUsage",
-        "description": "What the studio's parts take on the disks they are on; each file is counted once."
+        "description": "What the studio's own files take on disk; each file is counted once, in the most specific part."
       },
-      "StorageVolume": {
+      "StorageVersion": {
         "properties": {
-          "id": {
+          "version_id": {
             "type": "string",
-            "title": "Id"
+            "title": "Version Id"
           },
-          "path": {
+          "name": {
             "type": "string",
-            "title": "Path"
+            "title": "Name"
           },
-          "total": {
-            "type": "integer",
-            "title": "Total"
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
           },
-          "used": {
+          "bytes": {
             "type": "integer",
-            "title": "Used"
-          },
-          "free": {
-            "type": "integer",
-            "title": "Free"
+            "title": "Bytes"
           }
         },
         "additionalProperties": true,
         "type": "object",
         "required": [
-          "id",
-          "path",
-          "total",
-          "used",
-          "free"
+          "version_id",
+          "name",
+          "project_name",
+          "bytes"
         ],
-        "title": "StorageVolume"
+        "title": "StorageVersion"
       },
       "SystemInfo": {
         "properties": {
