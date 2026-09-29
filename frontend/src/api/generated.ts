@@ -508,6 +508,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/xyz/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Kept Models */
+        get: operations["kept_models_api_xyz_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/xyz/models/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release Models
+         * @description Unload the base models idle model-test workers keep; one that is drawing keeps its model.
+         */
+        post: operations["release_models_api_xyz_models_release_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/xyz/{jid}": {
         parameters: {
             query?: never;
@@ -4736,6 +4773,25 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** KeptModel */
+        KeptModel: {
+            /** Devices */
+            devices: string[];
+            /** Label */
+            label: string;
+            /** Busy */
+            busy: boolean;
+            /** Job Id */
+            job_id?: string | null;
+        };
+        /**
+         * KeptModels
+         * @description Base models that model-test workers keep loaded for the next comparison.
+         */
+        KeptModels: {
+            /** Models */
+            models: components["schemas"]["KeptModel"][];
+        };
         /** LogLine */
         LogLine: {
             /**
@@ -8558,6 +8614,8 @@ export interface components {
             sample_step?: number | null;
             /** Sample Steps */
             sample_steps?: number | null;
+            /** Wait Reason */
+            wait_reason?: string | null;
             /** Error */
             error: string | null;
             /** Created At */
@@ -9667,6 +9725,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kept_models_api_xyz_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeptModels"];
+                };
+            };
+        };
+    };
+    release_models_api_xyz_models_release_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeptModels"];
                 };
             };
         };

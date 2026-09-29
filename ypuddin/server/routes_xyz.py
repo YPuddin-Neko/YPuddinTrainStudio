@@ -27,6 +27,18 @@ def history(source: str, context=Depends(ctx)):
     return xyz.history(context, source)
 
 
+@router.get("/xyz/models", response_model=xyz.KeptModels)
+def kept_models(context=Depends(ctx)):
+    return {"models": context.supervisor.loaded_models()}
+
+
+@router.post("/xyz/models/release", response_model=xyz.KeptModels)
+def release_models(context=Depends(ctx)):
+    """Unload the base models idle model-test workers keep; one that is drawing keeps its model."""
+    context.supervisor.release_models(wait=10)
+    return {"models": context.supervisor.loaded_models()}
+
+
 @router.get("/xyz/{jid}", response_model=xyz.XyzTask)
 def task(jid: str, context=Depends(ctx)):
     return xyz.task(context, jid)

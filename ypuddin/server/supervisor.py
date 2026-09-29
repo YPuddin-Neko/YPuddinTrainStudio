@@ -6,9 +6,12 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
+import time
 from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +28,7 @@ from .job_logs import parse_log_lines
 from .job_paths import event_file, log_file, state_directory
 from .memory_fit import capacity_shortfall, device_label, fits_now, gb, shortfall_reason
 from .sample_events import sample_event_loss
+from .xyz import RESIDENT_IDLE_SECONDS, resident_key, resident_label
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +36,7 @@ ACTIVE = ("queued", "scheduled", "running", "pausing", "cancelling")
 TERMINAL = ("completed", "failed", "cancelled", "paused")
 EVENT_BATCH_SIZE = 128
 EVENT_BATCH_BYTES = 256 * 1024
+RELEASE_WAIT_SECONDS = 30
 
 
 def training_device_error(
@@ -89,6 +94,19 @@ def worker_device_environment(devices: tuple[str, ...], env: dict[str, str]) -> 
     return result
 
 
+@dataclass
+class _Resident:
+    """A model-test worker that keeps its base model for the next comparison on the same device."""
+
+    proc: subprocess.Popen
+    devices: tuple[str, ...]
+    key: str
+    control: Path
+    label: str
+    job_id: str | None
+    idle_since: float = 0.0
+
+
 class JobSupervisor:
     """One scheduler loop; jobs run as ``ypuddin train`` subprocesses writing ``events.jsonl``.
 
@@ -120,6 +138,12 @@ class JobSupervisor:
         self._outcome_seen: set[str] = set()
         # The reason last written on waiting jobs while maintenance blocked the queue.
         self._blocked_reason: str | None = None
+        # Model-test workers keeping a base model, by device; a busy one is also in _procs.
+        self._residents: dict[tuple[str, ...], _Resident] = {}
+        # Jobs whose worker reported that it stays for the next comparison.
+        self._staying: set[str] = set()
+        # Released workers still exiting, and when they were released; queued work waits for their memory.
+        self._releasing: list[tuple[subprocess.Popen, float]] = []
         self._task: asyncio.Task | None = None
         self._event_loop: asyncio.AbstractEventLoop | None = None
         self._stopping = False
@@ -143,6 +167,12 @@ class JobSupervisor:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        with self.db.lock:
+            for resident in list(self._residents.values()):
+                if resident.job_id is None:
+                    self._release(resident)
+                else:
+                    (resident.control / "exit").touch()
         # Request a recoverable pause before closing SQLite. Preparation/cache pauses
         # retain their cache and can restart without a training checkpoint.
         for job_id, proc in list(self._procs.items()):
@@ -200,12 +230,21 @@ class JobSupervisor:
                 self._on_exit(job_id, proc.returncode)
                 del self._procs[job_id]
                 self._devices.pop(job_id, None)
+                self._staying.discard(job_id)
+                self._forget_resident(proc)
+            elif job_id in self._staying and drained:
+                self._detach(job_id)
+        self._reap_residents()
         settings = self.db.get_kv("queue.settings", {"held": False, "max_concurrent": self.max_concurrent})
         blocked = maintenance_reason(self.db)
         if blocked or self._blocked_reason:
             self._mark_blocked(blocked)
         if blocked:
+            # Environment work and AI regularization need the memory a kept model holds.
+            self.release_models()
             return backlog
+        if self._releasing:
+            return backlog  # memory readings would still count the released workers
         # Holding the queue stops ordinary starts; a job the user forced to start still starts.
         held = bool(settings.get("held"))
         if not held:
@@ -222,10 +261,17 @@ class JobSupervisor:
         ):
             if nxt["id"] in self._procs:
                 continue
+            resident = self._reusable(nxt)
+            if resident is None and any(item.job_id is None for item in list(self._residents.values())):
+                # Other work gets the memory a kept model holds; it starts once the worker has exited.
+                self.release_models()
+                break
             if nxt.get("forced_at") is not None:
                 device = self._force_device(nxt, slots)
             elif len(self._procs) >= slots:
                 break
+            elif resident is not None:
+                device = resident.devices[0]
             else:
                 device = self._choose_device(nxt, check_memory=settings.get("memory_admission", True))
             if device is None:
@@ -505,6 +551,8 @@ class JobSupervisor:
         # Control requests live with the job's records, apart from the products the trainer writes.
         env["YPUDDIN_CONTROL_DIR"] = str(run_dir / "control")
         resume_from = None
+        reuse: _Resident | None = None
+        resident_control: Path | None = None
         if job["type"] == "xyz":
             import psutil
 
@@ -527,6 +575,18 @@ class JobSupervisor:
             cfg_path = run_dir / "xyz-request.json"
             cfg_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
             cmd = [self.python, "-m", "ypuddin.server.xyz_worker", str(cfg_path)]
+            key = resident_key(job)
+            held = self._residents.get(devices)
+            if held is not None and held.job_id is None and held.key == key and held.proc.poll() is None:
+                reuse = held
+            else:
+                if held is not None and held.job_id is None:
+                    self._release(held)  # another base model: that worker ends first
+                if key is not None:
+                    resident_control = self.data_root / "runtime" / f"model-test-{job_id}"
+                    shutil.rmtree(resident_control, ignore_errors=True)
+                    resident_control.mkdir(parents=True)
+                    cmd += ["--resident", str(resident_control)]
         else:
             payload = json.loads(job["config_json"])
             # New queue snapshots include the switch. Existing immutable jobs
@@ -587,10 +647,25 @@ class JobSupervisor:
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs["start_new_session"] = True
-        with open(log_file(job), "ab") as log_fp:
-            proc = subprocess.Popen(
-                cmd, stdout=log_fp, stderr=subprocess.STDOUT, cwd=str(run_dir), env=env, **kwargs
+        if reuse is not None:
+            # The worker already holds this base model: hand it the comparison.
+            handoff = reuse.control / "next.json"
+            temporary = handoff.with_suffix(".tmp")
+            temporary.write_text(
+                json.dumps({"request": str(cfg_path), "log": str(log_file(job))}), encoding="utf-8"
             )
+            temporary.replace(handoff)
+            proc = reuse.proc
+            reuse.job_id = job_id
+        else:
+            with open(log_file(job), "ab") as log_fp:
+                proc = subprocess.Popen(
+                    cmd, stdout=log_fp, stderr=subprocess.STDOUT, cwd=str(run_dir), env=env, **kwargs
+                )
+            if resident_control is not None:
+                self._residents[devices] = _Resident(
+                    proc, devices, key, resident_control, resident_label(job), job_id
+                )
         self._procs[job_id] = proc
         self._devices[job_id] = device or "cpu"
         phase = "checking_communication" if count > 1 and sys.platform == "win32" else "starting"
@@ -617,6 +692,99 @@ class JobSupervisor:
             forced_at=None,
         )
         self._publish("job.phase", {"job_id": job_id, "phase": phase})
+        if job["type"] == "xyz":
+            self._publish_models()
+
+    # ----------------------------------------------------------------- kept models
+    def loaded_models(self) -> list[dict[str, Any]]:
+        """Base models that model-test workers keep; a busy one is drawing a comparison."""
+        with self.db.lock:
+            return [
+                {"devices": list(r.devices), "label": r.label, "busy": r.job_id is not None, "job_id": r.job_id}
+                for r in self._residents.values()
+                if r.proc.poll() is None
+            ]
+
+    def release_models(self, *, wait: float = 0) -> int:
+        """End the idle workers that keep a base model; a busy one keeps drawing. Returns how many ended."""
+        with self.db.lock:
+            idle = [r for r in self._residents.values() if r.job_id is None]
+            for resident in idle:
+                self._release(resident)
+        deadline = time.monotonic() + wait
+        for resident in idle:
+            try:
+                resident.proc.wait(max(0.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                break
+        return len(idle)
+
+    def _publish_models(self) -> None:
+        self._publish("xyz.models", {"models": self.loaded_models()})
+
+    def _reusable(self, job: dict[str, Any]) -> _Resident | None:
+        """An idle worker that already holds the base model ``job`` compares with, on a card it may use."""
+        key = resident_key(job)
+        if key is None:
+            return None
+        requested = tuple(json.loads(job.get("gpu_devices_json") or "[]"))
+        owned = {device for allocation in self._devices.values() for device in self._allocation(allocation)}
+        for devices, resident in list(self._residents.items()):
+            if (
+                resident.job_id is None
+                and resident.key == key
+                and (not requested or requested == devices)
+                and not owned & set(devices)
+                and resident.proc.poll() is None
+            ):
+                return resident
+        return None
+
+    def _detach(self, job_id: str) -> None:
+        """The worker finished this comparison and waits for the next one with its model loaded."""
+        with self.db.lock:
+            proc = self._procs.pop(job_id)
+            self._devices.pop(job_id, None)
+            self._outcome_seen.discard(job_id)
+            self._staying.discard(job_id)
+            # The code a worker ending with this comparison would have exited with.
+            row = self.db.fetchone("SELECT status FROM jobs WHERE id=?", (job_id,))
+            self.db.update("jobs", job_id, {"exit_code": 0 if row and row["status"] == "completed" else 130})
+            for resident in self._residents.values():
+                if resident.proc is proc:
+                    resident.job_id = None
+                    resident.idle_since = time.monotonic()
+            self._publish_models()
+
+    def _release(self, resident: _Resident) -> None:
+        self._residents.pop(resident.devices, None)
+        self._kill_process_tree(resident.proc)
+        self._releasing.append((resident.proc, time.monotonic()))
+        shutil.rmtree(resident.control, ignore_errors=True)
+        self._publish_models()
+
+    def _forget_resident(self, proc: subprocess.Popen) -> None:
+        for resident in list(self._residents.values()):
+            if resident.proc is proc:
+                self._residents.pop(resident.devices, None)
+                shutil.rmtree(resident.control, ignore_errors=True)
+                self._publish_models()
+
+    def _reap_residents(self) -> None:
+        with self.db.lock:
+            # A worker that outlives its kill for long must not hold the queue forever.
+            self._releasing = [
+                (proc, since)
+                for proc, since in self._releasing
+                if proc.poll() is None and time.monotonic() - since < RELEASE_WAIT_SECONDS
+            ]
+            for resident in list(self._residents.values()):
+                if resident.job_id is not None:
+                    continue
+                if resident.proc.poll() is not None:
+                    self._forget_resident(resident.proc)
+                elif time.monotonic() - resident.idle_since >= RESIDENT_IDLE_SECONDS:
+                    self._release(resident)
 
     # ----------------------------------------------------------------- events
     def _publish(self, type_: str, data: dict[str, Any]) -> None:
@@ -766,6 +934,8 @@ class JobSupervisor:
         elif t == "warning":
             self._publish("job.warning", data)
         elif t in ("run.finished", "run.paused", "run.stopped", "run.failed"):
+            if ev.get("resident") and t in ("run.finished", "run.stopped"):
+                self._staying.add(job_id)
             self._set_terminal(job_id, t, ev)
         else:
             self._publish("job.event", data)

@@ -7,12 +7,20 @@ import json
 import math
 import os
 import sys
+import time
 from contextlib import nullcontext
 from pathlib import Path
 
 from ypuddin.models.precision import model_load_precision
 
-from .xyz import AXES, XyzRequest, checkpoint_signature, expand_cells, full_checkpoint_model
+from .xyz import (
+    AXES,
+    RESIDENT_IDLE_SECONDS,
+    XyzRequest,
+    checkpoint_signature,
+    expand_cells,
+    full_checkpoint_model,
+)
 
 GRID_PIXELS = 64 * 1024 * 1024  # largest downloadable page grid
 
@@ -21,6 +29,44 @@ def _atomic_json(path: Path, value):
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary.replace(path)
+
+
+def _release_memory():
+    gc.collect()
+    import torch
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+class LoadedModels:
+    """The base model a resident worker keeps for the next comparison, parked in host memory.
+
+    Only the backbone and the VAE stay; text encoders reload for each comparison's prompts.
+    """
+
+    def __init__(self):
+        self.key: str | None = None
+        self.loaded = None
+
+    def take(self, key: str):
+        """The kept model when it was loaded with the same settings; any other is released first."""
+        if self.loaded is not None and self.key == key:
+            loaded, self.loaded = self.loaded, None
+            return loaded
+        self.release()
+        return None
+
+    def keep(self, key: str, loaded) -> None:
+        self.key, self.loaded = key, loaded
+
+    def release(self) -> None:
+        if self.loaded is None:
+            return
+        self.loaded.text.unload()
+        self.loaded.latent.unload()
+        self.key = self.loaded = None
+        _release_memory()
 
 
 def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None):
@@ -214,7 +260,8 @@ def write_grids(output, request, manifest):
     manifest["grids"] = grids
 
 
-def generate(payload: dict, output: Path, emit, cancelled):
+def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels | None = None):
+    """Draw every cell of the request. ``models`` keeps an adapter comparison's base model afterwards."""
     import torch
     from PIL import Image
 
@@ -247,6 +294,11 @@ def generate(payload: dict, output: Path, emit, cancelled):
             )
     elif any(checkpoint.get("kind") == "model" for checkpoint in checkpoints.values()):
         raise ValueError("Full-model checkpoints require full-model XYZ mode")
+    # A full-model comparison loads each exported model itself, so a kept base model goes first.
+    kept = None if models is None or full else models
+    if models is not None and full:
+        models.release()
+    key = json.dumps([payload["model"], payload["memory"], payload["device"]], sort_keys=True)
     device = torch.device(payload["device"])
     dtype = (
         getattr(
@@ -311,9 +363,12 @@ def generate(payload: dict, output: Path, emit, cancelled):
             if device.type == "cuda"
             else torch.float32
         )
-        emit("phase.changed", phase="loading")
-        with fingerprint_cache(Path(payload["fingerprint_cache"])):
-            loaded = family.load(model, memory, device=device, dtype=dtype, backbone_device="cpu")
+        loaded = kept.take(key) if kept is not None else None
+        reused = loaded is not None
+        if not reused:
+            emit("phase.changed", phase="loading")
+            with fingerprint_cache(Path(payload["fingerprint_cache"])):
+                loaded = family.load(model, memory, device=device, dtype=dtype, backbone_device="cpu")
         loaded.backbone.eval().requires_grad_(False)
         conditions = {}
         prompts = [request.prompt]
@@ -327,9 +382,11 @@ def generate(payload: dict, output: Path, emit, cancelled):
         base_conditions = dict(conditions)
         loaded.text.unload()
         check()
-        family.materialize_backbone(loaded)
+        if not reused:
+            family.materialize_backbone(loaded)
         loaded.backbone.eval().requires_grad_(False)
 
+    clean = False
     try:
         check()
         with torch.inference_mode():
@@ -486,6 +543,13 @@ def generate(payload: dict, output: Path, emit, cancelled):
                 if device.type == "cuda":
                     torch.cuda.empty_cache()
                 check()
+                emit(
+                    "xyz.progress",
+                    phase="decoding",
+                    done=cell["index"],
+                    total=len(cells),
+                    cell_index=cell["index"],
+                )
                 loaded.latent.to(device)
                 pixels = loaded.latent.decode(latents).clamp(-1, 1)
                 if not torch.isfinite(pixels).all():
@@ -511,16 +575,34 @@ def generate(payload: dict, output: Path, emit, cancelled):
                     }
                 )
                 _atomic_json(manifest_path, manifest)
-                emit("xyz.progress", phase="sampling", done=len(manifest["cells"]), total=len(cells))
+                # The finished image's steps must not count toward the next one.
+                emit(
+                    "xyz.progress",
+                    phase="sampling",
+                    done=len(manifest["cells"]),
+                    total=len(cells),
+                    sample_step=0,
+                )
                 del latents, pixels, cond, uncond, predict, step
         check()
         manifest["complete"] = True
+        clean = True
+    except InterruptedError:
+        clean = True  # cancelling stops between steps and leaves the base model intact
+        raise
     finally:
         # Valid cells and partial grids remain reviewable after cancellation/failure.
         if loaded:
             park()
+            # A kept model must start the next comparison without this one's adapters.
+            for parent, attr, original, _ in bindings:
+                setattr(parent, attr, original)
             loaded.text.unload()
-            loaded.latent.unload()
+            if kept is not None and clean and loaded.extra.get("materialized", True):
+                loaded.latent.to("cpu")
+                kept.keep(key, loaded)
+            else:
+                loaded.latent.unload()
         bindings.clear()
         loaded = None
         gc.collect()
@@ -530,50 +612,98 @@ def generate(payload: dict, output: Path, emit, cancelled):
         _atomic_json(manifest_path, manifest)
 
 
-def main():
-    from ypuddin import worker_log
+def _watch_parent(pid, created):
+    import threading
 
-    request_path = Path(sys.argv[1])
+    import psutil
+
+    def watch():
+        while True:
+            try:
+                parent = psutil.Process(pid)
+                if parent.create_time() != created or not parent.is_running():
+                    os._exit(143)
+            except psutil.NoSuchProcess:
+                os._exit(143)
+            time.sleep(0.5)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
+def run_request(request_path: Path, models: LoadedModels | None = None) -> int:
+    """Run one queued comparison and report its outcome in the job's event file."""
+    from ypuddin import worker_log
+    from ypuddin.train.events import Emitter
+
     payload = json.loads(request_path.read_text(encoding="utf-8"))
     worker_log.configure(payload.get("logging", {}).get("level", "debug"))
     run_dir = request_path.parent
-    from ypuddin.train.events import Emitter
-
     emitter = Emitter(path=Path(payload.get("logging", {}).get("events_path") or run_dir / "events.jsonl"))
-    if payload.get("parent_pid"):
-        import threading
-        import time
 
-        import psutil
+    def staying():
+        # Tells the service this worker waits for the next comparison with the model loaded.
+        return {"resident": True} if models is not None and models.loaded is not None else {}
 
-        def watch_parent():
-            while True:
-                try:
-                    parent = psutil.Process(payload["parent_pid"])
-                    if parent.create_time() != payload["parent_created"] or not parent.is_running():
-                        os._exit(143)
-                except psutil.NoSuchProcess:
-                    os._exit(143)
-                time.sleep(0.5)
-
-        threading.Thread(target=watch_parent, daemon=True).start()
     try:
         generate(
             payload,
             Path(payload.get("sampling", {}).get("output_dir") or run_dir / "samples"),
             emitter.emit,
             lambda: any((run_dir / "control" / name).exists() for name in ("stop", "pause")),
+            models,
         )
-        emitter.emit("run.finished")
+        emitter.emit("run.finished", **staying())
         return 0
     except InterruptedError:
-        emitter.emit("run.stopped")
+        emitter.emit("run.stopped", **staying())
         return 130
     except Exception as exc:
         emitter.emit("run.failed", error=f"{type(exc).__name__}: {exc}")
         return 1
     finally:
         emitter.close()
+
+
+def next_request(control: Path, idle_seconds: float) -> Path | None:
+    """Wait for the service to hand this worker another comparison; None ends the worker."""
+    deadline = time.monotonic() + idle_seconds
+    handoff = control / "next.json"
+    while time.monotonic() < deadline:
+        if (control / "exit").exists():
+            return None
+        if handoff.exists():
+            data = json.loads(handoff.read_text(encoding="utf-8"))
+            handoff.unlink()
+            # Each job keeps its own log, as a newly started worker's would.
+            sys.stdout.flush()
+            sys.stderr.flush()
+            descriptor = os.open(data["log"], os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            os.dup2(descriptor, 1)
+            os.dup2(descriptor, 2)
+            os.close(descriptor)
+            return Path(data["request"])
+        time.sleep(0.1)
+    return None
+
+
+def main():
+    args = sys.argv[1:]
+    # --resident <folder>: keep the base model after a comparison and take the next one from the folder.
+    control = Path(args[args.index("--resident") + 1]) if "--resident" in args else None
+    request_path = Path(args[0])
+    payload = json.loads(request_path.read_text(encoding="utf-8"))
+    if payload.get("parent_pid"):
+        _watch_parent(payload["parent_pid"], payload["parent_created"])
+    models = LoadedModels() if control else None
+    while True:
+        code = run_request(request_path, models)
+        # A failure may leave the model in any state, so the worker ends with it.
+        if control is None or code == 1 or models.loaded is None:
+            return code
+        # The service releases an idle worker sooner; this only ends one it lost track of.
+        request_path = next_request(control, RESIDENT_IDLE_SECONDS + 60)
+        if request_path is None:
+            return code
 
 
 if __name__ == "__main__":

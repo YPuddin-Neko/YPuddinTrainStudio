@@ -30,6 +30,31 @@ AXES = {
 }
 # Cells are separate images; the bound only catches runaway grids such as a mistyped range.
 MAX_CELLS = 1000
+# A worker keeps an adapter comparison's base model this long for the next comparison.
+RESIDENT_IDLE_SECONDS = 15 * 60
+
+
+def resident_key(job: dict[str, Any]) -> str | None:
+    """What a kept model was loaded with; comparisons with equal keys can reuse it.
+
+    Full-model comparisons load each exported model themselves and keep nothing.
+    """
+    payload = json.loads(job.get("config_json") or "{}")
+    if job.get("type") != "xyz" or payload.get("training", {}).get("mode") == "full":
+        return None
+    return json.dumps([payload.get("model"), payload.get("memory")], sort_keys=True)
+
+
+def resident_label(job: dict[str, Any]) -> str:
+    """The kept base model as the page names it: its family and weight file."""
+    model = json.loads(job.get("config_json") or "{}").get("model") or {}
+    try:
+        spec = get_family(model.get("family")).spec
+        family = spec.label or spec.name
+    except Exception:  # noqa: BLE001 - a retired family still names itself
+        family = str(model.get("family") or "")
+    path = model.get("dit_path")
+    return f"{family} · {Path(path).name}" if path else family
 
 
 class XyzAxis(BaseModel):
@@ -115,12 +140,27 @@ class XyzTask(BaseModel):
     cell_index: int | None = None
     sample_step: int | None = None
     sample_steps: int | None = None
+    # What a queued comparison waits for, such as a card another job holds.
+    wait_reason: str | None = None
     error: str | None
     created_at: float
     finished_at: float | None
     request: dict[str, Any]
     manifest: XyzManifest
     can_cancel: bool
+
+
+class KeptModel(BaseModel):
+    devices: list[str]
+    label: str
+    busy: bool
+    job_id: str | None = None
+
+
+class KeptModels(BaseModel):
+    """Base models that model-test workers keep loaded for the next comparison."""
+
+    models: list[KeptModel]
 
 
 class XyzOptions(BaseModel):
@@ -633,6 +673,7 @@ def task(context, jid):
         "cell_index": progress.get("cell_index"),
         "sample_step": progress.get("sample_step"),
         "sample_steps": progress.get("sample_steps"),
+        "wait_reason": progress.get("wait_reason") or None,
         "error": row["error"],
         "created_at": row["created_at"],
         "finished_at": row["finished_at"],

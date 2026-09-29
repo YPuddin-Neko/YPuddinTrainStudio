@@ -381,6 +381,9 @@ class RegularizationManager:
                     code="regularization.credentials",
                 )
         oid = new_id("reg")
+        if request.source == "ai":
+            # AI generation needs the memory a kept model-test base model holds.
+            self.c.supervisor.release_models(wait=10)
         lease = self.c.versions.mutation(pid, vid)
         with self.c.db.lock:
             if self.closed:

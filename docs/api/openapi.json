@@ -1419,6 +1419,43 @@
         }
       }
     },
+    "/api/xyz/models": {
+      "get": {
+        "summary": "Kept Models",
+        "operationId": "kept_models_api_xyz_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeptModels"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/xyz/models/release": {
+      "post": {
+        "summary": "Release Models",
+        "description": "Unload the base models idle model-test workers keep; one that is drawing keeps its model.",
+        "operationId": "release_models_api_xyz_models_release_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeptModels"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/xyz/{jid}": {
       "get": {
         "summary": "Task",
@@ -14597,6 +14634,60 @@
         ],
         "title": "JobStorageFolder"
       },
+      "KeptModel": {
+        "properties": {
+          "devices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Devices"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "busy": {
+            "type": "boolean",
+            "title": "Busy"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "devices",
+          "label",
+          "busy"
+        ],
+        "title": "KeptModel"
+      },
+      "KeptModels": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/KeptModel"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "models"
+        ],
+        "title": "KeptModels",
+        "description": "Base models that model-test workers keep loaded for the next comparison."
+      },
       "LogLine": {
         "properties": {
           "offset": {
@@ -24251,6 +24342,17 @@
               }
             ],
             "title": "Sample Steps"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Reason"
           },
           "error": {
             "anyOf": [

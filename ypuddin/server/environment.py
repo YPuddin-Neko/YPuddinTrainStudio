@@ -709,6 +709,8 @@ class EnvironmentManager:
         maintenance = self.context.db.get_kv("environment.maintenance", {})
         if maintenance.get("torch_operation") or maintenance.get("restarting"):
             raise EnvironmentError(409, "The service is switching or preparing its runtime")
+        # A model-test worker keeping its base model holds the installed libraries open.
+        self.context.supervisor.release_models()
         if self._running():
             raise EnvironmentError(
                 409,
@@ -1094,6 +1096,8 @@ class EnvironmentManager:
         return {k: v for k, v in result.items() if k != "path"}
 
     def start(self, request: EnvironmentRequest):
+        # Waits outside the locks for a released model-test worker to exit.
+        self.context.supervisor.release_models(wait=10)
         with self.lock, self.context.db.lock:
             self._idle()
             if any(op.status in BUSY for op in self.list()):
@@ -1462,6 +1466,7 @@ class EnvironmentManager:
             log(str(exc))
 
     def apply(self, id_):
+        self.context.supervisor.release_models(wait=10)
         with self.lock, self.context.db.lock:
             self._idle()
             op = self.get(id_)
