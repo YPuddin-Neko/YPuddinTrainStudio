@@ -490,7 +490,7 @@ class Krea2Family(ModelFamily):
             "attn-only": TargetPreset(
                 "attn-only",
                 include=attn,
-                description="仅训练图像模型主模块的注意力投影，训练参数更少。",
+                description="只训练主模块的注意力层，训练的参数最少。",
             ),
             "attn-mlp-text": TargetPreset(
                 "attn-mlp-text",

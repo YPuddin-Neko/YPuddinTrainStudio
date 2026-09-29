@@ -1,6 +1,6 @@
 import { adapterLayerTypesLock, applySwitchLocks, selectTrainingComponents, switchLock, trainingManagedReason } from '../../utils/trainingSelection';
 import { confirmedTrainingComputePolicy, trainingComputeManagedField, trainingComputePolicyHint } from '../../utils/trainingComputePolicy';
-import { contextHelp, contextOptions, familyHasConvolutions, hideUnusedSetting, presetHasConvolutions, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
+import { contextHelp, contextOptions, hideUnusedSetting, presetHasConvolutions, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
@@ -1211,9 +1211,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     // Small values also read in scientific form beside the label, e.g. 0.0001 = 1e-4.
     const scientific = !managedReason && (prop.type === 'number' || prop.anyOf?.some((variant: SchemaProperty) => variant.type === 'number')) && ui.control !== 'slider' && !percentage ? scientificText(fieldValue) : '';
     const scopeHelp = fullPathKey === 'adapter.preset' ? [english
-      ? 'Selects which layers receive adapters; a wider scope trains more layers. LoKr Full controls how each adapter is parameterized. The two choices are independent and neither unfreezes the base model.'
-      : '选择哪些层添加适配器，范围越大训练的层越多；LoKr 的 Full 决定每个适配器使用完整因子矩阵，两者可同时选择，都不会解冻底模。',
-    familyHasConvolutions(family) && (english ? 'Whether convolution layers train too is chosen under Layer types.' : '是否同时训练卷积层，在“训练层类型”中选择。')].filter(Boolean).join('') || null : null;
+      ? 'Decides which layers of the model train. A wider scope learns more detail and makes a larger file; the base model itself stays unchanged.'
+      : '决定模型里哪些层参与训练。范围越大，能学到的细节越多，文件也越大；底模本身保持不变。',
+    value.adapter?.algo === 'lokr' && (english ? ' The Full option of the LoKr parameter form is a separate setting and does not change the scope.' : 'LoKr 参数形式里的 Full 是另一项设置，不影响这里的范围。')].filter(Boolean).join('') : null;
     const selectedPreset = fullPathKey === 'adapter.preset' ? family?.presets?.find(preset => preset.name === (fieldValue || family.default_preset)) : undefined;
     const modelPrecisionHint = family?.runtime_backend === 'mps'
       ? (english ? 'The current Apple GPU uses FP32 for model loading and computation.' : '当前 Apple GPU 使用 FP32 加载和计算。')

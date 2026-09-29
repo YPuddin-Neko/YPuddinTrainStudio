@@ -277,20 +277,17 @@ class SDXLFamily(ModelFamily):
             "*.{downsamplers,upsamplers}.*.conv",
         )
         return {
-            "attn-only": TargetPreset("attn-only", attn, description="仅训练图像模型的注意力投影，训练参数更少。"),
+            "attn-only": TargetPreset("attn-only", attn, description="只训练注意力层，训练的参数最少。"),
             "attn-mlp": TargetPreset(
                 "attn-mlp",
                 attn + mlp,
-                description="训练图像模型的注意力和前馈层；同时训练卷积层时，还训练 ResNet 模块和上下采样层。",
+                description="训练注意力层和前馈层，适合大多数 LoRA / LoKr；同时训练卷积层时，还包括 ResNet 模块和上下采样层。",
                 conv=resnet,
             ),
             "all-layers": TargetPreset(
                 "all-layers",
                 ("*",),
-                description=(
-                    "训练 UNet 的全部线性层，包括 Transformer 投影和时间、尺寸嵌入层；同时训练卷积层时，"
-                    "也训练全部卷积层，包括输入和输出卷积。归一化层不训练。"
-                ),
+                description="训练 UNet 里的全部线性层；同时训练卷积层时，卷积层也全部训练。",
                 conv=("*",),
             ),
         }

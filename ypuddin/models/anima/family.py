@@ -382,7 +382,7 @@ class AnimaFamily(ModelFamily):
                 description="训练图像模型的注意力和前馈层。适合大多数 LoRA / LoKr 训练。",
             ),
             "attn-only": TargetPreset(
-                "attn-only", include=attn, description="仅训练图像模型的注意力投影，训练参数更少。"
+                "attn-only", include=attn, description="只训练注意力层，训练的参数最少。"
             ),
             "full-linear": TargetPreset(
                 "full-linear",
