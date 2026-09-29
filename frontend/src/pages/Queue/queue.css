@@ -120,7 +120,8 @@
   .queue-search { grid-column:1 / -1; }
   .queue-filters > .queue-clear { grid-column:1 / -1; justify-self:start; }
 }
-.queue-notice { display:flex; align-items:center; gap:10px; margin:12px 16px 0; }
+/* An archived job is a completed action with an undo, not a warning. */
+.queue-notice { display:flex; align-items:center; gap:10px; margin:12px 16px 0; border-color:var(--studio-line); background:var(--studio-muted); }
 .queue-archive-note { margin:10px 16px 0; font-size:12px; line-height:1.6; color:var(--studio-dim); }
 .queue-notice > span { flex:1; min-width:0; overflow-wrap:anywhere; }
 .queue-notice > .ui-btn { flex:none; }

@@ -361,7 +361,7 @@ export default function JobDetail() {
       </dl>
       {dataError && <div className="task-error" role="alert">{dataError}</div>}
       {actionError && <div role="alert" className="task-error">{actionError}</div>}
-      {job?.archived_at != null && <div className="job-archived" role="status"><Archive size={15} aria-hidden="true"/><span>{text('这个任务已归档：不在队列和项目结果里显示，文件都还在。', 'This job is archived: it is hidden from the queue and project results, and its files are kept.')}</span>
+      {job?.archived_at != null && <div className="job-archived" role="status"><Archive size={15} aria-hidden="true"/><span>{text('此任务已归档，不再显示在队列和项目结果中，权重和记录仍保留。', 'This job is archived: it is hidden from the queue and project results; its weights and records are kept.')}</span>
         <button type="button" className="ui-btn ui-btn-sm" disabled={restoring} onClick={() => void restore()}><ArchiveRestore size={14}/>{text('恢复到训练历史', 'Restore to History')}</button></div>}
       {job?.error && <div role="alert" className="job-failure"><div><strong>{job.type === 'train' ? text('训练失败', 'Training failed') : text('任务失败', 'Job failed')}</strong><p>{job.error}</p></div>{activeTab !== 'logs' && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setActiveTab('logs')}><Terminal size={14}/>{text('查看日志', 'Open log')}</button>}</div>}
       {/* 1. 头部指标与阶段时间线 */}

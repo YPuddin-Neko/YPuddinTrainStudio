@@ -1,7 +1,6 @@
 import React from 'react';
 import { Download, Image as ImageIcon, ImageOff } from 'lucide-react';
 import type { JobSample } from '../../api/types';
-import ConfigHelp from '../../components/ConfigHelp';
 import CopyButton from '../../components/CopyButton';
 import { LazyImage } from '../../components/Loading';
 import SampleLightbox from '../../components/sampling/SampleLightbox';
@@ -39,7 +38,7 @@ function SampleFacts({ sample, stepsPerEpoch, position, total }: { sample: Sampl
       <div><dt>{text('步数', 'Step')}</dt><dd>{sample.step}</dd></div>
       <div><dt>Epoch</dt><dd>{epochText(epoch)}</dd></div>
       <div><dt>{text('种子', 'Seed')}</dt><dd className="sample-facts-seed"><span>{sample.seed}</span><CopyButton value={String(sample.seed)} label={text('复制种子', 'Copy seed')}/></dd></div>
-      <div><dt>Loss<ConfigHelp label={text('Loss · 说明', 'Loss · help')}>{text(`第 ${sample.step} 步记录的训练损失，不是这张采样图的质量评分。`, `Training loss recorded at step ${sample.step}, not a quality score for this image.`)}</ConfigHelp></dt><dd data-recorded={lossRecorded}>{loss}</dd></div>
+      <div><dt>Loss</dt><dd data-recorded={lossRecorded}>{loss}</dd></div>
       <div><dt>{text('尺寸', 'Size')}</dt><dd>{sample.width} × {sample.height}</dd></div>
       <div><dt>{text('生成时间', 'Created')}</dt><dd>{formatTime(sample.created_at)}</dd></div>
     </dl>
