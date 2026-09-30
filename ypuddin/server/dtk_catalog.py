@@ -138,25 +138,33 @@ def driver_version() -> str | None:
     return None
 
 
-def guidance(runtime: dict) -> DtkGuidance:
-    # This bundle's METADATA/version.py were inspected from the official DAS1.8 wheels.
-    # Package metadata does not describe runtime kernel support.
-    result = DtkGuidance(driver_version=runtime.get("driver_version"))
-    try:
-        if Version(str(runtime.get("torch", "0"))) < Version("2.5"):
-            result.current_stack_reason = "torch24_transformers5_diffusers040_conflict"
-    except InvalidVersion:
-        pass
-    if (
-        runtime.get("platform") == "Linux"
-        and str(runtime.get("machine", "")).lower() in ("x86_64", "amd64")
-        and runtime.get("distribution_id") == "ubuntu"
-        and runtime.get("distribution_version") == "22.04"
-        and re.match(r"^3\.11(?:\.|$)", str(runtime.get("python", "")))
-    ):
-        toolkit = _url("/file/1/DTK-26.04/Ubuntu22.04/DTK-26.04-Ubuntu22.04-x86_64.tar.gz")
-        # The PyTorch set is the one new DTK environments download; FlashAttention is optional.
-        bundles = (
+def _guidance_wheels(torch_version: str) -> tuple[tuple[str, str, str], ...]:
+    # Manual download links from SourceFind's DAS1.8 inventory (2026-09-30).
+    # They do not enter the checksum-pinned automatic installer catalog.
+    if torch_version == "2.5.1":
+        return tuple(
+            (package, version, f"/file/4/{directory}/DAS1.8/{filename}")
+            for package, directory, version, filename in (
+                (
+                    "torch", "pytorch", "2.5.1+das.opt1.dtk2604",
+                    "torch-2.5.1+das.opt1.dtk2604-cp311-cp311-manylinux_2_28_x86_64.whl",
+                ),
+                (
+                    "torchvision", "vision", "0.20.1+das.opt1.dtk2604.torch251",
+                    "torchvision-0.20.1+das.opt1.dtk2604.torch251-cp311-cp311-manylinux_2_28_x86_64.whl",
+                ),
+                (
+                    "triton", "triton", "3.1.0+das.opt1.dtk2604.torch251",
+                    "triton-3.1.0+das.opt1.dtk2604.torch251-cp311-cp311-manylinux_2_28_x86_64.whl",
+                ),
+                (
+                    "flash-attn", "flash_attn", "2.8.3+das.opt1.dtk2604.torch251",
+                    "flash_attn-2.8.3+das.opt1.dtk2604.torch251-cp311-cp311-manylinux_2_28_x86_64.whl",
+                ),
+            )
+        )
+    if torch_version == "2.7.1":
+        return (
             *(
                 (package, version, path)
                 for package, version, path, _, _ in dtk_builds.RUNTIME_SETS[("26.04", "cp311")]
@@ -167,12 +175,58 @@ def guidance(runtime: dict) -> DtkGuidance:
                 "/file/4/flash_attn/DAS1.8/flash_attn-2.8.3+das.opt1.dtk2604.torch271-cp311-cp311-manylinux_2_28_x86_64.whl",
             ),
         )
+    return ()
+
+
+def guidance(runtime: dict, versions: dict[str, str] | None = None) -> DtkGuidance:
+    result = DtkGuidance(driver_version=runtime.get("driver_version"))
+    installed_torch = (versions or {}).get("torch") or runtime.get("torch")
+    torch_version = None
+    try:
+        torch_version = Version(str(installed_torch)) if installed_torch else None
+        if torch_version is not None and torch_version < Version("2.5"):
+            result.current_stack_reason = "torch24_transformers5_diffusers040_conflict"
+    except InvalidVersion:
+        pass
+    if (
+        runtime.get("platform") == "Linux"
+        and str(runtime.get("machine", "")).lower() in ("x86_64", "amd64")
+        and runtime.get("distribution_id") == "ubuntu"
+        and runtime.get("distribution_version") == "22.04"
+        and re.match(r"^3\.11(?:\.|$)", str(runtime.get("python", "")))
+    ):
+        toolkit_version = runtime.get("installed_dtk")
+        build_version = dtk_build_version({**runtime, "torch": installed_torch})
+        if (toolkit_version and toolkit_version != "26.04") or (
+            build_version and build_version != "26.04"
+        ):
+            if result.current_stack_reason != "torch24_transformers5_diffusers040_conflict":
+                result.current_stack_reason = "no_matching_dtk_build"
+            return result
+        # Keep the current Torch line. The bootstrap default applies only when
+        # no Torch is installed, never as an implicit upgrade recommendation.
+        selected_torch = torch_version.base_version if torch_version is not None else "2.7.1"
+        if installed_torch and (
+            torch_version is None
+            or torch_version.public != torch_version.base_version
+            or torch_version.local not in (None, "das.opt1.dtk2604")
+            or not (build_version or toolkit_version) == "26.04"
+        ):
+            result.current_stack_reason = "no_matching_torch_build"
+            return result
+        bundles = _guidance_wheels(selected_torch)
+        if not bundles:
+            if result.current_stack_reason != "torch24_transformers5_diffusers040_conflict":
+                result.current_stack_reason = "no_matching_torch_build"
+            return result
+        toolkit = _url("/file/1/DTK-26.04/Ubuntu22.04/DTK-26.04-Ubuntu22.04-x86_64.tar.gz")
         result.recommendation = DtkRuntimeRecommendation(
             dtk="26.04",
             toolkit_url=toolkit,
             toolkit_checksum_url=toolkit + ".md5",
             python_tag="cp311",
             minimum_driver="6.3.30-V1.4.1a",
+            reason="matches_installed_torch" if installed_torch else "new_environment",
             wheels=[
                 DtkRuntimePackage(package=package, version=version, url=_url(path))
                 for package, version, path in bundles
@@ -321,7 +375,7 @@ def catalog(runtime: dict, versions: dict[str, str], profile: str) -> DtkCatalog
                 )
             },
         },
-        guidance=guidance(runtime),
+        guidance=guidance(runtime, versions),
         wheels=wheels,
         reason=None
         if any(w.compatible for w in wheels)

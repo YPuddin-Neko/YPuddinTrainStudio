@@ -28,6 +28,10 @@
 .settings-field{display:grid;grid-template-columns:160px minmax(0,1fr);gap:20px;align-items:start;padding:10px 0}
 .settings-field>label,.settings-field>.settings-field-label{padding-top:6px;font-size:13px;color:var(--settings-muted)}
 .settings-field-control{min-width:0}
+.dtk-runtime-links{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.dtk-runtime-package{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;font-size:13px}
+.dtk-runtime-package>span{min-width:0;overflow-wrap:anywhere}
+.dtk-runtime-package>.ui-btn{white-space:nowrap}
 .storage-directory-control{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px}
 .settings-note.storage-path-preview{overflow-x:auto;white-space:nowrap;overflow-wrap:normal;font-family:var(--font-mono,monospace)}
 .settings-field-control>input,.settings-field-control>select{width:100%;max-width:420px}

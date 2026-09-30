@@ -16,19 +16,22 @@
 
 ## DTK 安装指南
 
-“设置 → 运行环境 → DTK 安装指南”显示当前系统、DTK、Python、PyTorch 和驱动版本。服务器为 Ubuntu 22.04 x86_64、Python 3.11 时推荐 DTK 26.04（要求驱动 6.3.30-V1.4.1a），并给出 DTK 安装包、校验文件和 PyTorch、TorchVision、Triton、FlashAttention 的下载链接；其他系统从页面上的 DTK 版本目录、驱动下载目录和驱动配套表中选择。页面只提供下载，DTK 和驱动需在服务器上安装。
+“设置 → 运行环境 → DTK 安装指南”显示当前系统、DTK、Python、PyTorch 和驱动版本。Ubuntu 22.04 x86_64、Python 3.11、DTK 26.04 环境会按已安装的 PyTorch 2.5.1 或 2.7.1 提供同组下载链接；没有匹配组合时保留官方目录入口，不将另一版本当作当前环境的配套包。页面只提供下载，DTK 和驱动需在服务器上安装。
+
+[官方驱动配套表](https://download.sourcefind.cn:65024/file/1/DTK%E4%B8%8E%E9%A9%B1%E5%8A%A8%E7%89%88%E6%9C%AC%E9%85%8D%E5%A5%97%E5%85%B3%E7%B3%BB%E8%A1%A8.md)对 DTK 26.04 的驱动要求是 `>=6.3.30-V1.4.1a`，并非只能使用该版本。已有可用的更高版本驱动无需为匹配页面上的最低版本而降级；其他 DTK 版本按表中各自的要求选择。
 
 ## 厂商包组合
 
-项目内置目录包含以下 DTK 26.04 组合，适用于对应的 Linux x86_64 / Python 3.11 环境：
+安装指南提供以下 DTK 26.04 组合的官方下载链接，适用于对应的 Linux x86_64 / Python 3.11 环境：
 
-| 组件 | 构建 |
-| --- | --- |
-| Torch | `2.7.1+das.opt1.dtk2604` |
-| TorchVision | `0.22.0+das.opt1.dtk2604.torch271` |
-| Triton | `3.1.0+das.opt1.dtk2604.torch271` |
-| FlashAttention | `2.8.3+das.opt1.dtk2604.torch271` |
-| xFormers | `0.0.33+das.opt1.dtk2604.torch251`（纯 Python 包，需要 Torch 2.5 及以上和 FlashAttention） |
+| 组件 | PyTorch 2.5.1 配套组 | PyTorch 2.7.1 配套组 |
+| --- | --- | --- |
+| Torch | `2.5.1+das.opt1.dtk2604` | `2.7.1+das.opt1.dtk2604` |
+| TorchVision | `0.20.1+das.opt1.dtk2604.torch251` | `0.22.0+das.opt1.dtk2604.torch271` |
+| Triton | `3.1.0+das.opt1.dtk2604.torch251` | `3.1.0+das.opt1.dtk2604.torch271` |
+| FlashAttention | `2.8.3+das.opt1.dtk2604.torch251` | `2.8.3+das.opt1.dtk2604.torch271` |
+
+xFormers `0.0.33+das.opt1.dtk2604.torch251` 是纯 Python 包，需要 Torch 2.5 及以上和 FlashAttention。带有 `torch251`、`torch271` 的二进制扩展应与当前 PyTorch 配套，不要交叉安装。
 
 Torch、TorchVision、Triton 和其依赖放在同一 wheel 目录。其他版本需使用相应的厂商配套构建。普通 PyPI CUDA 包不能替代 HIP 版 Torch。
 

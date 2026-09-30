@@ -39,26 +39,25 @@ export default function DtkRuntimePanel() {
     {guidance?.current_stack_reason === 'torch24_transformers5_diffusers040_conflict' && <p className="settings-note">{text('当前 PyTorch 2.4 不满足新版 Diffusers 和 Transformers 的要求，升级时需使用配套组合。', 'PyTorch 2.4 does not meet the requirements of newer Diffusers and Transformers. Upgrade these packages as a matching set.')}</p>}
     <div className="settings-field"><span className="settings-field-label">{text('当前驱动', 'Current driver')}</span><div className="settings-field-control">
       <p className="break-words text-sm">{guidance?.driver_version || text('未检测到版本', 'Version not detected')}</p>
-      {recommendation && <p className="settings-note">{text(`DTK ${recommendation.dtk} 要求驱动 ${recommendation.minimum_driver}。`, `DTK ${recommendation.dtk} requires driver ${recommendation.minimum_driver}.`)}</p>}
+      {recommendation && <p className="settings-note">{text(`DTK ${recommendation.dtk} 的最低驱动版本为 ${recommendation.minimum_driver}，可使用更高版本。`, `DTK ${recommendation.dtk} requires driver ${recommendation.minimum_driver} or later.`)}</p>}
     </div></div>
-    {recommendation ? <div className="space-y-3" data-testid="dtk-runtime-recommendation">
-      <div className="settings-field"><span className="settings-field-label">{text('可选的 DTK 版本', 'Available DTK version')}</span><div className="settings-field-control">
-        <p className="text-sm font-medium">DTK {recommendation.dtk} · Python {runtime?.python.split('.').slice(0,2).join('.') || recommendation.python_tag}</p>
-      </div></div>
-      <div className="flex flex-wrap gap-2">
+    {recommendation ? <div data-testid="dtk-runtime-recommendation">
+      <div className="settings-field"><span className="settings-field-label">{text('DTK 安装包', 'DTK package')}</span><div className="settings-field-control dtk-runtime-links">
         <a className={linkButton} href={recommendation.toolkit_url} target="_blank" rel="noreferrer"><Download size={13}/>{text(`下载 DTK ${recommendation.dtk}`, `Download DTK ${recommendation.dtk}`)}</a>
         <a className={linkButton} href={recommendation.toolkit_checksum_url} target="_blank" rel="noreferrer">{text('下载校验文件', 'Download checksum file')}<ExternalLink size={12}/></a>
-      </div>
+      </div></div>
       <dl>{recommendation.wheels.map(wheel => <div key={wheel.package} className="settings-field">
         <dt className="settings-field-label">{{torch:'PyTorch',torchvision:'TorchVision',triton:'Triton','flash-attn':'FlashAttention'}[wheel.package] || wheel.package}</dt>
-        <dd className="settings-field-control flex flex-wrap items-center justify-between gap-2"><span className="min-w-0 break-all text-sm">{wheel.version}</span><a className={linkButton} href={wheel.url} target="_blank" rel="noreferrer" aria-label={text(`手动下载 ${wheel.package} ${wheel.version}`, `Download ${wheel.package} ${wheel.version} manually`)}><Download size={13}/>{text('下载', 'Download')}</a></dd>
+        <dd className="settings-field-control dtk-runtime-package"><span>{wheel.version}</span><a className={linkButton} href={wheel.url} target="_blank" rel="noreferrer" aria-label={text(`手动下载 ${wheel.package} ${wheel.version}`, `Download ${wheel.package} ${wheel.version} manually`)}><Download size={13}/>{text('下载', 'Download')}</a></dd>
       </div>)}</dl>
-    </div> : !loading && !error && <p className="settings-note">{text('暂未找到适合本机的配套版本。请前往官方目录，按系统版本选择安装包。', 'No matching package set was found. Choose packages for your OS in the official catalog.')}</p>}
-    <div className="mt-3 flex flex-wrap gap-2">
+    </div> : !loading && !error && <p className="settings-note">{guidance?.current_stack_reason === 'no_matching_torch_build'
+      ? text('暂未收录与当前 PyTorch 构建匹配的安装包，请从官方目录选择同一 PyTorch 和 DTK 版本的配套包。', 'No package set is listed for the installed PyTorch build. Choose matching PyTorch and DTK builds from the official catalog.')
+      : text('暂未收录与当前系统和 DTK 匹配的配套版本，请按系统、Python 和 DTK 版本查询官方目录。', 'No package set is listed for this system and DTK. Check the official catalog for matching OS, Python and DTK versions.')}</p>}
+    <div className="settings-field"><span className="settings-field-label">{text('官方目录', 'Official sources')}</span><div className="settings-field-control dtk-runtime-links">
       <a className={linkButton} href={guidance?.toolkit_source_url || toolkitSource} target="_blank" rel="noreferrer">{text('DTK 版本目录', 'DTK versions')}<ExternalLink size={12}/></a>
       <a className={linkButton} href={guidance?.driver_source_url || driverSource} target="_blank" rel="noreferrer">{text('驱动下载目录', 'Driver downloads')}<ExternalLink size={12}/></a>
       {guidance?.compatibility_source_url && <a className={linkButton} href={guidance.compatibility_source_url} target="_blank" rel="noreferrer">{text('驱动配套表', 'Driver compatibility')}<ExternalLink size={12}/></a>}
-    </div>
+    </div></div>
     <p className="settings-note mt-3">{text('DTK 和驱动需在服务器上安装；注意力扩展可在下方安装。', 'Install DTK and drivers on the server; install attention extensions below.')}</p>
   </section>;
 }
