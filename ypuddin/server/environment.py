@@ -291,11 +291,12 @@ def maintenance_blocked(db: Database) -> bool:
 
 
 def installed_versions() -> dict[str, str]:
-    return {
-        canonicalize_name(d.metadata["Name"]): d.version
-        for d in importlib.metadata.distributions()
-        if d.metadata["Name"]
-    }
+    versions = {}
+    for distribution in importlib.metadata.distributions():
+        name = distribution.metadata["Name"]
+        if name:
+            versions.setdefault(canonicalize_name(name), distribution.version)
+    return versions
 
 
 def protected(name: str) -> bool:

@@ -36,7 +36,7 @@ Torch、TorchVision、Triton 和其依赖放在同一 wheel 目录。其他版�
 
 启动器按以下顺序决定海光版 PyTorch 的来源：
 
-1. **所选 Python 已装好海光版 PyTorch**（官方容器镜像、conda 环境或已有虚拟环境）：新环境直接使用这份安装，不再下载。装在系统 Python 或 conda 环境里的，新环境继承其已装的包；装在另一个虚拟环境里的，新环境链接到该环境的包目录。
+1. **所选 Python 已装好海光版 PyTorch**（官方容器镜像、conda 环境或已有虚拟环境）：新环境直接使用这份安装，不再下载。装在系统 Python 或 conda 环境里的，新环境通过 `--system-site-packages` 继承其已装的包；装在另一个虚拟环境里的，新环境链接到该环境的包目录。
 2. **没有预装**：DTK 26.04 + Python 3.11（x86_64，glibc 2.28 及以上）从光合社区下载已核对的 Torch 2.7.1、TorchVision 0.22.0 和 Triton 3.1.0（约 640 MB），大小与 SHA-256 一致才安装。文件保存在环境目录的 `vendor-wheels/`，重建时不重复下载。
 3. **其他 DTK / Python 组合，或服务器不能联网**：用 `--dtk-wheelhouse` 提供本地 wheel 目录。
 
@@ -51,13 +51,24 @@ DTK_ROOT=/opt/dtk YPUDDIN_DTK_PYTHON=/path/to/python3.11 ./studio-linux-dtk.sh -
 DTK_ROOT=/opt/dtk ./studio-linux-dtk.sh --dtk-wheelhouse=/data/dtk-wheels --no-browser
 ```
 
-使用已装的 PyTorch 时，厂商 Torch、TorchVision、Triton 和 NumPy 的版本保持不变，训练器依赖只装进自己的环境，不修改原环境。原环境里的 PyTorch 之后被替换，启动时会提示；被删除则停止启动。
+使用已装的 PyTorch 时，厂商 Torch、TorchVision、Triton 的完整安装包版本保持不变，训练器依赖只装进自己的环境，不修改原环境。运行时的 `torch.__version__` 可能显示 `2.5.1`，安装包版本则是 `2.5.1+das.opt1.dtk2604`；启动器按安装包版本校验和锁定，并检查 HIP 构建。原环境里的 PyTorch 之后被替换，启动时会提示；被删除则停止启动。
+
+训练器要求 NumPy `>=1.26`。共享环境中的 NumPy 1.x 低于 1.26 时，启动器只在项目虚拟环境中安装 `numpy>=1.26,<2`，保留宿主的 NumPy，不跨到 NumPy 2。项目内的包优先于宿主包加载；满足要求的现有版本继续锁定。安装后检查 NumPy 与 PyTorch 的双向数据转换，通过后才继续启动。
 
 `--dtk-wheelhouse` 必须包含匹配的 Torch、TorchVision wheel 及其依赖。基础厂商包从本地目录安装，不从普通网络索引寻找替代包；配套 Triton 可在同一步安装。
 
 其他训练依赖从所选 Python 包源获取。启动器保留厂商 Torch、TorchVision、Triton 的版本约束，依赖冲突时停止安装。FlashAttention、xFormers 通过运行环境页安装，不因文件出现在 wheel 目录中而自动启用。
 
 已有环境继续使用原启动入口和同一 DTK 路径。`--reinstall` 会删除并重建当前 DTK 基础环境，使用已装 PyTorch 的环境仍从原来的 Python 重建；准备其他版本时应使用独立环境目录。
+
+### 旧启动脚本的依赖报错
+
+| 日志 | 原因与处理 |
+| --- | --- |
+| `新环境里没有读到 … PyTorch 2.5.1（读到 2.5.1+das.opt1.dtk2604）` | 旧脚本混用了运行时版本与安装包版本。更新项目源码，再执行原部署命令，无需替换厂商 PyTorch。 |
+| `numpy>=1.26` 与 `numpy==1.25.0` 冲突 | 旧脚本锁住了低于训练器要求的宿主 NumPy。更新项目源码后，原命令会在项目虚拟环境中补齐 NumPy；不需要卸载宿主包或加 `--reinstall`。更换镜像源不能解决版本约束冲突。 |
+
+通过 Git 安装的项目可在源码目录运行 `git pull --ff-only`；通过源码压缩包安装的，更新项目源码文件并保留原来的 `environment/`、`studio_data/` 和自定义数据目录。重试时继续使用原来的 `DTK_ROOT`、`--env-root`、`--data-root` 等参数。
 
 ### 缺少 ensurepip
 

@@ -380,11 +380,15 @@ def venv_json(code: str, *args: str):
 
 
 def installed_versions() -> dict[str, str]:
-    return venv_json(
-        "import importlib.metadata as m,json,re; "
-        "print(json.dumps({re.sub(r'[-_.]+','-',d.metadata['Name']).lower():d.version "
-        "for d in m.distributions() if d.metadata['Name']}))"
-    )
+    return venv_json("""
+import importlib.metadata as m, json, re
+versions = {}
+for distribution in m.distributions():
+    name = distribution.metadata['Name']
+    if name:
+        versions.setdefault(re.sub(r'[-_.]+', '-', name).lower(), distribution.version)
+print(json.dumps(versions))
+""")
 
 
 def editable_install_ready() -> bool:
@@ -1275,6 +1279,15 @@ def ensure_venv(
         preserved = protected_versions(installed_versions())
     if "torch" not in preserved:
         die("无法确认已安装 PyTorch 的版本，停止安装。")
+    numpy_release = tuple(int(n) for n in re.findall(r"\d+", versions.get("numpy", ""))[:2])
+    upgrade_shared_numpy = PROFILE == "linux-dtk" and bool(shared) and (1, 0) <= numpy_release < (1, 26)
+    compatibility = dtk_compatibility_constraints(versions)
+    if upgrade_shared_numpy:
+        # pip shadows an external package inside this venv without uninstalling the host copy.
+        preserved.pop("numpy", None)
+        if "numpy>=1.26,<2" not in compatibility:
+            compatibility.append("numpy>=1.26,<2")
+        log(f"[4/5] 在项目虚拟环境中更新 NumPy {versions['numpy']} 至 >=1.26,<2，保留宿主安装")
     log("[4/5] 安装训练器依赖")
     # Exact constraints apply to the whole dependency resolution, not just the
     # explicitly requested torch package. Conflicting accelerators fail before
@@ -1283,7 +1296,7 @@ def ensure_venv(
         constraints = Path(directory) / "native-stack.txt"
         constraints.write_text(
             "".join(f"{name}=={version}\n" for name, version in sorted(preserved.items()))
-            + "".join(value + "\n" for value in dtk_compatibility_constraints(versions)),
+            + "".join(value + "\n" for value in compatibility),
             encoding="utf-8",
         )
         pip_install(
@@ -1294,6 +1307,10 @@ def ensure_venv(
     changed = [name for name, version in preserved.items() if after.get(name) != version]
     if changed:
         die("安装器意外改变了受保护的原生依赖：" + ", ".join(changed) + "，请检查环境。")
+    if upgrade_shared_numpy:
+        numpy_release = tuple(int(n) for n in re.findall(r"\d+", after.get("numpy", ""))[:2])
+        if not (1, 26) <= numpy_release < (2, 0):
+            die(f"项目虚拟环境需要 NumPy >=1.26,<2，安装后读到 {after.get('numpy') or '未安装'}；停止启动。")
     issues = dependency_issues(extras) + dtk_compatibility_issues(after)
     if issues:
         die("安装后依赖仍不完整：" + "; ".join(issues[:12]) + "；下次启动会重试补齐。")
