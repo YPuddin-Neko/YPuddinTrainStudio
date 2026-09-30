@@ -11,6 +11,7 @@ import { loadPaint, restorePaint, savePaint, type PaintInfo } from './paintApi';
 import './image-editor.css';
 import { SlidingIndicator } from '../motion';
 import { LoadingNote } from '../Loading';
+import OverflowStrip from '../OverflowStrip';
 
 type Mode = 'paint' | 'mask';
 type Tool = 'brush' | 'erase' | 'pan' | 'pick';
@@ -197,13 +198,13 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
       <header><div><h2 id={titleId}>{text('涂抹与遮罩','Paint and mask')}</h2><p title={relPath}>{relPath}{info&&` · ${info.width} × ${info.height}`}</p></div><button ref={closeButton} type="button" className="ui-btn ui-btn-quiet ui-btn-icon" aria-label={text('关闭图片编辑器','Close image editor')} disabled={saving} onClick={close}><X size={17}/></button></header>
       <div className="image-editor-tools">
         <div className="ui-segmented" role="tablist" aria-label={text('编辑模式','Editing mode')}>{(['paint','mask'] as const).map(value=><button key={value} type="button" role="tab" aria-selected={mode===value} disabled={saving} onClick={()=>{finishStroke();setMode(value);if(tool==='pick')setTool('brush');}}>{value==='paint'?text('图像涂抹','Image paint'):text('训练遮罩','Training mask')}{(value==='paint'?paint.current?.dirty:mask.current?.dirty)?' *':''}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div>
-        <div className="ui-segmented" role="group" aria-label={text('绘制工具','Drawing tools')}>
+        <OverflowStrip className="ui-segmented" containerClassName="image-editor-tool-strip" role="group" label={text('绘制工具','Drawing tools')} activeKey={tool}>
           <button type="button" aria-pressed={tool==='brush'} disabled={saving||loading} onClick={()=>setTool('brush')}><Brush size={14}/>{mode==='paint'?text('画笔','Brush'):text('参与训练','Include')}</button>
           <button type="button" aria-pressed={tool==='erase'} disabled={saving||loading} onClick={()=>setTool('erase')}><Eraser size={14}/>{mode==='paint'?text('擦回原图','Erase paint'):text('忽略区域','Ignore')}</button>
           <button type="button" aria-pressed={tool==='pan'} disabled={saving||loading} onClick={()=>setTool('pan')}><Hand size={14}/>{text('移动','Pan')}</button>
           {mode==='paint'&&<button type="button" aria-pressed={tool==='pick'} disabled={saving||loading} onClick={()=>setTool('pick')}><Pipette size={14}/>{text('取色','Pick color')}</button>}
           <SlidingIndicator className="ui-segmented-thumb"/>
-        </div>
+        </OverflowStrip>
         {mode==='paint'&&<label>{text('颜色','Color')}<input type="color" aria-label={text('涂抹颜色','Paint color')} value={color} disabled={saving||loading} onChange={event=>setColor(event.target.value)}/></label>}
         <button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('撤销','Undo')} title={text('撤销','Undo')} disabled={saving||loading||!current?.canUndo} onClick={()=>history()}><Undo2 size={14}/></button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('重做','Redo')} title={text('重做','Redo')} disabled={saving||loading||!current?.canRedo} onClick={()=>history(true)}><Redo2 size={14}/></button>
         {mode==='paint'?<button type="button" className="ui-btn ui-btn-sm" disabled={saving||loading} onClick={()=>{paint.current?.apply({kind:'clear'});setMessage('');redraw();}}>{text('清除本次涂抹','Clear session paint')}</button>:<><button type="button" className="ui-btn ui-btn-sm" disabled={saving||loading} onClick={()=>operation({kind:'fill',value:255})}>{text('全白','All white')}</button><button type="button" className="ui-btn ui-btn-sm" disabled={saving||loading} onClick={()=>operation({kind:'fill',value:0})}>{text('全黑','All black')}</button><button type="button" className="ui-btn ui-btn-sm" disabled={saving||loading} onClick={()=>operation({kind:'invert'})}>{text('反转','Invert')}</button></>}

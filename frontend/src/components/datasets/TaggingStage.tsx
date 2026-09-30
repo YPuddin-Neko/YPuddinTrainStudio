@@ -4,6 +4,7 @@ import { SlidingIndicator } from '../motion';
 import AutoTagPanel from './AutoTagPanel';
 import VlmTagPanel from './VlmTagPanel';
 import type { PipelineOperation } from './DatasetPipelinePanel';
+import OverflowStrip from '../OverflowStrip';
 
 type Mode = 'tagger' | 'vlm' | 'assist';
 const MODE_KEY = 'studio.tagging.mode';
@@ -17,11 +18,11 @@ export default function TaggingStage({ projectId, versionId, locked, latest, act
   const text = useWorkspaceText();
   const [mode, setMode] = useState<Mode>(() => { try { const saved = localStorage.getItem(MODE_KEY); return saved === 'vlm' || saved === 'assist' ? saved : 'tagger'; } catch { return 'tagger'; } });
   const choose = (next: Mode) => { setMode(next); try { localStorage.setItem(MODE_KEY, next); } catch { /* the choice lasts for this page only */ } };
-  const header = <div className="ui-segmented tagging-modes" role="group" aria-label={text('打标方式', 'Tagging method')}>
+  const header = <OverflowStrip className="ui-segmented tagging-modes" containerClassName="tagging-modes-navigation" role="group" label={text('打标方式', 'Tagging method')} activeKey={mode}>
     {([['tagger', text('Tagger 模型', 'Tagger model')], ['vlm', text('视觉大模型', 'Vision model')], ['assist', text('辅助打标', 'Assisted tagging')]] as const).map(([value, label]) =>
       <button key={value} type="button" aria-pressed={mode === value} onClick={() => choose(value)}>{label}</button>)}
     <SlidingIndicator className="ui-segmented-thumb"/>
-  </div>;
+  </OverflowStrip>;
   const action = mode === 'tagger' ? 'autotag' : mode === 'vlm' ? 'vlmtag' : 'assisttag';
   // A run of another method keeps its progress above this panel.
   const own = active?.action === action;

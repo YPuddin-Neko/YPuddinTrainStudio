@@ -204,10 +204,12 @@
   .overview-data-toolbar .studio-select,.overview-gallery-search { min-height:40px; }
 }
 @container (max-width:460px) {
-  .overview-thumbnails { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .overview-thumbnails { grid-template-columns:repeat(auto-fill,minmax(min(90px,100%),1fr)); }
   .overview-source-summary a { grid-template-columns:minmax(0,1fr) 14px; gap:4px 8px; }
   .overview-source-summary span { grid-column:1; margin:0; white-space:normal; }
   .overview-source-summary svg { grid-column:2; grid-row:1 / 3; }
+}
+@media (max-width:520px) {
   .overview-preview-dialog footer { display:grid; grid-template-columns:1fr 1fr; }
   .overview-preview-dialog footer a { grid-column:1 / -1; margin:0; justify-content:center; }
 }

@@ -18,6 +18,7 @@ import '../Queue/queue.css';
 import './job-detail.css';
 import JobLogView from './JobLogView';
 import JobMetricsPanel from './JobMetricsPanel';
+import OverflowStrip from '../../components/OverflowStrip';
 import { learningRateGroupName } from './metricPresentation';
 import StatStrip from './StatStrip';
 import SampleViewer from './SampleViewer';
@@ -401,7 +402,7 @@ export default function JobDetail() {
       </div>}
 
       {/* 2. Tabs 切换导航 */}
-      <nav className="job-monitor-tabs ui-tabs" role="tablist" aria-label={text('任务详情分区', 'Job details tabs')}>
+      <OverflowStrip className="job-monitor-tabs ui-tabs" label={text('任务详情分区', 'Job details tabs')} activeKey={activeTab}>
           {tabs.map((tab, index) => (
             <button
               key={tab.key}
@@ -414,7 +415,7 @@ export default function JobDetail() {
             </button>
           ))}
           <SlidingIndicator className="ui-tabs-indicator"/>
-        </nav>
+        </OverflowStrip>
 
       {/* 3. 详细内容区域 */}
       <div ref={tabPanel} role="tabpanel" id={`job-panel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`}>

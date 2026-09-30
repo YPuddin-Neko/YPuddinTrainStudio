@@ -31,10 +31,10 @@
 .xyz-form footer { padding:12px 16px; border-top:1px solid var(--studio-line); background:var(--studio-muted); }
 .xyz-form footer p { color:var(--studio-dim); font-size:11px; margin-bottom:9px; line-height:1.6; }
 .xyz-result-header { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--studio-line); }
-.xyz-result-title { display:flex; align-items:center; gap:10px; flex:1; min-width:0; font-size:12px; }
+.xyz-result-title { display:flex; align-items:center; gap:10px; flex:1 1 220px; min-width:0; font-size:12px; }
 .xyz-result-title strong { font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .xyz-result-title > span:last-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--studio-dim); }
-.xyz-result-actions { display:flex; gap:8px; flex:none; }
+.xyz-result-actions { display:flex; flex-wrap:wrap; gap:8px; flex:0 1 auto; min-width:0; }
 .xyz-progress { display:grid; gap:7px; padding:10px 14px; border-bottom:1px solid var(--studio-line); background:var(--studio-muted); font-size:11px; }
 .xyz-progress-line { display:flex; align-items:center; gap:10px; font-variant-numeric:tabular-nums; }
 .xyz-progress-line > span { flex:1; min-width:0; color:var(--studio-dim); overflow-wrap:anywhere; }
@@ -88,7 +88,7 @@
 @media (hover:none) { .xyz-history-delete { opacity:1; pointer-events:auto; } }
 @media (prefers-reduced-motion:reduce) { .xyz-history-delete { transition:none; } }
 .xyz-history-page { flex:none; border-radius:999px; }
-.xyz-pages { margin:0 14px 10px; }
+.xyz-pages-strip { margin:0 14px 10px; }
 .xyz-pages > button { max-width:220px; overflow:hidden; text-overflow:ellipsis; font-size:12px; }
 .xyz-grid-scroll { overflow:auto; max-height:75vh; padding:0 10px 12px; scrollbar-gutter:stable; }
 .xyz-grid { width:100%; border-collapse:separate; border-spacing:5px; table-layout:fixed; }
@@ -108,7 +108,7 @@
 .xyz-full-image { display:block; width:100%; max-height:65vh; object-fit:contain; background:var(--studio-canvas); border-radius:6px; }
 .xyz-image-details { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:12px; font-size:12px; }
 .xyz-image-details span { flex:1; }
-@container (min-width:851px) { .xyz-layout { height:max(450px,calc(100dvh - 265px)); }.xyz-form,.xyz-results,.xyz-history { height:100%; }.xyz-form,.xyz-results { display:flex; flex-direction:column; }.xyz-form > header,.xyz-form footer,.xyz-result-header,.xyz-progress,.xyz-task-error,.xyz-pages { flex:none; }.xyz-form-body { flex:1; min-height:0; overflow:auto; scrollbar-gutter:stable; align-content:start; }.xyz-grid-scroll { flex:1; min-height:0; max-height:none; } }
+@container (min-width:851px) { .xyz-layout { height:max(450px,calc(100dvh - 265px)); }.xyz-form,.xyz-results,.xyz-history { height:100%; }.xyz-form,.xyz-results { display:flex; flex-direction:column; }.xyz-form > header,.xyz-form footer,.xyz-result-header,.xyz-progress,.xyz-task-error,.xyz-pages-strip { flex:none; }.xyz-form-body { flex:1; min-height:0; overflow:auto; scrollbar-gutter:stable; align-content:start; }.xyz-grid-scroll { flex:1; min-height:0; max-height:none; } }
 @container (max-width:850px) { .xyz-layout { grid-template-columns:minmax(0,1fr); grid-template-areas:"form" "results"; }.xyz-form-body { grid-template-columns:repeat(2,minmax(0,1fr)); }.xyz-section { align-content:start; }.xyz-settings { grid-column:1/-1; }.xyz-fields { grid-template-columns:repeat(4,minmax(0,1fr)); }.xyz-form footer { display:flex; align-items:center; gap:12px; }.xyz-form footer p { flex:1; margin:0; }.xyz-primary { width:auto; padding:8px 16px; } }
 @container (max-width:500px) { .xyz-form-body { grid-template-columns:minmax(0,1fr); }.xyz-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }.xyz-form footer { display:block; }.xyz-form footer p { margin-bottom:9px; }.xyz-primary { width:100%; }.xyz-result-title { flex-wrap:wrap; row-gap:4px; }.xyz-result-title > span:last-child { flex-basis:100%; white-space:normal; }.xyz-grid .xyz-corner,.xyz-grid .xyz-row-head { width:68px; } }
 /* Narrower pages put the history above the results as one line that pages sideways. */

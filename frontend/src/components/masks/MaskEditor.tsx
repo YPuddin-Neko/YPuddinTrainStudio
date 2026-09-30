@@ -8,6 +8,7 @@ import { loadMask, maskEndpoint, saveMask, type MaskInfo } from './maskApi';
 import ImageEditor from './ImageEditor';
 import Switch from '../Switch';
 import { SlidingIndicator } from '../motion';
+import OverflowStrip from '../OverflowStrip';
 
 interface Props { datasetId: string; imageId: string; relPath: string; onClose: () => void; onSaved: () => void; onEnableTraining: () => Promise<void>; allowPaint?: boolean }
 const control = 'ui-btn ui-btn-sm';
@@ -156,7 +157,7 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
         {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"><p className="whitespace-pre-line break-words">{error}</p><button type="button" className="ui-link mt-2" disabled={saving} onClick={() => { if (!doc.current?.dirty || window.confirm(text('重新读取会放弃未保存的修改，继续？', 'Reload and discard unsaved changes?'))) setReload((value) => value + 1); }}>{text('重新读取遮罩', 'Reload mask')}</button></div>}
         {info && !loading && <>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="ui-segmented" role="group" aria-label={text('绘制工具', 'Drawing tools')}>{([{ key: 'brush', Icon: Brush, label: text('笔刷 · 参与', 'Brush · include') }, { key: 'erase', Icon: Eraser, label: text('擦除 · 忽略', 'Erase · ignore') }, { key: 'pan', Icon: Hand, label: text('移动画布', 'Pan canvas') }] as const).map(({ key, Icon, label }) => <button key={key} type="button" aria-pressed={tool === key} disabled={saving} onClick={() => setTool(key)}><Icon className="h-4 w-4" />{label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div>
+            <OverflowStrip className="ui-segmented" containerClassName="image-editor-tool-strip" role="group" label={text('绘制工具', 'Drawing tools')} activeKey={tool}>{([{ key: 'brush', Icon: Brush, label: text('笔刷 · 参与', 'Brush · include') }, { key: 'erase', Icon: Eraser, label: text('擦除 · 忽略', 'Erase · ignore') }, { key: 'pan', Icon: Hand, label: text('移动画布', 'Pan canvas') }] as const).map(({ key, Icon, label }) => <button key={key} type="button" aria-pressed={tool === key} disabled={saving} onClick={() => setTool(key)}><Icon className="h-4 w-4" />{label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></OverflowStrip>
             <button type="button" className={control} disabled={saving || !doc.current?.canUndo} onClick={undo}><Undo2 className="h-4 w-4" />{text('撤销', 'Undo')}</button>
             <button type="button" className={control} disabled={saving || !doc.current?.canRedo} onClick={redo}><Redo2 className="h-4 w-4" />{text('重做', 'Redo')}</button>
             <button type="button" className={control} disabled={saving} onClick={() => perform({ kind: 'fill', value: 255 })}>{text('全选 · 全白', 'Select all · white')}</button>

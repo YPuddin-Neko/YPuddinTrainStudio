@@ -19,7 +19,7 @@
 .caption-workspace-search input:focus-visible { outline:none; }
 .caption-workspace-refresh.ui-btn { flex:none; width:30px; height:30px; min-height:30px; padding:0; }
 .caption-workspace-status-filter { display:flex; gap:4px; min-width:0; }
-.caption-workspace-status-filter > button { flex:1 1 0; min-width:0; padding:3px 0; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--studio-dim); font-size:11px; font-weight:500; line-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-variant-numeric:tabular-nums; cursor:pointer; transition:background-color var(--motion-quick,140ms), color var(--motion-quick,140ms); }
+.caption-workspace-status-filter > button { flex:1 0 auto; min-width:0; padding:3px 0; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--studio-dim); font-size:11px; font-weight:500; line-height:16px; white-space:nowrap; font-variant-numeric:tabular-nums; cursor:pointer; transition:background-color var(--motion-quick,140ms), color var(--motion-quick,140ms); }
 .caption-workspace-status-filter > button:hover:not([aria-pressed=true]):not(:disabled) { background:var(--studio-muted); color:var(--studio-text); }
 .caption-workspace-status-filter > button[aria-pressed=true] { border-color:color-mix(in srgb, var(--studio-accent) 25%, transparent); background:var(--control-accent-soft); color:var(--studio-accent); }
 .caption-workspace-status-filter > button:focus-visible { outline:2px solid var(--studio-accent); outline-offset:1px; }

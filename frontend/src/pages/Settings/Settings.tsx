@@ -8,6 +8,7 @@ import { SlidingIndicator } from '../../components/motion';
 import { useEnterAnimation } from '../../utils/motion';
 import '../../styles/settings.css';
 import PageLocation from '../../components/PageLocation';
+import OverflowStrip from '../../components/OverflowStrip';
 
 export default function Settings() {
   const text = useWorkspaceText();
@@ -55,7 +56,7 @@ export default function Settings() {
         <h1>{text('设置', 'Settings')}</h1>
         {restartRequired && <p role="status" className="settings-restart-notice" data-testid="settings-restart-notice"><CircleAlert size={15} aria-hidden="true"/><span>{text('一些环境设置发生了变化，需要重启服务后才能生效，队列将在重启后继续。', 'Some environment settings changed and take effect after the service restarts. The queue continues after the restart.')}</span></p>}
       </div>
-      <div className="settings-tabs ui-tabs" role="tablist" aria-label={text('设置分区', 'Settings sections')}>
+      <OverflowStrip className="settings-tabs ui-tabs" label={text('设置分区', 'Settings sections')} activeKey={selected}>
         {tabs.map(({ id, label, Icon }, index) => <button key={id} id={`settings-tab-${id}`} type="button" role="tab" aria-selected={selected === id} aria-controls="settings-content" tabIndex={selected === id ? 0 : -1} onClick={() => select(id)} onKeyDown={event => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
@@ -63,7 +64,7 @@ export default function Settings() {
           select(tabs[next].id); document.getElementById(`settings-tab-${tabs[next].id}`)?.focus();
         }}><Icon size={15} /><span>{label}</span></button>)}
         <SlidingIndicator className="ui-tabs-indicator"/>
-      </div>
+      </OverflowStrip>
     </header>
     <div ref={scroll} id="settings-content" className="settings-scroll" role="tabpanel" aria-labelledby={`settings-tab-${selected}`}><div ref={panel}><RestartRequiredContext.Provider value={reportRestart}><Outlet /></RestartRequiredContext.Provider></div></div>
   </div>;

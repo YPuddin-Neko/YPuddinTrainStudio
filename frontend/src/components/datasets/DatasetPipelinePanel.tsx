@@ -21,6 +21,7 @@ import AutoMaskPanel from './AutoMaskPanel';
 import type { WorkspaceDataset } from './ProjectDatasetCards';
 import { useEnterAnimation } from '../../utils/motion';
 import { useWorkspaceHeight } from '../projects/useWorkspaceHeight';
+import OverflowStrip from '../OverflowStrip';
 
 export type PipelineImageRef = { dataset_id: string; rel_path: string };
 type Issue = { severity: 'error' | 'warning'; code: string; message: string; path?: string };
@@ -49,31 +50,6 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
   const stage = STAGES.includes(normalizedStage) ? normalizedStage : 'datasets';
   const stageBody = useEnterAnimation<HTMLDivElement>(stage, { skipFirst: true });
   useEffect(() => { try { sessionStorage.setItem(stageStorage,stage); } catch { /* URL remains authoritative. */ } },[stage,stageStorage]);
-  useEffect(() => {
-    const revealStage = () => {
-      const list = navigationRef.current?.querySelector<HTMLElement>('.dataset-stages');
-      const current = list?.querySelector<HTMLElement>('[aria-current]');
-      if (!list || !current) return;
-      const viewport = list.getBoundingClientRect();
-      const item = current.getBoundingClientRect();
-      // Keep the current stage clear of the faded edges.
-      const edge = list.scrollWidth > list.clientWidth ? 28 : 0;
-      if (item.left < viewport.left + edge) list.scrollLeft -= viewport.left + edge - item.left;
-      else if (item.right > viewport.right - edge) list.scrollLeft += item.right - viewport.right + edge;
-    };
-    // Faded edges show that more stages sit off screen on narrow windows.
-    const list = navigationRef.current?.querySelector<HTMLElement>('.dataset-stages');
-    const markOverflow = () => {
-      if (!list) return;
-      list.dataset.before = String(list.scrollLeft > 1);
-      list.dataset.after = String(list.scrollLeft + list.clientWidth < list.scrollWidth - 1);
-    };
-    const update = () => { revealStage(); markOverflow(); };
-    update();
-    list?.addEventListener('scroll', markOverflow, { passive: true });
-    window.addEventListener('resize', update);
-    return () => { list?.removeEventListener('scroll', markOverflow); window.removeEventListener('resize', update); };
-  }, [stage, navigationRef]);
   const setStage = (value:string) => setParams(previous => { const next = new URLSearchParams(previous); next.set('data_step',value); return next; });
   const [filter, setFilter] = useState('all');
   useEffect(() => { setFilter('all'); }, [projectId, versionId]);
@@ -154,9 +130,9 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
   const undo = (id: string) => void perform({action:'restore', restore_operation_id:id});
   return <div className="dataset-pipeline" data-testid="dataset-pipeline">
     <div className="pipeline-navigation" ref={navigationRef}>
-    <nav className="dataset-stages" aria-label={text('训练数据处理','Dataset pipeline')}>
+    <OverflowStrip className="dataset-stages" label={text('训练数据处理','Dataset pipeline')} activeKey={stage} role="navigation">
       {tabs.map(([id, label, Icon, errors]) => <button key={id} type="button" aria-current={stage === id ? 'step' : undefined} onClick={() => setStage(id)}><Icon size={15} aria-hidden="true"/><span>{label}</span>{errors ? <span className="dataset-stage-badge" aria-label={text(`${errors} 项错误`, `${errors} errors`)}>{errors}</span> : null}</button>)}
-    </nav>
+    </OverflowStrip>
     </div>
     {(error || query.error) && <div role="alert" className="workspace-message error">{error || formatApiError(query.error)}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void query.refetch()}>{text('重新读取','Reload')}</button></div>}
     {snapshot?.stale && (stage === 'inspect' || stage === 'prepare') && <p className="pipeline-note">{text('检查结果已过期，请重新检查数据。','The inspection is out of date. Inspect the data again.')}</p>}

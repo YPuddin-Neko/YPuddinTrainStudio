@@ -19,7 +19,7 @@
 .dataset-workspace :where(.dataset-folder-settings input,.dataset-browser-batch input) { min-height:var(--control-h,32px); padding:5px 10px; border:1px solid var(--studio-line); border-radius:var(--control-radius,6px); background:var(--studio-panel); color:var(--studio-text); font-size:13px; max-width:100%; }
 .dataset-workspace input:focus-visible { outline:2px solid var(--studio-accent); outline-offset:1px; }
 .dataset-workspace input:disabled { opacity:.45; cursor:not-allowed; }
-.dataset-folder-actions { display:flex; gap:8px; align-items:center; margin-left:auto; }
+.dataset-folder-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-left:auto; }
 .dataset-library-meta { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; font-size:12px; color:var(--studio-dim); }
 .dataset-index-state { font-size:12px; }
 .dataset-index-state.status-ready { color:var(--studio-text); }
@@ -39,7 +39,7 @@
 .dataset-library-pane { display:grid; flex:1; min-height:300px; }
 .dataset-browser-batch { display:flex; align-items:end; flex-wrap:wrap; gap:8px; padding:12px; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); }
 .dataset-browser-batch legend { font-size:12px; padding:0 4px; color:var(--studio-dim); }
-.dataset-browser-batch label { display:grid; gap:6px; flex:1; min-width:160px; font-size:12px; }
+.dataset-browser-batch label { display:grid; gap:6px; flex:1; min-width:min(160px,100%); font-size:12px; }
 .dataset-browser-batch input { width:100%; }
 .dataset-preview-title { min-width:0; overflow-wrap:anywhere; font-size:15px; font-weight:600; }
 

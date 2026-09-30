@@ -16,6 +16,7 @@ import DatasetImportProgress from '../../components/datasets/DatasetImportProgre
 import SiteDownloadImport from '../../components/datasets/SiteDownloadImport';
 import './project-data-import.css';
 import { SlidingIndicator } from '../../components/motion';
+import OverflowStrip from '../../components/OverflowStrip';
 
 export default function ProjectDataImport({ projectId, versionId, onImported, defaultIsReg = false, captionFormats, targetDataset, onBusyChange }: { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean; captionFormats?: readonly string[]; targetDataset?: DatasetInfo; onBusyChange?: (busy:boolean)=>void }) {
   const text = useWorkspaceText();
@@ -139,9 +140,9 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
   return <div className="project-data-import" data-testid="project-data-import" aria-busy={locked} data-completed={!site && !showForm}>
     <header className="project-import-heading">
       <h3>{targetDataset ? text('添加到当前数据集', 'Add to this dataset') : defaultIsReg ? text('添加已有正则图', 'Add existing regularization images') : text('添加训练图片', 'Add training images')}</h3>
-      {site || showForm ? modes.length > 1 && <div className="project-import-modes ui-segmented" role="group" aria-label={text('数据导入方式', 'Data import method')}>
+      {site || showForm ? modes.length > 1 && <OverflowStrip className="project-import-modes ui-segmented" containerClassName="project-import-modes-navigation" role="group" label={text('数据导入方式', 'Data import method')} activeKey={mode}>
         {modes.map(([key, label]) => <button key={key} type="button" disabled={locked} onClick={() => chooseMode(key)} aria-pressed={mode === key}>{label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/>
-      </div> : <button type="button" className="ui-btn" onClick={() => setShowForm(true)}><Plus size={16}/>{text('继续添加', 'Add more')}</button>}
+      </OverflowStrip> : <button type="button" className="ui-btn" onClick={() => setShowForm(true)}><Plus size={16}/>{text('继续添加', 'Add more')}</button>}
     </header>
     {site ? <SiteDownloadImport projectId={projectId} versionId={versionId!} targetDataset={targetDataset} captionFormats={captionFormats} onImported={onImported} onBusyChange={setSiteBusy}/>
       : <form onSubmit={submit} className="project-import-form">

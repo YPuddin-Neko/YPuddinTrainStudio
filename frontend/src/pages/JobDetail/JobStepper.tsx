@@ -4,6 +4,7 @@ import { CheckCircle2, CircleSlash, Loader2, PauseCircle, PlayCircle, XCircle } 
 import type { JobProgress } from '../../api/types';
 import { formatTime } from '../../utils/format';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import OverflowStrip from '../../components/OverflowStrip';
 
 type StepState = 'done' | 'current' | 'pending' | 'pausing' | 'paused' | 'failed' | 'stopping' | 'stopped' | 'resumed' | 'idle';
 
@@ -70,7 +71,7 @@ export default function JobStepper({ status, phase, progress }: { status: string
     stopping: text('正在保存恢复点', 'saving the resume point'), stopped: text('已取消', 'cancelled'), resumed: text('暂停后已恢复', 'resumed after a pause'), idle: text('未发生', 'did not occur'),
   };
 
-  return <ol className="job-stepper" aria-label={text('任务阶段', 'Job stages')}>
+  return <OverflowStrip className="job-stage-scroll" containerClassName="job-stage-strip" role="group" label={text('任务阶段', 'Job stages')} activeKey={`${status}:${phase}`}><ol className="job-stepper" aria-label={text('任务阶段', 'Job stages')}>
     {!known && status === 'running' && <li className="job-step" data-state="current" title={phase || undefined}>
       <Loader2 size={14} className="animate-spin" aria-hidden="true"/><span>{t(`phase.${phase}`, t('job.phaseInProgress', '进行中'))}</span>
     </li>}
@@ -83,5 +84,5 @@ export default function JobStepper({ status, phase, progress }: { status: string
         {position < steps.length - 1 && <li className="job-step-line" aria-hidden="true"/>}
       </React.Fragment>;
     })}
-  </ol>;
+  </ol></OverflowStrip>;
 }

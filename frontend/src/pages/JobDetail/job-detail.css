@@ -60,7 +60,8 @@
 .job-monitor[data-view=xyz] > .job-monitor-bar { position:relative; }
 @container(max-width:760px) { .job-run-metadata { grid-template-columns:repeat(2, minmax(0, 1fr)); }.job-monitor-bar { position:relative; padding:12px 14px 14px; }.job-monitor-identity .task-actions-wrap { flex-basis:100%; align-items:flex-start; }.job-monitor-title h1 { font-size:19px; }.job-failure { flex-direction:column; gap:10px; } }
 
-.job-stepper { display:flex; align-items:center; gap:6px; margin:0; padding:10px 0 0; border-top:1px solid var(--studio-line); list-style:none; }
+.job-stage-strip { padding-top:10px; border-top:1px solid var(--studio-line); }
+.job-stepper { display:flex; align-items:center; gap:6px; min-width:max-content; margin:0; padding:0; list-style:none; }
 .job-step { display:flex; flex:none; align-items:center; gap:6px; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:500; line-height:1.4; white-space:nowrap; color:var(--studio-dim); }
 .job-step[data-state=done] { color:#15803d; }
 .job-step[data-state=current] { background:#dbeafe; color:#1d4ed8; }
@@ -75,4 +76,4 @@
 .dark .job-step:is([data-state=paused],[data-state=pausing]) { background:#422006; color:#fcd34d; }
 .dark .job-step[data-state=failed] { background:#450a0a; color:#fca5a5; }
 .job-step-line { flex:1; min-width:10px; height:2px; border-radius:1px; background:var(--studio-line); }
-@container (max-width:760px) { .job-stepper { flex-wrap:wrap; gap:4px; } .job-step { padding:5px 9px; } .job-step-line { flex:0 0 8px; min-width:8px; } }
+@container (max-width:760px) { .job-stepper { gap:4px; } .job-step { padding:5px 9px; } .job-step-line { min-width:8px; } }

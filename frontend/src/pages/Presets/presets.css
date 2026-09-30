@@ -73,6 +73,7 @@
   .presets-meta > label { grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
   .presets-meta > .presets-family { grid-column: 1; }
   .presets-description-toggle { grid-column: 2; grid-row: 1; }
-  .presets-form-toolbar { top: 0; gap: 10px; }
+  .presets-form-toolbar { top: 0; grid-template-columns:minmax(0,1fr); gap: 10px; }
+  .presets-form-toolbar > .parameter-mode-toggle { justify-self:end; }
   .presets-schema .config-field { scroll-margin-top: 136px; }
 }

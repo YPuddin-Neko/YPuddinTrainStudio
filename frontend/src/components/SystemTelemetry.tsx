@@ -53,7 +53,8 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
   const [selectedGpu, setSelectedGpu] = React.useState('all');
   const frame = React.useRef<HTMLDivElement>(null);
   const [level, setLevel] = React.useState(0);
-  // Fit the strip to the room the bar leaves instead of scrolling it; before layout everything shows.
+  const [scrollable, setScrollable] = React.useState(false);
+  // Keep GPU readings reachable when even the smallest strip exceeds the space left by the top bar.
   React.useLayoutEffect(() => {
     const node = frame.current;
     if (!node || typeof ResizeObserver === 'undefined') return;
@@ -62,6 +63,7 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
       if (!width) return;
       const index = LEVELS.findIndex(item => item.width <= width);
       setLevel(index < 0 ? LEVELS.length - 1 : index);
+      setScrollable(width < LEVELS[LEVELS.length - 1].width);
     };
     const observer = new ResizeObserver(measure);
     observer.observe(node);
@@ -109,7 +111,7 @@ export default function SystemTelemetry({ stats }: { stats: SystemStats | null }
   const deviceDescription = `${deviceKind[gpu?.kind ?? ''] ?? ''}${aggregate ? ` · ${text(`${gpus.length} 卡`, `${gpus.length} GPUs`)}` : ''}`;
   const deviceHelp = aggregate ? text(`当前显示 ${gpus.length} 张显卡的平均状态。\n点击可切换到单张显卡。`, `Showing averages across ${gpus.length} GPUs.\nClick to view an individual GPU.`) : undefined;
 
-  return <div ref={frame} className="system-telemetry" role="group" aria-label={text('系统硬件状态', 'System hardware status')}>
+  return <div ref={frame} className="system-telemetry" role="group" aria-label={text('系统硬件状态', 'System hardware status')} tabIndex={scrollable ? 0 : undefined}>
     <div className="telemetry-strip" style={{ gridTemplateColumns: columns }}>
       {!hidden.has('cpu') && <div className="telemetry-group telemetry-cpu" role="group" aria-label="CPU" data-testid="telemetry-cpu">
         <Cpu size={16} aria-hidden="true" /><div className="telemetry-value"><span className="telemetry-label">CPU</span><Reading value={stats?.cpu_pct} label={text('CPU 占用率', 'CPU utilization')}/></div>

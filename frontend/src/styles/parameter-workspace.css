@@ -126,6 +126,10 @@
 .parameter-workspace .readiness-heading h2 { margin: 0; min-width: 0; line-height: 1.5; }
 .parameter-workspace .readiness-heading > button { flex: 0 0 auto; padding-inline: 8px; }
 .parameter-workspace .training-header-actions .launch-schedule > div { top: calc(100% + 10px); bottom: auto; box-shadow: 0 8px 25px #0002; }
+@container training-workspace (max-width:560px) {
+  .training-header-actions .launch-schedule { position:static; }
+  .parameter-workspace .training-header-actions .launch-schedule > div { width:min(255px,100%); }
+}
 .parameter-step-complete { color: #15803d; flex: 0 0 auto; }
 .dark .parameter-step-complete { color: #4ade80; }
 .parameter-sections li { position: relative; }

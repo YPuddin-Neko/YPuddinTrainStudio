@@ -1,6 +1,6 @@
 /* Automatic tagging and masks: model, settings rows and the run bar. */
 
-.vision-panel { border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); color:var(--studio-text); }
+.vision-panel { min-width:0; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); color:var(--studio-text); container:vision-panel / inline-size; }
 .vision-panel-head { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:46px; padding:0 16px; border-bottom:1px solid var(--studio-line); }
 .vision-panel-head h3 { display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; }
 .vision-panel-head svg { color:var(--studio-accent); }
@@ -30,7 +30,7 @@
 .vision-model-control > .studio-select.vision-model-series { flex:0 0 132px; }
 /* A mask kind beside the detector that finds it, on the same four columns as the rows below. */
 .vision-row.vision-row-model > .vision-model-field { grid-column:span 3; }
-@media (max-width:1100px) { .vision-row.vision-row-model > .vision-model-field { grid-column:auto; } }
+@container vision-panel (max-width:1000px) { .vision-row.vision-row-model > .vision-model-field { grid-column:auto; } }
 .vision-model-name { font-size:13px; font-weight:500; }
 .vision-model-state { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--studio-dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
 .vision-model-state.ready { color:var(--studio-success); }
@@ -50,7 +50,8 @@
 .vision-result { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; font-size:12px; color:var(--studio-dim); }
 
 /* Tagging method switch in the panel header. */
-.vision-panel-head .tagging-modes { flex:0 1 auto; max-width:100%; overflow-x:auto; scrollbar-width:none; }
+.vision-panel-head .tagging-modes-navigation { flex:0 1 auto; max-width:100%; }
+.vision-panel-head .tagging-modes { width:max-content; max-width:100%; }
 .vision-panel-head:has(.tagging-modes) { min-height:52px; }
 .vision-section-title { display:flex; align-items:center; gap:10px; margin:0; color:var(--studio-text); font-size:12.5px; font-weight:600; }
 .vision-section-title::after { content:''; flex:1; height:1px; background:var(--studio-line); }
@@ -74,16 +75,16 @@
 .vision-prompt-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; }
 .vision-prompt-head > .vision-field-label { margin-right:4px; }
 .vision-prompt-head > .studio-select { width:auto; min-width:180px; max-width:280px; }
-.vision-template-name { display:flex; align-items:center; gap:6px; }
-.vision-template-name > input { width:180px; height:28px; padding:4px 8px; font-size:12px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); }
+.vision-template-name { display:flex; align-items:center; gap:6px; min-width:0; max-width:100%; }
+.vision-template-name > input { flex:1; min-width:0; width:180px; height:28px; padding:4px 8px; font-size:12px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); }
 .vision-prompt textarea { width:100%; min-height:190px; padding:10px 12px; resize:vertical; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); font:12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .vision-prompt textarea:focus-visible { outline:2px solid var(--studio-accent); outline-offset:1px; }
 /* Eight request settings: two even rows of four. */
 .vision-row.vision-row-quad { grid-template-columns:repeat(4,minmax(0,1fr)); }
 /* A labelled group of switches takes two columns, so both fit on one line. */
 .vision-row.vision-row-quad > .vision-field-pair { grid-column:span 2; }
-@media (max-width:1100px) { .vision-row.vision-row-quad { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width:520px) { .vision-row.vision-row-quad { grid-template-columns:minmax(0,1fr); } .vision-row.vision-row-quad > .vision-field-pair { grid-column:auto; } }
+@container vision-panel (max-width:1000px) { .vision-row.vision-row-quad { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@container vision-panel (max-width:520px) { .vision-row.vision-row-quad { grid-template-columns:minmax(0,1fr); } .vision-row.vision-row-quad > .vision-field-pair { grid-column:auto; } }
 .vision-advanced > summary { width:fit-content; cursor:pointer; color:var(--studio-accent); font-size:12px; font-weight:500; }
 .vision-advanced[open] > summary { margin-bottom:14px; }
 
@@ -94,7 +95,9 @@
 .vision-failures li { display:grid; gap:2px; color:var(--studio-dim); overflow-wrap:anywhere; }
 .vision-failures strong { color:var(--studio-text); font-weight:500; }
 
-@media (max-width:640px) {
+@container vision-panel (max-width:640px) {
+  .vision-panel-head:has(.tagging-modes) { flex-wrap:wrap; gap:8px; padding-block:10px; }
+  .vision-panel-head .tagging-modes-navigation { flex-basis:100%; }
   .vision-prompt-head > .studio-select { flex:1 1 100%; max-width:none; }
   .vision-panel-body { padding:14px; gap:16px; }
   .vision-model-control > .studio-select { flex-basis:100%; }
@@ -140,12 +143,12 @@
 .head-review-zoom-frame { display:grid; place-items:center; height:min(68vh, 760px); container-type:size; border-radius:8px; background:var(--studio-muted); }
 .head-review-zoom-bar { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; font-size:12px; }
 .head-review-zoom-bar > small { margin-left:auto; color:var(--studio-dim); font-variant-numeric:tabular-nums; }
-@media (max-width:640px) {
+@container vision-panel (max-width:640px) {
   .head-review { padding:12px; }
   .head-review-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
   .head-review-filter { margin-left:0; }
-  .head-review-zoom-frame { height:min(58vh, 520px); }
 }
+@media (max-width:640px) { .head-review-zoom-frame { height:min(58vh, 520px); } }
 @media (prefers-reduced-motion:reduce) { .head-box, .head-review-frame { transition:none; } }
 
 /* The vision model service tagging uses, chosen in 设置 → 打标. */

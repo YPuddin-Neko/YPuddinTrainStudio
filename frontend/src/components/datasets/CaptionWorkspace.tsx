@@ -21,6 +21,7 @@ import {EVENT_TYPES} from '../../events/eventTypes';
 import { SlidingIndicator } from '../motion';
 import { LoadingNote } from '../Loading';
 import ImageSortSelect, { type ImageSort } from './ImageSortSelect';
+import OverflowStrip from '../OverflowStrip';
 
 type CaptionStats = components['schemas']['DatasetCaptionStats'];
 interface Draft {
@@ -255,9 +256,9 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
                   <label className="caption-workspace-search"><Search size={13}/><input type="search" aria-label={text('搜索文件名或标签', 'Search filenames or captions')} placeholder={text('搜索文件名或标签…', 'Search filenames or captions…')} value={searchDraft} disabled={saving} onChange={event => updateNavigation({ searchDraft: event.target.value })}/></label>
                   <button type="button" className="ui-btn ui-btn-icon ui-btn-sm caption-workspace-refresh" onClick={refresh} disabled={saving || datasets.isFetching || images.isFetching || stats.isFetching} aria-label={text('刷新标签与统计', 'Refresh captions and statistics')} title={text('刷新标签与统计', 'Refresh captions and statistics')}><RefreshCw size={13} className={images.isFetching || stats.isFetching ? 'animate-spin' : undefined}/></button>
                 </div>
-                <div className="caption-workspace-status-filter" role="group" aria-label={text('标签状态筛选', 'Caption status filter')}>
+                <OverflowStrip className="caption-workspace-status-filter" role="group" label={text('标签状态筛选', 'Caption status filter')} activeKey={status}>
                   {statusFilters.map(([value, label, count]) => <button type="button" key={value} aria-pressed={status === value} disabled={saving} onClick={() => setFilter({ status: value })}>{label} {count ?? '—'}</button>)}
-                </div>
+                </OverflowStrip>
                 {tag && <button type="button" className="caption-workspace-clear" disabled={saving} onClick={() => setFilter({ tag: '' })} aria-label={text(`取消标签筛选：${tag}`, `Clear tag filter: ${tag}`)}><span>{text(`标签：${tag}`, `Tag: ${tag}`)}</span><X size={12}/></button>}
               </div>
             <div className="caption-workspace-gallery" ref={grid} role="region" aria-busy={images.isFetching} aria-label={text('图片缩略图', 'Image thumbnails')} tabIndex={0}>{items.map(item => <button type="button" key={imageKey(item)} aria-label={text(`选择图片：${item.rel_path}`, `Select image: ${item.rel_path}`)} aria-pressed={item === image} disabled={saving || images.isFetching} onClick={() => perform(() => updateNavigation({ selected: imageKey(item) }))}><img src={apiUrl(`/datasets/${source.source.id}/images/${item.hash}/thumb?size=256`)} alt={item.rel_path} loading="lazy"/><span title={item.rel_path}>{item.rel_path}</span>{(item.caption_error || item.caption_status === 'invalid') ? <small className="caption-workspace-error">{text('标签错误', 'Invalid caption')}</small> : !item.caption && <small>{text('缺少标签', 'No caption')}</small>}</button>)}</div>

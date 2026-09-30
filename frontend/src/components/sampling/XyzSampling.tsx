@@ -17,6 +17,7 @@ import { axisCount, axisNames, checkpointLabel, isActive, isWaiting, parseAxis, 
 import XyzHistory from './XyzHistory';
 import './xyz-sampling.css';
 import { SlidingIndicator } from '../motion';
+import OverflowStrip from '../OverflowStrip';
 
 const imageUrl = (url: string) => url.startsWith('/api/') ? apiUrl(url.slice(4)) : url;
 type AxisDraft = { key: AxisKey; raw: string };
@@ -303,7 +304,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
           {task.output_dir && <details className="xyz-result-location"><summary>{text('图片保存位置', 'Image folder')}</summary><code>{task.output_dir}</code></details>}
           {isActive(task) && <XyzProgress task={task}/>}
           {task.error && <p role="alert" className="xyz-task-error">{task.error}</p>}
-          {request?.z && <nav className="xyz-pages ui-tabs" aria-label={text('Z 轴分页', 'Z axis pages')}>{zValues.map((value, index) => <button key={index} type="button" aria-current={page === index ? 'page' : undefined} onClick={() => setPage(index)}>{name(request.z!.key)} · {displayValue(request.z, value)}</button>)}<SlidingIndicator className="ui-tabs-indicator"/></nav>}
+          {request?.z && <OverflowStrip className="xyz-pages ui-tabs" containerClassName="xyz-pages-strip" role="navigation" label={text('Z 轴分页', 'Z axis pages')} activeKey={page}>{zValues.map((value, index) => <button key={index} type="button" aria-current={page === index ? 'page' : undefined} onClick={() => setPage(index)}>{name(request.z!.key)} · {displayValue(request.z, value)}</button>)}<SlidingIndicator className="ui-tabs-indicator"/></OverflowStrip>}
           <div className="xyz-grid-scroll" tabIndex={0} aria-label={text('对比网格，可横向滚动查看所有列', 'Comparison grid, scroll horizontally for all columns')}>
             <table className="xyz-grid" data-single={xValues.length * yValues.length === 1 || undefined} style={{ minWidth: (rowHeads ? 88 : 0) + xValues.length * 150 }}>
               {request && columnHeads !== rowHeads && <caption>{columnHeads ? `${name(request.x.key)} →` : `${name(request.y!.key)} ↓`}</caption>}
