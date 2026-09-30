@@ -1337,6 +1337,8 @@ def ensure_venv(
 
 def choose_extras(torch_tag: str) -> str:
     extras = EXTRAS_BASE
+    if PROFILE == "linux-dtk":
+        extras += ",dtk"
     if (
         not PROFILE.endswith("-cpu")
         and PROFILE != "linux-dtk"

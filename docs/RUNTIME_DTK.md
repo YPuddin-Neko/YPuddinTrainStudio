@@ -55,6 +55,8 @@ DTK_ROOT=/opt/dtk ./studio-linux-dtk.sh --dtk-wheelhouse=/data/dtk-wheels --no-b
 
 训练器要求 NumPy `>=1.26`。共享环境中的 NumPy 1.x 低于 1.26 时，启动器只在项目虚拟环境中安装 `numpy>=1.26,<2`，保留宿主的 NumPy，不跨到 NumPy 2。项目内的包优先于宿主包加载；满足要求的现有版本继续锁定。安装后检查 NumPy 与 PyTorch 的双向数据转换，通过后才继续启动。
 
+DTK 启动入口还会补齐运行环境中的 `setuptools>=69`，满足镜像内 `lmslim` 等厂商工具的要求。`pyproject.toml` 的构建依赖只作用于临时构建环境，不能替代这项运行依赖；首次安装和已有环境重试都会检查并补齐，宿主包保持不变。
+
 `--dtk-wheelhouse` 必须包含匹配的 Torch、TorchVision wheel 及其依赖。基础厂商包从本地目录安装，不从普通网络索引寻找替代包；配套 Triton 可在同一步安装。
 
 其他训练依赖从所选 Python 包源获取。启动器保留厂商 Torch、TorchVision、Triton 的版本约束，依赖冲突时停止安装。FlashAttention、xFormers 通过运行环境页安装，不因文件出现在 wheel 目录中而自动启用。
@@ -67,6 +69,7 @@ DTK_ROOT=/opt/dtk ./studio-linux-dtk.sh --dtk-wheelhouse=/data/dtk-wheels --no-b
 | --- | --- |
 | `新环境里没有读到 … PyTorch 2.5.1（读到 2.5.1+das.opt1.dtk2604）` | 旧脚本混用了运行时版本与安装包版本。更新项目源码，再执行原部署命令，无需替换厂商 PyTorch。 |
 | `numpy>=1.26` 与 `numpy==1.25.0` 冲突 | 旧脚本锁住了低于训练器要求的宿主 NumPy。更新项目源码后，原命令会在项目虚拟环境中补齐 NumPy；不需要卸载宿主包或加 `--reinstall`。更换镜像源不能解决版本约束冲突。 |
+| `lmslim … requires setuptools>=69.0.0, but you have setuptools 65.5.0` | 项目环境中的 setuptools 低于厂商工具要求。即使末尾显示 `Successfully installed`，这项依赖仍未满足；更新源码后重跑原部署命令即可补齐。 |
 
 通过 Git 安装的项目可在源码目录运行 `git pull --ff-only`；通过源码压缩包安装的，更新项目源码文件并保留原来的 `environment/`、`studio_data/` 和自定义数据目录。重试时继续使用原来的 `DTK_ROOT`、`--env-root`、`--data-root` 等参数。
 

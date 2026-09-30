@@ -50,6 +50,8 @@ server = [
 ]
 # Selected automatically by the launcher only on NVIDIA hosts.
 nvidia = ["nvidia-ml-py>=12.0; sys_platform == 'win32' or sys_platform == 'linux'"]
+# Vendor tools such as lmslim need setuptools in the runtime environment, outside build isolation.
+dtk = ["setuptools>=69"]
 # CUDA-only accelerators; never imported unconditionally.
 cuda = [
     "bitsandbytes>=0.43",
