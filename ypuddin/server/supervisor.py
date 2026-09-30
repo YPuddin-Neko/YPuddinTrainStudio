@@ -60,13 +60,13 @@ def _exit_diagnostics(log_path: Path) -> list[str]:
             details.append(errors[-1][:500])
     except OSError as exc:
         if exc.errno == errno.ENOSPC:
-            details.append(f"退出检查读取日志时遇到磁盘空间不足（ENOSPC）：{log_path}")
+            details.append(f"磁盘可用空间不足（ENOSPC）：{log_path}")
     try:
         if shutil.disk_usage(log_path.parent).free == 0:
-            details.append(f"退出检查发现日志目录所在磁盘可用空间为 0 字节：{log_path.parent}")
+            details.append(f"磁盘可用空间不足：{log_path.parent}")
     except OSError as exc:
         if exc.errno == errno.ENOSPC:
-            details.append(f"退出检查查询日志目录空间时遇到磁盘空间不足（ENOSPC）：{log_path.parent}")
+            details.append(f"磁盘可用空间不足（ENOSPC）：{log_path.parent}")
     return details
 
 
