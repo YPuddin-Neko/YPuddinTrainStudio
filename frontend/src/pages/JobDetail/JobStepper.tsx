@@ -8,9 +8,10 @@ import OverflowStrip from '../../components/OverflowStrip';
 
 type StepState = 'done' | 'current' | 'pending' | 'pausing' | 'paused' | 'failed' | 'stopping' | 'stopped' | 'resumed' | 'idle';
 
-const PREPARING = ['starting', 'checking_communication', 'loading', 'indexing', 'injecting', 'prepared'];
+const PREPARING = ['starting', 'checking_communication', 'loading', 'indexing'];
 // Stepper positions of the worker phases; position 2 reports a pause or an error.
-const PHASE_POSITION: Record<string, number> = { preparing: 0, caching: 1, training: 3, finalizing: 4 };
+// Adapter and optimizer setup follows caching and belongs to the training stage.
+const PHASE_POSITION: Record<string, number> = { preparing: 0, caching: 1, injecting: 3, prepared: 3, training: 3, finalizing: 4 };
 
 function phaseGroup(phase: string): string {
   return PREPARING.includes(phase) ? 'preparing' : phase.startsWith('caching_') ? 'caching' : phase;

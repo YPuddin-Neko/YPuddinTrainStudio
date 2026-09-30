@@ -140,10 +140,10 @@ def evaluation(method):
 
 
 class _ProgressLog:
-    """Log a long loop when it starts, at most every 15 seconds while it runs, and when it ends."""
+    """Log the initial cache check and throttle progress, which includes existing entries."""
 
-    def __init__(self, label: str) -> None:
-        self.label = label
+    def __init__(self, label: str, *, start_label: str) -> None:
+        self.label, self.start_label = label, start_label
         self.started = time.monotonic()
         self.last = 0.0
 
@@ -151,7 +151,7 @@ class _ProgressLog:
         now = time.monotonic()
         if done == 0 or (done < total and now - self.last >= 15):
             self.last = now
-            log.info("%s: %d/%d", self.label, done, total)
+            log.info("%s: %d/%d", self.start_label if done == 0 else self.label, done, total)
 
     @property
     def elapsed(self) -> float:
@@ -447,7 +447,7 @@ class Trainer:
 
         if cfg.dataset.cache_latents:
             self.emit("phase.changed", phase="caching_latents")
-            latent_log = _ProgressLog("VAE encoding")
+            latent_log = _ProgressLog("VAE cache preparation", start_label="checking VAE cache")
             n = cache_latents(
                 self.bundle,
                 self.loaded.latent.encode,
@@ -905,7 +905,7 @@ class Trainer:
             for p in prompts:
                 captions.update(((TextCache.PROMPTS, p.prompt), (TextCache.PROMPTS, p.negative)))
         ordered = sorted(captions)
-        text_log = _ProgressLog("text encoding")
+        text_log = _ProgressLog("text cache preparation", start_label="checking text cache")
         n = build_text_cache(
             ordered,
             self.text_cache,

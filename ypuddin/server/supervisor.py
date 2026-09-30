@@ -613,7 +613,7 @@ class JobSupervisor:
                 cmd = [
                     self.python,
                     "-m",
-                    "torch.distributed.run",
+                    "ypuddin.distributed_run",
                     "--standalone",
                     f"--nproc_per_node={count}",
                     "-m",

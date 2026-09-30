@@ -2,7 +2,7 @@ import type { JobLogLine } from '../api/types';
 import { translateLogMessage } from './logTranslations';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-export type LogFilter = 'all' | 'warn' | 'error';
+export type LogFilter = 'all' | 'info' | 'warn' | 'error';
 
 /** One record with the lines that belong to it (traceback frames, multi-line text). */
 export interface LogEntry {
@@ -16,9 +16,12 @@ export interface LogEntry {
   /** Chinese reading of a fixed trainer message; the original stays in ``msg``. */
   translated?: string;
   detail: string[];
+  translatedDetail?: string[];
 }
 
 const RANK: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
+const PROCESS_RANK = /^\[rank(\d+)\]:/;
+const WARNING_HEAD = /^(?:\[rank\d+\]:\s*)?(?:[^\n]+:\d+:\s*)?\w*Warning:/;
 
 export function logLevel(value: string | null | undefined): LogLevel {
   const level = (value || '').toLowerCase();
@@ -35,17 +38,25 @@ export function logLevel(value: string | null | undefined): LogLevel {
 export function groupLogLines(lines: JobLogLine[]): LogEntry[] {
   const entries: LogEntry[] = [];
   let current: LogEntry | null = null;
+  let traceback = false;
   for (const line of lines) {
     const kind = line.kind ?? 'text';
     const level = logLevel(line.level);
-    const joins = current !== null && (kind === 'text' || (kind === 'traceback' && RANK[current.level] >= RANK.warn));
+    const rank = line.msg.match(PROCESS_RANK)?.[1];
+    const previousRank = current?.msg.match(PROCESS_RANK)?.[1];
+    const differentRank = rank !== undefined && previousRank !== undefined && rank !== previousRank;
+    const warningHead = kind === 'text' && !traceback && WARNING_HEAD.test(line.msg);
+    const joins = current !== null && !differentRank && !warningHead
+      && ((kind === 'text' && (level === 'info' || RANK[level] <= RANK[current.level]))
+      || (kind === 'traceback' && RANK[current.level] >= RANK.warn));
     if (joins && current) {
       current.detail.push(line.msg);
-      // Headerless output has no declared level; the most severe line decides it.
-      if (current.kind === 'text' && RANK[level] > RANK[current.level]) current.level = level;
+      if (RANK[level] > RANK[current.level]) current.level = level;
+      if (kind === 'traceback') traceback = true;
       continue;
     }
     current = { id: line.offset, kind, ts: line.ts ?? null, level, source: line.source ?? null, msg: line.msg, detail: [] };
+    traceback = kind === 'traceback';
     entries.push(current);
   }
   return entries;
@@ -54,17 +65,24 @@ export function groupLogLines(lines: JobLogLine[]): LogEntry[] {
 export function translateLogEntries(entries: LogEntry[]): LogEntry[] {
   return entries.map(entry => {
     const translated = translateLogMessage(entry.msg);
-    return translated ? { ...entry, translated } : entry;
+    const detail = entry.detail.map(message => translateLogMessage(message));
+    const hasDetail = detail.some(message => message !== null);
+    return translated || hasDetail ? {
+      ...entry,
+      ...(translated ? { translated } : {}),
+      ...(hasDetail ? { translatedDetail: detail.map((message, index) => message ?? entry.detail[index]) } : {}),
+    } : entry;
   });
 }
 
 export function visibleLogEntries(entries: LogEntry[], { filter, debug, query }: { filter: LogFilter; debug: boolean; query: string }): LogEntry[] {
   const minimum = filter === 'error' ? RANK.error : filter === 'warn' ? RANK.warn : debug ? RANK.debug : RANK.info;
   const needle = query.trim().toLocaleLowerCase();
-  return entries.filter(entry => RANK[entry.level] >= minimum && (!needle
+  return entries.filter(entry => (filter === 'info' ? entry.level === 'info' : RANK[entry.level] >= minimum) && (!needle
     || entry.msg.toLocaleLowerCase().includes(needle)
     || (entry.translated || '').toLocaleLowerCase().includes(needle)
     || (entry.source || '').toLocaleLowerCase().includes(needle)
+    || entry.translatedDetail?.some(line => line.toLocaleLowerCase().includes(needle))
     || entry.detail.some(line => line.toLocaleLowerCase().includes(needle))));
 }
 
@@ -87,5 +105,5 @@ export function logLevelTag(entry: LogEntry): string {
 export function logEntryText(entry: LogEntry): string {
   const time = logTime(entry.ts);
   const head = [time && `[${time}]`, logLevelTag(entry), entry.source ? `${entry.source}:` : '', entry.translated ?? entry.msg].filter(Boolean).join(' ');
-  return [head, ...entry.detail].join('\n');
+  return [head, ...(entry.translatedDetail ?? entry.detail)].join('\n');
 }

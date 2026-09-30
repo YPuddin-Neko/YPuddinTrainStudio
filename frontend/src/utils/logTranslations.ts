@@ -34,6 +34,14 @@ function adapterKinds(value: string): string {
 }
 
 const RULES: Rule[] = [
+  // PyTorch launcher and communication diagnostics; keep rank and all option values.
+  [/^Setting OMP_NUM_THREADS environment variable for each process to be (\d+) in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed\.\s*$/, m => `为避免系统负载过高，默认将每个进程的 OMP_NUM_THREADS 设为 ${m[1]}；可按应用需要调整线程数以提高性能。`],
+  [/^Warning: find_unused_parameters=True was specified in DDP constructor, but did not find any unused parameters in the forward pass\. This flag results in an extra traversal of the autograd graph every iteration,\s+which can adversely affect performance\. If your model indeed never has any unused parameters in the forward pass, consider turning this flag off\. Note that this warning may be a false positive if your model has flow control causing later iterations to have unused parameters\.(?: \(function operator\(\)\))?$/, () => 'DDP 已设置 find_unused_parameters=True，但本次前向计算未发现未使用的参数。此选项每次迭代额外遍历一次自动求导图，可能影响性能；仅在确认每次迭代所有参数都参与计算时才可关闭。若模型有分支控制，后续迭代仍可能出现未使用参数，此警告可能是误报。'],
+  [/^(?:WARNING: )?Logging before InitGoogleLogging\(\) is written to STDERR$/, () => 'InitGoogleLogging() 初始化前的日志会写入标准错误输出（STDERR）'],
+  [/^(\[PG ID \d+ PG GUID \S+ Rank \d+\]) ProcessGroupNCCL initialization options: ([\s\S]*)$/, m => `${m[1]} ProcessGroupNCCL 初始化选项：${m[2]}`],
+  [/^(\[PG ID \d+ PG GUID \S+ Rank \d+\]) ProcessGroupNCCL environments: ([\s\S]*)$/, m => `${m[1]} ProcessGroupNCCL 环境配置：${m[2]}`],
+  [/^((?:.*:\d+: UserWarning: )?)(?:1)?Torch was not compiled with memory efficient attention\.(?: \(Triggered internally at (.+)\))?$/, m => `${m[1]}当前 PyTorch 未编译内存高效注意力后端。${m[2] ? `（触发位置：${m[2]}）` : ''}`],
+
   // Model loading
   [/^loading (\w+) model components$/, m => `正在加载 ${FAMILIES[m[1]] || m[1]} 模型组件`],
   [/^model components loaded in ([\d.]+)s$/, m => `模型组件加载完成，用时 ${seconds(m[1])}`],
@@ -56,11 +64,16 @@ const RULES: Rule[] = [
   [/^training layout: buckets, (\d+) buckets: (.+)$/, m => `训练方法：分桶，${m[1]} 个分桶：${layoutSizes(m[2])}`],
   [/^VAE encoding: (\d+)\/(\d+)$/, m => `VAE 编码中：${m[1]}/${m[2]}`],
   [/^text encoding: (\d+)\/(\d+)$/, m => `文本编码中：${m[1]}/${m[2]}`],
+  [/^checking VAE cache: (\d+)\/(\d+)$/, m => `正在检查 VAE 缓存：${m[1]}/${m[2]}`],
+  [/^VAE cache preparation: (\d+)\/(\d+)$/, m => `VAE 缓存处理中：${m[1]}/${m[2]}`],
+  [/^checking text cache: (\d+)\/(\d+)$/, m => `正在检查文本缓存：${m[1]}/${m[2]}`],
+  [/^text cache preparation: (\d+)\/(\d+)$/, m => `文本缓存处理中：${m[1]}/${m[2]}`],
   [/^cached (\d+) latents in ([\d.]+)s$/, m => `VAE 编码完成：新缓存 ${m[1]} 张图片的潜空间，用时 ${seconds(m[2])}`],
   [/^cached (\d+) latents$/, m => `VAE 编码完成：新缓存 ${m[1]} 张图片的潜空间`],
   [/^all latents were already cached$/, () => 'VAE 编码：所有图片都已有缓存，无需重新编码'],
   [/^all text encodings were already cached$/, () => '文本编码：所有标注都已有缓存，无需重新编码'],
   [/^cached (\d+) text encodings \((\d+) distinct captions\) in ([\d.]+)s$/, m => `文本编码完成：新缓存 ${m[1]} 条（${m[2]} 条不同的标注），用时 ${seconds(m[3])}`],
+  [/^cached (\d+) text encodings \((\d+) captions of images and prompts\) in ([\d.]+)s$/, m => `文本编码完成：新缓存 ${m[1]} 条（共 ${m[2]} 条图片标注和提示词），用时 ${seconds(m[3])}`],
   [/^skipping unreadable image (.+) \((.+)\)$/, m => `跳过无法读取的图片 ${m[1]}（${m[2]}）`],
 
   // Training setup
@@ -127,11 +140,17 @@ const TONES: Array<[RegExp, 'pause' | 'resume' | 'success']> = [
 
 /** Pause reads in yellow, resume and successful completion in green. */
 export function logTone(message: string): 'pause' | 'resume' | 'success' | null {
-  return TONES.find(([pattern]) => pattern.test(message))?.[1] ?? null;
+  const text = message.replace(/^\[rank\d+\]:\s*/, '');
+  return TONES.find(([pattern]) => pattern.test(text))?.[1] ?? null;
 }
 
 /** The Chinese reading of a fixed trainer message, or null when the line has none. */
 export function translateLogMessage(message: string): string | null {
+  const rank = message.match(/^(\[rank\d+\]:\s*)([\s\S]*)$/);
+  if (rank) {
+    const translated = translateLogMessage(rank[2]);
+    return translated ? rank[1] + translated : null;
+  }
   for (const [pattern, render] of RULES) {
     const match = message.match(pattern);
     if (match) return render(match);

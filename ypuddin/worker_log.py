@@ -8,6 +8,7 @@ carry the same header instead of appearing as untimed stderr text.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 from typing import Any
@@ -15,6 +16,14 @@ from typing import Any
 FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 log = logging.getLogger("ypuddin.worker")
+
+
+def _worker_format() -> str:
+    try:
+        rank, world_size = int(os.environ["RANK"]), int(os.environ["WORLD_SIZE"])
+    except (KeyError, ValueError):
+        return FORMAT
+    return f"[rank{rank}]: {FORMAT}" if world_size > 1 and 0 <= rank < world_size else FORMAT
 
 
 def configure(level: str = "debug") -> None:
@@ -26,8 +35,13 @@ def configure(level: str = "debug") -> None:
     # Older saved configurations still pass a level; they must not hide new worker output.
     threshold = logging.DEBUG
     root = logging.getLogger()
+    format_ = _worker_format()
     if not root.handlers:
-        logging.basicConfig(format=FORMAT)
+        logging.basicConfig(format=format_)
+    for handler in root.handlers:
+        # The CLI installs its standard stream handler before it knows this is a worker.
+        if type(handler) is logging.StreamHandler:
+            handler.setFormatter(logging.Formatter(format_))
     root.setLevel(max(threshold, logging.INFO))
     logging.getLogger("ypuddin").setLevel(threshold)
     logging.captureWarnings(True)

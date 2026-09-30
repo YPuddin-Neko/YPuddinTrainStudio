@@ -42,12 +42,15 @@ function Highlight({ text, query }: { text: string; query: string }) {
 }
 
 function LogRow({ entry, query }: { entry: LogEntry; query: string }) {
+  const text = useWorkspaceText();
   const time = logTime(entry.ts);
+  const detail = entry.translatedDetail ?? entry.detail;
+  const original = entry.translated || entry.translatedDetail ? [entry.msg, ...entry.detail].join('\n') : undefined;
   return <div className="job-log-entry" data-level={entry.level} data-kind={entry.kind} data-tone={entry.level === 'info' ? logTone(entry.msg) ?? undefined : undefined}>
-    <time className="job-log-time" dateTime={entry.ts == null ? undefined : new Date(entry.ts * 1000).toISOString()} title={entry.ts == null ? undefined : new Date(entry.ts * 1000).toLocaleString()}>{time && `[${time}]`}</time>
+    <time className="job-log-time" dateTime={entry.ts == null ? undefined : new Date(entry.ts * 1000).toISOString()} title={entry.ts == null ? text('原始日志未记录时间', 'The original log has no timestamp') : new Date(entry.ts * 1000).toLocaleString()}>{`[${time || '--:--:--'}]`}</time>
     <span className="job-log-level">{logLevelTag(entry)}</span>
-    <span className="job-log-source" title={entry.source || undefined}>{logSource(entry.source)}</span>
-    <div className="job-log-message" title={entry.translated ? entry.msg : undefined}><Highlight text={entry.translated ?? entry.msg} query={query}/>{entry.detail.length > 0 && <pre><Highlight text={entry.detail.join('\n')} query={query}/></pre>}</div>
+    <span className="job-log-source" title={entry.source || text('原始日志未记录来源', 'The original log has no source')}>{logSource(entry.source) || text('未记录来源', 'No source')}</span>
+    <div className="job-log-message" title={original}><Highlight text={entry.translated ?? entry.msg} query={query}/>{detail.length > 0 && <pre><Highlight text={detail.join('\n')} query={query}/></pre>}</div>
   </div>;
 }
 
@@ -218,6 +221,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
     <div className="job-log-toolbar">
       <StudioSelect className="job-log-filter" aria-label={text('显示级别', 'Levels shown')} value={filter} onValueChange={value => setFilter(value as LogFilter)} options={[
         { value: 'all', label: text('全部级别', 'All levels') },
+        { value: 'info', label: text('仅信息', 'Info only') },
         { value: 'warn', label: text('警告及错误', 'Warnings and errors') },
         { value: 'error', label: text('仅错误', 'Errors only') },
       ]}/>

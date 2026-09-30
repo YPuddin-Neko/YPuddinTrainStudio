@@ -26,6 +26,11 @@ _GLOG = re.compile(
     + r"\[?(?P<level>[IWEF])(?P<month>\d{2})(?P<day>\d{2}) (?P<time>\d{2}:\d{2}:\d{2}(?:\.\d+)?)"
     r"\s+\d+\s+(?P<source>[^\]\s]+)\]\s?(?P<message>.*)$"
 )
+_BASIC_RECORD = re.compile(
+    _RANK + r"(?P<level>DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL|FATAL):"
+    r"(?P<source>[\w.\-<>]+):(?P<message>.*)$"
+)
+_BARE_RECORD = re.compile(_RANK + r"(?P<level>WARN(?:ING)?|ERROR|CRITICAL|FATAL):(?P<message>.*)$")
 _TRACEBACK = re.compile(_RANK + r"\s*Traceback \(most recent call last\):")
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _LEVELS = {"warning": "warn", "critical": "error", "fatal": "error"}
@@ -81,6 +86,24 @@ def parse_log_lines(lines: list[str], *, now: datetime | None = None) -> list[di
                     "source": match["source"],
                     "msg": (match["prefix"] or "") + match["message"],
                 }
+            )
+            continue
+        if match := _BASIC_RECORD.match(line):
+            level = match["level"].lower()
+            out.append(
+                {
+                    "kind": "record",
+                    "ts": None,
+                    "level": _LEVELS.get(level, level),
+                    "source": match["source"],
+                    "msg": (match["prefix"] or "") + match["message"],
+                }
+            )
+            continue
+        if match := _BARE_RECORD.match(line):
+            level = match["level"].lower()
+            out.append(
+                {"kind": "record", "ts": None, "level": _LEVELS.get(level, level), "source": None, "msg": line}
             )
             continue
         if _TRACEBACK.match(line):
