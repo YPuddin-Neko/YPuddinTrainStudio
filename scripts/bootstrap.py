@@ -863,7 +863,7 @@ def create_dtk_venv(
 # library paths the launcher exports; "share" says how a new venv can see that PyTorch: through its
 # system site-packages, or, when it lives inside another venv, through a .pth link to that venv.
 DTK_PYTHON_PROBE = r"""
-import json, platform, sys
+import importlib.metadata as metadata, json, platform, sys
 from pathlib import Path
 libc, libc_version = platform.libc_ver()
 out = {
@@ -874,8 +874,9 @@ try:
     import torch, torchvision
     location = Path(torch.__file__).resolve().parent.parent
     in_venv = sys.prefix != sys.base_prefix and location.is_relative_to(Path(sys.prefix).resolve())
+    # Vendor module versions may omit build suffixes; compare and pin package metadata in both environments.
     out.update(
-        torch=torch.__version__, torchvision=torchvision.__version__, hip=getattr(torch.version, "hip", None),
+        torch=metadata.version("torch"), torchvision=metadata.version("torchvision"), hip=getattr(torch.version, "hip", None),
         cuda=torch.version.cuda, location=str(location), share="link" if in_venv else "system",
     )
 except Exception as exc:
