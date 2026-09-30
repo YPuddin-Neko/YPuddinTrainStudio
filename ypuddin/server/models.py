@@ -369,6 +369,7 @@ class PlanMemory(_Out):
     heuristic: bool = True
     activations_mb_by_bucket: list[PlanActivation] = Field(default_factory=list)
     peak_mb_estimate: float | None = None
+    unavailable_issue: ConfigError | None = None
     # Peak under each activation checkpointing mode ("none", "block", "unsloth").
     checkpointing_peak_mb_estimates: dict[str, float] | None = None
     training_peak_mb_estimate: float | None = None

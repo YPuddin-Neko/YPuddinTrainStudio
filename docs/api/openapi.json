@@ -18571,6 +18571,16 @@
             ],
             "title": "Peak Mb Estimate"
           },
+          "unavailable_issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "checkpointing_peak_mb_estimates": {
             "anyOf": [
               {

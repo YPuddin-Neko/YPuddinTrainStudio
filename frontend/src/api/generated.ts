@@ -6283,6 +6283,7 @@ export interface components {
             activations_mb_by_bucket?: components["schemas"]["PlanActivation"][];
             /** Peak Mb Estimate */
             peak_mb_estimate?: number | null;
+            unavailable_issue?: components["schemas"]["ConfigError"] | null;
             /** Checkpointing Peak Mb Estimates */
             checkpointing_peak_mb_estimates?: {
                 [key: string]: number;

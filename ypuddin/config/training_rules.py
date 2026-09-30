@@ -100,11 +100,9 @@ def distributed_training_errors(cfg) -> list[dict[str, str]]:
         (bool(cfg.memory.blocks_to_swap), "memory.blocks_to_swap", "多卡训练暂不支持块换出，请设置为 0"),
         (cfg.memory.compile, "memory.compile", "多卡训练暂不支持编译，请关闭编译"),
         (
-            cfg.memory.activation_checkpointing not in ({"none", "block"} if sharded else {"none"}),
+            cfg.memory.activation_checkpointing not in {"none", "block"},
             "memory.activation_checkpointing",
-            "显存分片请选择逐块梯度检查点或关闭"
-            if sharded
-            else "多卡数据并行暂不支持梯度检查点，请选择关闭",
+            "多卡训练请选择逐块梯度检查点或关闭",
         ),
     ]
     if sharded:

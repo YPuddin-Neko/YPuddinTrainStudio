@@ -4,7 +4,7 @@ import type { Plan } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatBytesMB, formatParams } from '../../utils/format';
 import SourceBalance from './SourceBalance';
-import {configOptionLabel} from '../../utils/configPresentation';
+import {configOptionLabel, OPAQUE_CONFIG_ISSUE, presentConfigIssues} from '../../utils/configPresentation';
 import ConfigHelp from '../../components/ConfigHelp';
 import { SlidingIndicator } from '../../components/motion';
 import BucketGeometry from './BucketGeometry';
@@ -122,6 +122,9 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
   const totalSource = !plan?.total_steps || !plan.steps_per_epoch ? '' : plan.epochs && plan.total_steps === plan.epochs * plan.steps_per_epoch ? text(`${plan.epochs} 轮`, `${plan.epochs} epochs`) : text('按最大步数', 'max steps');
   const peak = plan?.memory?.peak_mb_estimate ?? null;
   const capacity = plan?.memory?.gpu_total_mb ?? null;
+  const memoryIssue = peak == null && plan?.memory?.unavailable_issue
+    ? presentConfigIssues([plan.memory.unavailable_issue], text('zh', 'en') === 'en')[0] : null;
+  const memoryIssueDetail = memoryIssue?.message === OPAQUE_CONFIG_ISSUE ? memoryIssue.detail : memoryIssue?.message;
   const overCapacity = peak != null && !!capacity && peak > capacity * 0.95;
   const tightMemory = !overCapacity && peak != null && !!capacity && peak > capacity * 0.9;
   const memoryBlocked = overCapacity && !!plan?.errors?.some(item => item.loc === 'memory');
@@ -188,13 +191,15 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
           <div><dt>{text('可训练参数', 'Trainable parameters')}</dt><dd>{formatParams(plan?.params?.trainable)}</dd></div>
         </dl>
         <div className={`estimate-memory${overCapacity ? ' is-over' : tightMemory ? ' is-tight' : ''}`}>
-          <div><span>{gpus > 1 ? text('每卡显存峰值估算', 'Estimated peak per GPU') : text('显存峰值估算', 'Estimated peak memory')}</span><strong>{formatBytesMB(peak)}{capacity ? <small> / {formatBytesMB(capacity)}</small> : null}</strong></div>
+          <div><span>{gpus > 1 ? text('每卡显存峰值估算', 'Estimated peak per GPU') : text('显存峰值估算', 'Estimated peak memory')}</span><strong>{memoryIssue
+            ? <button type="button" className="ui-link" title={memoryIssueDetail} onClick={() => onField && memoryIssue.path ? onField(memoryIssue.path) : onIssues?.()}>{text(`检查${memoryIssue.label}`, `Check ${memoryIssue.label}`)}</button>
+            : <>{formatBytesMB(peak)}{capacity ? <small> / {formatBytesMB(capacity)}</small> : null}</>}</strong></div>
           {capacity && peak != null ? <span className="estimate-meter" aria-hidden="true"><span style={{width: `${Math.min(100, peak / capacity * 100)}%`}}/></span> : null}
         </div>
         {overCapacity && capacity && peak != null && <div className="estimate-alert" role="alert">
           <strong>{memoryBlocked ? text('超过显卡容量，无法开始训练', 'Exceeds GPU memory; training cannot start') : text('超过显卡容量', 'Exceeds GPU memory')}</strong>
           <p>{memoryBlocked
-            ? text(`预计峰值比本机最大显卡的 ${formatBytesMB(capacity)} 多 ${formatBytesMB(peak - capacity * 0.95)}（保留 5% 余量）。可以这样减少显存占用：`, `The estimate needs ${formatBytesMB(peak - capacity * 0.95)} more than this machine's largest GPU (${formatBytesMB(capacity)}, keeping 5% headroom). Reduce memory with:`)
+            ? text(`预计峰值比单卡可用预算多 ${formatBytesMB(peak - capacity * 0.95)}（容量 ${formatBytesMB(capacity)}，保留 5% 余量）。可以这样减少显存占用：`, `The estimate exceeds the per-GPU budget by ${formatBytesMB(peak - capacity * 0.95)} (${formatBytesMB(capacity)} capacity, keeping 5% headroom). Reduce memory with:`)
             : text('启动前显存检查已在任务队列的调度设置中关闭，训练可能因显存不足而失败。', 'The pre-launch memory check is off in the queue settings, so training may fail for lack of memory.')}</p>
           <ul>{memoryFixes(plan?.memory, nativeMode, text).map(fix => <li key={fix.path}>{onField ? <button type="button" className="ui-link" onClick={() => onField(fix.path)}>{fix.label}</button> : fix.label}</li>)}</ul>
         </div>}

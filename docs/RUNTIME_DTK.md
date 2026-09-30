@@ -121,3 +121,5 @@ Klein 显式选择 FlashAttention 时，通过专用处理器调用厂商 `flash
 模型下载、扩展下载和普通依赖安装使用设置中的网络代理。服务启动前的安装过程仍读取终端代理环境变量。
 
 单任务多卡支持 DDP 和 FSDP。卡数、精度、优化器和训练对象要求见 [多卡训练](MULTI_GPU.md)。
+
+Krea 2 使用 Prodigy（神童）时可选择 DDP，并开启逐块梯度检查点。每张卡保留完整模型；右侧显存估算按每卡容量比较。FSDP 目前支持 AdamW、Adafactor、SGD，不支持 Prodigy。

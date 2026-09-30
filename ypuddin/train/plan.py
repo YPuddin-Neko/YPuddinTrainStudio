@@ -542,6 +542,20 @@ def _preview_invalid_config(
     )
 
 
+def _model_plan_draft(raw: dict[str, Any]) -> tuple[TrainConfig, dict[str, dict[str, Any]]]:
+    """Validate estimator inputs independently without repairing an invalid training draft."""
+    fields, issues = {}, {}
+    for name, field in TrainConfig.model_fields.items():
+        try:
+            fields[name] = field.annotation.model_validate(raw.get(name, {}))
+        except ValidationError as error:
+            fields[name] = None
+            issues[name] = validation_issues(error, prefix=[name])[0]
+    # This object is private to the planner. Invalid sections remain absent;
+    # their defaults must never produce estimates for a different configuration.
+    return TrainConfig.model_construct(**fields), issues
+
+
 def plan(
     cfg: TrainConfig | dict[str, Any],
     *,
@@ -561,26 +575,54 @@ def plan(
         "compute_policy": None,
         "source_balance": None,
     }
+    draft = False
+    memory_issue = None
     try:
         cfg = TrainConfig.model_validate(cfg)
     except ValidationError as e:
         out.update(ok=False, errors=validation_issues(e))
         raw = cfg.to_dict() if isinstance(cfg, TrainConfig) else cfg
-        if isinstance(raw, dict):
-            _preview_invalid_config(raw, out, index_db_path=index_db_path)
-        return out
+        if not isinstance(raw, dict):
+            return out
+        _preview_invalid_config(raw, out, index_db_path=index_db_path)
+        cfg, field_issues = _model_plan_draft(raw)
+        draft = True
+        for name in ("model", "training", "adapter", "memory", "loop", "dataset"):
+            if name in field_issues:
+                out["memory"] = {"unavailable_issue": field_issues[name]}
+                return out
+        memory_issue = field_issues.get("optimizer") or field_issues.get("validation")
+        if memory_issue is None and "buckets" not in out:
+            memory_issue = next(
+                (issue for issue in out["errors"] if issue["loc"].startswith(("dataset", "validation"))),
+                out["errors"][0],
+            )
     try:
         family = get_family(cfg.model.family)
     except KeyError as e:
-        return {"ok": False, "errors": [{"loc": "model.family", "msg": str(e)}], "warnings": []}
+        issue = {"loc": "model.family", "msg": str(e)}
+        if issue not in out["errors"]:
+            out["errors"].append(issue)
+        out.update(ok=False, memory={"unavailable_issue": issue})
+        return out
     try:
         device_type = torch.device(device).type if device is not None else None
     except (RuntimeError, ValueError) as e:
-        return {"ok": False, "errors": [{"loc": "device", "msg": str(e)}], "warnings": []}
+        issue = {"loc": "device", "msg": str(e)}
+        out["errors"].append(issue)
+        out.update(ok=False, memory={"unavailable_issue": issue})
+        return out
     if device_type not in (None, "cpu", "mps", "cuda"):
         out["errors"].append({"loc": "device", "msg": "only cpu, mps and cuda execution are supported"})
-    out["warnings"].extend(value_advice(cfg, family.spec.latent.align))
-    cfg, compute_policy = resolve_training_compute_config(cfg, device_type, current_profile())
+    if cfg.sampling is not None:
+        out["warnings"].extend(value_advice(cfg, family.spec.latent.align))
+    try:
+        cfg, compute_policy = resolve_training_compute_config(cfg, device_type, current_profile())
+    except ValueError as error:
+        issue = {"loc": "model", "msg": str(error)}
+        out["errors"].append(issue)
+        out.update(ok=False, memory={"unavailable_issue": issue})
+        return out
     out["compute_policy"] = compute_policy
     metal_runtime = None
     if cfg.model.attention == "metal_flash" and device_type is not None:
@@ -590,7 +632,7 @@ def plan(
             out["errors"].append({"loc": "model.attention", "msg": str(error)})
     # Offline plans do not know which runtime recipe will apply. The execution
     # plan and trainer perform this check once the device is known.
-    if cfg.checkpoint.resume and device_type is not None:
+    if cfg.checkpoint is not None and cfg.checkpoint.resume and device_type is not None:
         metadata_path = Path(cfg.checkpoint.resume) / "state.json"
         if metadata_path.is_file():
             try:
@@ -659,7 +701,9 @@ def plan(
             f"{cfg.model.attention} attention requires CUDA",
         ),
         (
-            device_type in ("cpu", "mps") and "8bit" in cfg.optimizer.type.lower(),
+            cfg.optimizer is not None
+            and device_type in ("cpu", "mps")
+            and "8bit" in cfg.optimizer.type.lower(),
             "optimizer.type",
             "8-bit optimizers require CUDA",
         ),
@@ -670,7 +714,8 @@ def plan(
         ),
     ]
     out["errors"].extend({"loc": loc, "msg": message} for failed, loc, message in checks if failed)
-    out["errors"].extend(family.training_options_errors(cfg))
+    if cfg.objective is not None and cfg.sampling is not None:
+        out["errors"].extend(family.training_options_errors(cfg))
     effective_dtype = (
         "fp32"
         if device_type in ("cpu", "mps")
@@ -695,14 +740,20 @@ def plan(
     # ---- data
     ds = cfg.dataset
     native = ds.resolution_mode == "native"
-    counts = _append_data_plan(
-        out,
-        cfg,
-        family.spec.latent,
-        loop=cfg.loop,
-        seed=cfg.loop.seed,
-        index_db_path=index_db_path,
-    )
+    if draft:
+        counts = {}
+        for bucket in out.get("buckets", []):
+            key = (bucket["w"], bucket["h"])
+            counts[key] = counts.get(key, 0) + bucket["items"]
+    else:
+        counts = _append_data_plan(
+            out,
+            cfg,
+            family.spec.latent,
+            loop=cfg.loop,
+            seed=cfg.loop.seed,
+            index_db_path=index_db_path,
+        )
 
     # ---- parameters (meta device, no weights)
     params: dict[str, Any] = {}
@@ -721,9 +772,9 @@ def plan(
             presets = family.presets()
             full_training = cfg.training.mode == "full"
             if not full_training and cfg.training.train_backbone and cfg.adapter.preset not in presets:
-                out["errors"].append(
-                    {"loc": "adapter.preset", "msg": f"unknown preset; available: {sorted(presets)}"}
-                )
+                issue = {"loc": "adapter.preset", "msg": f"unknown preset; available: {sorted(presets)}"}
+                out["errors"].append(issue)
+                memory["unavailable_issue"] = issue
             else:
                 error_loc = "adapter"
                 if full_training:
@@ -793,6 +844,13 @@ def plan(
                     out["errors"].append(
                         {"loc": "adapter", "msg": "adapter rules select no trainable parameters"}
                     )
+                if memory_issue is None and cfg.loop.distributed_strategy == "fsdp":
+                    from ypuddin.config.training_rules import distributed_training_errors
+
+                    memory_issue = next(iter(distributed_training_errors(cfg)), None)
+                if memory_issue is not None:
+                    out.update(params=params, memory={"unavailable_issue": memory_issue})
+                    return out
                 error_loc = "memory"
                 # A loader may retain native FP8 even when model.dtype is BF16.
                 # Explicit base_precision applies only to selected adapter targets.
@@ -1068,7 +1126,9 @@ def plan(
                         }
                     )
         except Exception as e:  # noqa: BLE001
-            out["errors"].append({"loc": error_loc, "msg": f"could not prepare model/adapter plan: {e}"})
+            issue = {"loc": error_loc, "msg": f"could not prepare model/adapter plan: {e}"}
+            out["errors"].append(issue)
+            memory["unavailable_issue"] = issue
     out["params"] = params
     out["memory"] = memory
     out["text_encoding"] = (
