@@ -13,6 +13,7 @@ import { formatBytes } from '../../utils/format';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import Dialog from '../Dialog';
 import StudioSelect from '../StudioSelect';
+import { LazyImage } from '../Loading';
 import DatasetImagePane from './DatasetImagePane';
 import type { WorkspaceDataset } from './ProjectDatasetCards';
 
@@ -87,7 +88,7 @@ function CurationWorkspace({ datasetId, selector, readOnly, onChanged }: { datas
     {preview && <Dialog title={text('图片预览', 'Image preview')} wide onClose={() => setPreview(null)}>
       <div className="dataset-preview" data-testid="curation-preview">
         <div>
-          <img src={apiUrl(`/datasets/${datasetId}/images/${preview.hash}/file`)} alt={preview.path}/>
+          <div className="dataset-preview-image" style={previewImage?.width && previewImage.height ? { aspectRatio: `${previewImage.width} / ${previewImage.height}` } : undefined}><LazyImage src={apiUrl(`/datasets/${datasetId}/images/${preview.hash}/file`)} alt={preview.path}/></div>
           {previewImage && <dl>
             <div><dt>{text('文件', 'File')}</dt><dd>{previewImage.rel_path}</dd></div>
             <div><dt>{text('尺寸', 'Size')}</dt><dd>{previewImage.width} × {previewImage.height}</dd></div>

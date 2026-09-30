@@ -20,6 +20,7 @@ import './dataset-workspace.css';
 import ProjectDataImport from '../ProjectDetail/ProjectDataImport';
 import DatasetImagePane from '../../components/datasets/DatasetImagePane';
 import ProgressBar from '../../components/ProgressBar';
+import { LazyImage } from '../../components/Loading';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
 import DatasetNavigationGuard from '../../components/datasets/DatasetNavigationGuard';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -356,7 +357,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
             </header>
             <div className="caption-dialog-body">
               <div>
-                <img src={apiUrl(`/datasets/${id}/images/${activeImage}/file`)} alt={activeImg?.rel_path || ''} className="caption-dialog-image"/>
+                <div className="caption-dialog-image-frame"><LazyImage src={apiUrl(`/datasets/${id}/images/${activeImage}/file`)} alt={activeImg?.rel_path || ''} className="caption-dialog-image" width={activeImg?.width} height={activeImg?.height}/></div>
                 {activeImg && (
                   <div className="caption-dialog-meta" data-testid="caption-meta">
                     <span>{t('dataset.resolution', '分辨率')}: <span className="tabular-nums">{activeImg.width}×{activeImg.height}</span></span>

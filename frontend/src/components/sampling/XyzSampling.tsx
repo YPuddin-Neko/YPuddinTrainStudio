@@ -13,6 +13,7 @@ import GpuDevicePicker from '../GpuDevicePicker';
 import ProgressBar from '../ProgressBar';
 import { gpuDeviceLabel } from '../../utils/gpuDevices';
 import Dialog from '../Dialog';
+import { LazyImage } from '../Loading';
 import { axisCount, axisNames, checkpointLabel, isActive, isWaiting, parseAxis, taskProgress, useStatusLabel, type AxisKey, type XyzAxis, type XyzCell, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
 import XyzHistory from './XyzHistory';
 import './xyz-sampling.css';
@@ -309,7 +310,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
             <table className="xyz-grid" data-single={xValues.length * yValues.length === 1 || undefined} style={{ minWidth: (rowHeads ? 88 : 0) + xValues.length * 150 }}>
               {request && columnHeads !== rowHeads && <caption>{columnHeads ? `${name(request.x.key)} →` : `${name(request.y!.key)} ↓`}</caption>}
               {request && columnHeads && <thead><tr>{rowHeads && <th className="xyz-corner">{`${name(request.y!.key)} ↓`}<br/>{`${name(request.x.key)} →`}</th>}{xValues.map((value, x) => <th key={x} title={displayValue(request.x, value)}>{displayValue(request.x, value)}</th>)}</tr></thead>}
-              <tbody>{yValues.map((value, y) => <tr key={y}>{rowHeads && <th className="xyz-row-head" title={displayValue(request?.y, value)}>{displayValue(request?.y, value)}</th>}{xValues.map((_, x) => { const cell = cells.get(`${x}:${y}`); return <td key={x}>{cell ? <button type="button" className="xyz-cell" onClick={() => setPreview(cell)} aria-label={text(`查看第 ${x + 1} 列第 ${y + 1} 行`, `View column ${x + 1}, row ${y + 1}`)}><img src={imageUrl(cell.url)} loading="lazy" alt={`${name(request!.x.key)} ${displayValue(request?.x, cell.x_value)}${request?.y ? `, ${name(request.y.key)} ${displayValue(request.y, cell.y_value)}` : ''}`} width={request?.width} height={request?.height}/></button> : <PendingCell task={task} drawing={isActive(task) && !isWaiting(task) && (page * yValues.length + y) * xValues.length + x === task.done}/>}</td>; })}</tr>)}</tbody>
+              <tbody>{yValues.map((value, y) => <tr key={y}>{rowHeads && <th className="xyz-row-head" title={displayValue(request?.y, value)}>{displayValue(request?.y, value)}</th>}{xValues.map((_, x) => { const cell = cells.get(`${x}:${y}`); return <td key={x}>{cell ? <button type="button" className="xyz-cell" style={{'--xyz-image-ratio': `${request?.width || 1} / ${request?.height || 1}`} as React.CSSProperties} onClick={() => setPreview(cell)} aria-label={text(`查看第 ${x + 1} 列第 ${y + 1} 行`, `View column ${x + 1}, row ${y + 1}`)}><LazyImage src={imageUrl(cell.url)} loading="lazy" alt={`${name(request!.x.key)} ${displayValue(request?.x, cell.x_value)}${request?.y ? `, ${name(request.y.key)} ${displayValue(request.y, cell.y_value)}` : ''}`} width={request?.width} height={request?.height}/></button> : <PendingCell task={task} drawing={isActive(task) && !isWaiting(task) && (page * yValues.length + y) * xValues.length + x === task.done}/>}</td>; })}</tr>)}</tbody>
             </table>
           </div>
         </> : <div className="xyz-empty"><Grid2X2 size={26} aria-hidden="true"/><span>{text('还没有对比图', 'No comparisons yet')}</span></div>}
@@ -322,7 +323,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
       {deleteError && <p role="alert" className="xyz-task-error">{deleteError}</p>}
       <div className="task-actions"><button type="button" className="ui-btn" disabled={deleteBusy} onClick={() => setDeleting(null)}>{text('取消', 'Cancel')}</button><button type="button" className="ui-btn ui-btn-danger" disabled={deleteBusy} onClick={() => void remove()}>{deleteBusy ? text('正在删除…', 'Deleting…') : text('删除记录和图片', 'Delete record and images')}</button></div>
     </Dialog>}
-    {preview && <Dialog title={`${text('模型测试图片', 'Model test image')} · ${displayValue(request?.x, preview.x_value)}`} wide onClose={() => setPreview(null)}><img className="xyz-full-image" src={imageUrl(preview.url)} alt={request?.prompt}/><div className="xyz-image-details"><span>Seed {preview.seed} · {preview.steps} {text('步', 'steps')} · CFG {preview.cfg} · {preview.sampler} / {preview.scheduler}{!fullModel && <> · LoRA {preview.adapter_scale}</>}</span><a className="ui-btn ui-btn-sm" href={imageUrl(preview.url)} download><Download size={14}/>{text('下载原图', 'Download image')}</a></div></Dialog>}
+    {preview && <Dialog title={`${text('模型测试图片', 'Model test image')} · ${displayValue(request?.x, preview.x_value)}`} wide onClose={() => setPreview(null)}><div className="xyz-full-frame"><LazyImage className="xyz-full-image" src={imageUrl(preview.url)} alt={request?.prompt} width={request?.width} height={request?.height}/></div><div className="xyz-image-details"><span>Seed {preview.seed} · {preview.steps} {text('步', 'steps')} · CFG {preview.cfg} · {preview.sampler} / {preview.scheduler}{!fullModel && <> · LoRA {preview.adapter_scale}</>}</span><a className="ui-btn ui-btn-sm" href={imageUrl(preview.url)} download><Download size={14}/>{text('下载原图', 'Download image')}</a></div></Dialog>}
   </section>;
 }
 

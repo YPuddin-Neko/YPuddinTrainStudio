@@ -3,6 +3,7 @@ import { Crop, FolderOpen, ImagePlus, Loader2, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { useFamilies } from '../../api/hooks/useFamilies';
 import Dialog from '../../components/Dialog';
+import { LazyImage } from '../../components/Loading';
 import StudioSelect from '../../components/StudioSelect';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -17,7 +18,7 @@ export function ProjectCover({ source, name, crop }: { source?: string | null; n
   const text = useWorkspaceText();
   const [failed, setFailed] = React.useState(false);
   React.useEffect(() => setFailed(false), [source]);
-  return source && !failed ? <img src={source} alt={text(`${name} 的封面`, `Cover for ${name}`)} style={crop ? cropImageStyle(crop) : undefined} loading="lazy" onError={() => setFailed(true)}/>
+  return source && !failed ? <LazyImage src={source} alt={text(`${name} 的封面`, `Cover for ${name}`)} style={crop ? cropImageStyle(crop) : undefined} loading="lazy" onError={() => setFailed(true)}/>
     : <div className="project-cover-placeholder"><FolderOpen size={27} aria-hidden="true"/><span>{source ? text('封面暂不可用', 'Cover unavailable') : text('未设置封面', 'No cover')}</span></div>;
 }
 

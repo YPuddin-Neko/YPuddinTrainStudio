@@ -19,7 +19,7 @@ import CaptionResizeHandle from './CaptionResizeHandle';
 import {useEventStream} from '../../events/useEventStream';
 import {EVENT_TYPES} from '../../events/eventTypes';
 import { SlidingIndicator } from '../motion';
-import { LoadingNote } from '../Loading';
+import { LazyImage, LoadingNote } from '../Loading';
 import ImageSortSelect, { type ImageSort } from './ImageSortSelect';
 import OverflowStrip from '../OverflowStrip';
 
@@ -258,10 +258,11 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
                 </div>
                 <OverflowStrip className="caption-workspace-status-filter" role="group" label={text('标签状态筛选', 'Caption status filter')} activeKey={status}>
                   {statusFilters.map(([value, label, count]) => <button type="button" key={value} aria-pressed={status === value} disabled={saving} onClick={() => setFilter({ status: value })}>{label} {count ?? '—'}</button>)}
+                  <SlidingIndicator className="caption-status-indicator"/>
                 </OverflowStrip>
                 {tag && <button type="button" className="caption-workspace-clear" disabled={saving} onClick={() => setFilter({ tag: '' })} aria-label={text(`取消标签筛选：${tag}`, `Clear tag filter: ${tag}`)}><span>{text(`标签：${tag}`, `Tag: ${tag}`)}</span><X size={12}/></button>}
               </div>
-            <div className="caption-workspace-gallery" ref={grid} role="region" aria-busy={images.isFetching} aria-label={text('图片缩略图', 'Image thumbnails')} tabIndex={0}>{items.map(item => <button type="button" key={imageKey(item)} aria-label={text(`选择图片：${item.rel_path}`, `Select image: ${item.rel_path}`)} aria-pressed={item === image} disabled={saving || images.isFetching} onClick={() => perform(() => updateNavigation({ selected: imageKey(item) }))}><img src={apiUrl(`/datasets/${source.source.id}/images/${item.hash}/thumb?size=256`)} alt={item.rel_path} loading="lazy"/><span title={item.rel_path}>{item.rel_path}</span>{(item.caption_error || item.caption_status === 'invalid') ? <small className="caption-workspace-error">{text('标签错误', 'Invalid caption')}</small> : !item.caption && <small>{text('缺少标签', 'No caption')}</small>}</button>)}</div>
+            <div className="caption-workspace-gallery" ref={grid} role="region" aria-busy={images.isFetching} aria-label={text('图片缩略图', 'Image thumbnails')} tabIndex={0}>{items.map(item => <button type="button" key={imageKey(item)} aria-label={text(`选择图片：${item.rel_path}`, `Select image: ${item.rel_path}`)} aria-pressed={item === image} disabled={saving || images.isFetching} onClick={() => perform(() => updateNavigation({ selected: imageKey(item) }))}><div className="caption-workspace-thumbnail"><LazyImage src={apiUrl(`/datasets/${source.source.id}/images/${item.hash}/thumb?size=256`)} alt={item.rel_path} loading="lazy"/></div><span title={item.rel_path}>{item.rel_path}</span>{(item.caption_error || item.caption_status === 'invalid') ? <small className="caption-workspace-error">{text('标签错误', 'Invalid caption')}</small> : !item.caption && <small>{text('缺少标签', 'No caption')}</small>}</button>)}</div>
               <footer role="navigation" className="caption-workspace-pagination" aria-label={text('图片列表翻页','Image list pagination')}>
                 <span className="caption-workspace-count">{filtered ? `${images.data?.total ?? 0} / ${stats.data?.images ?? '—'}` : text(`${images.data?.total ?? 0} 张`, `${images.data?.total ?? 0} images`)}</span>
                 {pages > 1 && <div className="caption-workspace-pager"><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一页', 'Previous page')} disabled={page <= 1 || images.isFetching || saving} onClick={() => perform(() => updateNavigation({ page: page - 1, selected: '' }))}><ChevronLeft size={12}/></button><span>{images.data?.page || page}/{pages}</span><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一页', 'Next page')} disabled={page >= pages || images.isFetching || saving} onClick={() => perform(() => updateNavigation({ page: page + 1, selected: '' }))}><ChevronRight size={12}/></button></div>}
@@ -272,7 +273,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
           {!items.length ? <p className="caption-workspace-empty">{source.index_status === 'indexing' ? text('图片正在建立索引，完成后刷新即可查看。', 'Images are being indexed. Refresh when indexing completes.') : text('没有符合条件的图片。', 'No images match these filters.')}</p> : <div className="caption-workspace-body">
             <div className="caption-workspace-visual">
               {image && <>
-              <div className="caption-workspace-preview"><img src={apiUrl(`/datasets/${source.source.id}/images/${image.hash}/file`)} alt={text(`大图：${image.rel_path}`, `Full image: ${image.rel_path}`)}/></div>
+              <div className="caption-workspace-preview"><LazyImage src={apiUrl(`/datasets/${source.source.id}/images/${image.hash}/file`)} alt={text(`大图：${image.rel_path}`, `Full image: ${image.rel_path}`)}/></div>
               <div className="caption-workspace-image-heading"><strong>{image.rel_path}</strong><span>{image.width} × {image.height}</span><span>{image.caption_format?.toUpperCase() || 'TXT'}</span><div><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一张', 'Previous image')} disabled={page===1 && selectedIndex<=0 || saving || images.isFetching} onClick={()=>moveImage(-1)}><ChevronLeft size={14}/></button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一张', 'Next image')} disabled={page>=pages && selectedIndex>=items.length-1 || saving || images.isFetching} onClick={()=>moveImage(1)}><ChevronRight size={14}/></button></div></div>
               </>}
 

@@ -58,7 +58,7 @@
 
 .artifact-grid { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:12px; }
 .artifact-card { display:flex; flex-direction:column; min-width:0; overflow:hidden; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-panel); }
-.artifact-preview { position:relative; display:block; width:100%; aspect-ratio:1; overflow:hidden; border-bottom:1px solid var(--studio-line); background:var(--studio-canvas); }
+.artifact-preview { position:relative; display:block; width:100%; aspect-ratio:1; overflow:hidden; border-bottom:1px solid var(--studio-line); background-color:var(--studio-canvas); }
 .artifact-preview img { width:100%; height:100%; object-fit:contain; }
 .artifact-preview:enabled { cursor:zoom-in; }
 .artifact-preview:enabled:hover { background:color-mix(in srgb, var(--studio-accent) 6%, var(--studio-canvas)); }

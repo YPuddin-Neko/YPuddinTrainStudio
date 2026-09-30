@@ -50,8 +50,6 @@ export function metricLabels(chinese: boolean) {
 
 export function metricChartBase(xAxisName: string, yAxisName: string, formatSeries: (seriesName: string | undefined, value: unknown) => string = (_, value) => formatMetricValue(value)) {
   return {
-    // Live steps redraw at once instead of morphing the lines, so the hovered step's markers can be shown again right away.
-    animationDurationUpdate: 0,
     tooltip: {
       trigger: 'axis' as const, renderMode: 'richText' as const, confine: true,
       textStyle: { fontSize: 12 },

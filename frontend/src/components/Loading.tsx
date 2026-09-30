@@ -13,7 +13,13 @@ export function LoadingNote({ label, block = false, className = '' }: { label: s
  * An image that shimmers while it downloads and fades in once decoded. The caller's box is the frame:
  * it must be positioned, and the placeholder fills it.
  */
-export function LazyImage({ src, alt, className = '', fallback, onLoad, onError, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { src: string; fallback?: React.ReactNode }) {
+type LazyImageProps = React.ImgHTMLAttributes<HTMLImageElement> & { src: string; fallback?: React.ReactNode };
+
+export function LazyImage(props: LazyImageProps) {
+  return <ImageLoadState key={props.src} {...props}/>;
+}
+
+function ImageLoadState({ src, alt, className = '', fallback, onLoad, onError, ...props }: LazyImageProps) {
   const [loaded, setLoaded] = React.useState('');
   const [failed, setFailed] = React.useState('');
   // A cached image can finish before its load listener runs.

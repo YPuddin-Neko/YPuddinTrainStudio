@@ -11,6 +11,7 @@ import {
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsCoreOption } from 'echarts/core';
 import { readChartTheme, updateChartTheme } from './chartTheme';
+import { prefersReducedMotion } from '../utils/motion';
 
 // 按需注册，避免打包未使用的图表模块。
 echarts.use([
@@ -22,15 +23,6 @@ echarts.use([
   DataZoomSliderComponent,
   CanvasRenderer,
 ]);
-
-/** Index of the point in [x, y] data closest to x; -1 without data. */
-function nearestIndex(data: unknown, x: number): number {
-  if (!Array.isArray(data) || !data.length || !Number.isFinite(x)) return -1;
-  const at = (index: number) => { const point = data[index]; return Array.isArray(point) ? Number(point[0]) : index; };
-  let low = 0, high = data.length - 1;
-  while (low < high) { const middle = (low + high) >> 1; if (at(middle) < x) low = middle + 1; else high = middle; }
-  return low > 0 && Math.abs(at(low - 1) - x) <= Math.abs(at(low) - x) ? low - 1 : low;
-}
 
 type MediaRule = { query?: { maxWidth?: number }; option: Record<string, unknown> };
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -84,7 +76,8 @@ export function EChart({ option, style }: EChartProps) {
     const resolved = resolveMedia(option, ref.current.clientWidth);
     if (!always && resolved.matched === matchedMedia.current) return;
     matchedMedia.current = resolved.matched;
-    chart.setOption(resolved.option, { replaceMerge: ['series', 'yAxis'], lazyUpdate: true });
+    restoreTip.current = !!pointer.current;
+    chart.setOption({ ...resolved.option, animation: prefersReducedMotion() ? false : resolved.option.animation ?? true }, { replaceMerge: ['series', 'yAxis'], lazyUpdate: true });
   }, []);
 
   React.useEffect(() => {
@@ -100,21 +93,20 @@ export function EChart({ option, style }: EChartProps) {
     const leave = () => { pointer.current = null; };
     zr.on('mousemove', move);
     zr.on('globalout', leave);
-    // Redrawn series drop the markers of the hovered step, while the axis pointer still counts that step as
-    // highlighted and so never draws them again. Refresh the tip and highlight each line's point under the pointer.
+    // Redrawing removes temporary markers but leaves the axis pointer's highlight cache intact.
+    // Reset that cache, then let ECharts find the displayed points after sampling, zoom and legend filtering.
     const rendered = () => {
       if (!restoreTip.current) return;
       restoreTip.current = false;
       if (!pointer.current) return;
       const { x, y } = pointer.current;
+      chart.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' });
       chart.dispatchAction({ type: 'showTip', x, y });
-      const series = (latest.current as { series?: Array<{ data?: unknown }> } | null)?.series;
-      if (!Array.isArray(series)) return;
-      const [value] = chart.convertFromPixel({ gridIndex: 0 }, [x, y]) as unknown as number[];
-      const batch = series.map((item, seriesIndex) => ({ seriesIndex, dataIndex: nearestIndex(item.data, value) })).filter(item => item.dataIndex >= 0);
-      if (batch.length) chart.dispatchAction({ type: 'highlight', batch, notBlur: true });
     };
     chart.on('rendered', rendered);
+    const motionPreference = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    const updateMotion = () => apply(true);
+    motionPreference?.addEventListener?.('change', updateMotion);
     const themeObserver = new MutationObserver(() => {
       const nextDark = root.classList.contains('dark');
       if (nextDark === dark) return;
@@ -133,6 +125,7 @@ export function EChart({ option, style }: EChartProps) {
     }
     return () => {
       themeObserver.disconnect();
+      motionPreference?.removeEventListener?.('change', updateMotion);
       observer?.disconnect();
       window.removeEventListener('resize', onResize);
       chart.dispose();
@@ -141,7 +134,6 @@ export function EChart({ option, style }: EChartProps) {
   }, [apply]);
 
   React.useEffect(() => {
-    restoreTip.current = !!pointer.current;
     latest.current = option;
     apply(true);
   }, [option, apply]);
