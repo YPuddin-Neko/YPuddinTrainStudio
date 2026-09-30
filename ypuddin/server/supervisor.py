@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import logging
 import os
@@ -37,6 +38,36 @@ TERMINAL = ("completed", "failed", "cancelled", "paused")
 EVENT_BATCH_SIZE = 128
 EVENT_BATCH_BYTES = 256 * 1024
 RELEASE_WAIT_SECONDS = 30
+
+
+def _exit_diagnostics(log_path: Path) -> list[str]:
+    """Keep recorded errors separate from facts observed after the worker exited."""
+    details = []
+    try:
+        with log_path.open("rb") as stream:
+            size = stream.seek(0, os.SEEK_END)
+            start = max(0, size - 4000)
+            stream.seek(start)
+            lines = stream.read(4000).decode("utf-8", errors="replace").splitlines()
+        if start:
+            lines = lines[1:]
+        errors = [
+            line["msg"]
+            for line in parse_log_lines(lines)
+            if line["level"] == "error" and line["kind"] != "traceback" and line["msg"].strip()
+        ]
+        if errors:
+            details.append(errors[-1][:500])
+    except OSError as exc:
+        if exc.errno == errno.ENOSPC:
+            details.append(f"退出检查读取日志时遇到磁盘空间不足（ENOSPC）：{log_path}")
+    try:
+        if shutil.disk_usage(log_path.parent).free == 0:
+            details.append(f"退出检查发现日志目录所在磁盘可用空间为 0 字节：{log_path.parent}")
+    except OSError as exc:
+        if exc.errno == errno.ENOSPC:
+            details.append(f"退出检查查询日志目录空间时遇到磁盘空间不足（ENOSPC）：{log_path.parent}")
+    return details
 
 
 def training_device_error(
@@ -1021,7 +1052,7 @@ class JobSupervisor:
         failed_after_completion = job["status"] == "completed" and code is not None and code != 0
         if (job["status"] in TERMINAL or job_id in self._outcome_seen) and not failed_after_completion:
             self._outcome_seen.discard(job_id)
-            self.db.update("jobs", job_id, {"exit_code": code})
+            self._set_status(job_id, job["status"], exit_code=code)
             return
         self._outcome_seen.discard(job_id)
         error = (
@@ -1029,19 +1060,18 @@ class JobSupervisor:
             if failed_after_completion
             else f"process exited with code {code}"
         )
-        log_path = log_file(job)
-        if log_path.exists():
-            tail = log_path.read_bytes()[-4000:].decode("utf-8", errors="replace").strip().splitlines()
-            if tail:
-                error += ": " + parse_log_lines(tail[-1:])[0]["msg"][:500]
         status = "cancelled" if job["status"] == "cancelling" else "failed"
+        if status == "failed":
+            details = _exit_diagnostics(log_file(job))
+            if details:
+                error += ": " + "; ".join(details)
         self._set_status(
             job_id, status, finished_at=now(), exit_code=code, error=error if status == "failed" else None
         )
 
     def _set_status(self, job_id: str, status: str, **fields: Any) -> None:
         self.db.update("jobs", job_id, {"status": status, **fields})
-        row = self.db.fetchone("SELECT progress_json, error FROM jobs WHERE id=?", (job_id,))
+        row = self.db.fetchone("SELECT progress_json, error, exit_code FROM jobs WHERE id=?", (job_id,))
         self._publish(
             "job.state",
             {
@@ -1049,6 +1079,7 @@ class JobSupervisor:
                 "status": status,
                 "progress": json.loads(row["progress_json"] or "{}") if row else {},
                 "error": row["error"] if row else None,
+                "exit_code": row["exit_code"] if row else None,
             },
         )
         self._publish("queue.changed", {})

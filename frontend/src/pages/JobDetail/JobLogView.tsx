@@ -59,8 +59,8 @@ function LogRow({ entry, query }: { entry: LogEntry; query: string }) {
  * Live job log: reads new bytes while the worker runs and follows the end until
  * the reader scrolls up. Earlier output loads on demand above the first line.
  */
-export default function JobLogView({ jobId, live, active, recordedLevel }: {
-  jobId: string; live: boolean; active: boolean; recordedLevel?: string | null;
+export default function JobLogView({ jobId, live, active, recordedLevel, exitCode, failure }: {
+  jobId: string; live: boolean; active: boolean; recordedLevel?: string | null; exitCode?: number | null; failure?: React.ReactNode;
 }) {
   const text = useWorkspaceText();
   const { i18n } = useTranslation();
@@ -77,6 +77,8 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
   const [following, setFollowing] = React.useState(true);
   const [copied, setCopied] = React.useState<'done' | 'failed' | ''>('');
   const cursor = React.useRef({ start: 0, end: 0, busy: false, generation: 0 });
+  const finalReadPending = React.useRef(false);
+  const [readReady, setReadReady] = React.useState(0);
   const linesRef = React.useRef<JobLogLine[]>([]);
   const followingRef = React.useRef(true);
   const seenId = React.useRef(-1);
@@ -93,6 +95,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
 
   const load = React.useCallback(async () => {
     const generation = cursor.current.generation + 1;
+    finalReadPending.current = false;
     cursor.current = { start: 0, end: 0, busy: true, generation };
     commit([]); setLoaded(false); setError(''); setHasEarlier(false); followingRef.current = true; setFollowing(true);
     try {
@@ -107,14 +110,15 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
   }, [endpoint]);
   React.useEffect(() => { void load(); return () => { cursor.current.generation += 1; }; }, [load]);
 
-  const pull = React.useCallback(async () => {
+  const pull = React.useCallback(async (final = false) => {
     const state = cursor.current;
     if (state.busy) return;
     state.busy = true;
     const generation = state.generation;
     try {
       // A burst of output can exceed one read; catch up before the next tick.
-      for (let round = 0; round < 5; round += 1) {
+      for (let round = 0; final || round < 5; round += 1) {
+        const offset = state.end;
         const page = await apiClient.get<JobLogResponse>(endpoint, { params: { offset: state.end, limit: PAGE }, silent: true });
         if (cursor.current.generation !== generation) return;
         const fresh = page.lines.filter(line => line.offset >= state.end);
@@ -128,12 +132,15 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
           commit(next);
         }
         setError('');
-        if (!page.has_more) break;
+        if (!page.has_more || state.end <= offset) break;
       }
     } catch (failure) {
       if (cursor.current.generation === generation) setError(formatApiError(failure));
     } finally {
-      if (cursor.current.generation === generation) state.busy = false;
+      if (cursor.current.generation === generation) {
+        state.busy = false;
+        if (finalReadPending.current) setReadReady(value => value + 1);
+      }
     }
   }, [endpoint]);
 
@@ -143,12 +150,18 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
     const timer = window.setInterval(() => void pull(), POLL_MS);
     return () => window.clearInterval(timer);
   }, [active, live, loaded, pull]);
-  // The worker writes its last lines as it exits; read them once after it stops.
-  const wasLive = React.useRef(live);
+  // A terminal event can precede the final traceback; the exit code confirms process exit.
+  const previousRun = React.useRef({ jobId, live, exitCode });
   React.useEffect(() => {
-    if (wasLive.current && !live && loaded) void pull();
-    wasLive.current = live;
-  }, [live, loaded, pull]);
+    const previous = previousRun.current;
+    if (previous.jobId === jobId && ((previous.live && !live) || (exitCode != null && previous.exitCode !== exitCode))) {
+      finalReadPending.current = true;
+    }
+    previousRun.current = { jobId, live, exitCode };
+    if (!loaded || cursor.current.busy || !finalReadPending.current) return;
+    finalReadPending.current = false;
+    void pull(true);
+  }, [jobId, live, exitCode, loaded, pull, readReady]);
 
   const loadEarlier = async () => {
     const state = cursor.current, generation = state.generation;
@@ -219,6 +232,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel }: {
         : text('没有符合筛选条件的日志', 'No log lines match the filters');
 
   return <section className="job-log" aria-label={text('任务日志', 'Job log')}>
+    {failure}
     <div className="job-log-toolbar">
       <StudioSelect className="job-log-filter" aria-label={text('显示级别', 'Levels shown')} value={filter} onValueChange={value => setFilter(value as LogFilter)} options={[
         { value: 'all', label: text('全部级别', 'All levels') },

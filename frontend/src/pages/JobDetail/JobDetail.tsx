@@ -217,7 +217,7 @@ export default function JobDetail() {
   // 2. SSE 增量监听
   useEventStream(EVENT_TYPES.JOB_STATE, (data: any) => {
     if (data.job_id === id) {
-      setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
+      setJob((prev) => prev ? { ...mergeJobEvent(prev, data), ...(data.exit_code !== undefined ? { exit_code: data.exit_code } : {}) } : null);
       // A resumed run also brings its pause history.
       if (['completed', 'failed', 'cancelled', 'paused', 'running'].includes(data.status)) {
         void refreshSamples();
@@ -338,6 +338,7 @@ export default function JobDetail() {
   const totalEpochs = stepsPerEpoch && job?.progress?.total_steps != null ? Math.ceil(job.progress.total_steps / stepsPerEpoch) : configSnapshot?.loop?.epochs;
   const elapsed = job?.started_at != null ? Math.max(0, (job.finished_at ?? (['running','pausing','cancelling'].includes(job.status) ? clock : job.started_at)) - job.started_at) : null;
   const configurationName = job?.version_name || versionName || job?.name;
+  const failureNotice = job?.error ? <div role="alert" className="job-failure"><div><strong>{job.type === 'train' ? text('训练失败', 'Training failed') : text('任务失败', 'Job failed')}</strong><p>{job.error}</p></div>{activeTab !== 'logs' && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setActiveTab('logs')}><Terminal size={14}/>{text('查看日志', 'Open log')}</button>}</div> : null;
 
   return (
     <div className="job-monitor task-workspace" data-view={activeTab} data-testid="job-detail-page">
@@ -364,7 +365,7 @@ export default function JobDetail() {
       {actionError && <div role="alert" className="task-error">{actionError}</div>}
       {job?.archived_at != null && <div className="job-archived" role="status"><Archive size={15} aria-hidden="true"/><span>{text('此任务已归档，不再显示在队列和项目结果中，权重和记录仍保留。', 'This job is archived: it is hidden from the queue and project results; its weights and records are kept.')}</span>
         <button type="button" className="ui-btn ui-btn-sm" disabled={restoring} onClick={() => void restore()}><ArchiveRestore size={14}/>{text('恢复到训练历史', 'Restore to History')}</button></div>}
-      {job?.error && <div role="alert" className="job-failure"><div><strong>{job.type === 'train' ? text('训练失败', 'Training failed') : text('任务失败', 'Job failed')}</strong><p>{job.error}</p></div>{activeTab !== 'logs' && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setActiveTab('logs')}><Terminal size={14}/>{text('查看日志', 'Open log')}</button>}</div>}
+      {activeTab !== 'logs' && failureNotice}
       {/* 1. 头部指标与阶段时间线 */}
       {job?.type !== 'xyz' && <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
         <StatStrip label={text('训练核心指标','Training metrics')}>
@@ -440,7 +441,7 @@ export default function JobDetail() {
         </div>
       </Dialog>}
 
-      {activeTab === 'logs' && id && <JobLogView jobId={id} active live={!!job && ['running', 'pausing', 'cancelling'].includes(job.status)} recordedLevel={job?.type === 'xyz' ? null : configSnapshot?.logging?.level}/>}
+      {activeTab === 'logs' && id && <JobLogView jobId={id} active live={!!job && ['running', 'pausing', 'cancelling'].includes(job.status)} exitCode={job?.exit_code} failure={failureNotice} recordedLevel={job?.type === 'xyz' ? null : configSnapshot?.logging?.level}/>}
 
       {activeTab === 'config' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
