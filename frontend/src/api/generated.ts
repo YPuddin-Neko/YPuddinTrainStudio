@@ -4633,6 +4633,8 @@ export interface components {
         JobLog: {
             /** Lines */
             lines: components["schemas"]["LogLine"][];
+            /** @description Saved supervisor failure absent from the worker log; does not advance byte offsets. */
+            terminal?: components["schemas"]["LogLine"] | null;
             /**
              * Start Offset
              * @default 0
@@ -11753,7 +11755,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The complete worker log */
+            /** @description The complete job log, including saved supervisor failures */
             200: {
                 headers: {
                     [name: string]: unknown;

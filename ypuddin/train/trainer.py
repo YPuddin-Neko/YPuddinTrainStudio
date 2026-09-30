@@ -90,6 +90,14 @@ log = logging.getLogger(__name__)
 DTYPES = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32, "no": torch.float32}
 
 
+def _log_exception(message: str, *args: Any) -> None:
+    try:
+        log.exception(message, *args)
+    except Exception:
+        # A failing log destination must not replace the exception being reported.
+        pass
+
+
 class StopRequested(Exception):
     def __init__(self, kind: str):
         super().__init__(kind)
@@ -1539,6 +1547,13 @@ class Trainer:
         with self._watching_control():
             return self._run()
 
+    def _report_failure(self, error: Exception, message: str, **data: Any) -> None:
+        _log_exception(message)
+        try:
+            self.emit("run.failed", error=f"{type(error).__name__}: {error}", **data)
+        except Exception:
+            _log_exception("could not record run.failed event")
+
     def _run(self) -> str:
         outcome = "finished"
         try:
@@ -1570,14 +1585,11 @@ class Trainer:
             return outcome
         except Exception as e:
             outcome = "failed"
-            self.emit("run.failed", error=f"{type(e).__name__}: {e}", step=self.progress.step)
+            self._report_failure(e, "training failed", step=self.progress.step)
             raise
         finally:
             self._preparing = False
-            if self._gpu_sampler is not None:
-                self._gpu_sampler.close()
-            self._close_logs(failed=outcome == "failed")
-            self.emitter.close()
+            self._close_resources(failed=outcome == "failed")
 
     def _primary_call(self, function, *args, **kwargs):
         """Run on the process that decides for all; one process decides for itself."""
@@ -1662,6 +1674,24 @@ class Trainer:
         if self._logs is not None:
             self._logs.close(failed=failed)
             self._logs = None
+
+    def _close_resources(self, *, failed: bool) -> None:
+        closers = []
+        if self._gpu_sampler is not None:
+            closers.append(("GPU sampler", self._gpu_sampler.close))
+        closers.extend(
+            (
+                ("training log sinks", partial(self._close_logs, failed=failed)),
+                ("event stream", self.emitter.close),
+            )
+        )
+        for name, close in closers:
+            try:
+                close()
+            except Exception:
+                if not failed:
+                    raise
+                _log_exception("could not close %s after failure", name)
 
     def _record_dir(self) -> Path:
         """The run's log folder, which keeps its records; the output folder holds only products."""
@@ -2304,12 +2334,11 @@ def cache(cfg: TrainConfig, *, device: str | None = None, emitter: Emitter | Non
         return outcome
     except Exception as e:  # noqa: BLE001
         failed = True
-        trainer.emit("run.failed", error=f"{type(e).__name__}: {e}")
+        trainer._report_failure(e, "caching failed")
         raise
     finally:
         trainer._preparing = False
-        trainer._close_logs(failed=failed)
-        em.close()
+        trainer._close_resources(failed=failed)
 
 
 def train(

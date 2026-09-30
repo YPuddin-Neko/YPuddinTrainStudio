@@ -25,7 +25,7 @@ from .db import Database, new_id, now
 from .environment import maintenance_blocked, maintenance_reason
 from .gpu_selection import selection_error
 from .hardware import gpu_info
-from .job_logs import parse_log_lines
+from .job_logs import append_failure_record, parse_log_lines
 from .job_paths import event_file, log_file, state_directory
 from .memory_fit import capacity_shortfall, device_label, fits_now, gb, shortfall_reason
 from .sample_events import sample_event_loss
@@ -1070,8 +1070,15 @@ class JobSupervisor:
         )
 
     def _set_status(self, job_id: str, status: str, **fields: Any) -> None:
-        self.db.update("jobs", job_id, {"status": status, **fields})
-        row = self.db.fetchone("SELECT progress_json, error, exit_code FROM jobs WHERE id=?", (job_id,))
+        with self.db.lock:
+            self.db.update("jobs", job_id, {"status": status, **fields})
+            row = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
+            if row and status == "failed" and "exit_code" in fields:
+                try:
+                    append_failure_record(log_file(row), row)
+                except OSError:
+                    # The saved outcome remains available through the log API when the disk cannot accept it.
+                    log.exception("could not append the exit record for job %s", job_id)
         self._publish(
             "job.state",
             {

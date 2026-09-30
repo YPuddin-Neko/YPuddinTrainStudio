@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from starlette.background import BackgroundTask
 
@@ -36,7 +36,7 @@ from .errors import ApiError, NotFound
 from .gpu_selection import GpuSelection, selection_error
 from .hardware import gpu_info
 from .import_progress import ImportProgress
-from .job_logs import read_log
+from .job_logs import failure_record_bytes, missing_failure_record, read_log
 from .job_paths import event_file, log_file, owned_job_directories
 from .project_covers import cover_path, cover_url, read_cover_upload, remove_cover, replace_cover, thumbnail
 from .sample_events import read_events, samples_with_loss
@@ -2377,20 +2377,50 @@ def job_log(
     tail: bool = False,
     before: int | None = None,
 ) -> dict[str, Any]:
-    r = _get_job(c, jid)
-    # A live worker may be mid-line; a stopped one has written its final output.
-    live = c.supervisor.is_running(jid)
-    return read_log(log_file(r), offset=offset, limit=limit, tail=tail, before=before, complete_only=live)
+    # Keep the file page and saved outcome on the same side of the exit-record append.
+    with c.db.lock:
+        r = _get_job(c, jid)
+        # A live worker may be mid-line; a stopped one has written its final output.
+        live = c.supervisor.is_running(jid) and r.get("exit_code") is None
+        path = log_file(r)
+        page = read_log(path, offset=offset, limit=limit, tail=tail, before=before, complete_only=live)
+        # This separate record must never advance the worker file's byte cursor.
+        page["terminal"] = None if live else missing_failure_record(path, r)
+    return page
 
 
 @router.get(
     "/jobs/{jid}/log/raw",
     response_class=FileResponse,
-    responses={200: {"content": {"text/plain": {}}, "description": "The complete worker log"}},
+    responses={200: {"content": {"text/plain": {}}, "description": "The complete job log, including saved supervisor failures"}},
 )
 def job_log_raw(jid: str, c: ServiceContext = Depends(ctx)) -> Response:
-    r = _get_job(c, jid)
-    path = log_file(r)
+    with c.db.lock:
+        r = _get_job(c, jid)
+        path = log_file(r)
+        live = c.supervisor.is_running(jid) and r.get("exit_code") is None
+        terminal = None if live else missing_failure_record(path, r)
+    if terminal is not None:
+        def contents():
+            last = b""
+            remaining = terminal["offset"]
+            try:
+                with path.open("rb") as stream:
+                    while remaining and (chunk := stream.read(min(remaining, 64 * 1024))):
+                        remaining -= len(chunk)
+                        last = chunk[-1:]
+                        yield chunk
+            except FileNotFoundError:
+                pass
+            if last and last != b"\n":
+                yield b"\n"
+            yield failure_record_bytes(terminal)
+
+        return StreamingResponse(
+            contents(),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{jid}-run.log"'},
+        )
     if not path.is_file():
         raise NotFound("log file not found", code="file.not_found")
     return FileResponse(str(path), media_type="text/plain; charset=utf-8", filename=f"{jid}-run.log")

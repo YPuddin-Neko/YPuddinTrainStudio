@@ -59,14 +59,15 @@ function LogRow({ entry, query }: { entry: LogEntry; query: string }) {
  * Live job log: reads new bytes while the worker runs and follows the end until
  * the reader scrolls up. Earlier output loads on demand above the first line.
  */
-export default function JobLogView({ jobId, live, active, recordedLevel, exitCode, failure }: {
-  jobId: string; live: boolean; active: boolean; recordedLevel?: string | null; exitCode?: number | null; failure?: React.ReactNode;
+export default function JobLogView({ jobId, live, active, recordedLevel, exitCode }: {
+  jobId: string; live: boolean; active: boolean; recordedLevel?: string | null; exitCode?: number | null;
 }) {
   const text = useWorkspaceText();
   const { i18n } = useTranslation();
   const chinese = (i18n.resolvedLanguage || i18n.language || '').startsWith('zh');
   const [original, setOriginal] = React.useState(() => storedFlag(ORIGINAL_KEY));
   const [lines, setLines] = React.useState<JobLogLine[]>([]);
+  const [terminal, setTerminal] = React.useState<JobLogLine | null>(null);
   const [loaded, setLoaded] = React.useState(false);
   const [error, setError] = React.useState('');
   const [hasEarlier, setHasEarlier] = React.useState(false);
@@ -87,6 +88,12 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
   const body = React.useRef<HTMLDivElement>(null);
   const endpoint = `/jobs/${encodeURIComponent(jobId)}/log`;
 
+  const recordTerminal = React.useCallback((next: JobLogLine | null = null) => {
+    setTerminal(previous => previous && next
+      && previous.offset === next.offset && previous.kind === next.kind && previous.level === next.level
+      && previous.ts === next.ts && previous.source === next.source && previous.msg === next.msg ? previous : next);
+  }, []);
+
   const commit = (next: JobLogLine[]) => { linesRef.current = next; setLines(next); };
   const setFollow = (value: boolean) => {
     followingRef.current = value; setFollowing(value);
@@ -97,17 +104,17 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
     const generation = cursor.current.generation + 1;
     finalReadPending.current = false;
     cursor.current = { start: 0, end: 0, busy: true, generation };
-    commit([]); setLoaded(false); setError(''); setHasEarlier(false); followingRef.current = true; setFollowing(true);
+    commit([]); setTerminal(null); setLoaded(false); setError(''); setHasEarlier(false); followingRef.current = true; setFollowing(true);
     try {
       const page = await apiClient.get<JobLogResponse>(endpoint, { params: { tail: true, limit: PAGE }, silent: true });
       if (cursor.current.generation !== generation) return;
       cursor.current = { start: page.start_offset, end: page.next_offset, busy: false, generation };
-      commit(page.lines); setHasEarlier(page.has_earlier); setLoaded(true);
+      commit(page.lines); recordTerminal(page.terminal); setHasEarlier(page.has_earlier); setLoaded(true);
     } catch (failure) {
       if (cursor.current.generation !== generation) return;
       cursor.current.busy = false; setError(formatApiError(failure)); setLoaded(true);
     }
-  }, [endpoint]);
+  }, [endpoint, recordTerminal]);
   React.useEffect(() => { void load(); return () => { cursor.current.generation += 1; }; }, [load]);
 
   const pull = React.useCallback(async (final = false) => {
@@ -121,6 +128,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
         const offset = state.end;
         const page = await apiClient.get<JobLogResponse>(endpoint, { params: { offset: state.end, limit: PAGE }, silent: true });
         if (cursor.current.generation !== generation) return;
+        recordTerminal(page.terminal);
         const fresh = page.lines.filter(line => line.offset >= state.end);
         state.end = Math.max(state.end, page.next_offset);
         if (fresh.length) {
@@ -142,7 +150,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
         if (finalReadPending.current) setReadReady(value => value + 1);
       }
     }
-  }, [endpoint]);
+  }, [endpoint, recordTerminal]);
 
   React.useEffect(() => {
     if (!active || !live || !loaded) return;
@@ -170,6 +178,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
     try {
       const page = await apiClient.get<JobLogResponse>(endpoint, { params: { before: state.start, limit: PAGE }, silent: true });
       if (cursor.current.generation !== generation) return;
+      recordTerminal(page.terminal);
       const older = page.lines.filter(line => line.offset < state.start);
       state.start = Math.min(state.start, page.start_offset);
       prependHeight.current = body.current?.scrollHeight ?? null;
@@ -182,7 +191,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
     }
   };
 
-  const grouped = React.useMemo(() => groupLogLines(lines), [lines]);
+  const grouped = React.useMemo(() => groupLogLines(terminal ? [...lines, terminal] : lines), [lines, terminal]);
   // Fixed trainer lines read in Chinese; the original shows on hover and in downloads.
   const entries = React.useMemo(() => chinese && !original ? translateLogEntries(grouped) : grouped, [grouped, chinese, original]);
   const visible = React.useMemo(() => visibleLogEntries(entries, { filter, debug, query }), [entries, filter, debug, query]);
@@ -200,7 +209,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
       element.scrollTop = element.scrollHeight;
       seenId.current = lastVisibleId.current;
     }
-  }, [lines, filter, debug, query, active, original]);
+  }, [lines, terminal, filter, debug, query, active, original]);
 
   const onScroll = () => {
     const element = body.current;
@@ -224,15 +233,15 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
   const levelNames: Record<string, string> = { info: text('信息', 'Info'), warning: text('警告', 'Warning') };
   const debugMissing = debug && filter === 'all' && !!recordedLevel && recordedLevel !== 'debug';
   const filtered = filter !== 'all' || !!query.trim();
+  const hasLog = lines.length > 0 || terminal !== null;
   // A burst of debug records can fill the loaded window while debug lines are hidden.
   const onlyDebug = loaded && !filtered && !debug && lines.length > 0 && entries.every(entry => entry.level === 'debug');
   const empty = !loaded ? text('读取日志…', 'Loading log…')
-    : lines.length === 0 ? (live ? text('等待任务输出…', 'Waiting for output…') : text('暂无日志', 'No log output'))
+    : !hasLog ? (live ? text('等待任务输出…', 'Waiting for output…') : text('暂无日志', 'No log output'))
       : onlyDebug ? text('最近的日志都是调试信息', 'The latest lines are all debug records')
         : text('没有符合筛选条件的日志', 'No log lines match the filters');
 
   return <section className="job-log" aria-label={text('任务日志', 'Job log')}>
-    {failure}
     <div className="job-log-toolbar">
       <StudioSelect className="job-log-filter" aria-label={text('显示级别', 'Levels shown')} value={filter} onValueChange={value => setFilter(value as LogFilter)} options={[
         { value: 'all', label: text('全部级别', 'All levels') },
@@ -245,16 +254,16 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
       {chinese && <Switch className="job-log-debug" checked={original} onCheckedChange={toggleOriginal}>显示原文</Switch>}
       <div className="job-log-actions">
         <button type="button" className="ui-btn ui-btn-icon ui-btn-quiet" disabled={!visible.length} onClick={() => void copyVisible()} aria-label={text('复制显示的日志', 'Copy shown lines')} title={copied === 'done' ? text('已复制', 'Copied') : copied === 'failed' ? text('复制失败', 'Copy failed') : text('复制显示的日志', 'Copy shown lines')}>{copied === 'done' ? <Check size={15}/> : <Copy size={15}/>}</button>
-        <a className="ui-btn ui-btn-icon ui-btn-quiet" href={apiUrl(`/jobs/${encodeURIComponent(jobId)}/log/raw`)} download aria-label={text('下载完整日志', 'Download full log')} title={text('下载完整日志', 'Download full log')} aria-disabled={!lines.length || undefined} onClick={event => { if (!lines.length) event.preventDefault(); }}><Download size={15}/></a>
+        <a className="ui-btn ui-btn-icon ui-btn-quiet" href={apiUrl(`/jobs/${encodeURIComponent(jobId)}/log/raw`)} download aria-label={text('下载完整日志', 'Download full log')} title={text('下载完整日志', 'Download full log')} aria-disabled={!hasLog || undefined} onClick={event => { if (!hasLog) event.preventDefault(); }}><Download size={15}/></a>
       </div>
     </div>
-    {error && <div className="task-error" role="alert">{error}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void (loaded && lines.length ? pull() : load())}>{text('重试', 'Retry')}</button></div>}
+    {error && <div className="task-error" role="alert">{error}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void (loaded && hasLog ? pull() : load())}>{text('重试', 'Retry')}</button></div>}
     {debugMissing && <p className="job-log-note" role="status">{text(`此任务按“${levelNames[recordedLevel!] || recordedLevel}”级别记录，没有调试日志。`, `This job was recorded at the ${levelNames[recordedLevel!] || recordedLevel} level and has no debug lines.`)}</p>}
     <div className="job-log-frame">
       <div ref={body} className="job-log-body" onScroll={onScroll} tabIndex={0} aria-label={text('日志内容', 'Log lines')} aria-busy={!loaded}>
         {hasEarlier && <div className="job-log-earlier"><button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" disabled={loadingEarlier} onClick={() => void loadEarlier()}>{loadingEarlier ? <><Loader2 size={13} className="animate-spin" aria-hidden="true"/>{text('读取中…', 'Loading…')}</> : text('加载更早的日志', 'Load earlier lines')}</button></div>}
         {visible.length ? visible.map(entry => <LogRow key={entry.id} entry={entry} query={query}/>)
-          : <div className="job-log-empty"><Terminal size={22} aria-hidden="true"/><span>{empty}</span>{filtered && lines.length > 0 && <button type="button" className="ui-link" onClick={() => { setFilter('all'); setQuery(''); }}>{text('清除筛选', 'Clear filters')}</button>}{onlyDebug && <button type="button" className="ui-link" onClick={() => toggleDebug(true)}>{text('显示调试日志', 'Show debug lines')}</button>}</div>}
+          : <div className="job-log-empty"><Terminal size={22} aria-hidden="true"/><span>{empty}</span>{filtered && hasLog && <button type="button" className="ui-link" onClick={() => { setFilter('all'); setQuery(''); }}>{text('清除筛选', 'Clear filters')}</button>}{onlyDebug && <button type="button" className="ui-link" onClick={() => toggleDebug(true)}>{text('显示调试日志', 'Show debug lines')}</button>}</div>}
       </div>
       {!following && visible.length > 0 && <button type="button" className="ui-btn ui-btn-sm job-log-latest" onClick={jumpToEnd}><ArrowDown size={14}/>{unseen ? text(`${unseen} 条新日志`, `${unseen} new entries`) : text('回到最新', 'Latest')}</button>}
     </div>

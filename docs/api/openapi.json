@@ -4538,7 +4538,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The complete worker log",
+            "description": "The complete job log, including saved supervisor failures",
             "content": {
               "text/plain": {}
             }
@@ -14142,6 +14142,17 @@
             },
             "type": "array",
             "title": "Lines"
+          },
+          "terminal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogLine"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved supervisor failure absent from the worker log; does not advance byte offsets."
           },
           "start_offset": {
             "type": "integer",

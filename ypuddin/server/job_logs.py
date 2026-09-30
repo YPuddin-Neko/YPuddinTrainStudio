@@ -9,6 +9,7 @@ bars); the log view groups them because a record can span two reads.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,60 @@ _LEVELS = {"warning": "warn", "critical": "error", "fatal": "error"}
 _GLOG_LEVELS = {"I": "info", "W": "warn", "E": "error", "F": "error"}
 
 MAX_READ = 512 * 1024
+SUPERVISOR_SOURCE = "ypuddin.server.supervisor"
+
+
+def failure_record_bytes(record: Mapping[str, Any]) -> bytes:
+    """Serialize a supervisor record using the worker log's existing header format."""
+    timestamp = record.get("ts")
+    if timestamp is None:
+        header = f"ERROR:{SUPERVISOR_SOURCE}:"
+    else:
+        stamp = datetime.fromtimestamp(timestamp).astimezone().isoformat(timespec="milliseconds")
+        header = f"{stamp} ERROR {SUPERVISOR_SOURCE}: "
+    return (header + str(record["msg"]) + "\n").encode("utf-8")
+
+
+def missing_failure_record(path: Path, job: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Use the saved supervisor outcome when its record could not reach run.log."""
+    if job.get("status") != "failed" or not job.get("error"):
+        return None
+    record = {
+        "offset": 0,
+        "kind": "record",
+        "ts": job.get("finished_at"),
+        "level": "error",
+        "source": SUPERVISOR_SOURCE,
+        "msg": job["error"],
+    }
+    payload = failure_record_bytes(record)
+    try:
+        with path.open("rb") as stream:
+            size = stream.seek(0, 2)
+            record["offset"] = size
+            start = max(0, size - len(payload) - 4096)
+            stream.seek(start)
+            tail = stream.read(len(payload) + 4096)
+        # Only our complete record with this outcome's timestamp counts as persisted.
+        if (start == 0 and tail.startswith(payload)) or b"\n" + payload in tail:
+            return None
+    except FileNotFoundError:
+        pass
+    return record
+
+
+def append_failure_record(path: Path, job: Mapping[str, Any]) -> None:
+    record = missing_failure_record(path, job)
+    if record is None:
+        return
+    separator = b""
+    if record["offset"]:
+        with path.open("rb") as stream:
+            stream.seek(-1, 2)
+            if stream.read(1) != b"\n":
+                separator = b"\n"
+    with path.open("ab") as stream:
+        stream.write(separator + failure_record_bytes(record))
 
 
 def _clean(raw: str) -> str:

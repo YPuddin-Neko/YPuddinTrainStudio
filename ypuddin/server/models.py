@@ -980,6 +980,10 @@ class LogLine(_Out):
 
 class JobLog(_Out):
     lines: list[LogLine]
+    terminal: LogLine | None = Field(
+        None,
+        description="Saved supervisor failure absent from the worker log; does not advance byte offsets.",
+    )
     start_offset: int = 0
     next_offset: int
     has_more: bool = False
