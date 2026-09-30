@@ -22,10 +22,15 @@ export function useDatasetImages(datasetId: string | undefined, targetPageSize =
   const [error, setError] = React.useState<string | null>(null);
   const request = React.useRef<AbortController | null>(null);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const loadedItems = React.useRef(items);
+  const previousQuery = React.useRef<{ scope: string; pageSize: number } | null>(null);
+  const replacementPending = React.useRef(false);
+  React.useEffect(() => { loadedItems.current = items; }, [items]);
 
   const fetchPage = React.useCallback(
     async (p: number, query: string, append: boolean) => {
       if (!datasetId) return;
+      if (!append) replacementPending.current = true;
       request.current?.abort();
       const controller = new AbortController(); request.current = controller;
       setLoading(true);
@@ -36,9 +41,14 @@ export function useDatasetImages(datasetId: string | undefined, targetPageSize =
           params: { page: p, page_size: pageSize, q: query || undefined, membership, sort },
         });
         if (controller.signal.aborted) return;
+        if (!append) replacementPending.current = false;
         setTotal(resp.total);
         setPage(resp.page);
-        setItems((prev) => (append ? [...prev, ...resp.items] : resp.items));
+        setItems(prev => {
+          if (!append) return resp.items;
+          const existing = new Set(prev.map(item => item.rel_path));
+          return [...prev, ...resp.items.filter(item => !existing.has(item.rel_path))];
+        });
       } catch (e: any) {
         if (!controller.signal.aborted) setError(e?.message || 'failed to load images');
       } finally {
@@ -48,22 +58,36 @@ export function useDatasetImages(datasetId: string | undefined, targetPageSize =
     [datasetId, pageSize, membership, sort]
   );
 
-  // datasetId 或 q 变化：重置并加载第一页
+  // Resizing fills the last row without clearing images already in view.
   React.useEffect(() => {
-    setItems([]);
-    setPage(1);
-    fetchPage(1, q, false);
+    const scope = JSON.stringify([datasetId, q, membership, sort]);
+    const previous = previousQuery.current;
+    previousQuery.current = { scope, pageSize };
+    const loaded = loadedItems.current.length;
+    const resizing = previous?.scope === scope && previous.pageSize !== pageSize;
+    if (resizing && loaded && !replacementPending.current) {
+      const lastPage = Math.ceil(loaded / pageSize);
+      if (loaded % pageSize) void fetchPage(lastPage, q, true);
+      else { setPage(lastPage); setLoading(false); }
+    } else {
+      if (!resizing) setItems([]);
+      setPage(1);
+      void fetchPage(1, q, false);
+    }
     return () => request.current?.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datasetId, q, membership, pageSize, sort]);
+  }, [datasetId, q, membership, pageSize, sort, fetchPage]);
 
   React.useEffect(() => { setSelected(new Set()); }, [datasetId, q, membership, sort]);
 
   const loadMore = React.useCallback(() => {
     if (loading) return;
+    if (replacementPending.current) {
+      void fetchPage(1, q, false);
+      return;
+    }
     if (items.length >= total) return;
-    fetchPage(page + 1, q, true);
-  }, [loading, items.length, total, page, q, fetchPage]);
+    fetchPage(Math.floor(items.length / pageSize) + 1, q, true);
+  }, [loading, items.length, total, pageSize, q, fetchPage]);
 
   const refresh = React.useCallback(() => {
     fetchPage(1, q, false);

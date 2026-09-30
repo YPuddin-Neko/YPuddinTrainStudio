@@ -30,27 +30,31 @@ export default function CaptionViewer({projectId,versionId,readOnly=false,editin
   const [sort,setSort]=useState<ImageSort>('filename');
   const displayedPage=useRef('');
   const [datasetId,setDatasetId]=useState(initialDatasetId);
-  const pageLayout = `${sort}/${gridPage.pageSize}`;
   const measureGrid = gridPage.gridRef;
   const bindGrid = useCallback((node: HTMLDivElement | null)=>{gridRef.current=node;measureGrid(node);},[measureGrid]);
-  const [navigation,setNavigation]=useState({scope:'',layout:'',page:1,draftSearch:'',search:'',selected:''});
+  const [navigation,setNavigation]=useState({scope:'',pageSize:40,page:1,draftSearch:'',search:'',selected:'',selectionIndex:0});
   const datasets=useQuery({queryKey:['caption-datasets',projectId,versionId],queryFn:({signal})=>apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`,{params:{version_id:versionId,include_cache:false},signal,silent:true})});
   const source=datasets.data?.find(item=>item.source.id===datasetId) || datasets.data?.[0];
   // Derive reset state before querying: a reused viewer must never request the old page in a new source/version.
   const scope=JSON.stringify([projectId,versionId,source?.source.id]);
-  const empty={scope,layout:pageLayout,page:1,draftSearch:'',search:'',selected:''};
-  const current=navigation.scope===scope?navigation:empty;
-  const {draftSearch,search}=current;
-  const page=current.layout===pageLayout?current.page:1;
-  const selected=current.layout===pageLayout?current.selected:'';
-  const updateNavigation=(patch:Partial<typeof navigation>)=>setNavigation(previous=>({...(previous.scope===scope ? previous.layout===pageLayout ? previous : {...previous,page:1,selected:''} : empty),layout:pageLayout,...patch}));
-  const setPage=(page:number)=>updateNavigation({page});
+  const empty={scope,pageSize:gridPage.pageSize,page:1,draftSearch:'',search:'',selected:'',selectionIndex:0};
+  const fitNavigation=(previous:typeof navigation)=>{
+    const current=previous.scope===scope?previous:empty;
+    if(current.pageSize===gridPage.pageSize)return current;
+    // Resizing changes page boundaries, not the image being viewed.
+    const index=(current.page-1)*current.pageSize+current.selectionIndex;
+    return {...current,pageSize:gridPage.pageSize,page:Math.floor(index/gridPage.pageSize)+1,selectionIndex:index%gridPage.pageSize};
+  };
+  const current=fitNavigation(navigation);
+  const {draftSearch,search,page,selected}=current;
+  const updateNavigation=(patch:Partial<typeof navigation>)=>setNavigation(previous=>({...fitNavigation(previous),...patch}));
+  const setPage=(page:number)=>updateNavigation({page,selected:'',selectionIndex:0});
   const setDraftSearch=(draftSearch:string)=>updateNavigation({draftSearch});
   const setSearch=(search:string)=>updateNavigation({search});
-  const setSelected=(selected:string)=>updateNavigation({selected});
+  const setSelected=(selected:string)=>updateNavigation({selected,selectionIndex:Math.max(0,items.findIndex(item=>`${item.hash}/${item.rel_path}`===selected))});
   const changeSort=(value:ImageSort)=>{
     setSort(value);
-    setNavigation(previous=>({...previous.scope===scope?previous:empty,layout:`${value}/${gridPage.pageSize}`,page:1,selected:''}));
+    setNavigation(previous=>({...previous.scope===scope?previous:empty,pageSize:gridPage.pageSize,page:1,selected:'',selectionIndex:0}));
   };
   const query=useQuery<DatasetImagesPage>({
     queryKey:['caption-images',projectId,versionId,source?.source.id,page,search,sort,gridPage.pageSize],enabled:!!source,
@@ -58,7 +62,7 @@ export default function CaptionViewer({projectId,versionId,readOnly=false,editin
     queryFn:({signal})=>apiClient.get<DatasetImagesPage>(`/datasets/${source!.source.id}/images`,{params:{page,page_size:gridPage.pageSize,q:search||undefined,sort},signal,silent:true}),
   });
   const items=query.data?.items || [];
-  const selectedIndex=Math.max(0,items.findIndex(item=>`${item.hash}/${item.rel_path}`===selected));
+  const selectedIndex=selected?Math.max(0,items.findIndex(item=>`${item.hash}/${item.rel_path}`===selected)):Math.min(current.selectionIndex,Math.max(0,items.length-1));
   const image=items[selectedIndex];
   const pages=Math.max(1,Math.ceil((query.data?.total||0)/gridPage.pageSize));
   const imageKey=image?`${image.hash}/${image.rel_path}`:'';
@@ -73,12 +77,12 @@ export default function CaptionViewer({projectId,versionId,readOnly=false,editin
     const viewport=grid.getBoundingClientRect(),card=selectedCard.getBoundingClientRect();
     if(card.top<viewport.top)grid.scrollTop=Math.max(0,grid.scrollTop+card.top-viewport.top);
     else if(card.bottom>viewport.bottom)grid.scrollTop+=card.bottom-viewport.bottom;
-  },[scope,search,actualPage,query.isPlaceholderData,imageKey]);
+  },[scope,search,actualPage,query.isPlaceholderData,imageKey,gridPage.columns]);
   useEffect(()=>{
     if(!query.data || query.isFetching || query.isError || page<=pages)return;
     // Refresh can remove the last page after curation. Only correct the scope that returned this result.
-    setNavigation(previous=>previous.scope===scope?{...previous,page:pages,selected:''}:previous);
-  },[query.data,query.isFetching,query.isError,page,pages,scope]);
+    setNavigation(previous=>previous.scope===scope?{...previous,pageSize:gridPage.pageSize,page:pages,selected:'',selectionIndex:0}:previous);
+  },[query.data,query.isFetching,query.isError,page,pages,scope,gridPage.pageSize]);
   const loading=datasets.isPending || (!!source && query.isPending);
   const error=datasets.error || query.error;
   const refresh=()=>{void datasets.refetch();if(source)void query.refetch();};

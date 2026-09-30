@@ -864,7 +864,6 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     // Preserve legacy logging settings in the draft without exposing their controls.
     if (fullPathKey === 'logging.level' || fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
 
-    if (versionSources && fullPathKey === 'checkpoint.name' && editOutput !== 'name') return null;
     // Settings the selected adapter form ignores: full LoKr factors fix the scale, and
     // full target-layer weights take no rank, scale, initialization or dropout.
     if (value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && ['adapter.alpha', 'adapter.decompose_both', 'adapter.rs_lora'].includes(fullPathKey)) return null;
@@ -889,9 +888,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (groupFilter && !groupFilter.includes(currentGroup) && !(compact && parentPath[0] === 'training' && groupFilter.includes('training'))) return null;
     if (search.trim() && !`${fieldLabel} ${fullPathKey} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs epoch 轮' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
+    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || fullPathKey === 'checkpoint.save_state_every_steps' && e.loc === 'checkpoint.save_state_every_epochs');
+    const revealOutputName = versionSources && fullPathKey === 'checkpoint.name' && (editOutput === 'name' || !!errorItem || !!search.trim());
+    if (versionSources && fullPathKey === 'checkpoint.name' && !revealOutputName) return null;
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
     const optionalAdvanced = ui.advanced;
-    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput === 'name' && fullPathKey === 'checkpoint.name')) return null;
+    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !revealOutputName) return null;
     const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
     if (ui.show_when && !incompatiblePredictionLoss && !incompatibleFamilyLoss) {
       try {
@@ -907,7 +909,6 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       }
     }
 
-    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || fullPathKey === 'checkpoint.save_state_every_steps' && e.loc === 'checkpoint.save_state_every_epochs');
     const lockedSwitch = switchLock(fullPathKey, value, family, english);
     const computeManaged: {value: unknown; label?: string; reason: string; tag?: string} | null = layerLock ?? lockedSwitch ?? trainingComputeManagedField(activeComputePolicy, fullPathKey, english);
     const fieldValue = computeManaged ? computeManaged.value : getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;

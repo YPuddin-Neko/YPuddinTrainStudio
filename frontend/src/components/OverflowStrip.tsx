@@ -46,7 +46,17 @@ export default function OverflowStrip({ children, className = '', containerClass
   React.useLayoutEffect(() => {
     const element = strip.current;
     if (!element) return;
-    const resize = () => { measure(); reveal(); };
+    let viewportWidth = element.clientWidth;
+    let containerWidth = container.current?.clientWidth;
+    const resize = () => {
+      const nextViewportWidth = element.clientWidth;
+      const nextContainerWidth = container.current?.clientWidth;
+      const viewportChanged = nextViewportWidth !== viewportWidth || nextContainerWidth !== containerWidth;
+      viewportWidth = nextViewportWidth;
+      containerWidth = nextContainerWidth;
+      measure();
+      if (viewportChanged) reveal();
+    };
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
     const observe = () => {
       observer?.disconnect();
@@ -57,7 +67,11 @@ export default function OverflowStrip({ children, className = '', containerClass
     observe();
     resize();
     element.addEventListener('scroll', measure, { passive: true });
-    const mutation = new MutationObserver(() => { observe(); resize(); });
+    const mutation = new MutationObserver(records => {
+      if (records.some(record => record.type === 'childList' && record.target === element)) observe();
+      measure();
+      if (records.some(record => record.type === 'attributes')) reveal();
+    });
     mutation.observe(element, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['aria-selected', 'aria-current', 'aria-pressed'] });
     return () => { observer?.disconnect(); mutation.disconnect(); element.removeEventListener('scroll', measure); };
   }, [measure, reveal]);
