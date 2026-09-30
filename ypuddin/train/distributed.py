@@ -131,6 +131,48 @@ class _TrainingGraph(nn.Module):
         return self.trainer.compute_loss(batch)[0]
 
 
+def _needs_unused_parameter_detection(trainer, graph: _TrainingGraph) -> bool:
+    cfg = trainer.cfg
+    if (
+        cfg.model.family != "krea2"
+        or cfg.training.mode != "adapter"
+        or cfg.training.train_text_encoder
+        or cfg.memory.compile
+        or getattr(trainer, "compute_policy", None) is not None
+    ):
+        return True
+    from ypuddin.adapters import AdaptedLinear, AdapterSet, DoRA, LoKr, LoRA
+    from ypuddin.models.krea2.vendor.krea2_mmdit import SingleStreamDiT
+
+    adapters, backbone = trainer.adapters, trainer.loaded.backbone
+    if (
+        type(backbone) is not SingleStreamDiT
+        or type(adapters) is not AdapterSet
+        or adapters.model is not backbone
+        or not adapters.layers
+    ):
+        return True
+    expected = set()
+    modules = dict(backbone.named_modules())
+    for name, layer in adapters.layers.items():
+        if (
+            type(layer) is not AdaptedLinear
+            or type(layer.adapter) not in {LoRA, LoKr}
+            or (layer.dora is not None and type(layer.dora) is not DoRA)
+            or layer.module_dropout_p != 0
+            or layer.multiplier == 0
+            or modules.get(name) is not layer
+        ):
+            return True
+        expected.update(id(p) for p in layer.adapter.parameters() if p.requires_grad)
+        if layer.dora is not None:
+            expected.update(id(p) for p in layer.dora.parameters() if p.requires_grad)
+    # Krea's dense forward uses every adapted layer. Whole-layer dropout and
+    # extra trainable components need discovery; ordinary/rank dropout keep the graph.
+    actual = {id(p) for p in graph.parameters() if p.requires_grad}
+    return not expected or actual != expected
+
+
 class DistributedTrainer(Trainer):
     def __init__(self, cfg, *, context: DistributedContext, emitter=None):
         self.distributed = context
@@ -206,7 +248,7 @@ class DistributedTrainer(Trainer):
             device_ids=[self.device.index] if self.device.type == "cuda" else None,
             output_device=self.device.index if self.device.type == "cuda" else None,
             broadcast_buffers=False,
-            find_unused_parameters=True,
+            find_unused_parameters=_needs_unused_parameter_detection(self, graph),
         )
         self._finish_distributed_preparation()
 
