@@ -102,7 +102,7 @@ const join = (lines: Lines) => lines.filter(Boolean).join('\n');
 
 /** Help written for the selected model and this machine; undefined leaves the general text. */
 export function contextHelp(path: string, context: FieldContext, options?: string[]): string | undefined {
-  const { family, english } = context;
+  const { family, config, english } = context;
   if (!family) return undefined;
   const runtime = runtimeOf(family);
   const text = (zh: string, en: string) => english ? en : zh;
@@ -113,6 +113,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
     .filter(([option]) => listed(option)).map(([option, [zh, en]]) => `${label(option)}${english ? `: ${en}` : `：${zh}`}`);
   const name = modelName(family);
   const ddpm = family.objective === 'ddpm';
+  const multiGpu = Number(config.loop?.gpu_count ?? 1) > 1 || config.loop?.distributed_strategy === 'fsdp';
   switch (path) {
     case 'model.attention': {
       const sdpa: [string, string] = runtime === 'cuda'
@@ -158,7 +159,9 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
     case 'memory.activation_checkpointing':
       return join([
         text('开启后每个模块只保留输入，反向传播时逐块重新计算：显存大幅减少，训练会慢一些（多一次前向计算）。可与梯度累积同时使用。', 'On keeps only each block\'s input and recomputes blocks during backward: much less memory, somewhat slower (one extra forward pass). Works with gradient accumulation.'),
-        listed('unsloth') && text('开启并卸载到内存：再把这些输入暂存到内存，显存再少一些，但占用内存并增加传输；开启后显存仍不够时再用。', 'On + offload also parks those inputs in system memory for a little more saving, at the cost of RAM and transfers; use it when On is not enough.'),
+        multiGpu
+          ? text('DDP 和 FSDP 可选关闭或开启（逐块），不支持开启并卸载到内存。', 'DDP and FSDP support Off or On (per block), but not On + offload.')
+          : listed('unsloth') && text('开启并卸载到内存：再把这些输入暂存到内存，显存再少一些，但占用内存并增加传输；开启后显存仍不够时再用。', 'On + offload also parks those inputs in system memory for a little more saving, at the cost of RAM and transfers; use it when On is not enough.'),
       ]);
     case 'loop.mixed_precision':
       return runtime === 'cpu'
@@ -166,7 +169,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         : text('训练运算的自动混合精度，默认 BF16；FP16 需要显卡和模型支持。关闭只停用自动混合精度，不改变权重本身的精度；底模和导出文件的精度分别设置。可复现训练以参数检查显示的设置为准。', 'Automatic mixed precision for training, BF16 by default; FP16 needs GPU and model support. Turning it off disables only mixed precision, not weight precision; base-model and export precision are set separately. Reproducible training uses the values the parameter check shows.');
     case 'loop.distributed_strategy':
       return join([
-        text('数据并行（DDP）：每张卡保留完整模型，最通用。', 'Data parallel (DDP): each GPU holds the whole model; works everywhere.'),
+        text('数据并行（DDP）：每张卡保留完整模型并处理不同数据，可搭配 Prodigy（神童）和逐块梯度检查点。', 'Data parallel (DDP): each GPU holds the whole model and processes different data. Supports Prodigy with per-block gradient checkpointing.'),
         listed('fsdp') && text('显存分片（FSDP）：把参数、梯度和优化器状态分到多张卡，适合单卡装不下的主模型；需要至少两张显卡，支持冻结文本编码器的主模型全量微调、LoRA 和 LoKr，以及 AdamW、Adafactor 或 SGD，暂不支持 FP8 底模。', 'Sharded (FSDP): splits parameters, gradients and optimizer state across GPUs, for main models too large for one card. Needs at least two GPUs and supports full fine-tuning of the main model with a frozen text encoder, LoRA and LoKr, with AdamW, Adafactor or SGD; FP8 base weights are not supported yet.'),
         family.runtime_platform === 'windows' && text('Windows 只支持数据并行。', 'Windows supports data parallel only.'),
       ]);

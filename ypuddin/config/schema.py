@@ -1066,7 +1066,7 @@ class MemoryConfig(_Strict):
     )
     activation_checkpointing: Literal["none", "block", "unsloth"] = F(
         "none",
-        help="减少反向前保存的中间激活，默认 none 全程保留；block 在反向时重算，unsloth 还把块输入卸载到 CPU。会增加重算或传输工作，显存不足时再按模型支持情况选择。",
+        help="减少反向前保存的中间激活，默认 none 全程保留；block 在反向时重算，unsloth 还把块输入卸载到 CPU。会增加重算或传输工作，显存不足时再按模型支持情况选择。DDP 和 FSDP 支持 none（关闭）与 block（逐块），不支持 unsloth（开启并卸载到内存）。",
         ui_=ui("memory", order=20, control="select"),
     )
     offload_text_encoder: bool = F(
@@ -1097,7 +1097,7 @@ class LoopConfig(_Strict):
     )
     distributed_strategy: Literal["ddp", "fsdp"] = F(
         "ddp",
-        help="数据并行（DDP）每卡保留完整模型；显存分片（FSDP）将参数、梯度和优化器状态分到多张卡，适合单卡装不下的主模型。分片需要至少两张 CUDA/DTK 显卡，支持冻结文本编码器的主模型全量微调、LoRA 和 LoKr，以及 AdamW、Adafactor 或 SGD；适配器分片暂不支持 FP8 底模和整层丢弃。可配逐块梯度检查点；实际速度取决于跨卡通信和模型。",
+        help="数据并行（DDP）每卡保留完整模型，可搭配 Prodigy（神童）和逐块梯度检查点；显存分片（FSDP）将参数、梯度和优化器状态分到多张卡，适合单卡装不下的主模型。分片需要至少两张 CUDA/DTK 显卡，支持冻结文本编码器的主模型全量微调、LoRA 和 LoKr，以及 AdamW、Adafactor 或 SGD；适配器分片暂不支持 FP8 底模和整层丢弃。可配逐块梯度检查点；实际速度取决于跨卡通信和模型。",
         ui_=ui(
             "loop",
             order=16,
