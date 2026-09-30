@@ -7,6 +7,7 @@ import SourceBalance from './SourceBalance';
 import {configOptionLabel} from '../../utils/configPresentation';
 import ConfigHelp from '../../components/ConfigHelp';
 import { SlidingIndicator } from '../../components/motion';
+import BucketGeometry from './BucketGeometry';
 
 type DatasetSizing = { resolution_mode?: string; native_max_pixels?: number; native_max_side?: number };
 type PlanBucket = NonNullable<Plan['buckets']>[number];
@@ -49,13 +50,13 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
   const nativeMode = dataset ? dataset.resolution_mode === 'native' : !!native;
   const awaitingPlan = hasSources && !buckets.length && !plan?.ok;
   const maxCount = Math.max(1, ...buckets.map(bucket => bucket.items));
-  const chosen = buckets.find(bucket => bucketKey(bucket) === selected);
   const groups = nativeMode ? [{ base: 0, buckets, items: 0 }] : groupByBase(buckets);
   const grouped = groups.length > 1;
   // Native tiles carry the source size and an arrow, so they get wider columns.
   const gridClass = `bucket-grid${nativeMode && buckets.some(bucket => bucket.sources?.length) ? ' has-routes' : ''}`;
   const baseLabel = (base: number) => text(`分辨率 ${base}`, `Resolution ${base}`);
   const fitMode = plan?.image_fit?.mode === 'pad' ? 'pad' : 'crop';
+  const cropAnchor = plan?.image_fit?.crop_anchor || 'center';
   const fitName = fitMode === 'pad' ? text('补边', 'pad') : text('裁切', 'crop');
   const resized = (route: SourceRoute) => route.resized_width !== route.width || route.resized_height !== route.height;
   const trimmed = (bucket: PlanBucket, route: SourceRoute) => route.resized_width !== bucket.w || route.resized_height !== bucket.h;
@@ -73,15 +74,6 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
         : dw ? text(`宽度${action} ${dw} px`, `${action} ${dw} px wide`) : text(`高度${action} ${dh} px`, `${action} ${dh} px tall`));
     }
     return steps.length === 1 ? [text(`与原图一致，未缩放或${fitMode === 'pad' ? '补边' : '裁切'}`, `Same as the source, no resize or ${fitMode === 'pad' ? 'padding' : 'crop'}`)] : steps;
-  };
-  // Lines break only between steps, so a size never splits across lines.
-  const routeRows = (bucket: PlanBucket, limit: number) => {
-    const routes = (bucket.sources || []).slice(0, limit);
-    const more = Math.max(bucket.source_variants || 0, bucket.sources?.length || 0) - routes.length;
-    return <>
-      {routes.map(route => <div key={`${route.width}x${route.height}/${route.resized_width}x${route.resized_height}`} className="size-route"><p>{routeSteps(bucket, route).map(step => step.replace(/ /g, '\u00a0')).join(' → ')}</p><small>{route.images} {text('张', 'images')}</small></div>)}
-      {more > 0 && <small className="size-route-more">{text(`另有 ${more} 种原图尺寸`, `${more} more source sizes`)}</small>}
-    </>;
   };
   // A native tile reads source size → what was done → training size.
   const tileRoute = (bucket: PlanBucket) => {
@@ -135,11 +127,12 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
   const memoryBlocked = overCapacity && !!plan?.errors?.some(item => item.loc === 'memory');
   const tile = (bucket: PlanBucket) => {
     const key = bucketKey(bucket);
-    const longest = Math.max(bucket.w, bucket.h);
     const route = tileRoute(bucket);
-    const shape = route ? 44 : 56;
+    const source = bucket.sources?.[0];
+    const variants = Math.max(bucket.source_variants || 0, bucket.sources?.length || 0);
+    const geometryTitle = source ? routeSteps(bucket, source).join(' → ') + (variants > 1 ? text(`；图示为 ${source.images} 张图片的尺寸`, `; shows the size of ${source.images} images`) : '') : undefined;
     return <button type="button" key={key} className={`bucket-tile${key === selected ? ' is-selected' : ''}${route ? ' has-route' : ''}`} aria-pressed={key === selected} aria-label={`${grouped ? `${baseLabel(bucket.base)} · ` : ''}${bucket.w} × ${bucket.h}, ${bucket.items} ${text('样本', 'samples')}`} aria-describedby={route ? `${routeId}-${key}` : undefined} onClick={() => setSelected(key === selected ? null : key)}>
-      <span className="bucket-shape-space"><span className="bucket-shape" style={{width: `${bucket.w / longest * shape}px`, height: `${bucket.h / longest * shape}px`}}><span>{bucket.items}</span></span></span>
+      <span className="bucket-shape-space" title={geometryTitle}><BucketGeometry size={bucket} route={source} fit={fitMode} anchor={cropAnchor} count={bucket.items}/></span>
       {route && <span className="bucket-route" aria-hidden="true">
         <span className="bucket-route-source" title={route.source}>{route.source}</span>
         <span className="bucket-route-step">{route.step}</span>
@@ -173,7 +166,6 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
           </section>
           : <div key={group.base} className={gridClass}>{group.buckets.map(tile)}</div>)}</div>
           : <div className="bucket-table-wrap" data-testid="plan-buckets"><table className="bucket-table"><thead><tr>{grouped && <th>{text('分辨率', 'Resolution')}</th>}<th>{text('尺寸', 'Size')}</th><th>{text('样本', 'Items')}</th><th>{native ? <span className="bucket-column-help">{text('计算次数', 'Model runs')}<ConfigHelp label={text('计算次数说明', 'Model runs help')}>{text('每轮对这个尺寸运行模型的次数。同尺寸图片在不超过图像面积上限时合并为一次计算；单张已接近上限时逐张计算，因此常与样本数相同。', 'How many times the model runs on this size per epoch. Same-size images are combined while they fit the image area limit; images near the limit run one at a time, so this often equals the sample count.')}</ConfigHelp></span> : text('批次', 'Batches')}</th></tr></thead><tbody>{buckets.map(bucket => <tr key={bucketKey(bucket)}>{grouped && <td>{bucket.base}</td>}<td>{bucket.w} × {bucket.h}</td><td>{bucket.items}</td><td>{bucket.batches ?? '—'}</td></tr>)}</tbody></table></div>}
-        {chosen && <div className="bucket-selection"><strong>{grouped ? `${baseLabel(chosen.base)} · ` : ''}{chosen.w} × {chosen.h}</strong><span>{chosen.items} {text('样本', 'samples')} · {native ? text(`每轮 ${chosen.batches ?? '—'} 次计算`, `${chosen.batches ?? '—'} model runs / epoch`) : text(`每轮 ${chosen.batches ?? '—'} 批`, `${chosen.batches ?? '—'} batches / epoch`)}</span><span>{text('长宽比', 'Aspect ratio')} {(chosen.w / chosen.h).toFixed(2)}</span>{!!chosen.sources?.length && <div className="bucket-selection-routes">{routeRows(chosen, 4)}</div>}</div>}
       </>}
       {plan?.image_fit && <div className="image-fit-summary">
         <div className="image-fit-head">

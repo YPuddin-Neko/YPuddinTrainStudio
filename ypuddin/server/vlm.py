@@ -328,8 +328,9 @@ def caption(
                 ],
             }
         ],
-        "temperature": temperature,
     }
+    if temperature > 0:
+        body["temperature"] = temperature
     if max_tokens:
         body["max_tokens"] = max_tokens
     endpoint = url + "/chat/completions"

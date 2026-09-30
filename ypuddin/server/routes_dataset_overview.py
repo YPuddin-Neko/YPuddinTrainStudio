@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import PurePosixPath
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from . import models as m
 from .context import ServiceContext
+from .dataset_sort import sort_images
 from .errors import ApiError, NotFound
 from .routes_work import _dataset_image_items, _get_dataset, ctx
 
@@ -39,6 +41,7 @@ def dataset_overview(
     page: int = Query(1, ge=1),
     page_size: int = Query(16, ge=1, le=100),
     c: ServiceContext = Depends(ctx),
+    sort: Literal["filename", "folder", "modified"] = "filename",
 ) -> dict:
     row = _get_dataset(c, did)
     if row["project_id"] != project_id or row.get("version_id") != version_id:
@@ -81,6 +84,7 @@ def dataset_overview(
         or q.strip().casefold() in item["caption"].casefold()
         or q.strip().casefold() in item["rel_path"].casefold()
     ]
+    matching = sort_images(matching, row["path"], sort)
     start = (page - 1) * page_size
     return {
         "dataset_id": did,

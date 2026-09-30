@@ -210,6 +210,21 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
     finally { setSubmitting(false); }
   };
   const [cancelling, setCancelling] = React.useState('');
+  const [deleting, setDeleting] = React.useState<XyzTask | null>(null);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState('');
+  const remove = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true); setDeleteError('');
+    try {
+      await apiClient.delete(`/xyz/${encodeURIComponent(deleting.id)}`, { silent: true });
+      const remaining = history.filter(row => row.id !== deleting.id);
+      setHistory(previous => previous.filter(row => row.id !== deleting.id));
+      if (selected === deleting.id) { setSelected(remaining[0]?.id || ''); setPage(0); setPreview(null); }
+      setDeleting(null);
+    } catch (failure) { setDeleteError(formatApiError(failure)); }
+    finally { setDeleteBusy(false); }
+  };
   const cancel = async (item: XyzTask) => {
     setCancelling(item.id); setError('');
     try { const updated = await apiClient.post<XyzTask>(`/xyz/${encodeURIComponent(item.id)}/cancel`, {}, { silent: true }); setHistory(previous => previous.map(row => row.id === item.id ? updated : row)); }
@@ -285,6 +300,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
               <span>{[`${request?.width} × ${request?.height}`, text(`${task.total} 张`, `${task.total} images`), request?.gpu_devices?.length ? request.gpu_devices.map(gpuDeviceLabel).join(', ') : ''].filter(Boolean).join(' · ')}</span></div>
             <div className="xyz-result-actions"><button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={reuse}>{text('复用参数', 'Reuse settings')}</button>{grid && <a className="ui-btn ui-btn-sm" href={imageUrl(grid.url)} download><Download size={14}/>{text('下载本页网格', 'Download grid')}</a>}</div>
           </header>
+          {task.output_dir && <details className="xyz-result-location"><summary>{text('图片保存位置', 'Image folder')}</summary><code>{task.output_dir}</code></details>}
           {isActive(task) && <XyzProgress task={task}/>}
           {task.error && <p role="alert" className="xyz-task-error">{task.error}</p>}
           {request?.z && <nav className="xyz-pages ui-tabs" aria-label={text('Z 轴分页', 'Z axis pages')}>{zValues.map((value, index) => <button key={index} type="button" aria-current={page === index ? 'page' : undefined} onClick={() => setPage(index)}>{name(request.z!.key)} · {displayValue(request.z, value)}</button>)}<SlidingIndicator className="ui-tabs-indicator"/></nav>}
@@ -297,8 +313,14 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
           </div>
         </> : <div className="xyz-empty"><Grid2X2 size={26} aria-hidden="true"/><span>{text('还没有对比图', 'No comparisons yet')}</span></div>}
       </div>
-      {history.length > 0 && <XyzHistory tasks={history} selected={selected} disabled={readOnly || !!cancelling} onSelect={id => { setSelected(id); setPage(0); }} onCancel={item => void cancel(item)}/>}
+      {history.length > 0 && <XyzHistory tasks={history} selected={selected} disabled={!!cancelling || deleteBusy} onSelect={id => { setSelected(id); setPage(0); }} onCancel={item => void cancel(item)} onDelete={item => { setDeleteError(''); setDeleting(item); }}/>}
     </div>
+    {deleting && <Dialog title={text('删除模型测试', 'Delete model test')} closeDisabled={deleteBusy} onClose={() => setDeleting(null)}>
+      <p>{text('删除这条记录及它生成的图片和网格？此操作无法撤销。', 'Delete this record and its generated images and grids? This cannot be undone.')}</p>
+      {deleting.output_dir && <code className="xyz-delete-path">{deleting.output_dir}</code>}
+      {deleteError && <p role="alert" className="xyz-task-error">{deleteError}</p>}
+      <div className="task-actions"><button type="button" className="ui-btn" disabled={deleteBusy} onClick={() => setDeleting(null)}>{text('取消', 'Cancel')}</button><button type="button" className="ui-btn ui-btn-danger" disabled={deleteBusy} onClick={() => void remove()}>{deleteBusy ? text('正在删除…', 'Deleting…') : text('删除记录和图片', 'Delete record and images')}</button></div>
+    </Dialog>}
     {preview && <Dialog title={`${text('模型测试图片', 'Model test image')} · ${displayValue(request?.x, preview.x_value)}`} wide onClose={() => setPreview(null)}><img className="xyz-full-image" src={imageUrl(preview.url)} alt={request?.prompt}/><div className="xyz-image-details"><span>Seed {preview.seed} · {preview.steps} {text('步', 'steps')} · CFG {preview.cfg} · {preview.sampler} / {preview.scheduler}{!fullModel && <> · LoRA {preview.adapter_scale}</>}</span><a className="ui-btn ui-btn-sm" href={imageUrl(preview.url)} download><Download size={14}/>{text('下载原图', 'Download image')}</a></div></Dialog>}
   </section>;
 }

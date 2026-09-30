@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "YPuddin Train Studio",
-    "version": "0.5.9"
+    "version": "0.6.0"
   },
   "paths": {
     "/api/health": {
@@ -1331,6 +1331,137 @@
         }
       }
     },
+    "/api/xyz/sources": {
+      "get": {
+        "summary": "Sources",
+        "operationId": "sources_api_xyz_sources_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XyzSourcePage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/xyz/sources/{source}": {
+      "get": {
+        "summary": "Source Details",
+        "operationId": "source_details_api_xyz_sources__source__get",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XyzSource"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs/{source}/xyz/options": {
       "get": {
         "summary": "Options",
@@ -1520,6 +1651,41 @@
                 "schema": {
                   "$ref": "#/components/schemas/XyzTask"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete",
+        "operationId": "delete_api_xyz__jid__delete",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -3246,6 +3412,21 @@
               "type": "string",
               "default": "all",
               "title": "Membership"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "filename",
+                "folder",
+                "modified"
+              ],
+              "type": "string",
+              "default": "filename",
+              "title": "Sort"
             }
           }
         ],
@@ -5587,6 +5768,21 @@
               "minimum": 1,
               "default": 16,
               "title": "Page Size"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "filename",
+                "folder",
+                "modified"
+              ],
+              "type": "string",
+              "default": "filename",
+              "title": "Sort"
             }
           }
         ],
@@ -8261,6 +8457,7 @@
             "description": "LoKr 的整数分解方式：默认 -1 在每个层维度中选接近平方根的一对因子；正数优先按该因子分解，不能整除时取不大于它的可用因子并给出提示。它决定 W1/W2 的形状，不是训练秩。",
             "default": -1,
             "x-ui": {
+              "advanced": true,
               "group": "adapter",
               "order": 30,
               "show_when": "adapter.algo == 'lokr'"
@@ -8312,6 +8509,7 @@
             "description": "DoRA 幅度按哪一侧的通道计算：input 每个输入通道一个幅度，ComfyUI、Forge 和 A1111 按训练时的方式计算，LyCORIS 自带的加载和合并工具无法读取；output 每个输出通道一个幅度，是 LyCORIS 的默认方式，ComfyUI、Forge 和 A1111 出图会偏离训练。更改后需要重新训练。",
             "default": "input",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "adapter",
               "order": 61,
@@ -8347,6 +8545,7 @@
             "title": "Tlora Min Rank",
             "description": "噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半（论文推荐）。",
             "x-ui": {
+              "advanced": true,
               "group": "adapter",
               "order": 72,
               "show_when": "adapter.algo == 'tlora'"
@@ -8372,6 +8571,7 @@
             "description": "用正交初始化开始训练（论文的完整做法）：各秩从互相独立的方向开始，训练开始时不改变底模输出。关闭则与普通 LoRA 的初始化相同。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "adapter",
               "order": 76,
@@ -8423,6 +8623,7 @@
             "description": "选择哪些层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。",
             "default": "attn-mlp",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "adapter",
               "order": 110
@@ -8438,6 +8639,7 @@
             "description": "训练层范围内哪些类型的层添加适配器：linear 只训练线性层；linear_conv 同时训练卷积层，目前只有 SDXL 的 UNet 含卷积层。卷积层的 Rank 和 Alpha 可以单独设置。",
             "default": "linear",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "adapter",
               "order": 112
@@ -8456,6 +8658,7 @@
             "title": "Conv Rank",
             "description": "大于 1×1 的卷积层使用的 Rank，与 kohya、LyCORIS 的 conv_dim 相同；留空与 Rank 相同。1×1 卷积按 Rank 训练。",
             "x-ui": {
+              "advanced": true,
               "group": "adapter",
               "order": 114,
               "show_when": "adapter.layer_types == 'linear_conv'"
@@ -8474,6 +8677,7 @@
             "title": "Conv Alpha",
             "description": "大于 1×1 的卷积层使用的 Alpha，与 kohya、LyCORIS 的 conv_alpha 相同；留空与 Alpha 相同。",
             "x-ui": {
+              "advanced": true,
               "group": "adapter",
               "order": 116,
               "show_when": "adapter.layer_types == 'linear_conv'"
@@ -8487,6 +8691,7 @@
             "title": "Rules",
             "description": "按序匹配的覆盖规则",
             "x-ui": {
+              "advanced": true,
               "control": "rules",
               "group": "adapter",
               "order": 120
@@ -9518,6 +9723,7 @@
             "description": "将学习率、优化器、分辨率等训练参数写入导出的 LoRA/LoKr 文件，供元数据查看器读取；不包含本机目录、图片标签、提示词或访问密钥。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "checkpoint",
               "order": 65,
@@ -9530,6 +9736,7 @@
             "description": "结束时保存最终权重",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "checkpoint",
               "order": 70
@@ -10178,6 +10385,7 @@
             "description": "原生模式单边长度上限，包含对齐补边；超限后按下方策略等比缩小或报错。",
             "default": 4096,
             "x-ui": {
+              "advanced": true,
               "group": "dataset",
               "order": 12,
               "show_when": "dataset.resolution_mode == 'native'"
@@ -10207,6 +10415,7 @@
             "description": "分桶最大长边/短边比，默认 2 对应最宽 2:1、最高 1:2。更狭长的原图进入最近的桶，按适配方式补边或裁切；大量长图可提高此值或改用原生模式减少补边。",
             "default": 2.0,
             "x-ui": {
+              "advanced": true,
               "group": "dataset",
               "order": 20,
               "show_when": "dataset.resolution_mode == 'bucket'"
@@ -10251,6 +10460,7 @@
             "description": "默认允许小图放大；启用后先缩小并对齐候选桶，再选择裁切或补边最少的尺寸。短边小于模型对齐要求时需选保留完整画面。想逐图保留原始大小可选原生模式。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "dataset",
               "order": 40,
@@ -14832,6 +15042,7 @@
             "description": "额外写入本地 TensorBoard 格式的训练指标与样图，默认关闭；前端任务日志和曲线不依赖此开关。需要用 TensorBoard 查看时启用。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "logging",
               "order": 0
@@ -14879,9 +15090,7 @@
             "description": "训练日志记录的详细程度。调试级别额外记录设备与精度、各阶段耗时、数据分桶、优化器与调度器、恢复点保存和采样的细节，在任务日志中打开“调试日志”后显示；信息级别只记录常规进度；警告级别只记录警告和错误。",
             "default": "debug",
             "x-ui": {
-              "control": "select",
-              "group": "logging",
-              "order": 5
+              "hidden": true
             }
           }
         },
@@ -14987,6 +15196,7 @@
             "description": "训练随机种子，默认 42，影响数据顺序、标签变体、噪声等。对比参数时保持一致；不同设备、依赖版本或数据仍可能产生不同结果，预览图另有自己的种子。",
             "default": 42,
             "x-ui": {
+              "advanced": true,
               "group": "loop",
               "order": 40
             }
@@ -16539,6 +16749,7 @@
             "description": "训练噪声强度分布，t 越大噪声越多。默认 shift 在 logit-normal 抽样后应用 shift=3；uniform 均匀抽样，resolution_shift 按图像 token 数调整。预览图使用独立的噪声调度设置。",
             "default": "shift",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "objective",
               "order": 0
@@ -16550,6 +16761,7 @@
             "description": "logit-normal 在 sigmoid 变换前的均值，默认 0；提高会偏向较高噪声，降低会偏向较低噪声。仅对应训练时间步分布，通常先保持默认。",
             "default": 0.0,
             "x-ui": {
+              "advanced": true,
               "group": "objective",
               "order": 10,
               "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
@@ -16562,6 +16774,7 @@
             "description": "logit-normal 在 sigmoid 变换前的标准差，默认 1；提高会增加靠近低噪声和高噪声端点的样本。",
             "default": 1.0,
             "x-ui": {
+              "advanced": true,
               "group": "objective",
               "order": 20,
               "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
@@ -16624,6 +16837,7 @@
             "description": "训练时间步偏移，默认 3；大于 1 将样本推向高噪声，1 不偏移。公式为 t'=s·t/(1+(s-1)·t)。该字段只影响训练 shift 分布，预览另有采样 shift。",
             "default": 3.0,
             "x-ui": {
+              "advanced": true,
               "group": "objective",
               "order": 30,
               "show_when": "objective.timestep_sampling == 'shift'"
@@ -16635,6 +16849,7 @@
             "description": "mode 训练时间步分布的形状系数，默认 1.29；仅在选择 mode 时生效。通常保持默认，并通过时间步诊断观察实际抽样分布。",
             "default": 1.29,
             "x-ui": {
+              "advanced": true,
               "group": "objective",
               "order": 40,
               "show_when": "objective.timestep_sampling == 'mode'"
@@ -16689,6 +16904,7 @@
             "description": "默认 MSE 平方误差。Huber/pseudo-Huber 调整大误差的惩罚方式，更换后损失数值不能直接与 MSE 比较。",
             "default": "mse",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "objective",
               "order": 80
@@ -16701,6 +16917,7 @@
             "description": "Huber/pseudo-Huber 从小误差过渡到大误差区域的尺度，默认 0.1；MSE 不使用此值。",
             "default": 0.1,
             "x-ui": {
+              "advanced": true,
               "group": "objective",
               "order": 90,
               "show_when": "objective.loss != 'mse'"
@@ -16720,6 +16937,7 @@
             "description": "给不同噪声时间步的损失乘权重，默认 none 等权；它不改变时间步抽样概率。其他方案会改变优化重点和损失量级，建议先保留默认建立对照。",
             "default": "none",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "objective",
               "order": 100
@@ -16732,6 +16950,7 @@
             "description": "SNR 截断值，默认 5。SDXL 的 Min-SNR 按实际噪声调度和 ε/v 预测计算损失权重；Flow 模型的 snr_like 是不同公式。仅选择对应加权方式时生效，不改变时间步抽样。",
             "default": 5.0,
             "x-ui": {
+              "advanced": true,
               "group": "objective",
               "order": 110,
               "show_when": "objective.weighting in ['snr_like', 'min_snr']"
@@ -16870,6 +17089,7 @@
               0.99
             ],
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 30,
               "show_when": "optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came']"
@@ -16889,6 +17109,7 @@
             "description": "防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 选择“Adam-atan2”会切换更新方式，此时不能同时启用 StableAdamW 或 FOCUS。",
             "default": 1e-08,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 40,
               "show_when": "optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic']"
@@ -16912,6 +17133,7 @@
             "description": "更新前将整体梯度范数限制到此值，默认 1，0 关闭；不是逐个参数的数值上限。频繁触发时可结合梯度曲线、学习率和数据检查原因。",
             "default": 1.0,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 60
             }
@@ -16922,6 +17144,7 @@
             "description": "为低精度训练参数保留 fp32 副本并补偿舍入误差，默认关闭；会增加内存。仅在确实用低精度适配器参数时考虑，不支持与 Schedule-Free 优化器组合。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 70
@@ -16948,6 +17171,7 @@
             "title": "Group Lr",
             "description": "按模块分组的学习率，如 {'llm_adapter': 5e-5, 'te': 2e-5}",
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 90
             }
@@ -16971,6 +17195,7 @@
             "description": "自动估计步长的起始值，默认 0.000001。仅影响估计起点；通常保留默认，与训练中实时估计的 D 值不同。",
             "default": 1e-06,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 110,
               "show_when": "optimizer.type in ['prodigy','prodigy_plus_sf']"
@@ -16990,6 +17215,7 @@
             "title": "Beta3",
             "description": "步长估计所用的历史平滑系数。留空时取 β2 的平方根；通常保留自动值。",
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 120,
               "show_when": "optimizer.type in ['prodigy','prodigy_plus_sf']"
@@ -17001,6 +17227,7 @@
             "description": "Prodigy 修正训练初期的统计偏差；PPSF 使用 RAdam 式修正与自动预热。作者均默认关闭，开启会改变早期更新曲线。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 130,
@@ -17013,6 +17240,7 @@
             "description": "估计步长时排除学习率预热的影响，作者默认关闭；使用外部预热时可启用。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 140,
@@ -17032,6 +17260,7 @@
             "title": "Growth Rate",
             "description": "限制 D 估计每一步最多增长的倍率；留空时不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。",
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 150,
               "show_when": "optimizer.type == 'prodigy'"
@@ -17044,6 +17273,7 @@
             "description": "步长估计每隔几个元素取样。默认 1 使用全部元素；更大值减少估计状态占用，也会降低估计精细度。",
             "default": 1,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 160,
               "show_when": "optimizer.type == 'prodigy'"
@@ -17055,6 +17285,7 @@
             "description": "将权重衰减与梯度更新分开，默认开启；关闭时衰减项会加入梯度。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 170,
@@ -17068,6 +17299,7 @@
             "description": "持续自动估计步长的优化器更新次数。0 表示全程估计；正数表示到达该步数后冻结估计，继续训练。",
             "default": 0,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 180,
               "show_when": "optimizer.type == 'prodigy_plus_sf'"
@@ -17079,6 +17311,7 @@
             "description": "限制步长估计突然增大，默认开启。启用 SPEED 时由 SPEED 自己的估计方式接管。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 190,
@@ -17092,6 +17325,7 @@
             "description": "控制 Schedule-Free 权重平均的速度。0 使用作者默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。",
             "default": 0.0,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 200,
               "show_when": "optimizer.type == 'prodigy_plus_sf' && optimizer.use_schedulefree == true"
@@ -17103,6 +17337,7 @@
             "description": "让不同参数组分别估计步长，默认开启。关闭后共享估计；不会启用手动分组学习率。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 210,
@@ -17115,6 +17350,7 @@
             "description": "将各参数组估计的步长取调和平均后使用，默认关闭；需启用分组估计。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 220,
@@ -17127,6 +17363,7 @@
             "description": "将适合的梯度统计矩阵分解存储，默认开启以减少优化器状态占用；关闭会保存完整统计。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 230,
@@ -17139,6 +17376,7 @@
             "description": "使用 FP32 保存分解统计，默认开启以减少舍入误差；仅在分解统计开启时生效。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 240,
@@ -17151,6 +17389,7 @@
             "description": "使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（在 EPS 输入处选择）组合。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 250,
@@ -17163,6 +17402,7 @@
             "description": "对低精度参数写回使用随机舍入，默认开启，降低小更新被截断的偏差；不影响 FP32 参数。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 260,
@@ -17175,6 +17415,7 @@
             "description": "将权重衰减随当前有效学习率一起缩放，默认开启；关闭会使用另一种衰减尺度。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 270,
@@ -17187,6 +17428,7 @@
             "description": "启用免调度权重平均，默认开启，无需外部学习率曲线。关闭后按普通训练方式使用学习率调度。",
             "default": true,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 280,
@@ -17199,6 +17441,7 @@
             "description": "切换为 SPEED 步长估计，默认关闭；启用后忽略 D 增长限制，估计轨迹会改变。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 290,
@@ -17211,6 +17454,7 @@
             "description": "只保留与当前梯度方向一致的更新，默认关闭；不能与 Grams 同时启用。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 300,
@@ -17223,6 +17467,7 @@
             "description": "按当前梯度重新确定更新方向，默认关闭；不能与 Cautious 同时启用。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 310,
@@ -17235,6 +17480,7 @@
             "description": "切换梯度归一化顺序并加入 ADOPT 的限制，默认关闭；会改变早期更新方式。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 320,
@@ -17247,6 +17493,7 @@
             "description": "移除梯度中与权重方向平行的分量，默认关闭；用于对比不同更新方向。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 330,
@@ -17259,6 +17506,7 @@
             "description": "改用 FOCUS 更新方式，默认关闭；不能与分解统计或 Adam-atan2 同时使用。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "optimizer",
               "order": 340,
@@ -17273,6 +17521,7 @@
             "description": "平滑梯度大小估计，默认 0.999。数值越大，越看重较长的历史，对变化反应更慢。",
             "default": 0.999,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 350,
               "show_when": "optimizer.type == 'automagic'"
@@ -17285,6 +17534,7 @@
             "description": "逐元素自适应学习率的下限，默认 0.0000001；需不高于上限。",
             "default": 1e-07,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 360,
               "show_when": "optimizer.type == 'automagic'"
@@ -17297,6 +17547,7 @@
             "description": "逐元素自适应学习率的上限，默认 0.001；用于限制最大更新强度。",
             "default": 0.001,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 370,
               "show_when": "optimizer.type == 'automagic'"
@@ -17309,6 +17560,7 @@
             "description": "逐元素学习率每次调整的增量，默认 0.000001。较大值会更快调整，也可能使步长变化更明显。",
             "default": 1e-06,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 380,
               "show_when": "optimizer.type == 'automagic'"
@@ -17321,6 +17573,7 @@
             "description": "Automagic 内部更新归一化阈值，默认 1；与训练器的全局梯度裁剪不同。",
             "default": 1.0,
             "x-ui": {
+              "advanced": true,
               "group": "optimizer",
               "order": 390,
               "show_when": "optimizer.type == 'automagic'"
@@ -20560,6 +20813,7 @@
             "description": "默认关闭；开启后在首次训练更新前生成基线图，便于与后续结果对比。从已完成该阶段的完整状态恢复时不会重复生成。",
             "default": false,
             "x-ui": {
+              "advanced": true,
               "control": "switch",
               "group": "sampling",
               "order": 30,
@@ -20592,6 +20846,7 @@
             "title": "Prompts File",
             "description": "可选的额外提示词文件，.txt 每行一条，.toml 可携带逐条参数；文件内容会追加到上方列表。留空只使用列表，避免两处重复填写。",
             "x-ui": {
+              "advanced": true,
               "control": "path",
               "group": "sampling",
               "order": 50,
@@ -20648,6 +20903,7 @@
             "title": "Shift",
             "description": "调整预览积分时间步的噪声分布，留空使用模型族默认（Anima 为 3，Krea 2 按图像 token 数计算）。1 不偏移，更大值偏向高噪声时间段；不同于训练分布里的 shift。",
             "x-ui": {
+              "advanced": true,
               "group": "sampling",
               "order": 80,
               "show_when": "sampling.enabled == true"
@@ -20685,6 +20941,7 @@
             "description": "预览初始噪声种子，默认 0：每次训练开始时随机生成一个种子，本次训练的所有预览都使用它，续训沿用同一个。手动输入种子值会固定训练时使用的种子。未单独设种子的第 i 条提示词使用该种子 + i（从 0 计）。与训练随机种子独立。",
             "default": 0,
             "x-ui": {
+              "advanced": true,
               "group": "sampling",
               "order": 110,
               "show_when": "sampling.enabled == true"
@@ -20701,6 +20958,7 @@
             "description": "预览图的采样算法，默认 Euler 每步评估一次；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。",
             "default": "euler",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "sampling",
               "order": 120,
@@ -20719,6 +20977,7 @@
             "description": "预览采样使用的噪声时间点。默认 uniform 使用均匀网格并应用 shift；simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。",
             "default": "uniform",
             "x-ui": {
+              "advanced": true,
               "control": "select",
               "group": "sampling",
               "order": 130,
@@ -20827,6 +21086,7 @@
             "description": "衰减下限相对基础学习率的倍率，默认 0；0.1 表示最低为基础值的 10%。constant 不使用此下限，周期重启会重新提高学习率。",
             "default": 0.0,
             "x-ui": {
+              "advanced": true,
               "group": "scheduler",
               "order": 20,
               "show_when": "scheduler.type != 'constant'"
@@ -20839,6 +21099,7 @@
             "description": "cosine_restarts 的周期数，默认 1；每个周期会先降低再恢复学习率。",
             "default": 1,
             "x-ui": {
+              "advanced": true,
               "group": "scheduler",
               "order": 30,
               "show_when": "scheduler.type == 'cosine_restarts'"
@@ -20851,6 +21112,7 @@
             "description": "多项式衰减的幂，默认 1 为线性衰减；更大值会更早降低学习率。仅 polynomial 使用，通常先保留默认。",
             "default": 1.0,
             "x-ui": {
+              "advanced": true,
               "group": "scheduler",
               "order": 40,
               "show_when": "scheduler.type == 'polynomial'"
@@ -20868,6 +21130,7 @@
             "title": "Decay Steps",
             "description": "预热—稳定—衰减调度最后的衰减时长，留空为总步数的约 10%；0 到 1 之间表示比例，≥1 表示步数。仅 warmup_stable_decay 使用。",
             "x-ui": {
+              "advanced": true,
               "group": "scheduler",
               "order": 50,
               "show_when": "scheduler.type == 'warmup_stable_decay'"
@@ -21463,7 +21726,7 @@
             "maximum": 2.0,
             "minimum": 0.0,
             "title": "Temperature",
-            "default": 0.3
+            "default": 0
           },
           "max_tokens": {
             "anyOf": [
@@ -23760,7 +24023,7 @@
             "maximum": 2.0,
             "minimum": 0.0,
             "title": "Temperature",
-            "default": 0.3
+            "default": 0
           },
           "max_tokens": {
             "anyOf": [
@@ -24429,6 +24692,120 @@
         ],
         "title": "XyzRequest"
       },
+      "XyzSource": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "version_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Name"
+          },
+          "version_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Number"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "title": "XyzSource"
+      },
+      "XyzSourcePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/XyzSource"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "XyzSourcePage"
+      },
       "XyzTask": {
         "properties": {
           "id": {
@@ -24540,6 +24917,10 @@
           "can_cancel": {
             "type": "boolean",
             "title": "Can Cancel"
+          },
+          "output_dir": {
+            "type": "string",
+            "title": "Output Dir"
           }
         },
         "type": "object",
@@ -24556,7 +24937,8 @@
           "finished_at",
           "request",
           "manifest",
-          "can_cancel"
+          "can_cancel",
+          "output_dir"
         ],
         "title": "XyzTask"
       }

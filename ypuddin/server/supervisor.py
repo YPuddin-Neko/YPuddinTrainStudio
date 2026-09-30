@@ -1178,6 +1178,14 @@ class JobSupervisor:
         from .job_layout import makes_products, renamed_for_job
 
         self._check_job_version(job)
+        if job["type"] == "xyz":
+            payload = json.loads(job["config_json"])
+            source_id = payload["xyz"]["source_job_id"]
+            if not self.db.fetchone("SELECT id FROM jobs WHERE id=? AND type='train'", (source_id,)):
+                raise ValueError("来源训练任务已删除，请选择其他训练任务生成模型测试。")
+            for checkpoint in payload["xyz"].get("checkpoints", {}).values():
+                if not Path(checkpoint["path"]).exists():
+                    raise ValueError("模型测试使用的训练权重已删除，请重新选择权重。")
         new = new_id("j")
 
         def sibling(path: Path, fallback: Path) -> Path:
@@ -1199,6 +1207,8 @@ class JobSupervisor:
         events = event_file(job)
         cfg.setdefault("logging", {})["events_path"] = str(sibling(events, run_dir / "events.jsonl"))
         cfg["logging"]["output_dir"] = str(Path(cfg["logging"]["events_path"]).parent)
+        if job["type"] in {"train", "cache"}:
+            cfg["logging"]["level"] = "debug"
         cfg.setdefault("sampling", {})["output_dir"] = str(samples_dir)
         self.db.insert(
             "jobs",

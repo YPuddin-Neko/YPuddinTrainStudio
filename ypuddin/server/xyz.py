@@ -148,6 +148,26 @@ class XyzTask(BaseModel):
     request: dict[str, Any]
     manifest: XyzManifest
     can_cancel: bool
+    output_dir: str
+
+
+class XyzSource(BaseModel):
+    id: str
+    name: str
+    project_id: str | None = None
+    version_id: str | None = None
+    project_name: str | None = None
+    version_name: str | None = None
+    version_number: int | None = None
+    created_at: float
+    deleted: bool = False
+
+
+class XyzSourcePage(BaseModel):
+    items: list[XyzSource]
+    total: int
+    page: int
+    page_size: int
 
 
 class KeptModel(BaseModel):
@@ -255,6 +275,69 @@ def _source(context, source_id):
     return row
 
 
+def preserve_source(context, source):
+    """A completed comparison owns its images and the source's description, independently."""
+    rows = context.db.fetchall(
+        "SELECT * FROM jobs WHERE type='xyz' AND json_extract(config_json,'$.xyz.source_job_id')=?",
+        (source["id"],),
+    )
+    if any(row["status"] not in {"completed", "failed", "cancelled"} or context.supervisor.is_running(row["id"]) for row in rows):
+        raise ApiError("模型测试还在使用此训练任务，请先取消或等待生成完成。", code="job.xyz_dependencies", status=409)
+    snapshot = {key: source.get(key) for key in ("id", "name", "project_id", "version_id", "created_at", "config_json")}
+    for row in rows:
+        payload = json.loads(row["config_json"])
+        payload["xyz"]["source_snapshot"] = snapshot
+        context.db.update("jobs", row["id"], {"config_json": json.dumps(payload)})
+
+
+def history_source(context, source_id):
+    source = context.db.fetchone("SELECT * FROM jobs WHERE id=? AND type='train'", (source_id,))
+    if source:
+        return source
+    row = context.db.fetchone(
+        "SELECT config_json FROM jobs WHERE type='xyz' AND json_extract(config_json,'$.xyz.source_job_id')=?"
+        " AND json_extract(config_json,'$.xyz.source_snapshot') IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+        (source_id,),
+    )
+    if not row:
+        raise NotFound("模型测试来源不存在。", code="xyz.source")
+    return {**json.loads(row["config_json"])["xyz"]["source_snapshot"], "deleted": True}
+
+
+def source_details(context, source_id):
+    source = history_source(context, source_id)
+    project = context.db.fetchone("SELECT name FROM projects WHERE id=?", (source.get("project_id"),))
+    version = context.db.fetchone("SELECT name,number FROM project_versions WHERE id=?", (source.get("version_id"),))
+    return {
+        **{key: source.get(key) for key in ("id", "name", "project_id", "version_id", "created_at")},
+        "project_name": project["name"] if project else None,
+        "version_name": version["name"] if version else None,
+        "version_number": version["number"] if version else None,
+        "deleted": bool(source.get("deleted")),
+    }
+
+
+def sources(context, *, project_id=None, version_id=None, q="", page=1, page_size=50):
+    ids = {row["id"] for row in context.db.fetchall("SELECT id FROM jobs WHERE type='train' AND archived_at IS NULL")}
+    ids.update(row["id"] for row in context.db.fetchall(
+        "SELECT DISTINCT json_extract(config_json,'$.xyz.source_job_id') AS id FROM jobs WHERE type='xyz'"
+    ))
+    rows = []
+    for source_id in ids:
+        try:
+            row = source_details(context, source_id)
+        except NotFound:
+            continue
+        if project_id and row["project_id"] != project_id or version_id and row["version_id"] != version_id:
+            continue
+        if q.strip() and q.strip().casefold() not in " ".join(str(row.get(key) or "") for key in ("name", "project_name", "version_name", "id")).casefold():
+            continue
+        rows.append(row)
+    rows.sort(key=lambda row: (row["created_at"], row["id"]), reverse=True)
+    page, page_size = max(1, page), max(1, min(200, page_size))
+    return {"items": rows[(page - 1) * page_size:page * page_size], "total": len(rows), "page": page, "page_size": page_size}
+
+
 # The model a run's products are sampled with; adapters only mean the same thing on the same base.
 BASE_MODEL_FIELDS = ("dit_path", "text_encoder_path", "text_encoder_2_path", "vae_path", "tokenizer_path")
 
@@ -326,7 +409,7 @@ def _checkpoints(context, source_id, *, full=False):
 
 
 def options(context, source_id):
-    source = _source(context, source_id)
+    source = history_source(context, source_id)
     config = json.loads(source["config_json"])
     model = ModelConfig.model_validate(config["model"])
     family = get_family(model.family)
@@ -680,11 +763,12 @@ def task(context, jid):
         "request": snapshot["request"],
         "manifest": manifest,
         "can_cancel": row["status"] in {"queued", "scheduled", "running", "pausing"},
+        "output_dir": str(path.parent),
     }
 
 
 def history(context, source_id):
-    _source(context, source_id)
+    history_source(context, source_id)
     return [
         task(context, row["id"])
         for row in context.db.fetchall(

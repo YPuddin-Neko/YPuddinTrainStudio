@@ -36,6 +36,8 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
   const rows = Math.ceil(images.items.length / cols);
   const startRow = Math.max(0, Math.floor(viewport.top / rowHeight) - 2);
   const endRow = Math.min(rows, Math.ceil((viewport.top + viewport.height) / rowHeight) + 2);
+  const setColumns = images.setColumns;
+  React.useEffect(() => { setColumns?.(cols); }, [cols, setColumns]);
   const firstLoad = images.loading && images.items.length === 0 && !images.error;
 
   React.useLayoutEffect(() => {

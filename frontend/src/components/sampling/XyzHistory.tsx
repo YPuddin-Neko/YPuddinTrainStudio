@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, Grid2X2, Loader2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Grid2X2, Loader2, Trash2, X } from 'lucide-react';
 import { apiUrl } from '../../api/client';
 import { LazyImage } from '../Loading';
 import { prefersReducedMotion } from '../../utils/motion';
@@ -18,8 +18,8 @@ function when(seconds: number) {
  * The run's comparisons as thumbnails, newest first. Beside the results they form a column; on narrow pages a line
  * that pages sideways.
  */
-export default function XyzHistory({ tasks, selected, onSelect, onCancel, disabled }: {
-  tasks: XyzTask[]; selected: string; onSelect: (id: string) => void; onCancel: (task: XyzTask) => void; disabled: boolean;
+export default function XyzHistory({ tasks, selected, onSelect, onCancel, onDelete, disabled }: {
+  tasks: XyzTask[]; selected: string; onSelect: (id: string) => void; onCancel: (task: XyzTask) => void; onDelete: (task: XyzTask) => void; disabled: boolean;
 }) {
   const text = useWorkspaceText();
   const list = React.useRef<HTMLOListElement>(null);
@@ -61,13 +61,13 @@ export default function XyzHistory({ tasks, selected, onSelect, onCancel, disabl
     {edges.paged && arrow(-1)}
     <ol ref={list} className="xyz-history-list">
       {tasks.map(task => <HistoryItem key={task.id} task={task} selected={task.id === selected} disabled={disabled}
-        onSelect={() => onSelect(task.id)} onCancel={() => onCancel(task)}/>)}
+        onSelect={() => onSelect(task.id)} onCancel={() => onCancel(task)} onDelete={() => onDelete(task)}/>)}
     </ol>
     {edges.paged && arrow(1)}
   </nav>;
 }
 
-function HistoryItem({ task, selected, disabled, onSelect, onCancel }: { task: XyzTask; selected: boolean; disabled: boolean; onSelect: () => void; onCancel: () => void }) {
+function HistoryItem({ task, selected, disabled, onSelect, onCancel, onDelete }: { task: XyzTask; selected: boolean; disabled: boolean; onSelect: () => void; onCancel: () => void; onDelete: () => void }) {
   const text = useWorkspaceText();
   const statusLabel = useStatusLabel();
   const active = isActive(task);
@@ -92,5 +92,7 @@ function HistoryItem({ task, selected, disabled, onSelect, onCancel }: { task: X
     </button>
     {task.can_cancel && task.status !== 'cancelling' && <button type="button" className="xyz-history-cancel" disabled={disabled}
       aria-label={text(`取消 ${time} 的对比`, `Cancel the ${time} comparison`)} title={text('取消', 'Cancel')} onClick={onCancel}><X size={13}/></button>}
+    {['completed', 'failed', 'cancelled'].includes(task.status) && <button type="button" className="xyz-history-delete" disabled={disabled}
+      aria-label={text(`删除 ${time} 的模型测试`, `Delete the ${time} model test`)} title={text('删除模型测试', 'Delete model test')} onClick={onDelete}><Trash2 size={13}/></button>}
   </li>;
 }

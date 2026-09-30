@@ -58,6 +58,7 @@
           "title": "Factor",
           "type": "integer",
           "x-ui": {
+            "advanced": true,
             "group": "adapter",
             "order": 30,
             "show_when": "adapter.algo == 'lokr'"
@@ -109,6 +110,7 @@
           "title": "Dora Axis",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "adapter",
             "order": 61,
@@ -145,6 +147,7 @@
           "description": "噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半（论文推荐）。",
           "title": "Tlora Min Rank",
           "x-ui": {
+            "advanced": true,
             "group": "adapter",
             "order": 72,
             "show_when": "adapter.algo == 'tlora'"
@@ -170,6 +173,7 @@
           "title": "Tlora Ortho",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "adapter",
             "order": 76,
@@ -221,6 +225,7 @@
           "title": "Preset",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "adapter",
             "order": 110
@@ -236,6 +241,7 @@
           "title": "Layer Types",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "adapter",
             "order": 112
@@ -255,6 +261,7 @@
           "description": "大于 1×1 的卷积层使用的 Rank，与 kohya、LyCORIS 的 conv_dim 相同；留空与 Rank 相同。1×1 卷积按 Rank 训练。",
           "title": "Conv Rank",
           "x-ui": {
+            "advanced": true,
             "group": "adapter",
             "order": 114,
             "show_when": "adapter.layer_types == 'linear_conv'"
@@ -274,6 +281,7 @@
           "description": "大于 1×1 的卷积层使用的 Alpha，与 kohya、LyCORIS 的 conv_alpha 相同；留空与 Alpha 相同。",
           "title": "Conv Alpha",
           "x-ui": {
+            "advanced": true,
             "group": "adapter",
             "order": 116,
             "show_when": "adapter.layer_types == 'linear_conv'"
@@ -287,6 +295,7 @@
           "title": "Rules",
           "type": "array",
           "x-ui": {
+            "advanced": true,
             "control": "rules",
             "group": "adapter",
             "order": 120
@@ -773,6 +782,7 @@
           "title": "Save Training Metadata",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "checkpoint",
             "order": 65,
@@ -785,6 +795,7 @@
           "title": "Save On Finish",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "checkpoint",
             "order": 70
@@ -919,6 +930,7 @@
           "title": "Native Max Side",
           "type": "integer",
           "x-ui": {
+            "advanced": true,
             "group": "dataset",
             "order": 12,
             "show_when": "dataset.resolution_mode == 'native'"
@@ -948,6 +960,7 @@
           "title": "Aspect Ratio Limit",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "dataset",
             "order": 20,
             "show_when": "dataset.resolution_mode == 'bucket'"
@@ -993,6 +1006,7 @@
           "title": "Bucket No Upscale",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "dataset",
             "order": 40,
@@ -1228,6 +1242,7 @@
           "title": "Tensorboard",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "logging",
             "order": 0
@@ -1277,9 +1292,7 @@
           "title": "Level",
           "type": "string",
           "x-ui": {
-            "control": "select",
-            "group": "logging",
-            "order": 5
+            "hidden": true
           }
         }
       },
@@ -1386,6 +1399,7 @@
           "title": "Seed",
           "type": "integer",
           "x-ui": {
+            "advanced": true,
             "group": "loop",
             "order": 40
           }
@@ -1815,6 +1829,7 @@
           "title": "Timestep Sampling",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "objective",
             "order": 0
@@ -1826,6 +1841,7 @@
           "title": "Logit Mean",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "objective",
             "order": 10,
             "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
@@ -1838,6 +1854,7 @@
           "title": "Logit Std",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "objective",
             "order": 20,
             "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
@@ -1900,6 +1917,7 @@
           "title": "Shift",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "objective",
             "order": 30,
             "show_when": "objective.timestep_sampling == 'shift'"
@@ -1911,6 +1929,7 @@
           "title": "Mode Scale",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "objective",
             "order": 40,
             "show_when": "objective.timestep_sampling == 'mode'"
@@ -1965,6 +1984,7 @@
           "title": "Loss",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "objective",
             "order": 80
@@ -1977,6 +1997,7 @@
           "title": "Huber C",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "objective",
             "order": 90,
             "show_when": "objective.loss != 'mse'"
@@ -1996,6 +2017,7 @@
           "title": "Weighting",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "objective",
             "order": 100
@@ -2008,6 +2030,7 @@
           "title": "Snr Gamma",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "objective",
             "order": 110,
             "show_when": "objective.weighting in ['snr_like', 'min_snr']"
@@ -2134,6 +2157,7 @@
           "title": "Betas",
           "type": "array",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 30,
             "show_when": "optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came']"
@@ -2153,6 +2177,7 @@
           "description": "防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 选择“Adam-atan2”会切换更新方式，此时不能同时启用 StableAdamW 或 FOCUS。",
           "title": "Eps",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 40,
             "show_when": "optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic']"
@@ -2176,6 +2201,7 @@
           "title": "Grad Clip Norm",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 60
           }
@@ -2186,6 +2212,7 @@
           "title": "Kahan",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 70
@@ -2212,6 +2239,7 @@
           "title": "Group Lr",
           "type": "object",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 90
           }
@@ -2235,6 +2263,7 @@
           "title": "D0",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 110,
             "show_when": "optimizer.type in ['prodigy','prodigy_plus_sf']"
@@ -2255,6 +2284,7 @@
           "description": "步长估计所用的历史平滑系数。留空时取 β2 的平方根；通常保留自动值。",
           "title": "Beta3",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 120,
             "show_when": "optimizer.type in ['prodigy','prodigy_plus_sf']"
@@ -2266,6 +2296,7 @@
           "title": "Use Bias Correction",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 130,
@@ -2278,6 +2309,7 @@
           "title": "Safeguard Warmup",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 140,
@@ -2298,6 +2330,7 @@
           "description": "限制 D 估计每一步最多增长的倍率；留空时不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。",
           "title": "Growth Rate",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 150,
             "show_when": "optimizer.type == 'prodigy'"
@@ -2310,6 +2343,7 @@
           "title": "Slice P",
           "type": "integer",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 160,
             "show_when": "optimizer.type == 'prodigy'"
@@ -2321,6 +2355,7 @@
           "title": "Decouple",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 170,
@@ -2334,6 +2369,7 @@
           "title": "Prodigy Steps",
           "type": "integer",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 180,
             "show_when": "optimizer.type == 'prodigy_plus_sf'"
@@ -2345,6 +2381,7 @@
           "title": "D Limiter",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 190,
@@ -2358,6 +2395,7 @@
           "title": "Schedulefree C",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 200,
             "show_when": "optimizer.type == 'prodigy_plus_sf' && optimizer.use_schedulefree == true"
@@ -2369,6 +2407,7 @@
           "title": "Split Groups",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 210,
@@ -2381,6 +2420,7 @@
           "title": "Split Groups Mean",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 220,
@@ -2393,6 +2433,7 @@
           "title": "Factored",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 230,
@@ -2405,6 +2446,7 @@
           "title": "Factored Fp32",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 240,
@@ -2417,6 +2459,7 @@
           "title": "Use Stableadamw",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 250,
@@ -2429,6 +2472,7 @@
           "title": "Stochastic Rounding",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 260,
@@ -2441,6 +2485,7 @@
           "title": "Weight Decay By Lr",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 270,
@@ -2453,6 +2498,7 @@
           "title": "Use Schedulefree",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 280,
@@ -2465,6 +2511,7 @@
           "title": "Use Speed",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 290,
@@ -2477,6 +2524,7 @@
           "title": "Use Cautious",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 300,
@@ -2489,6 +2537,7 @@
           "title": "Use Grams",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 310,
@@ -2501,6 +2550,7 @@
           "title": "Use Adopt",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 320,
@@ -2513,6 +2563,7 @@
           "title": "Use Orthograd",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 330,
@@ -2525,6 +2576,7 @@
           "title": "Use Focus",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "optimizer",
             "order": 340,
@@ -2539,6 +2591,7 @@
           "title": "Beta2",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 350,
             "show_when": "optimizer.type == 'automagic'"
@@ -2551,6 +2604,7 @@
           "title": "Min Lr",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 360,
             "show_when": "optimizer.type == 'automagic'"
@@ -2563,6 +2617,7 @@
           "title": "Max Lr",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 370,
             "show_when": "optimizer.type == 'automagic'"
@@ -2575,6 +2630,7 @@
           "title": "Lr Bump",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 380,
             "show_when": "optimizer.type == 'automagic'"
@@ -2587,6 +2643,7 @@
           "title": "Clip Threshold",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "optimizer",
             "order": 390,
             "show_when": "optimizer.type == 'automagic'"
@@ -2776,6 +2833,7 @@
           "title": "At Start",
           "type": "boolean",
           "x-ui": {
+            "advanced": true,
             "control": "switch",
             "group": "sampling",
             "order": 30,
@@ -2809,6 +2867,7 @@
           "description": "可选的额外提示词文件，.txt 每行一条，.toml 可携带逐条参数；文件内容会追加到上方列表。留空只使用列表，避免两处重复填写。",
           "title": "Prompts File",
           "x-ui": {
+            "advanced": true,
             "control": "path",
             "group": "sampling",
             "order": 50,
@@ -2868,6 +2927,7 @@
           "description": "调整预览积分时间步的噪声分布，留空使用模型族默认（Anima 为 3，Krea 2 按图像 token 数计算）。1 不偏移，更大值偏向高噪声时间段；不同于训练分布里的 shift。",
           "title": "Shift",
           "x-ui": {
+            "advanced": true,
             "group": "sampling",
             "order": 80,
             "show_when": "sampling.enabled == true"
@@ -2905,6 +2965,7 @@
           "title": "Seed",
           "type": "integer",
           "x-ui": {
+            "advanced": true,
             "group": "sampling",
             "order": 110,
             "show_when": "sampling.enabled == true"
@@ -2921,6 +2982,7 @@
           "title": "Sampler",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "sampling",
             "order": 120,
@@ -2939,6 +3001,7 @@
           "title": "Scheduler",
           "type": "string",
           "x-ui": {
+            "advanced": true,
             "control": "select",
             "group": "sampling",
             "order": 130,
@@ -3023,6 +3086,7 @@
           "title": "Min Lr Ratio",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "scheduler",
             "order": 20,
             "show_when": "scheduler.type != 'constant'"
@@ -3035,6 +3099,7 @@
           "title": "Num Cycles",
           "type": "integer",
           "x-ui": {
+            "advanced": true,
             "group": "scheduler",
             "order": 30,
             "show_when": "scheduler.type == 'cosine_restarts'"
@@ -3047,6 +3112,7 @@
           "title": "Power",
           "type": "number",
           "x-ui": {
+            "advanced": true,
             "group": "scheduler",
             "order": 40,
             "show_when": "scheduler.type == 'polynomial'"
@@ -3065,6 +3131,7 @@
           "description": "预热—稳定—衰减调度最后的衰减时长，留空为总步数的约 10%；0 到 1 之间表示比例，≥1 表示步数。仅 warmup_stable_decay 使用。",
           "title": "Decay Steps",
           "x-ui": {
+            "advanced": true,
             "group": "scheduler",
             "order": 50,
             "show_when": "scheduler.type == 'warmup_stable_decay'"

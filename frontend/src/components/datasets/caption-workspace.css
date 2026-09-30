@@ -93,7 +93,7 @@
   .caption-workspace-library { height:250px; }
   .caption-workspace-body { height:660px; grid-template-rows:minmax(160px,min(var(--caption-preview-height,58%),calc(100% - 188px))) 8px minmax(180px,1fr); }
   .caption-workspace-statistics { margin-top:0; }
-  .caption-workspace-gallery { grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); }
+  .caption-workspace-gallery { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
 @container (max-width:520px) {
   .caption-workspace-source { flex-basis:100%; max-width:none; }

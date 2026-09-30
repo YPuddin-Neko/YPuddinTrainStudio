@@ -1,6 +1,8 @@
 import React from 'react';
 import { apiClient } from '../client';
 import { DatasetImage, DatasetImagesPage } from '../types';
+import type { ImageSort } from '../../components/datasets/ImageSortSelect';
+import { fullRowPageSize } from './useGridPageSize';
 
 /**
  * 数据集图片分页 + 搜索 + 多选 hook。
@@ -8,11 +10,14 @@ import { DatasetImage, DatasetImagesPage } from '../types';
  * - 支持追加加载（loadMore）与全量刷新（refresh）
  * - 本地更新某张图 caption（caption 编辑保存后）
  */
-export function useDatasetImages(datasetId: string | undefined, pageSize = 60, membership: 'all' | 'training' | 'unused' = 'all') {
+export function useDatasetImages(datasetId: string | undefined, targetPageSize = 60, membership: 'all' | 'training' | 'unused' = 'all') {
+  const [columns, setColumns] = React.useState(1);
+  const pageSize = fullRowPageSize(targetPageSize, columns);
   const [items, setItems] = React.useState<DatasetImage[]>([]);
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(1);
   const [q, setQ] = React.useState('');
+  const [sort, setSort] = React.useState<ImageSort>('filename');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const request = React.useRef<AbortController | null>(null);
@@ -28,7 +33,7 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60, m
       try {
         const resp = await apiClient.get<DatasetImagesPage>(`/datasets/${datasetId}/images`, {
           signal: controller.signal,
-          params: { page: p, page_size: pageSize, q: query || undefined, membership },
+          params: { page: p, page_size: pageSize, q: query || undefined, membership, sort },
         });
         if (controller.signal.aborted) return;
         setTotal(resp.total);
@@ -40,18 +45,19 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60, m
         if (!controller.signal.aborted) setLoading(false);
       }
     },
-    [datasetId, pageSize, membership]
+    [datasetId, pageSize, membership, sort]
   );
 
   // datasetId 或 q 变化：重置并加载第一页
   React.useEffect(() => {
     setItems([]);
     setPage(1);
-    setSelected(new Set());
     fetchPage(1, q, false);
     return () => request.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datasetId, q, membership]);
+  }, [datasetId, q, membership, pageSize, sort]);
+
+  React.useEffect(() => { setSelected(new Set()); }, [datasetId, q, membership, sort]);
 
   const loadMore = React.useCallback(() => {
     if (loading) return;
@@ -91,8 +97,11 @@ export function useDatasetImages(datasetId: string | undefined, pageSize = 60, m
     total,
     page,
     pageSize,
+    setColumns,
     q,
     setQ,
+    sort,
+    setSort,
     loading,
     error,
     selected,

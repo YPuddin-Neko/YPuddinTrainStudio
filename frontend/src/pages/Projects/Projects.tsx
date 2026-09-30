@@ -98,7 +98,11 @@ export default function Projects() {
     const name = project.active_version_name?.trim() || '';
     return number && name && name !== number ? `${number} · ${name}` : name || number;
   };
-  const updated = (value: number) => value > 0 ? new Date(value * 1000).toLocaleDateString(i18n.resolvedLanguage || 'zh-CN', { month: 'short', day: 'numeric' }) : '—';
+  const updated = (value: number) => {
+    const date = value > 0 ? new Date(value * 1000) : null;
+    const valid = date !== null && Number.isFinite(date.getTime());
+    return <time dateTime={valid ? date.toISOString() : undefined}>{valid ? date.toLocaleDateString(i18n.resolvedLanguage || 'zh-CN', { month: 'short', day: 'numeric' }) : '—'}</time>;
+  };
   const counts = (project: GalleryProject) => [
     { key: 'images', label: text('训练图片', 'Training images'), value: project.image_count, unit: text('张图片', 'images') },
     { key: 'versions', label: text('版本', 'Versions'), value: project.version_count, unit: text('个版本', 'versions') },
@@ -140,7 +144,7 @@ export default function Projects() {
               <div className="project-card-meta">{meta(project).map((item, index) => <span key={index} className={index === 0 ? 'project-category' : undefined} title={item}>{item}</span>)}</div>
               {project.note?.trim() && <p className="project-card-note" title={project.note}>{project.note}</p>}
               <ProjectActivityLine job={project.latest_job}/>
-              <div className="project-card-footer"><div className="project-stats">{counts(project).map(item => <span key={item.key} aria-label={`${item.label}: ${item.value ?? '—'}`}>{item.value == null ? `${item.label} —` : `${item.value} ${item.unit}`}</span>)}</div><time dateTime={new Date(project.updated_at * 1000).toISOString()}>{updated(project.updated_at)}</time></div>
+              <div className="project-card-footer"><div className="project-stats">{counts(project).map(item => <span key={item.key} aria-label={`${item.label}: ${item.value ?? '—'}`}>{item.value == null ? `${item.label} —` : `${item.value} ${item.unit}`}</span>)}</div>{updated(project.updated_at)}</div>
             </div>
           </Link>
           {menu(project)}
@@ -154,7 +158,7 @@ export default function Projects() {
               <div className="project-row-meta"><span className="project-category">{meta(project)[0]}</span><small title={meta(project).slice(1).join(' · ')}>{meta(project).slice(1).join(' · ')}</small></div>
               <ProjectActivityLine job={project.latest_job}/>
               {counts(project).map(item => <span key={item.key} className="project-row-number" aria-label={`${item.label}: ${item.value ?? '—'}`}>{item.value ?? '—'}</span>)}
-              <time dateTime={new Date(project.updated_at * 1000).toISOString()}>{updated(project.updated_at)}</time>
+              {updated(project.updated_at)}
             </Link>
             {menu(project)}
           </article>)}

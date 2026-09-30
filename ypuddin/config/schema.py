@@ -230,7 +230,7 @@ class DatasetConfig(_Strict):
         ge=32,
         le=8192,
         help="原生模式单边长度上限，包含对齐补边；超限后按下方策略等比缩小或报错。",
-        ui_=ui("dataset", order=12, show_when="dataset.resolution_mode == 'native'"),
+        ui_=ui("dataset", advanced=True, order=12, show_when="dataset.resolution_mode == 'native'"),
     )
     native_overflow: Literal["downscale", "error"] = F(
         "downscale",
@@ -247,7 +247,7 @@ class DatasetConfig(_Strict):
         2.0,
         ge=1.0,
         help="分桶最大长边/短边比，默认 2 对应最宽 2:1、最高 1:2。更狭长的原图进入最近的桶，按适配方式补边或裁切；大量长图可提高此值或改用原生模式减少补边。",
-        ui_=ui("dataset", order=20, show_when="dataset.resolution_mode == 'bucket'"),
+        ui_=ui("dataset", advanced=True, order=20, show_when="dataset.resolution_mode == 'bucket'"),
     )
     area_tolerance: float = F(
         0.10,
@@ -265,7 +265,7 @@ class DatasetConfig(_Strict):
     bucket_no_upscale: bool = F(
         False,
         help="默认允许小图放大；启用后先缩小并对齐候选桶，再选择裁切或补边最少的尺寸。短边小于模型对齐要求时需选保留完整画面。想逐图保留原始大小可选原生模式。",
-        ui_=ui("dataset", order=40, control="switch", show_when="dataset.resolution_mode == 'bucket'"),
+        ui_=ui("dataset", advanced=True, order=40, control="switch", show_when="dataset.resolution_mode == 'bucket'"),
     )
     batch_size: int = F(
         1,
@@ -353,7 +353,7 @@ class AdapterConfig(_Strict):
     factor: int = F(
         -1,
         help="LoKr 的整数分解方式：默认 -1 在每个层维度中选接近平方根的一对因子；正数优先按该因子分解，不能整除时取不大于它的可用因子并给出提示。它决定 W1/W2 的形状，不是训练秩。",
-        ui_=ui("adapter", order=30, show_when="adapter.algo == 'lokr'"),
+        ui_=ui("adapter", advanced=True, order=30, show_when="adapter.algo == 'lokr'"),
     )
     decompose_both: bool = F(
         False,
@@ -377,7 +377,7 @@ class AdapterConfig(_Strict):
             "LyCORIS 自带的加载和合并工具无法读取；output 每个输出通道一个幅度，是 LyCORIS 的默认方式，ComfyUI、Forge 和 "
             "A1111 出图会偏离训练。更改后需要重新训练。"
         ),
-        ui_=ui("adapter", order=61, control="select", show_when="adapter.dora == true"),
+        ui_=ui("adapter", advanced=True, order=61, control="select", show_when="adapter.dora == true"),
     )
     init: Literal["default", "scalar"] = F(
         "default",
@@ -388,7 +388,7 @@ class AdapterConfig(_Strict):
         None,
         ge=1,
         help="噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半（论文推荐）。",
-        ui_=ui("adapter", order=72, show_when="adapter.algo == 'tlora'"),
+        ui_=ui("adapter", advanced=True, order=72, show_when="adapter.algo == 'tlora'"),
     )
     tlora_power: float = F(
         1.0,
@@ -400,7 +400,7 @@ class AdapterConfig(_Strict):
     tlora_ortho: bool = F(
         True,
         help="用正交初始化开始训练（论文的完整做法）：各秩从互相独立的方向开始，训练开始时不改变底模输出。关闭则与普通 LoRA 的初始化相同。",
-        ui_=ui("adapter", order=76, control="switch", show_when="adapter.algo == 'tlora'"),
+        ui_=ui("adapter", advanced=True, order=76, control="switch", show_when="adapter.algo == 'tlora'"),
     )
     dropout: float = F(
         0.0, ge=0, lt=1, help="对适配器输出的 dropout", ui_=ui("adapter", order=80, advanced=True)
@@ -412,7 +412,7 @@ class AdapterConfig(_Strict):
     preset: str = F(
         "attn-mlp",
         help="选择哪些层参与训练：选项和层数由当前模型提供。attn-mlp 通常包含注意力和 MLP；full-linear 覆盖主模块中的全部线性层。",
-        ui_=ui("adapter", order=110, control="select"),
+        ui_=ui("adapter", advanced=True, order=110, control="select"),
     )
     layer_types: Literal["linear", "linear_conv"] = F(
         "linear",
@@ -420,22 +420,22 @@ class AdapterConfig(_Strict):
             "训练层范围内哪些类型的层添加适配器：linear 只训练线性层；linear_conv 同时训练卷积层，"
             "目前只有 SDXL 的 UNet 含卷积层。卷积层的 Rank 和 Alpha 可以单独设置。"
         ),
-        ui_=ui("adapter", order=112, control="select"),
+        ui_=ui("adapter", advanced=True, order=112, control="select"),
     )
     conv_rank: int | None = F(
         None,
         ge=1,
         help="大于 1×1 的卷积层使用的 Rank，与 kohya、LyCORIS 的 conv_dim 相同；留空与 Rank 相同。1×1 卷积按 Rank 训练。",
-        ui_=ui("adapter", order=114, show_when="adapter.layer_types == 'linear_conv'"),
+        ui_=ui("adapter", advanced=True, order=114, show_when="adapter.layer_types == 'linear_conv'"),
     )
     conv_alpha: float | None = F(
         None,
         gt=0,
         help="大于 1×1 的卷积层使用的 Alpha，与 kohya、LyCORIS 的 conv_alpha 相同；留空与 Alpha 相同。",
-        ui_=ui("adapter", order=116, show_when="adapter.layer_types == 'linear_conv'"),
+        ui_=ui("adapter", advanced=True, order=116, show_when="adapter.layer_types == 'linear_conv'"),
     )
     rules: list[AdapterRule] = F(
-        default_factory=list, help="按序匹配的覆盖规则", ui_=ui("adapter", order=120, control="rules")
+        default_factory=list, help="按序匹配的覆盖规则", ui_=ui("adapter", advanced=True, order=120, control="rules")
     )
     mode: Literal["auto", "bypass", "merged"] = F(
         "auto",
@@ -462,13 +462,14 @@ class ObjectiveConfig(_Strict):
     timestep_sampling: Literal["uniform", "logit_normal", "shift", "resolution_shift", "mode", "cosmap"] = F(
         "shift",
         help="训练噪声强度分布，t 越大噪声越多。默认 shift 在 logit-normal 抽样后应用 shift=3；uniform 均匀抽样，resolution_shift 按图像 token 数调整。预览图使用独立的噪声调度设置。",
-        ui_=ui("objective", order=0, control="select"),
+        ui_=ui("objective", advanced=True, order=0, control="select"),
     )
     logit_mean: float = F(
         0.0,
         help="logit-normal 在 sigmoid 变换前的均值，默认 0；提高会偏向较高噪声，降低会偏向较低噪声。仅对应训练时间步分布，通常先保持默认。",
         ui_=ui(
             "objective",
+            advanced=True,
             order=10,
             show_when="objective.timestep_sampling in ['logit_normal','shift','resolution_shift']",
         ),
@@ -479,6 +480,7 @@ class ObjectiveConfig(_Strict):
         help="logit-normal 在 sigmoid 变换前的标准差，默认 1；提高会增加靠近低噪声和高噪声端点的样本。",
         ui_=ui(
             "objective",
+            advanced=True,
             order=20,
             show_when="objective.timestep_sampling in ['logit_normal','shift','resolution_shift']",
         ),
@@ -507,12 +509,12 @@ class ObjectiveConfig(_Strict):
         3.0,
         gt=0,
         help="训练时间步偏移，默认 3；大于 1 将样本推向高噪声，1 不偏移。公式为 t'=s·t/(1+(s-1)·t)。该字段只影响训练 shift 分布，预览另有采样 shift。",
-        ui_=ui("objective", order=30, show_when="objective.timestep_sampling == 'shift'"),
+        ui_=ui("objective", advanced=True, order=30, show_when="objective.timestep_sampling == 'shift'"),
     )
     mode_scale: float = F(
         1.29,
         help="mode 训练时间步分布的形状系数，默认 1.29；仅在选择 mode 时生效。通常保持默认，并通过时间步诊断观察实际抽样分布。",
-        ui_=ui("objective", order=40, show_when="objective.timestep_sampling == 'mode'"),
+        ui_=ui("objective", advanced=True, order=40, show_when="objective.timestep_sampling == 'mode'"),
     )
     stratified: bool = F(
         True,
@@ -536,25 +538,25 @@ class ObjectiveConfig(_Strict):
     loss: Literal["mse", "huber", "pseudo_huber"] = F(
         "mse",
         help="默认 MSE 平方误差。Huber/pseudo-Huber 调整大误差的惩罚方式，更换后损失数值不能直接与 MSE 比较。",
-        ui_=ui("objective", order=80, control="select"),
+        ui_=ui("objective", advanced=True, order=80, control="select"),
     )
     huber_c: float = F(
         0.1,
         gt=0,
         help="Huber/pseudo-Huber 从小误差过渡到大误差区域的尺度，默认 0.1；MSE 不使用此值。",
-        ui_=ui("objective", order=90, show_when="objective.loss != 'mse'"),
+        ui_=ui("objective", advanced=True, order=90, show_when="objective.loss != 'mse'"),
     )
     weighting: Literal["none", "sigma_sqrt", "cosmap", "snr_like", "cosmos", "min_snr"] = F(
         "none",
         help="给不同噪声时间步的损失乘权重，默认 none 等权；它不改变时间步抽样概率。其他方案会改变优化重点和损失量级，建议先保留默认建立对照。",
-        ui_=ui("objective", order=100, control="select"),
+        ui_=ui("objective", advanced=True, order=100, control="select"),
     )
     snr_gamma: float = F(
         5.0,
         gt=0,
         allow_inf_nan=False,
         help="SNR 截断值，默认 5。SDXL 的 Min-SNR 按实际噪声调度和 ε/v 预测计算损失权重；Flow 模型的 snr_like 是不同公式。仅选择对应加权方式时生效，不改变时间步抽样。",
-        ui_=ui("objective", order=110, show_when="objective.weighting in ['snr_like', 'min_snr']"),
+        ui_=ui("objective", advanced=True, order=110, show_when="objective.weighting in ['snr_like', 'min_snr']"),
     )
     ip_noise_gamma: float = F(
         0.0,
@@ -643,6 +645,7 @@ class OptimizerConfig(_Strict):
         help="平滑更新所用的历史统计。普通 Adam/Prodigy 的 β1 平滑方向；Schedule-Free 的 β1 控制权重平均；β2 平滑梯度大小估计。通常保持当前优化器默认值，较大值反应更平缓。",
         ui_=ui(
             "optimizer",
+            advanced=True,
             order=30,
             show_when="optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came']",
         ),
@@ -653,6 +656,7 @@ class OptimizerConfig(_Strict):
         help="防止梯度大小估计过小时除法不稳定，通常保留优化器默认值。PPSF 选择“Adam-atan2”会切换更新方式，此时不能同时启用 StableAdamW 或 FOCUS。",
         ui_=ui(
             "optimizer",
+            advanced=True,
             order=40,
             show_when="optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic']",
         ),
@@ -666,12 +670,12 @@ class OptimizerConfig(_Strict):
         1.0,
         ge=0,
         help="更新前将整体梯度范数限制到此值，默认 1，0 关闭；不是逐个参数的数值上限。频繁触发时可结合梯度曲线、学习率和数据检查原因。",
-        ui_=ui("optimizer", order=60),
+        ui_=ui("optimizer", advanced=True, order=60),
     )
     kahan: bool = F(
         False,
         help="为低精度训练参数保留 fp32 副本并补偿舍入误差，默认关闭；会增加内存。仅在确实用低精度适配器参数时考虑，不支持与 Schedule-Free 优化器组合。",
-        ui_=ui("optimizer", order=70, control="switch"),
+        ui_=ui("optimizer", advanced=True, order=70, control="switch"),
     )
     fused_backward: bool = F(
         False,
@@ -681,7 +685,7 @@ class OptimizerConfig(_Strict):
     group_lr: dict[str, float] = F(
         default_factory=dict,
         help="按模块分组的学习率，如 {'llm_adapter': 5e-5, 'te': 2e-5}",
-        ui_=ui("optimizer", order=90),
+        ui_=ui("optimizer", advanced=True, order=90),
     )
 
     d_coef: float = F(
@@ -695,7 +699,7 @@ class OptimizerConfig(_Strict):
         1e-6,
         gt=0,
         help="自动估计步长的起始值，默认 0.000001。仅影响估计起点；通常保留默认，与训练中实时估计的 D 值不同。",
-        ui_=ui("optimizer", order=110, show_when="optimizer.type in ['prodigy','prodigy_plus_sf']"),
+        ui_=ui("optimizer", advanced=True, order=110, show_when="optimizer.type in ['prodigy','prodigy_plus_sf']"),
     )
 
     beta3: float | None = F(
@@ -703,7 +707,7 @@ class OptimizerConfig(_Strict):
         ge=0,
         lt=1,
         help="步长估计所用的历史平滑系数。留空时取 β2 的平方根；通常保留自动值。",
-        ui_=ui("optimizer", order=120, show_when="optimizer.type in ['prodigy','prodigy_plus_sf']"),
+        ui_=ui("optimizer", advanced=True, order=120, show_when="optimizer.type in ['prodigy','prodigy_plus_sf']"),
     )
 
     use_bias_correction: bool = F(
@@ -711,6 +715,7 @@ class OptimizerConfig(_Strict):
         help="Prodigy 修正训练初期的统计偏差；PPSF 使用 RAdam 式修正与自动预热。作者均默认关闭，开启会改变早期更新曲线。",
         ui_=ui(
             "optimizer",
+            advanced=True,
             order=130,
             control="switch",
             show_when="optimizer.type in ['prodigy','prodigy_plus_sf']",
@@ -720,131 +725,131 @@ class OptimizerConfig(_Strict):
     safeguard_warmup: bool = F(
         False,
         help="估计步长时排除学习率预热的影响，作者默认关闭；使用外部预热时可启用。",
-        ui_=ui("optimizer", order=140, control="switch", show_when="optimizer.type == 'prodigy'"),
+        ui_=ui("optimizer", advanced=True, order=140, control="switch", show_when="optimizer.type == 'prodigy'"),
     )
 
     growth_rate: float | None = F(
         None,
         ge=1,
         help="限制 D 估计每一步最多增长的倍率；留空时不设上限。1.02 表示相对上一步最多增加约 2%，通常保留不限。",
-        ui_=ui("optimizer", order=150, show_when="optimizer.type == 'prodigy'"),
+        ui_=ui("optimizer", advanced=True, order=150, show_when="optimizer.type == 'prodigy'"),
     )
 
     slice_p: int = F(
         1,
         ge=1,
         help="步长估计每隔几个元素取样。默认 1 使用全部元素；更大值减少估计状态占用，也会降低估计精细度。",
-        ui_=ui("optimizer", order=160, show_when="optimizer.type == 'prodigy'"),
+        ui_=ui("optimizer", advanced=True, order=160, show_when="optimizer.type == 'prodigy'"),
     )
 
     decouple: bool = F(
         True,
         help="将权重衰减与梯度更新分开，默认开启；关闭时衰减项会加入梯度。",
-        ui_=ui("optimizer", order=170, control="switch", show_when="optimizer.type == 'prodigy' && optimizer.weight_decay > 0"),
+        ui_=ui("optimizer", advanced=True, order=170, control="switch", show_when="optimizer.type == 'prodigy' && optimizer.weight_decay > 0"),
     )
 
     prodigy_steps: int = F(
         0,
         ge=0,
         help="持续自动估计步长的优化器更新次数。0 表示全程估计；正数表示到达该步数后冻结估计，继续训练。",
-        ui_=ui("optimizer", order=180, show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=180, show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     d_limiter: bool = F(
         True,
         help="限制步长估计突然增大，默认开启。启用 SPEED 时由 SPEED 自己的估计方式接管。",
-        ui_=ui("optimizer", order=190, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.use_speed == false"),
+        ui_=ui("optimizer", advanced=True, order=190, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.use_speed == false"),
     )
 
     schedulefree_c: float = F(
         0.0,
         ge=0,
         help="控制 Schedule-Free 权重平均的速度。0 使用作者默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。",
-        ui_=ui("optimizer", order=200, show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.use_schedulefree == true"),
+        ui_=ui("optimizer", advanced=True, order=200, show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.use_schedulefree == true"),
     )
 
     split_groups: bool = F(
         True,
         help="让不同参数组分别估计步长，默认开启。关闭后共享估计；不会启用手动分组学习率。",
-        ui_=ui("optimizer", order=210, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=210, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     split_groups_mean: bool = F(
         False,
         help="将各参数组估计的步长取调和平均后使用，默认关闭；需启用分组估计。",
-        ui_=ui("optimizer", order=220, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.split_groups == true"),
+        ui_=ui("optimizer", advanced=True, order=220, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.split_groups == true"),
     )
 
     factored: bool = F(
         True,
         help="将适合的梯度统计矩阵分解存储，默认开启以减少优化器状态占用；关闭会保存完整统计。",
-        ui_=ui("optimizer", order=230, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=230, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     factored_fp32: bool = F(
         True,
         help="使用 FP32 保存分解统计，默认开启以减少舍入误差；仅在分解统计开启时生效。",
-        ui_=ui("optimizer", order=240, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.factored == true"),
+        ui_=ui("optimizer", advanced=True, order=240, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.factored == true"),
     )
 
     use_stableadamw: bool = F(
         True,
         help="使用 StableAdamW 的更新归一化，默认开启以约束异常更新；不能与 Adam-atan2（在 EPS 输入处选择）组合。",
-        ui_=ui("optimizer", order=250, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=250, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     stochastic_rounding: bool = F(
         True,
         help="对低精度参数写回使用随机舍入，默认开启，降低小更新被截断的偏差；不影响 FP32 参数。",
-        ui_=ui("optimizer", order=260, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=260, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     weight_decay_by_lr: bool = F(
         True,
         help="将权重衰减随当前有效学习率一起缩放，默认开启；关闭会使用另一种衰减尺度。",
-        ui_=ui("optimizer", order=270, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.weight_decay > 0"),
+        ui_=ui("optimizer", advanced=True, order=270, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.weight_decay > 0"),
     )
 
     use_schedulefree: bool = F(
         True,
         help="启用免调度权重平均，默认开启，无需外部学习率曲线。关闭后按普通训练方式使用学习率调度。",
-        ui_=ui("optimizer", order=280, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=280, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     use_speed: bool = F(
         False,
         help="切换为 SPEED 步长估计，默认关闭；启用后忽略 D 增长限制，估计轨迹会改变。",
-        ui_=ui("optimizer", order=290, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=290, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     use_cautious: bool = F(
         False,
         help="只保留与当前梯度方向一致的更新，默认关闭；不能与 Grams 同时启用。",
-        ui_=ui("optimizer", order=300, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=300, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     use_grams: bool = F(
         False,
         help="按当前梯度重新确定更新方向，默认关闭；不能与 Cautious 同时启用。",
-        ui_=ui("optimizer", order=310, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=310, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     use_adopt: bool = F(
         False,
         help="切换梯度归一化顺序并加入 ADOPT 的限制，默认关闭；会改变早期更新方式。",
-        ui_=ui("optimizer", order=320, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=320, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     use_orthograd: bool = F(
         False,
         help="移除梯度中与权重方向平行的分量，默认关闭；用于对比不同更新方向。",
-        ui_=ui("optimizer", order=330, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=330, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     use_focus: bool = F(
         False,
         help="改用 FOCUS 更新方式，默认关闭；不能与分解统计或 Adam-atan2 同时使用。",
-        ui_=ui("optimizer", order=340, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
+        ui_=ui("optimizer", advanced=True, order=340, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     beta2: float = F(
@@ -852,35 +857,35 @@ class OptimizerConfig(_Strict):
         ge=0,
         lt=1,
         help="平滑梯度大小估计，默认 0.999。数值越大，越看重较长的历史，对变化反应更慢。",
-        ui_=ui("optimizer", order=350, show_when="optimizer.type == 'automagic'"),
+        ui_=ui("optimizer", advanced=True, order=350, show_when="optimizer.type == 'automagic'"),
     )
 
     min_lr: float = F(
         1e-7,
         gt=0,
         help="逐元素自适应学习率的下限，默认 0.0000001；需不高于上限。",
-        ui_=ui("optimizer", order=360, show_when="optimizer.type == 'automagic'"),
+        ui_=ui("optimizer", advanced=True, order=360, show_when="optimizer.type == 'automagic'"),
     )
 
     max_lr: float = F(
         1e-3,
         gt=0,
         help="逐元素自适应学习率的上限，默认 0.001；用于限制最大更新强度。",
-        ui_=ui("optimizer", order=370, show_when="optimizer.type == 'automagic'"),
+        ui_=ui("optimizer", advanced=True, order=370, show_when="optimizer.type == 'automagic'"),
     )
 
     lr_bump: float = F(
         1e-6,
         gt=0,
         help="逐元素学习率每次调整的增量，默认 0.000001。较大值会更快调整，也可能使步长变化更明显。",
-        ui_=ui("optimizer", order=380, show_when="optimizer.type == 'automagic'"),
+        ui_=ui("optimizer", advanced=True, order=380, show_when="optimizer.type == 'automagic'"),
     )
 
     clip_threshold: float = F(
         1.0,
         gt=0,
         help="Automagic 内部更新归一化阈值，默认 1；与训练器的全局梯度裁剪不同。",
-        ui_=ui("optimizer", order=390, show_when="optimizer.type == 'automagic'"),
+        ui_=ui("optimizer", advanced=True, order=390, show_when="optimizer.type == 'automagic'"),
     )
 
     @field_validator("fused_backward")
@@ -1025,24 +1030,24 @@ class SchedulerConfig(_Strict):
         ge=0,
         le=1,
         help="衰减下限相对基础学习率的倍率，默认 0；0.1 表示最低为基础值的 10%。constant 不使用此下限，周期重启会重新提高学习率。",
-        ui_=ui("scheduler", order=20, show_when="scheduler.type != 'constant'"),
+        ui_=ui("scheduler", advanced=True, order=20, show_when="scheduler.type != 'constant'"),
     )
     num_cycles: int = F(
         1,
         ge=1,
         help="cosine_restarts 的周期数，默认 1；每个周期会先降低再恢复学习率。",
-        ui_=ui("scheduler", order=30, show_when="scheduler.type == 'cosine_restarts'"),
+        ui_=ui("scheduler", advanced=True, order=30, show_when="scheduler.type == 'cosine_restarts'"),
     )
     power: float = F(
         1.0,
         gt=0,
         help="多项式衰减的幂，默认 1 为线性衰减；更大值会更早降低学习率。仅 polynomial 使用，通常先保留默认。",
-        ui_=ui("scheduler", order=40, show_when="scheduler.type == 'polynomial'"),
+        ui_=ui("scheduler", advanced=True, order=40, show_when="scheduler.type == 'polynomial'"),
     )
     decay_steps: float | None = F(
         None,
         help="预热—稳定—衰减调度最后的衰减时长，留空为总步数的约 10%；0 到 1 之间表示比例，≥1 表示步数。仅 warmup_stable_decay 使用。",
-        ui_=ui("scheduler", order=50, show_when="scheduler.type == 'warmup_stable_decay'"),
+        ui_=ui("scheduler", advanced=True, order=50, show_when="scheduler.type == 'warmup_stable_decay'"),
     )
 
 
@@ -1126,7 +1131,7 @@ class LoopConfig(_Strict):
     seed: int = F(
         42,
         help="训练随机种子，默认 42，影响数据顺序、标签变体、噪声等。对比参数时保持一致；不同设备、依赖版本或数据仍可能产生不同结果，预览图另有自己的种子。",
-        ui_=ui("loop", order=40),
+        ui_=ui("loop", advanced=True, order=40),
     )
     deterministic: bool = F(
         False,
@@ -1219,10 +1224,10 @@ class CheckpointConfig(_Strict):
     save_training_metadata: bool = F(
         False,
         help="将学习率、优化器、分辨率等训练参数写入导出的 LoRA/LoKr 文件，供元数据查看器读取；不包含本机目录、图片标签、提示词或访问密钥。",
-        ui_=ui("checkpoint", order=65, control="switch", show_when="training.mode == 'adapter'"),
+        ui_=ui("checkpoint", advanced=True, order=65, control="switch", show_when="training.mode == 'adapter'"),
     )
     save_on_finish: bool = F(
-        True, help="结束时保存最终权重", ui_=ui("checkpoint", order=70, control="switch")
+        True, help="结束时保存最终权重", ui_=ui("checkpoint", advanced=True, order=70, control="switch")
     )
     resume: str | None = F(
         None,
@@ -1287,7 +1292,7 @@ class SamplingConfig(_Strict):
     at_start: bool = F(
         False,
         help="默认关闭；开启后在首次训练更新前生成基线图，便于与后续结果对比。从已完成该阶段的完整状态恢复时不会重复生成。",
-        ui_=ui("sampling", order=30, control="switch", show_when="sampling.enabled == true"),
+        ui_=ui("sampling", advanced=True, order=30, control="switch", show_when="sampling.enabled == true"),
     )
     prompts: list[SamplePrompt] = F(
         default_factory=list,
@@ -1297,7 +1302,7 @@ class SamplingConfig(_Strict):
     prompts_file: str | None = F(
         None,
         help="可选的额外提示词文件，.txt 每行一条，.toml 可携带逐条参数；文件内容会追加到上方列表。留空只使用列表，避免两处重复填写。",
-        ui_=ui("sampling", order=50, control="path", show_when="sampling.enabled == true"),
+        ui_=ui("sampling", advanced=True, order=50, control="path", show_when="sampling.enabled == true"),
     )
     steps: int | None = F(
         None,
@@ -1318,7 +1323,7 @@ class SamplingConfig(_Strict):
         gt=0,
         allow_inf_nan=False,
         help="调整预览积分时间步的噪声分布，留空使用模型族默认（Anima 为 3，Krea 2 按图像 token 数计算）。1 不偏移，更大值偏向高噪声时间段；不同于训练分布里的 shift。",
-        ui_=ui("sampling", order=80, show_when="sampling.enabled == true"),
+        ui_=ui("sampling", advanced=True, order=80, show_when="sampling.enabled == true"),
     )
     width: int = F(
         1024,
@@ -1337,17 +1342,17 @@ class SamplingConfig(_Strict):
     seed: int = F(
         0,
         help="预览初始噪声种子，默认 0：每次训练开始时随机生成一个种子，本次训练的所有预览都使用它，续训沿用同一个。手动输入种子值会固定训练时使用的种子。未单独设种子的第 i 条提示词使用该种子 + i（从 0 计）。与训练随机种子独立。",
-        ui_=ui("sampling", order=110, show_when="sampling.enabled == true"),
+        ui_=ui("sampling", advanced=True, order=110, show_when="sampling.enabled == true"),
     )
     sampler: Literal["euler", "heun", "er_sde"] = F(
         "euler",
         help="预览图的采样算法，默认 Euler 每步评估一次；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。",
-        ui_=ui("sampling", order=120, control="select", show_when="sampling.enabled == true"),
+        ui_=ui("sampling", advanced=True, order=120, control="select", show_when="sampling.enabled == true"),
     )
     scheduler: Literal["uniform", "simple", "sgm_uniform", "normal"] = F(
         "uniform",
         help="预览采样使用的噪声时间点。默认 uniform 使用均匀网格并应用 shift；simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。",
-        ui_=ui("sampling", order=130, control="select", show_when="sampling.enabled == true"),
+        ui_=ui("sampling", advanced=True, order=130, control="select", show_when="sampling.enabled == true"),
     )
     er_sde_order: Literal[1, 2, 3] = F(
         3,
@@ -1439,7 +1444,7 @@ class LoggingConfig(_Strict):
     tensorboard: bool = F(
         False,
         help="额外写入本地 TensorBoard 格式的训练指标与样图，默认关闭；前端任务日志和曲线不依赖此开关。需要用 TensorBoard 查看时启用。",
-        ui_=ui("logging", order=0, control="switch"),
+        ui_=ui("logging", advanced=True, order=0, control="switch"),
     )
     wandb: WandbConfig | None = F(None, help="Weights & Biases", ui_=ui("logging", order=10, advanced=True))
     events_path: str | None = F(
@@ -1450,7 +1455,7 @@ class LoggingConfig(_Strict):
     level: Literal["debug", "info", "warning"] = F(
         "debug",
         help="训练日志记录的详细程度。调试级别额外记录设备与精度、各阶段耗时、数据分桶、优化器与调度器、恢复点保存和采样的细节，在任务日志中打开“调试日志”后显示；信息级别只记录常规进度；警告级别只记录警告和错误。",
-        ui_=ui("logging", order=5, control="select"),
+        ui_={"x-ui": {"hidden": True}},
     )
 
 

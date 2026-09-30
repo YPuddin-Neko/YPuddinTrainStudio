@@ -2,7 +2,7 @@ import DatasetLink from '../../components/datasets/DatasetLink';
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, FolderPlus, Images, Search } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { DatasetImage, DatasetImagesPage, DatasetInfo } from '../../api/types';
 import type { components } from '../../api/generated';
@@ -15,6 +15,8 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
 import type { OverviewDataset } from './ProjectOverview';
 import { SlidingIndicator } from '../../components/motion';
+import { useGridPageSize } from '../../api/hooks/useGridPageSize';
+import ImageSortSelect, { type ImageSort } from '../../components/datasets/ImageSortSelect';
 
 type DatasetOverview = {
   dataset_id: string;
@@ -47,6 +49,8 @@ export default function OverviewDataPanel({ datasets, workspaceUrl, projectId, v
   datasets: OverviewDataset[]; workspaceUrl: string; projectId: string; versionId?: string;
 }) {
   const text = useWorkspaceText();
+  const gridPage = useGridPageSize(16);
+  const [sort, setSort] = React.useState<ImageSort>('filename');
   const [role, setRole] = React.useState<'train' | 'reg'>('train');
   const [source, setSource] = React.useState('all');
   const [folder, setFolder] = React.useState('');
@@ -60,13 +64,13 @@ export default function OverviewDataPanel({ datasets, workspaceUrl, projectId, v
   const indexedRows = rows.filter(ready);
   const incomplete = indexedRows.length !== rows.length;
   const ids = indexedRows.map(row => row.source.id);
-  const scope = ['overview-data', projectId, versionId, role, ids, folder, indexedRows.map(row => row.stats)];
+  const scope = ['overview-data', projectId, versionId, role, ids, folder, indexedRows.map(row => row.stats), sort, gridPage.pageSize];
   const overview = useQuery({
     queryKey: [...scope, query],
     enabled: ids.length > 0,
     queryFn: ({ signal }) => Promise.all(ids.map(async id => {
       const data = await apiClient.get<DatasetOverview>(`/datasets/${encodeURIComponent(id)}/overview`, {
-        params: { project_id: projectId, version_id: versionId, folder: selection === 'all' ? '' : folder, q: query || undefined, page: 1, page_size: 16 }, signal, silent: true,
+        params: { project_id: projectId, version_id: versionId, folder: selection === 'all' ? '' : folder, q: query || undefined, page: 1, page_size: gridPage.pageSize, sort }, signal, silent: true,
       });
       if (data.dataset_id !== id || !Array.isArray(data.images?.items) || !Array.isArray(data.caption_stats?.tags) || !Array.isArray(data.folders)) {
         throw new Error(text('数据概览响应格式不完整，请重新读取。', 'The dataset overview response is incomplete. Please retry.'));
@@ -100,8 +104,8 @@ export default function OverviewDataPanel({ datasets, workspaceUrl, projectId, v
   const matching = data.reduce((sum, entry) => sum + entry.images.total, 0);
   // Round-robin sampling keeps a large first source from hiding the other sources.
   const pictures: Preview[] = [];
-  for (let index = 0; index < 16 && pictures.length < 16; index++) for (const entry of data) {
-    if (entry.images.items[index] && pictures.length < 16) pictures.push({ ...entry.images.items[index], source: entry.dataset_id });
+  for (let index = 0; index < gridPage.pageSize && pictures.length < gridPage.pageSize; index++) for (const entry of data) {
+    if (entry.images.items[index] && pictures.length < gridPage.pageSize) pictures.push({ ...entry.images.items[index], source: entry.dataset_id });
   }
   const charts = [
     { title: text('图片分辨率', 'Image resolutions'), items: [...resolutions.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8), truncated: resolutions.size > 8 },
@@ -121,22 +125,24 @@ export default function OverviewDataPanel({ datasets, workspaceUrl, projectId, v
   const viewAllUrl = selection === 'all' ? `${workspaceUrl}&data_step=${role === 'reg' ? 'reg' : 'datasets'}#version-datasets` : sourceUrl(selection);
 
   return <section className="overview-data-panel" aria-label={text('版本数据分布', 'Version data distributions')}>
-    <div className="overview-data-toolbar">
+    <div className="overview-role-toolbar">
       <div className="overview-role-switch ui-segmented" role="group" aria-label={text('数据用途', 'Dataset role')}>
         {(['train', 'reg'] as const).map(value => <button type="button" key={value} aria-pressed={role === value} onClick={() => { setRole(value); setSource('all'); setFolder(''); clearSearch(); }}>{value === 'train' ? text('训练集', 'Training set') : text('正则集', 'Regularization')} <strong>{countLabel(value)}</strong></button>)}
         <SlidingIndicator className="ui-segmented-thumb"/>
       </div>
+    </div>
+    <div className="overview-data-toolbar">
       <StudioSelect aria-label={text('概览数据集', 'Overview dataset')} value={selection} onValueChange={changeSource} options={[{ value: 'all', label: text('全部数据集', 'All datasets') }, ...roleRows.map(row => ({ value: row.source.id, label: `${basename(row.source.path)} · ${ready(row) ? row.stats?.images : '—'} ${text('张', 'images')}` }))]}/>
       <label className="overview-gallery-search"><Search size={15}/><input aria-label={text('筛选概览图片', 'Filter overview images')} placeholder={text('标签或文件名', 'Tag or filename')} value={search} onChange={event => setSearch(event.target.value)}/></label>
     </div>
     {folderOptions.length > 0 && <label className="overview-folder-filter">{text('子目录', 'Subfolder')}<StudioSelect aria-label={text('概览子目录', 'Overview subfolder')} value={folder} onValueChange={value => { setFolder(value); clearSearch(); }} options={[{ value: '', label: text('全部子目录', 'All subfolders') }, ...folderOptions.map(item => ({ value: item.path, label: `${item.path} · ${item.count}` }))]}/></label>}
-    {rows.length === 0 ? <div className="overview-panel overview-empty-data"><span>{role === 'reg' ? text('当前版本没有正则集。', 'No regularization set in this version.') : text('当前版本还没有训练图片。', 'No training images in this version.')}</span><Link className="ui-link" to={`${workspaceUrl}&data_step=${role === 'reg' ? 'reg' : 'datasets'}`}>{text('添加数据', 'Add data')}<ArrowRight size={14}/></Link></div> : <>
+    {rows.length === 0 ? <div className="overview-panel overview-empty-data"><Images size={30} aria-hidden="true"/><span>{role === 'reg' ? text('当前版本没有正则集。', 'No regularization set in this version.') : text('当前版本还没有训练图片。', 'No training images in this version.')}</span><Link className="ui-btn" to={`${workspaceUrl}&data_step=${role === 'reg' ? 'reg' : 'datasets'}`}><FolderPlus size={15}/>{text('添加数据', 'Add data')}</Link></div> : <>
       {incomplete && <p role="status" className="overview-index-note">{text(`${rows.length - indexedRows.length} 个数据集索引尚未就绪；分布仅显示已就绪的数据。`, `${rows.length - indexedRows.length} datasets are not indexed yet; distributions show only ready datasets.`)}<Link className="ui-link" to={`${workspaceUrl}&data_step=datasets#version-datasets`}>{text('查看数据集状态', 'View dataset status')}</Link></p>}
       {indexedRows.length > 0 && (overview.error ? <div className="overview-panel overview-inline-error" role="alert"><span>{formatApiError(overview.error)}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void overview.refetch()}>{text('重新读取数据分布', 'Reload data distributions')}</button></div> : overview.isPending ? <PreviewSkeleton label={text('正在读取图片与分布…', 'Loading images and distributions…')}/> : <>
         <div className="overview-data-grid">
           <section className="overview-panel overview-gallery"><div className="overview-panel-heading"><h3>{role === 'reg' ? text('正则图预览', 'Regularization preview') : text('训练集预览', 'Training set preview')}</h3><DatasetLink className="ui-link" to={viewAllUrl}>{text('查看全部', 'View all')}<ArrowRight size={13}/></DatasetLink></div>
-            <p className="overview-section-detail">{searching ? <LoadingNote label={text('正在筛选图片…', 'Filtering images…')}/> : query ? text(`匹配 ${matching} 张 · 预览 ${pictures.length} 张`, `${matching} matches · ${pictures.length} previewed`) : text(`共 ${total} 张 · 预览 ${pictures.length} 张`, `${total} images · ${pictures.length} previewed`)}</p>
-            {pictures.length ? <div className={`overview-thumbnails${searching ? ' is-refreshing' : ''}`} aria-busy={searching || undefined}>{pictures.map(item => <button type="button" key={`${item.source}/${item.rel_path}`} onClick={() => setPreview(item)} aria-label={text(`预览图片：${item.rel_path}`, `Preview image: ${item.rel_path}`)}><span className="overview-thumbnail-image"><LazyImage loading="lazy" src={apiUrl(`/datasets/${encodeURIComponent(item.source)}/images/${encodeURIComponent(item.hash)}/thumb?size=256`)} alt=""/></span><span title={item.rel_path}>{basename(item.rel_path)}</span><small>{item.width} × {item.height}</small></button>)}</div> : <p className="overview-section-detail">{text('没有匹配的图片。', 'No matching images.')}</p>}
+            <div className="overview-preview-controls"><p className="overview-section-detail">{searching ? <LoadingNote label={text('正在筛选图片…', 'Filtering images…')}/> : query ? text(`匹配 ${matching} 张 · 预览 ${pictures.length} 张`, `${matching} matches · ${pictures.length} previewed`) : text(`共 ${total} 张 · 预览 ${pictures.length} 张`, `${total} images · ${pictures.length} previewed`)}</p><ImageSortSelect value={sort} onChange={setSort}/></div>
+            {pictures.length ? <div ref={gridPage.gridRef} className={`overview-thumbnails${searching ? ' is-refreshing' : ''}`} aria-busy={searching || undefined}>{pictures.map(item => <button type="button" key={`${item.source}/${item.rel_path}`} onClick={() => setPreview(item)} aria-label={text(`预览图片：${item.rel_path}`, `Preview image: ${item.rel_path}`)}><span className="overview-thumbnail-image"><LazyImage loading="lazy" src={apiUrl(`/datasets/${encodeURIComponent(item.source)}/images/${encodeURIComponent(item.hash)}/thumb?size=256`)} alt=""/></span><span title={item.rel_path}>{basename(item.rel_path)}</span><small>{item.width} × {item.height}</small></button>)}</div> : <p className="overview-section-detail">{text('没有匹配的图片。', 'No matching images.')}</p>}
             <div className="overview-source-summary">{rows.map(row => <DatasetLink key={row.source.id} to={sourceUrl(row.source.id)}><strong>{basename(row.source.path)}</strong><span>{ready(row) ? row.stats?.images : '—'} {text('张', 'images')} · ×{row.source.repeats ?? 1}{role === 'reg' ? ` · ${text('权重', 'Weight')} ${row.source.prior_weight ?? 1}` : ''}</span><ArrowRight size={13}/></DatasetLink>)}</div>
           </section>
           <section className="overview-panel overview-tags"><div className="overview-panel-heading"><h3>{text('标签分布', 'Tag distribution')}</h3><Link className="ui-link" to={`${workspaceUrl}&data_step=captions${selection !== 'all' ? `&dataset=${encodeURIComponent(selection)}` : ''}`}>{text('编辑标签', 'Edit tags')}<ArrowRight size={13}/></Link></div>

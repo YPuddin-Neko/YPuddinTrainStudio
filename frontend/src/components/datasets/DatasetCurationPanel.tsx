@@ -5,6 +5,7 @@ import { ImagePlus, Search, X } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { DatasetInfo } from '../../api/types';
 import { useDatasetImages } from '../../api/hooks/useDatasetImages';
+import ImageSortSelect from './ImageSortSelect';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { formatApiError } from '../../utils/errors';
@@ -75,6 +76,7 @@ function CurationWorkspace({ datasetId, selector, readOnly, onChanged }: { datas
     <div className="dataset-curation-toolbar">
       {selector}
       <label className="dataset-curation-search"><Search size={15}/><input type="search" aria-label={text('搜索文件名或标签', 'Search filenames or captions')} value={query} onChange={event => search(event.target.value)} placeholder={text('搜索文件名或标签…', 'Search filenames or captions…')}/>{query && <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" aria-label={text('清除图片筛选', 'Clear image filter')} onClick={() => search('')}><X size={15}/></button>}</label>
+      <ImageSortSelect value={training.sort} onChange={value=>{held.setSort(value);training.setSort(value);}}/>
       <label className="dataset-thumbnail-size">{text('缩略图', 'Thumbnails')}<input type="range" min={120} max={220} step={20} value={thumbnailWidth} onChange={event => setThumbnailWidth(Number(event.target.value))} aria-label={text('缩略图大小', 'Thumbnail size')}/></label>
     </div>
     {(error || info.error) && <div role="alert" className="workspace-message error">{error || formatApiError(info.error)}<button type="button" className="ui-btn ui-btn-sm" onClick={() => { setError(''); refresh(); }}>{text('重试', 'Retry')}</button></div>}

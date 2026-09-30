@@ -46,6 +46,7 @@ def assert_version_writable(c: Any, pid: str, vid: str | None, *, data: bool = F
 
 
 def version_row(c: Any, row: dict) -> dict:
+    from .artifact_inventory import artifact_count
     pid, vid = row["project_id"], row["id"]
     datasets = c.db.fetchall(
         "SELECT id,stats_json FROM datasets WHERE version_id=? ORDER BY created_at", (vid,)
@@ -64,7 +65,7 @@ def version_row(c: Any, row: dict) -> dict:
             "jobs": c.db.fetchone(
                 "SELECT count(*) n FROM jobs WHERE version_id=? AND archived_at IS NULL", (vid,)
             )["n"],
-            "artifacts": c.db.fetchone("SELECT count(*) n FROM artifacts WHERE version_id=?", (vid,))["n"],
+            "artifacts": artifact_count(c.db, version_id=vid),
         },
         "paths": {
             "root": str(data_root),

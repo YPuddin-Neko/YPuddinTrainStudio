@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { apiClient, apiUrl } from '../../api/client';
 import { DatasetInfo, DatasetImage } from '../../api/types';
 import { useDatasetImages } from '../../api/hooks/useDatasetImages';
+import ImageSortSelect from '../../components/datasets/ImageSortSelect';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { MaskEditor } from '../../components/masks/MaskEditor';
@@ -330,6 +331,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
 
       <div className="dataset-library-tools">
         <label className="dataset-library-search"><Search size={16}/><input type="search" aria-label={text('搜索文件名或标签','Search filenames or captions')} value={images.q} onChange={event => images.setQ(event.target.value)} placeholder={t('dataset.filterPlaceholder')} data-testid="dataset-search"/>{images.q && <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" aria-label={text('清除图片筛选','Clear image filter')} onClick={() => images.setQ('')}><X size={15}/></button>}</label>
+        <ImageSortSelect value={images.sort} onChange={images.setSort}/>
         <label className="dataset-thumbnail-size">{text('缩略图','Thumbnails')}<input type="range" min={120} max={220} step={20} value={thumbnailWidth} onChange={event => setThumbnailWidth(Number(event.target.value))} aria-label={text('缩略图大小','Thumbnail size')}/></label>
         {canEdit && <button type="button" className="ui-btn" aria-expanded={showBatch} onClick={() => setShowBatch(value => !value)} disabled={!images.selected.size}>{text('批量编辑标签','Edit selected captions')}{images.selected.size > 0 ? ` (${images.selected.size})` : ''}</button>}
       </div>

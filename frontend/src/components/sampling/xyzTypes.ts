@@ -27,7 +27,7 @@ export interface XyzCell {
 export interface XyzTask {
   id: string; job_id: string; source_job_id: string; status: string; phase: string; done: number; total: number;
   cell_index?: number | null; sample_step?: number | null; sample_steps?: number | null; wait_reason?: string | null;
-  error: string | null; created_at: number; finished_at: number | null; request: XyzRequest; can_cancel: boolean;
+  error: string | null; created_at: number; finished_at: number | null; request: XyzRequest; can_cancel: boolean; output_dir?: string;
   manifest: { cells: XyzCell[]; grids: { z: number; z_value: AxisValue | null; file: string; url: string }[]; complete: boolean };
 }
 /** A base model a model-test worker keeps loaded for the next comparison. */

@@ -140,13 +140,14 @@ def _latest_training(c: ServiceContext, project_id: str) -> dict[str, Any] | Non
 
 
 def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
+    from .artifact_inventory import artifact_count
     from .family_config import version_family
 
     ds = c.db.fetchall(
         "SELECT id,is_reg,stats_json,index_status FROM datasets WHERE version_id=?", (r["active_version_id"],)
     )
     jobs = c.db.fetchone("SELECT COUNT(*) AS n FROM jobs WHERE project_id=?", (r["id"],))["n"]
-    arts = c.db.fetchone("SELECT COUNT(*) AS n FROM artifacts WHERE project_id=?", (r["id"],))["n"]
+    arts = artifact_count(c.db, project_id=r["id"])
     version = (
         c.db.fetchone("SELECT name,number FROM project_versions WHERE id=?", (r["active_version_id"],))
         if r["active_version_id"]
@@ -1462,10 +1463,14 @@ def list_images(
     tag: str | None = None,
     caption_status: Literal["captioned", "missing", "invalid"] | None = None,
     membership: Literal["all", "training", "unused"] = "all",
+    sort: Literal["filename", "folder", "modified"] = "filename",
 ) -> dict[str, Any]:
+    from .dataset_sort import sort_images
+
+    row = _get_dataset(c, did)
     items = []
     query, exact_tag = q.casefold(), tag.strip().casefold() if tag else ""
-    for item in _dataset_image_items(c, _get_dataset(c, did)):
+    for item in _dataset_image_items(c, row):
         if membership != "all" and item["training_enabled"] != (membership == "training"):
             continue
         if query and query not in item["caption"].casefold() and query not in item["rel_path"].casefold():
@@ -1476,7 +1481,7 @@ def list_images(
             continue
         item.pop("_tokens")
         items.append(item)
-    return _page(items, page, page_size)
+    return _page(sort_images(items, row["path"], sort), page, page_size)
 
 
 def _record_by_hash(c: ServiceContext, did: str, h: str, rel_path: str | None = None) -> dict[str, Any]:
@@ -1778,6 +1783,8 @@ def list_jobs(
         }
         conds.append("j.status IN ({})".format(",".join("?" for _ in groups[group])))
         params += groups[group]
+    if group in {"history", "archive"}:
+        conds.append("j.type!='xyz'")
     if type:
         conds.append("j.type=?")
         params.append(type)
@@ -1884,7 +1891,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         config,
         {
             "checkpoint": {"output_dir": str(output_dir), "state_dir": str(state_dir)},
-            "logging": {"events_path": str(logs_dir / events_name), "output_dir": str(logs_dir)},
+            "logging": {"events_path": str(logs_dir / events_name), "output_dir": str(logs_dir), "level": "debug"},
             "sampling": {"output_dir": str(samples_dir)},
         },
     )
@@ -2093,6 +2100,7 @@ def _folder_size(folder: Path) -> tuple[int, int]:
 @router.get("/jobs/{jid}/storage", response_model=m.JobStorage, response_model_exclude_unset=True)
 def job_storage(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     """The folders deleting this job removes, with their sizes, so the archive can say so first."""
+    from .artifact_inventory import artifact_count
     from .job_paths import output_directory, state_directory
 
     r = _get_job(c, jid)
@@ -2114,12 +2122,14 @@ def job_storage(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
         folders.append(
             {"path": str(folder), "kinds": kinds, "exists": folder.is_dir(), "bytes": size, "files": count}
         )
-    artifacts = c.db.fetchone("SELECT count(*) n FROM artifacts WHERE job_id=?", (jid,))["n"]
+    artifacts = artifact_count(c.db, job_id=jid)
     return {"folders": folders, "total_bytes": sum(f["bytes"] for f in folders), "artifacts": artifacts}
 
 
 @router.delete("/jobs/{jid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    from .job_paths import job_directories
+
     with c.db.lock:
         r = _get_job(c, jid)
         if r["status"] in ("running", "pausing", "cancelling") or c.supervisor.is_running(jid):
@@ -2128,17 +2138,18 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
             raise ApiError(
                 "archive the job before permanently deleting it", code="job.archive_required", status=409
             )
-        if c.db.fetchone(
-            "SELECT id FROM jobs WHERE type='xyz' AND json_extract(config_json,'$.xyz.source_job_id')=?",
-            (jid,),
-        ):
-            raise ApiError(
-                "请先删除使用此训练任务的模型测试记录。",
-                code="job.xyz_dependencies",
-                status=409,
-            )
+        from .xyz import preserve_source
+
+        preserve_source(c, r)
         if delete_files:
             folders = owned_job_directories(r)
+            for directory in folders:
+                if any(part.is_symlink() for part in (directory, *directory.parents)) or not c.is_allowed(directory.resolve()):
+                    raise ApiError("任务目录不在允许访问的范围内。", code="job.path", status=403)
+                for other in c.db.fetchall("SELECT * FROM jobs WHERE id!=?", (jid,)):
+                    for other_dir in job_directories(other):
+                        if other_dir.resolve() == directory.resolve() or other_dir.resolve().is_relative_to(directory.resolve()):
+                            raise ApiError("目录中包含其他任务的文件，无法删除。", code="job.files_in_use", status=409)
             if users := _jobs_using(c, jid, folders):
                 raise ApiError(
                     f"任务“{users[0]['name']}”还要用到这个任务的文件，请等它结束或取消后再删除。",
@@ -2488,6 +2499,8 @@ def list_artifacts(
     version_id: str | None = None,
     job_id: str | None = None,
 ) -> list[dict[str, Any]]:
+    from .artifact_inventory import artifact_exists
+
     conditions, params = [], []
     for key, value in (("project_id", project_id), ("version_id", version_id), ("job_id", job_id)):
         if value:
@@ -2497,7 +2510,7 @@ def list_artifacts(
     return [
         _artifact_row(r)
         for r in c.db.fetchall(sql + " ORDER BY created_at DESC", tuple(params))
-        if Path(r["path"]).is_file() or (r["kind"] == "model" and Path(r["path"]).is_dir())
+        if artifact_exists(r)
     ]
 
 

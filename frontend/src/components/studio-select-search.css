@@ -31,3 +31,7 @@
 .checkbox-select-group-count { flex:none; font-size:11px; color:var(--studio-dim); font-variant-numeric:tabular-nums; }
 .checkbox-select-group > svg { flex:none; color:var(--studio-dim); }
 .checkbox-select-option-group { margin-left:auto; padding-left:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:var(--studio-dim); }
+
+.studio-select-menu-searchable > input:focus-visible, .checkbox-select-menu > input:focus-visible {
+  border-color:var(--studio-accent); outline:1px solid var(--studio-accent); outline-offset:-2px; box-shadow:none;
+}

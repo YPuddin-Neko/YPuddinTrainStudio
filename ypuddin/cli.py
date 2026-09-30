@@ -30,9 +30,8 @@ def _load(args: argparse.Namespace) -> TrainConfig:
 
 
 def _worker_config(args: argparse.Namespace) -> TrainConfig:
-    worker_log.configure("debug" if args.verbose else "info")
+    worker_log.configure()
     cfg = _load(args)
-    worker_log.configure("debug" if args.verbose else cfg.logging.level)
     return cfg
 
 

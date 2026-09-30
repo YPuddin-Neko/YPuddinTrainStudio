@@ -805,7 +805,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
 
   const scheduleFree = value.optimizer?.type === 'adamw_sf' || (value.optimizer?.type === 'prodigy_plus_sf' && value.optimizer?.use_schedulefree !== false);
   const [editCaptionOverrides, setEditCaptionOverrides] = React.useState(false);
-  const [editOutput, setEditOutput] = React.useState(false);
+  const [editOutput, setEditOutput] = React.useState<'name' | 'path' | null>(null);
   const lastLowRank = React.useRef<number | null>(null);
   const lastEmittedConfig = React.useRef<Record<string, any> | null>(null);
   const optimizerEdits = React.useRef(new Map<string, Record<string, any>>());
@@ -861,10 +861,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS && weights.length && !weightMeta && !(key === 'tokenizer_path' && family?.name === 'sdxl')) return null;
     if (family?.name === 'sdxl' && weightMeta?.required === false && !showAdvanced) return null;
     if (fullPathKey === 'model.zero_terminal_snr' && value.model?.prediction_type !== 'v_prediction' && !value.model?.zero_terminal_snr) return null;
-    // Keep legacy cloud-log data in the draft, but do not expose controls that enable it.
-    if (fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
+    // Preserve legacy logging settings in the draft without exposing their controls.
+    if (fullPathKey === 'logging.level' || fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
 
-    if (versionSources && fullPathKey === 'checkpoint.name' && !showAdvanced && !editOutput) return null;
+    if (versionSources && fullPathKey === 'checkpoint.name' && editOutput !== 'name') return null;
     // Settings the selected adapter form ignores: full LoKr factors fix the scale, and
     // full target-layer weights take no rank, scale, initialization or dropout.
     if (value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && ['adapter.alpha', 'adapter.decompose_both', 'adapter.rs_lora'].includes(fullPathKey)) return null;
@@ -874,7 +874,6 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' ? {group:'model'} : {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}), ...(fullPathKey === 'adapter.layer_types' && value.training?.mode === 'full' ? {group: compact ? 'model' : 'training'} : {}) };
     if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
-    if (compact && !showAdvanced && fullPathKey === 'adapter.rules' && !value.adapter?.rules?.length) return null;
 
     const nested = prop.$ref ? resolveRef(schema, prop.$ref) : prop;
     if (nested?.type === 'object' && nested.properties) {
@@ -891,8 +890,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (search.trim() && !`${fieldLabel} ${fullPathKey} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs epoch 轮' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
-    const optionalAdvanced = ui.advanced && !(currentGroup === 'optimizer' && key !== 'args');
-    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput && fullPathKey === 'checkpoint.name')) return null;
+    const optionalAdvanced = ui.advanced;
+    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !(editOutput === 'name' && fullPathKey === 'checkpoint.name')) return null;
     const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
     if (ui.show_when && !incompatiblePredictionLoss && !incompatibleFamilyLoss) {
       try {
@@ -1254,6 +1253,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         ? (english ? 'Updates the selected model weights directly.' : '直接训练所选模型本身的权重。')
         : (english ? 'Trains LoRA weights while keeping the base model frozen.' : '只训练 LoRA 权重，底模保持不变。')
       : fullPathKey === 'model.dtype' ? modelPrecisionHint
+      : fullPathKey === 'adapter.dora_axis' ? fieldValue === 'input'
+        ? (family?.name === 'sdxl' ? (english ? 'For ComfyUI, Forge and A1111, keep this default.' : '使用 ComfyUI、Forge 或 A1111 时保持此默认值。') : (english ? 'For ComfyUI, keep this default.' : '使用 ComfyUI 等出图工具时保持此默认值。'))
+        : (english ? 'For LyCORIS tools. ComfyUI may render differently from training previews.' : '用于 LyCORIS 工具；ComfyUI 出图会与训练预览有差异。')
       : fullPathKey === 'dataset.native_max_pixels' ? nativePixelsHint(fieldValue, english) || configFieldHint(fullPathKey, english)
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')
       : parentPath[0] === 'model' && key in MODEL_PATH_FIELDS ? modelPathHint(family?.name, key, english, preset)
@@ -1387,8 +1389,16 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           {/* A problem with the whole group, such as a memory estimate too large for the GPU, has no field to sit under. */}
           {errors.filter(error => error.loc === groupName && error.msg).map(error => <p key={error.msg} className="config-group-alert"><AlertCircle size={14} aria-hidden="true"/><span>{error.msg}</span></p>)}
           {groupName === 'checkpoint' && versionSources && <div className="output-binding-summary">
-            <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong>{!showAdvanced && <button type="button" className="ui-btn ui-btn-sm" aria-expanded={editOutput} onClick={() => setEditOutput(previous => !previous)}>{editOutput ? (english ? 'Collapse file name' : '收起文件名设置') : (english ? 'Edit file name' : '修改文件名')}</button>}</div>
+            <div className="output-binding-heading"><strong>{english ? 'Training weights' : '训练权重'}</strong><StudioSelect aria-label={english ? 'Edit saved weights' : '修改保存设置'} value={editOutput || ''} placeholder={english ? 'Edit…' : '修改…'} onValueChange={next => setEditOutput(next as 'name' | 'path')} options={[{value:'name',label:english ? 'Edit file name' : '修改文件名'},{value:'path',label:english ? 'Edit save location' : '修改保存路径'}]} disabled={readOnly}/></div>
             {outputBinding ? <><div><span>{english ? 'File name' : '文件名'}</span><code>{outputBinding.name}-final{value.training?.mode === 'full' ? '.model/' : '.safetensors'}</code></div><div><span>{english ? 'Save location' : '保存位置'}</span><code>{outputBinding.directory_template.replace('{job_id}', english ? '<run ID>' : '<运行 ID>')}</code></div></> : <p><LoadingNote label={english ? 'Resolving the save location…' : '正在读取保存位置…'}/></p>}
+            {editOutput === 'path' && <div className={`output-binding-editor${errors.some(error=>error.loc==='checkpoint.output_dir') ? ' config-field-invalid' : ''}`} data-field-path="checkpoint.output_dir">
+              <label>{english ? 'Save root' : '保存根目录'}</label>
+              <fieldset disabled={readOnly} className="config-readonly-control"><PathInput ariaLabel={english ? 'Save root' : '保存根目录'} value={value.checkpoint?.output_dir === 'outputs/run' ? '' : value.checkpoint?.output_dir || ''} placeholder={english ? 'Use the configured default location' : '留空使用默认保存位置'} directoryOnly allowMissingDirectory
+                resolveDefaultPath={async()=> (await apiClient.get<{path:string}>('/fs/browse-root',{params:{field:'checkpoint.output_dir',project_id:projectId,version_id:versionId},silent:true})).path}
+                onChange={path=>onChange(setNestedValue(value,['checkpoint','output_dir'],path || 'outputs/run'))}/></fieldset>
+              <p className="config-field-hint">{english ? 'Weights are grouped by project, version and run inside this folder.' : '权重按项目、版本和运行分别保存在此目录下。'}</p>
+              {errors.filter(error=>error.loc==='checkpoint.output_dir').map(error=><p key={error.msg} className="config-field-error">{error.msg}</p>)}
+            </div>}
           </div>}
           {groupName === 'caption' && showCaptionFormats && <div className="config-field-section config-caption-formats"><h3>{english ? 'Caption format' : '标签格式'}</h3><div className="caption-source-formats">
             {captionSources.map((source: any, index: number) => {

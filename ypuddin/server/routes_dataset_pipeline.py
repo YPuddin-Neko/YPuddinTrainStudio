@@ -112,7 +112,7 @@ class VlmOptions(BaseModel):
     existing: Literal["skip", "overwrite", "refine"] = "skip"
     trigger_word: str | None = Field(None, max_length=200)
     exclude_tags: list[str] = Field(default_factory=list, max_length=1000)
-    temperature: float = Field(0.3, ge=0, le=2)
+    temperature: float = Field(0, ge=0, le=2)
     max_tokens: int | None = Field(None, ge=16, le=65536)
     image_size: int = Field(1024, ge=256, le=4096)
     image_detail: Literal["", "auto", "low", "high"] = ""

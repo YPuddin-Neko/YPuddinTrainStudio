@@ -13,18 +13,18 @@ import threading
 from typing import Any
 
 FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
-LEVELS = {"debug": logging.DEBUG, "info": logging.INFO, "warning": logging.WARNING}
 
 log = logging.getLogger("ypuddin.worker")
 
 
-def configure(level: str = "info") -> None:
-    """Record YPuddin messages from ``level`` and other libraries from INFO or above.
+def configure(level: str = "debug") -> None:
+    """Record all trainer messages and other libraries from INFO or above.
 
     Third-party DEBUG output (image decoders, HTTP clients, compilers) would bury the
-    trainer's own records, so ``debug`` only lowers the threshold of ``ypuddin.*``.
+    trainer's own records, so only ``ypuddin.*`` uses the DEBUG threshold.
     """
-    threshold = LEVELS.get(level, logging.INFO)
+    # Older saved configurations still pass a level; they must not hide new worker output.
+    threshold = logging.DEBUG
     root = logging.getLogger()
     if not root.handlers:
         logging.basicConfig(format=FORMAT)

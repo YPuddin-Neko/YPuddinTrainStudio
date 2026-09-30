@@ -167,7 +167,7 @@ class SettingsVlm(BaseModel):
     # Per service: the address of a local or custom one, and the chosen model.
     base_urls: dict[str, str] = Field(default_factory=dict, max_length=16)
     models: dict[str, str] = Field(default_factory=dict, max_length=16)
-    temperature: float = Field(0.3, ge=0, le=2)
+    temperature: float = Field(0, ge=0, le=2)
     max_tokens: int | None = Field(None, ge=16, le=65536)
     image_size: int = Field(1024, ge=256, le=4096)
     image_detail: Literal["", "auto", "low", "high"] = ""

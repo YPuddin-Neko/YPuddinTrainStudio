@@ -87,3 +87,13 @@
   .caption-viewer-grid { grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); max-height:200px; }
   .caption-viewer-grid img { height:96px; }.caption-viewer-detail { grid-row:auto; padding:12px; }
 }
+
+.caption-viewer-filter-row > .studio-select { flex:0 1 190px; min-width:150px; }
+.caption-viewer.is-editing .caption-viewer-detail { display:flex; flex-direction:column; overflow:hidden; }
+.caption-viewer.is-editing .caption-viewer-image { flex:1; min-height:120px; overflow:hidden; }
+.caption-viewer.is-editing .caption-viewer-image img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+.caption-viewer.is-editing .caption-viewer-image-heading, .caption-viewer.is-editing .caption-viewer-editor { flex:none; }
+.caption-viewer.is-editing .caption-viewer-editor { margin-top:auto; }
+@container(max-width:620px) {
+  .caption-viewer.is-editing .caption-viewer-detail { min-height:400px; }
+}

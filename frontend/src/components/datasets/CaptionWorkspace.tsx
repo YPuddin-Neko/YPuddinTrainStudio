@@ -20,6 +20,7 @@ import {useEventStream} from '../../events/useEventStream';
 import {EVENT_TYPES} from '../../events/eventTypes';
 import { SlidingIndicator } from '../motion';
 import { LoadingNote } from '../Loading';
+import ImageSortSelect, { type ImageSort } from './ImageSortSelect';
 
 type CaptionStats = components['schemas']['DatasetCaptionStats'];
 interface Draft {
@@ -38,6 +39,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   const dataRouter = !!React.useContext(UNSAFE_DataRouterContext);
   const [datasetId, setDatasetId] = React.useState(initialDatasetId);
   const pageSize = PAGE_SIZE;
+  const [sort, setSort] = React.useState<ImageSort>('filename');
   const [galleryWidth,setGalleryWidth] = React.useState(220);
   const [statsWidth,setStatsWidth] = React.useState(220);
   const [previewHeight,setPreviewHeight] = React.useState<number|null>(null);
@@ -67,10 +69,10 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
   const currentNavigation = navigation.scope === scope ? navigation : emptyNavigation;
   const { page, searchDraft, search, tag, status, selected } = currentNavigation;
   const updateNavigation = (patch: Partial<typeof navigation>) => setNavigation(previous => ({ ...(previous.scope === scope ? previous : emptyNavigation), ...patch }));
-  const images = useQuery<DatasetImagesPage>({ queryKey: ['caption-workspace-images', scope, page, search, tag, status, pageSize], enabled: !!source, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  const images = useQuery<DatasetImagesPage>({ queryKey: ['caption-workspace-images', scope, page, search, tag, status, pageSize, sort], enabled: !!source, refetchOnWindowFocus: false, refetchOnReconnect: false,
     placeholderData: (previous, query) => query?.queryKey[1] === scope ? previous : undefined,
     queryFn: ({ signal }) => apiClient.get<DatasetImagesPage>(`/datasets/${source!.source.id}/images`, {
-      params: { page, page_size: pageSize, q: search || undefined, tag: tag || undefined, caption_status: status || undefined }, signal, silent: true,
+      params: { page, page_size: pageSize, q: search || undefined, tag: tag || undefined, caption_status: status || undefined, sort }, signal, silent: true,
     }) });
   const stats = useQuery({ queryKey: ['caption-stats', scope], enabled: !!source, refetchOnWindowFocus: false, refetchOnReconnect: false,
     queryFn: ({ signal }) => apiClient.get<CaptionStats>(`/datasets/${source!.source.id}/caption-stats`, { signal, silent: true }) });
@@ -240,7 +242,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
     {dataRouter && <DatasetNavigationGuard shouldBlock={() => dirty || saving} beforeLeave={beforeLeave} onError={failure => { if (failure instanceof Error && failure.message) setError(formatApiError(failure)); }}/>}
     <div className="caption-workspace-toolbar" role="group" aria-label={text('选择图片目录', 'Choose image folder')}>
       <label className="caption-workspace-source"><span><Folder size={17}/>{text('图片目录', 'Image folder')}</span><StudioSelect searchable aria-label={text('图片目录', 'Image folder')} value={source?.source.id || ''} disabled={saving || !source} options={(datasets.data || []).map(item => ({ value: item.source.id, label: nameOf(item.source.path) }))} onValueChange={value => perform(() => setDatasetId(value))}/></label>
-      <span className="caption-workspace-source-summary">{source?.source.is_reg ? text('正则图', 'Regularization') : text('训练集', 'Training')} · {stats.data?.images ?? source?.stats?.images ?? '—'} {text('张图片', 'images')}</span>
+      <ImageSortSelect value={sort} disabled={saving} onChange={value=>perform(()=>{setSort(value);updateNavigation({page:1,selected:''});})}/><span className="caption-workspace-source-summary">{source?.source.is_reg ? text('正则图', 'Regularization') : text('训练集', 'Training')} · {stats.data?.images ?? source?.stats?.images ?? '—'} {text('张图片', 'images')}</span>
     </div>
     {(datasets.error || images.error || error) && <p role="alert" className="caption-workspace-error">{error || formatApiError(datasets.error || images.error)}</p>}
     {datasets.isPending || source && images.isPending ? <p className="caption-workspace-empty" role="status"><Loader2 size={16} className="animate-spin"/>{text('读取图片与标签…', 'Loading images and captions…')}</p>

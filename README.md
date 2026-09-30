@@ -6,7 +6,7 @@
 
 一个本地运行的 LoRA / LoKr 训练器，支持 Anima、SDXL、Krea 2 与 FLUX.2 Klein
 
-[![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#支持的模型与平台) [![Version](https://img.shields.io/badge/Version-v0.5.9-orange)](CHANGELOG.md) [![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB)](#快速开始) [![PyTorch](https://img.shields.io/badge/PyTorch-2.4%2B-EE4C2C)](docs/RUNTIME.md) [![React](https://img.shields.io/badge/React-18-61DAFB)](frontend/package.json)
+[![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#支持的模型与平台) [![Version](https://img.shields.io/badge/Version-v0.6.0-orange)](CHANGELOG.md) [![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB)](#快速开始) [![PyTorch](https://img.shields.io/badge/PyTorch-2.4%2B-EE4C2C)](docs/RUNTIME.md) [![React](https://img.shields.io/badge/React-18-61DAFB)](frontend/package.json)
 
 [快速开始](#快速开始) · [功能介绍](#功能介绍) · [文档](#文档)
 
@@ -14,12 +14,11 @@
 
 ## 功能介绍
 
-- **训练算法**：LoRA、LoKr、LoHa、OrthoLoRA、T-LoRA 和 LyCORIS Full，可选 DoRA、rsLoRA，SDXL 可同时训练卷积层；也支持主模型或文本编码器的全量微调。
-- **数据集**：图片导入、数据集检查与筛选，WD / PixAI / CL Tagger 等打标模型、视觉大模型和辅助打标，TXT / JSON 标签编辑，自动头部遮罩，图像涂抹与遮罩编辑，从图站下载训练图和正则图，用底模生成正则图。
-- **训练**：分桶与原生分辨率、图像和文本缓存、梯度累积与梯度检查点、显存估算，DDP / FSDP 多卡训练。
-- **任务**：任务队列与显卡分配、强制开始、实时日志和指标曲线、训练预览、按完整状态暂停与恢复、任务归档。
-- **结果**：XYZ 模型对比，连续测试保留已加载的底模，可手动“释放显存”；训练权重导出，导出的 LoRA 可直接在 ComfyUI 中加载，OrthoLoRA 和 T-LoRA 也导出为通用的 LoRA 文件。
-- **环境**：模型下载、访问密钥、代理与下载源，PyTorch 版本切换，注意力扩展、8-bit 优化器和打标与遮罩所需 ONNX Runtime 的安装，视觉大模型服务设置。
+- **整理训练数据**：导入与筛选图片，使用 Tagger 或视觉大模型打标，编辑 TXT / JSON 标签，制作遮罩和准备正则图片。
+- **配置训练**：支持 LoRA、LoKr、LoHa、OrthoLoRA、T-LoRA、LyCORIS Full 与全量微调；可选择分桶或原生分辨率，查看图片尺寸变化和显存估算。
+- **安排显卡与任务**：不同显卡可同时运行不同任务，也可通过 DDP / FSDP 共同训练一个模型；训练支持暂停、保存恢复点和继续训练。
+- **查看训练过程**：实时日志、损失与硬件曲线、定期预览，以及按任务管理的权重和恢复点。
+- **测试训练结果**：选择保存的权重，对比模型版本、强度和采样参数；保留生成记录，放大或下载图片。OrthoLoRA 和 T-LoRA 导出为通用 LoRA，适配器兼容范围见[内置适配器](docs/ADAPTERS.md)。
 
 ## 支持的模型与平台
 

@@ -153,7 +153,6 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'checkpoint.resume': ['从保存的完整状态继续训练。', 'Continue from a saved training state.'],
 
   'logging.output_dir': ['保存任务日志和 TensorBoard，留空跟随默认目录。', 'Stores logs and TensorBoard data; blank uses the default directory.'],
-  'logging.level': ['训练日志记录的详细程度。', 'How much detail the training log records.'],
   'logging.events_path': ['记录训练进度与损失，留空使用默认日志位置。', 'Records training progress and loss; blank uses the default log location.'],
 };
 
@@ -210,7 +209,6 @@ export const FIELD_HELP: Record<string, Copy> = {
   'validation.every_steps': ['每隔多少次优化更新计算一次验证损失。留空不按步验证。', 'Computes validation loss every N optimizer updates. Blank disables step-based validation.'],
   'validation.every_epochs': ['每隔多少轮计算一次验证损失。留空不按轮验证。', 'Computes validation loss every N epochs. Blank disables epoch-based validation.'],
   'validation.seed': ['验证加噪使用的随机种子。保持不变，不同时间点的验证损失才能直接比较。', 'Random seed for validation noise. Keep it fixed so validation losses stay comparable over time.'],
-  'logging.level': ['调试级别额外记录设备与精度、各阶段耗时、数据分桶、优化器与调度器、恢复点保存和采样等细节；在任务日志中打开“调试日志”后显示，默认隐藏。信息级别只记录常规进度；警告级别只记录警告和错误。修改后对新启动的任务生效。', 'Debug additionally records device and precision choices, phase timings, buckets, optimizer and scheduler settings, recovery saves and sampling. Turn on Debug in the job log to show these lines; they are hidden by default. Info records routine progress; Warning records only warnings and errors. Changes apply to newly started jobs.'],
   'logging.output_dir': ['保存控制台日志、训练事件与 TensorBoard 数据。留空使用“设置 → 存储路径”中的日志目录；该项也未设置时保存在版本目录的 jobs/<任务>。自定义目录下按项目、版本和任务分开存放。', 'Stores console logs, training events and TensorBoard data. Blank uses the log directory in Settings → Storage paths, or jobs/<job> in the version folder if unset. Custom roots are organized by project, version and job.'],
   'logging.events_path': ['记录训练进度、损失等事件的文件，默认名为 events.jsonl。设置了日志保存目录时使用该目录；否则使用此文件的父目录作为日志根目录。', 'Records training progress, losses and other events, named events.jsonl by default. Uses the configured log directory, or this file’s parent as the log root.'],
 };

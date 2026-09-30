@@ -493,6 +493,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/xyz/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sources */
+        get: operations["sources_api_xyz_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/xyz/sources/{source}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Source Details */
+        get: operations["source_details_api_xyz_sources__source__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{source}/xyz/options": {
         parameters: {
             query?: never;
@@ -576,7 +610,8 @@ export interface paths {
         get: operations["task_api_xyz__jid__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete */
+        delete: operations["delete_api_xyz__jid__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -7461,7 +7496,7 @@ export interface components {
             };
             /**
              * Temperature
-             * @default 0.3
+             * @default 0
              */
             temperature: number;
             /** Max Tokens */
@@ -8346,7 +8381,7 @@ export interface components {
             exclude_tags?: string[];
             /**
              * Temperature
-             * @default 0.3
+             * @default 0
              */
             temperature: number;
             /** Max Tokens */
@@ -8657,6 +8692,41 @@ export interface components {
             y?: components["schemas"]["XyzAxis"] | null;
             z?: components["schemas"]["XyzAxis"] | null;
         };
+        /** XyzSource */
+        XyzSource: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Version Id */
+            version_id?: string | null;
+            /** Project Name */
+            project_name?: string | null;
+            /** Version Name */
+            version_name?: string | null;
+            /** Version Number */
+            version_number?: number | null;
+            /** Created At */
+            created_at: number;
+            /**
+             * Deleted
+             * @default false
+             */
+            deleted: boolean;
+        };
+        /** XyzSourcePage */
+        XyzSourcePage: {
+            /** Items */
+            items: components["schemas"]["XyzSource"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+        };
         /** XyzTask */
         XyzTask: {
             /** Id */
@@ -8694,6 +8764,8 @@ export interface components {
             manifest: components["schemas"]["XyzManifest"];
             /** Can Cancel */
             can_cancel: boolean;
+            /** Output Dir */
+            output_dir: string;
         };
     };
     responses: never;
@@ -9728,6 +9800,72 @@ export interface operations {
             };
         };
     };
+    sources_api_xyz_sources_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+                version_id?: string | null;
+                q?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XyzSourcePage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_details_api_xyz_sources__source__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XyzSource"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     options_api_jobs__source__xyz_options_get: {
         parameters: {
             query?: never;
@@ -9883,6 +10021,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["XyzTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_api_xyz__jid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -10905,6 +11074,7 @@ export interface operations {
                 tag?: string | null;
                 caption_status?: ("captioned" | "missing" | "invalid") | null;
                 membership?: "all" | "training" | "unused";
+                sort?: "filename" | "folder" | "modified";
             };
             header?: never;
             path: {
@@ -12404,6 +12574,7 @@ export interface operations {
                 q?: string;
                 page?: number;
                 page_size?: number;
+                sort?: "filename" | "folder" | "modified";
             };
             header?: never;
             path: {
