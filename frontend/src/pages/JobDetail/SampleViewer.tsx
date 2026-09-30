@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Image as ImageIcon, ImageOff } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Image as ImageIcon, ImageOff } from 'lucide-react';
 import type { JobSample } from '../../api/types';
 import CopyButton from '../../components/CopyButton';
 import { LazyImage } from '../../components/Loading';
@@ -77,7 +77,6 @@ export default function SampleViewer({ samples, stepsPerEpoch, loaded, selected,
   const text = useWorkspaceText();
   const [query, setQuery] = React.useState('');
   const [open, setOpen] = React.useState(false);
-  const [failed, setFailed] = React.useState('');
   const strip = React.useRef<HTMLDivElement>(null);
   const ranges = React.useMemo(() => parseEpochQuery(query), [query]);
   const shown = React.useMemo(() => samples.filter(sample => inEpochs(epochAt(sample, stepsPerEpoch), ranges)) as Sample[], [samples, stepsPerEpoch, ranges]);
@@ -128,10 +127,16 @@ export default function SampleViewer({ samples, stepsPerEpoch, loaded, selected,
     {!current ? <div className="sample-empty"><ImageIcon size={26} aria-hidden="true"/><p>{text('没有符合轮次的采样图', 'No previews in these epochs')}</p><button type="button" className="ui-link" onClick={() => setQuery('')}>{text('清除搜索', 'Clear search')}</button></div>
       : <div className="sample-viewer" tabIndex={-1} onKeyDown={onKeyDown}>
         <div className="sample-main">
-          <button type="button" className="sample-stage" onClick={event => { event.currentTarget.focus(); openViewer(); }} aria-label={text(`放大查看第 ${current.step} 步的采样图`, `Enlarge the step ${current.step} preview`)} title={text('点击放大查看', 'Click to enlarge')}>
-            {failed === src ? <span className="sample-stage-failed"><ImageOff size={26} aria-hidden="true"/>{text('采样图读取失败', 'The preview could not be loaded')}</span>
-              : <LazyImage key={src} src={src} alt={current.prompt} draggable={false} className="sample-stage-image" onError={() => setFailed(src)}/>}
-          </button>
+          <div className="sample-stage-wrap">
+            <button type="button" className="sample-stage" onClick={event => { event.currentTarget.focus(); openViewer(); }} aria-label={text(`放大查看第 ${current.step} 步的采样图`, `Enlarge the step ${current.step} preview`)} title={text('点击放大查看', 'Click to enlarge')}>
+              <LazyImage key={src} src={src} alt={current.prompt} draggable={false} className="sample-stage-image"
+                fallback={<span className="sample-stage-failed"><ImageOff size={26} aria-hidden="true"/>{text('采样图读取失败', 'The preview could not be loaded')}</span>}/>
+            </button>
+            {shown.length > 1 && <>
+              <button type="button" className="ui-btn ui-btn-icon sample-stage-nav sample-stage-previous" onClick={() => go(index - 1)} disabled={index === 0} aria-label={text('上一张', 'Previous')} title={text('上一张（←）', 'Previous (←)')}><ChevronLeft size={18} aria-hidden="true"/></button>
+              <button type="button" className="ui-btn ui-btn-icon sample-stage-nav sample-stage-next" onClick={() => go(index + 1)} disabled={index === shown.length - 1} aria-label={text('下一张', 'Next')} title={text('下一张（→）', 'Next (→)')}><ChevronRight size={18} aria-hidden="true"/></button>
+            </>}
+          </div>
           <div ref={strip} className="sample-strip" aria-label={text('采样图列表', 'Preview list')}>
             {groups.map(group => <div key={group.step} className="sample-strip-group">
               <span className="sample-strip-label">{text(`步 ${group.step}`, `Step ${group.step}`)}</span>

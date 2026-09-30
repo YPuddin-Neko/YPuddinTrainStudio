@@ -186,7 +186,7 @@ export default function SampleLightbox({ sample, position, total, details = [], 
       </div>
       <button type="button" className="ui-btn ui-btn-icon sample-lightbox-close" onClick={onClose} aria-label={text('关闭', 'Close')} title={text('关闭（Esc）', 'Close (Esc)')}><X size={18}/></button>
     </header>
-    <ZoomStage ref={zoom} src={src} alt={sample.prompt} onState={onState} onBackdrop={onClose}/>
+    <ZoomStage key={src} ref={zoom} src={src} alt={sample.prompt} onState={onState} onBackdrop={onClose}/>
     <div className="sample-lightbox-toolbar" role="toolbar" aria-label={text('查看工具', 'Viewer tools')}>
       <div className="sample-lightbox-tools">
         <button type="button" onClick={onPrevious} disabled={!onPrevious} aria-label={text('上一张', 'Previous')} title={text('上一张（←）', 'Previous (←)')}><ChevronLeft size={16}/></button>

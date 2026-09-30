@@ -11,6 +11,7 @@
 
 .sample-viewer { display:grid; grid-template-columns:minmax(0, 1fr) 320px; gap:12px; min-width:0; outline:none; }
 .sample-main { display:grid; align-content:start; gap:10px; min-width:0; }
+.sample-stage-wrap { position:relative; min-width:0; }
 .sample-stage { position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:clamp(360px, 64vh, 820px); padding:0; overflow:hidden; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-canvas); user-select:none; -webkit-user-select:none; }
 .sample-stage:hover { border-color:color-mix(in srgb, var(--studio-accent) 45%, var(--studio-line)); }
 /* The global button rule sets a pointer; the preview shows it opens enlarged. */
@@ -18,6 +19,9 @@
 .sample-stage-image { max-width:100%; max-height:100%; object-fit:contain; }
 .sample-stage-skeleton { position:absolute; inset:0; }
 .sample-stage-failed { display:flex; flex-direction:column; align-items:center; gap:8px; font-size:12px; color:var(--studio-dim); }
+.sample-stage-nav { position:absolute; top:50%; translate:0 -50%; }
+.sample-stage-previous { left:12px; }
+.sample-stage-next { right:12px; }
 
 .sample-strip { position:relative; display:flex; gap:14px; overflow-x:auto; padding:4px 4px 8px; scrollbar-width:thin; }
 .sample-strip-group { display:grid; align-content:start; gap:5px; flex:none; }
