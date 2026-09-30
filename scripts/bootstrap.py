@@ -1385,6 +1385,123 @@ def frontend_stale() -> bool:
         return True
 
 
+def frontend_dependency_signature(node: str, npm: str, node_version: str) -> str | None:
+    try:
+        inputs = {
+            name: hashlib.sha256((FRONTEND / name).read_bytes()).hexdigest()
+            for name in ("package.json", "package-lock.json")
+        }
+        if (FRONTEND / ".npmrc").exists():
+            inputs[".npmrc"] = hashlib.sha256((FRONTEND / ".npmrc").read_bytes()).hexdigest()
+        npm_version = subprocess.run(
+            [npm, "--version"], capture_output=True, text=True, check=True, cwd=FRONTEND
+        ).stdout.strip()
+        runtime = json.loads(
+            subprocess.run(
+                [node, "-p", "JSON.stringify([process.platform, process.arch, process.versions.modules])"],
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=FRONTEND,
+            ).stdout
+        )
+        if (
+            not re.fullmatch(r"\d+\.\d+\.\d+.*", npm_version)
+            or not isinstance(runtime, list)
+            or len(runtime) != 3
+            or not all(isinstance(value, str) and value for value in runtime)
+        ):
+            return None
+        identity = {
+            "inputs": inputs,
+            "node": node_version,
+            "npm": npm_version,
+            "runtime": runtime,
+            "executables": [str(Path(node).resolve()), str(Path(npm).resolve())],
+            "install_env": {
+                key: value
+                for key, value in os.environ.items()
+                if key == "NODE_ENV" or key.lower().startswith("npm_config_")
+            },
+        }
+        return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return None
+
+
+def frontend_installation_signature(node: str) -> str | None:
+    try:
+        modules = FRONTEND / "node_modules"
+        hidden_lock = modules / ".package-lock.json"
+        packages = json.loads(hidden_lock.read_text(encoding="utf-8"))["packages"]
+        if not isinstance(packages, dict) or not packages:
+            return None
+        files = [hidden_lock]
+        resolved_modules = modules.resolve()
+        for name in packages:
+            package = FRONTEND / name
+            if not name.startswith("node_modules/") or resolved_modules not in package.resolve().parents:
+                return None
+            files.append(package / "package.json")
+        manifest = json.loads((FRONTEND / "package.json").read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            return None
+        for section in ("dependencies", "devDependencies"):
+            if any(f"node_modules/{name}" not in packages for name in manifest.get(section, {})):
+                return None
+        for name in ("vite", "tsc"):
+            files.append(modules / ".bin" / (name + (".cmd" if WIN else "")))
+        files.extend(
+            modules / name for name in ("vite/bin/vite.js", "typescript/bin/tsc", "typescript/lib/tsc.js")
+        )
+        installed = {
+            file.relative_to(FRONTEND).as_posix(): hashlib.sha256(file.read_bytes()).hexdigest()
+            for file in files
+        }
+        subprocess.run(
+            [node, "--input-type=module", "-e", "await import('vite'); await import('typescript');"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=FRONTEND,
+        )
+        return hashlib.sha256(json.dumps(installed, sort_keys=True).encode()).hexdigest()
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
+        return None
+
+
+def ensure_frontend_dependencies(node: str, npm: str, node_version: str) -> Path:
+    marker = FRONTEND / "node_modules" / ".ypuddin-install.json"
+    signature = frontend_dependency_signature(node, npm, node_version)
+    try:
+        saved = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = None
+    if (
+        signature is not None
+        and isinstance(saved, dict)
+        and saved.get("version") == 1
+        and saved.get("inputs") == signature
+        and saved.get("installed") is not None
+        and saved["installed"] == frontend_installation_signature(node)
+    ):
+        log("[5/5] 前端依赖未变，复用已安装依赖")
+        return marker
+    marker.unlink(missing_ok=True)
+    lock = FRONTEND / "package-lock.json"
+    run([npm, "ci" if lock.exists() else "install", "--no-audit", "--no-fund"], cwd=FRONTEND)
+    signature = frontend_dependency_signature(node, npm, node_version)
+    installed = frontend_installation_signature(node)
+    if signature is not None and installed is not None:
+        # Keep the record inside node_modules so npm ci also clears it on a fresh install.
+        temporary = marker.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps({"version": 1, "inputs": signature, "installed": installed}), encoding="utf-8"
+        )
+        temporary.replace(marker)
+    return marker
+
+
 def build_frontend(force: bool = False) -> bool:
     if not force and not frontend_stale():
         log("[5/5] 前端构建已是最新，跳过")
@@ -1403,10 +1520,13 @@ def build_frontend(force: bool = False) -> bool:
     version = subprocess.run([node, "--version"], capture_output=True, text=True, check=True).stdout.strip()
     if not node_supported(version):
         die(f"Node.js {version} 不支持当前前端；需要 20.19+ 或 22.12+")
-    lock = FRONTEND / "package-lock.json"
     log("[5/5] 构建前端界面")
-    run([npm, "ci" if lock.exists() else "install", "--no-audit", "--no-fund"], cwd=FRONTEND)
-    run([npm, "run", "build"], cwd=FRONTEND)
+    marker = ensure_frontend_dependencies(node, npm, version)
+    try:
+        run([npm, "run", "build"], cwd=FRONTEND)
+    except (OSError, subprocess.CalledProcessError):
+        marker.unlink(missing_ok=True)
+        raise
     return True
 
 
