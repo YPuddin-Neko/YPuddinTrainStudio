@@ -134,7 +134,7 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
     <div className="pipeline-navigation" ref={navigationRef}>
     <OverflowStrip className="dataset-stages" label={text('训练数据处理','Dataset pipeline')} activeKey={stage} role="navigation">
       {tabs.map(([id, label, Icon, errors]) => <button key={id} type="button" aria-current={stage === id ? 'step' : undefined} onClick={() => setStage(id)}><Icon size={15} aria-hidden="true"/><span>{label}</span>{errors ? <span className="dataset-stage-badge" aria-label={text(`${errors} 项错误`, `${errors} errors`)}>{errors}</span> : null}</button>)}
-      <SlidingIndicator className="dataset-stage-indicator"/>
+      <SlidingIndicator className="ui-segmented-thumb dataset-stage-indicator"/>
     </OverflowStrip>
     </div>
     {(error || query.error) && <div role="alert" className="workspace-message error">{error || formatApiError(query.error)}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void query.refetch()}>{text('重新读取','Reload')}</button></div>}

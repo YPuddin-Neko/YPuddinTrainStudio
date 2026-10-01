@@ -258,7 +258,7 @@ export default function CaptionWorkspace({ projectId, versionId, initialDatasetI
                 </div>
                 <OverflowStrip className="caption-workspace-status-filter" role="group" label={text('标签状态筛选', 'Caption status filter')} activeKey={status}>
                   {statusFilters.map(([value, label, count]) => <button type="button" key={value} aria-pressed={status === value} disabled={saving} onClick={() => setFilter({ status: value })}>{label} {count ?? '—'}</button>)}
-                  <SlidingIndicator className="caption-status-indicator"/>
+                  <SlidingIndicator className="ui-segmented-thumb caption-status-indicator"/>
                 </OverflowStrip>
                 {tag && <button type="button" className="caption-workspace-clear" disabled={saving} onClick={() => setFilter({ tag: '' })} aria-label={text(`取消标签筛选：${tag}`, `Clear tag filter: ${tag}`)}><span>{text(`标签：${tag}`, `Tag: ${tag}`)}</span><X size={12}/></button>}
               </div>

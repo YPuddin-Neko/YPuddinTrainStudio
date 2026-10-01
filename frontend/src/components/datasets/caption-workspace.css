@@ -22,9 +22,8 @@
 .caption-workspace-status-filter > button { position:relative; z-index:1; flex:1 0 auto; min-width:0; padding:3px 0; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--studio-dim); font-size:11px; font-weight:500; line-height:16px; white-space:nowrap; font-variant-numeric:tabular-nums; cursor:pointer; transition:background-color var(--motion-quick,140ms), color var(--motion-quick,140ms); }
 .caption-workspace-status-filter > button:hover:not([aria-pressed=true]):not(:disabled) { background:var(--studio-muted); color:var(--studio-text); }
 .caption-workspace-status-filter > button[aria-pressed=true] { color:var(--studio-accent); }
-.caption-status-indicator { position:absolute; z-index:0; top:0; bottom:0; left:0; width:0; border:1px solid color-mix(in srgb, var(--studio-accent) 25%, transparent); border-radius:6px; pointer-events:none; background:var(--control-accent-soft); opacity:0; transition:transform var(--motion-base,200ms) var(--motion-ease,ease-out), width var(--motion-base,200ms) var(--motion-ease,ease-out), opacity var(--motion-quick,140ms); }
-.caption-status-indicator[data-ready] { opacity:1; }
-.caption-workspace-status-filter:not(:has(> .caption-status-indicator[data-ready])) > button[aria-pressed=true] { border-color:color-mix(in srgb, var(--studio-accent) 25%, transparent); background:var(--control-accent-soft); }
+.ui-segmented-thumb.caption-status-indicator { top:0; bottom:0; border:1px solid color-mix(in srgb, var(--studio-accent) 25%, transparent); background:var(--control-accent-soft); box-shadow:none; }
+.caption-workspace-status-filter:not(:has(> .ui-segmented-thumb[data-ready])) > button[aria-pressed=true] { border-color:color-mix(in srgb, var(--studio-accent) 25%, transparent); background:var(--control-accent-soft); }
 .caption-workspace-status-filter > button:focus-visible { outline:2px solid var(--studio-accent); outline-offset:1px; }
 .caption-workspace-clear { display:flex; align-items:center; justify-content:space-between; gap:6px; min-width:0; padding:3px 8px; border:1px solid color-mix(in srgb, var(--studio-accent) 25%, transparent); border-radius:6px; background:var(--control-accent-soft); color:var(--studio-accent); font-size:11px; cursor:pointer; }
 .caption-workspace-clear > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
