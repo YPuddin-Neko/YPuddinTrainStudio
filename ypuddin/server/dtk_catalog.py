@@ -139,11 +139,11 @@ def driver_version() -> str | None:
 
 
 def _guidance_wheels(torch_version: str) -> tuple[tuple[str, str, str], ...]:
-    # Manual download links from SourceFind's DAS1.8 inventory (2026-09-30).
-    # They do not enter the checksum-pinned automatic installer catalog.
+    # Manual download links (package, version, URL) from SourceFind's DAS1.8 inventory (2026-09-30).
+    # Attention extensions are listed only as reviewed WHEELS entries, which the installer accepts.
     if torch_version == "2.5.1":
         return tuple(
-            (package, version, f"/file/4/{directory}/DAS1.8/{filename}")
+            (package, version, _url(f"/file/4/{directory}/DAS1.8/{filename}"))
             for package, directory, version, filename in (
                 (
                     "torch", "pytorch", "2.5.1+das.opt1.dtk2604",
@@ -157,28 +157,21 @@ def _guidance_wheels(torch_version: str) -> tuple[tuple[str, str, str], ...]:
                     "triton", "triton", "3.1.0+das.opt1.dtk2604.torch251",
                     "triton-3.1.0+das.opt1.dtk2604.torch251-cp311-cp311-manylinux_2_28_x86_64.whl",
                 ),
-                (
-                    "flash-attn", "flash_attn", "2.8.3+das.opt1.dtk2604.torch251",
-                    "flash_attn-2.8.3+das.opt1.dtk2604.torch251-cp311-cp311-manylinux_2_28_x86_64.whl",
-                ),
             )
         )
     if torch_version == "2.7.1":
+        flash = find_wheel("sourcefind-flash-attn-2.8.3-dtk2604-torch271-cp311")
         return (
             *(
-                (package, version, path)
+                (package, version, _url(path))
                 for package, version, path, _, _ in dtk_builds.RUNTIME_SETS[("26.04", "cp311")]
             ),
-            (
-                "flash-attn",
-                "2.8.3+das.opt1.dtk2604.torch271",
-                "/file/4/flash_attn/DAS1.8/flash_attn-2.8.3+das.opt1.dtk2604.torch271-cp311-cp311-manylinux_2_28_x86_64.whl",
-            ),
+            (flash.package, flash.version, flash.url),
         )
     return ()
 
 
-def guidance(runtime: dict, versions: dict[str, str] | None = None) -> DtkGuidance:
+def guidance(runtime: dict, versions: dict[str, str] | None = None, build: str | None = None) -> DtkGuidance:
     result = DtkGuidance(driver_version=runtime.get("driver_version"))
     installed_torch = (versions or {}).get("torch") or runtime.get("torch")
     torch_version = None
@@ -188,6 +181,13 @@ def guidance(runtime: dict, versions: dict[str, str] | None = None) -> DtkGuidan
             result.current_stack_reason = "torch24_transformers5_diffusers040_conflict"
     except InvalidVersion:
         pass
+
+    def unmatched(reason: str) -> DtkGuidance:
+        # The PyTorch 2.4 conflict is the more specific explanation; keep it.
+        if result.current_stack_reason != "torch24_transformers5_diffusers040_conflict":
+            result.current_stack_reason = reason
+        return result
+
     if (
         runtime.get("platform") == "Linux"
         and str(runtime.get("machine", "")).lower() in ("x86_64", "amd64")
@@ -196,13 +196,12 @@ def guidance(runtime: dict, versions: dict[str, str] | None = None) -> DtkGuidan
         and re.match(r"^3\.11(?:\.|$)", str(runtime.get("python", "")))
     ):
         toolkit_version = runtime.get("installed_dtk")
-        build_version = dtk_build_version({**runtime, "torch": installed_torch})
+        build_version = build or installed_build(runtime, versions or {})
         if (toolkit_version and toolkit_version != "26.04") or (
             build_version and build_version != "26.04"
         ):
-            if result.current_stack_reason != "torch24_transformers5_diffusers040_conflict":
-                result.current_stack_reason = "no_matching_dtk_build"
-            return result
+            return unmatched("no_matching_dtk_build")
+        dtk_unknown = not (build_version or toolkit_version)
         # Keep the current Torch line. The bootstrap default applies only when
         # no Torch is installed, never as an implicit upgrade recommendation.
         selected_torch = torch_version.base_version if torch_version is not None else "2.7.1"
@@ -210,15 +209,12 @@ def guidance(runtime: dict, versions: dict[str, str] | None = None) -> DtkGuidan
             torch_version is None
             or torch_version.public != torch_version.base_version
             or torch_version.local not in (None, "das.opt1.dtk2604")
-            or not (build_version or toolkit_version) == "26.04"
+            or dtk_unknown
         ):
-            result.current_stack_reason = "no_matching_torch_build"
-            return result
+            return unmatched("no_matching_torch_build")
         bundles = _guidance_wheels(selected_torch)
         if not bundles:
-            if result.current_stack_reason != "torch24_transformers5_diffusers040_conflict":
-                result.current_stack_reason = "no_matching_torch_build"
-            return result
+            return unmatched("no_matching_torch_build")
         toolkit = _url("/file/1/DTK-26.04/Ubuntu22.04/DTK-26.04-Ubuntu22.04-x86_64.tar.gz")
         result.recommendation = DtkRuntimeRecommendation(
             dtk="26.04",
@@ -226,10 +222,9 @@ def guidance(runtime: dict, versions: dict[str, str] | None = None) -> DtkGuidan
             toolkit_checksum_url=toolkit + ".md5",
             python_tag="cp311",
             minimum_driver="6.3.30-V1.4.1a",
-            reason="matches_installed_torch" if installed_torch else "new_environment",
             wheels=[
-                DtkRuntimePackage(package=package, version=version, url=_url(path))
-                for package, version, path in bundles
+                DtkRuntimePackage(package=package, version=version, url=url)
+                for package, version, url in bundles
             ],
         )
     return result
@@ -309,7 +304,14 @@ def dtk_build_version(runtime: dict) -> str | None:
     return None
 
 
-def incompatibility(wheel: DtkWheel, runtime: dict, versions: dict[str, str], profile: str) -> str | None:
+def installed_build(runtime: dict, versions: dict[str, str]) -> str | None:
+    """DTK build of the installed Torch package; torch.__version__ may omit the build suffix."""
+    return dtk_build_version({**runtime, "torch": versions.get("torch") or runtime.get("torch")})
+
+
+def incompatibility(
+    wheel: DtkWheel, runtime: dict, versions: dict[str, str], profile: str, build: str | None = None
+) -> str | None:
     from packaging.requirements import Requirement
 
     if profile != "linux-dtk":
@@ -331,7 +333,7 @@ def incompatibility(wheel: DtkWheel, runtime: dict, versions: dict[str, str], pr
     except InvalidVersion:
         return "torch_version_mismatch"
     if wheel.binary and (
-        dtk_build_version(runtime) != wheel.dtk
+        (build or installed_build(runtime, versions)) != wheel.dtk
         or runtime.get("installed_dtk")
         and runtime["installed_dtk"] != wheel.dtk
     ):
@@ -350,16 +352,18 @@ def incompatibility(wheel: DtkWheel, runtime: dict, versions: dict[str, str], pr
 
 
 def catalog(runtime: dict, versions: dict[str, str], profile: str) -> DtkCatalog:
+    # One DTK build for the guide, the installer and the runtime summary.
+    build = installed_build(runtime, versions)
     wheels = []
     for wheel in WHEELS:
-        reason = incompatibility(wheel, runtime, versions, profile)
+        reason = incompatibility(wheel, runtime, versions, profile, build)
         wheels.append(wheel.model_copy(update={"compatible": reason is None, "reason": reason}))
     return DtkCatalog(
         runtime={
             "environment_profile": profile,
             "torch": str(runtime.get("torch", "")),
             "python": str(runtime.get("python", "")),
-            "dtk": dtk_build_version(runtime),
+            "dtk": build,
             "machine": str(runtime.get("machine", "")),
             **{
                 name: runtime.get(name)
@@ -375,7 +379,7 @@ def catalog(runtime: dict, versions: dict[str, str], profile: str) -> DtkCatalog
                 )
             },
         },
-        guidance=guidance(runtime, versions),
+        guidance=guidance(runtime, versions, build),
         wheels=wheels,
         reason=None
         if any(w.compatible for w in wheels)

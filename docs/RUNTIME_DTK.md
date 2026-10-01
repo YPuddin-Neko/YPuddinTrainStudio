@@ -29,7 +29,7 @@
 | Torch | `2.5.1+das.opt1.dtk2604` | `2.7.1+das.opt1.dtk2604` |
 | TorchVision | `0.20.1+das.opt1.dtk2604.torch251` | `0.22.0+das.opt1.dtk2604.torch271` |
 | Triton | `3.1.0+das.opt1.dtk2604.torch251` | `3.1.0+das.opt1.dtk2604.torch271` |
-| FlashAttention | `2.8.3+das.opt1.dtk2604.torch251` | `2.8.3+das.opt1.dtk2604.torch271` |
+| FlashAttention | — | `2.8.3+das.opt1.dtk2604.torch271` |
 
 xFormers `0.0.33+das.opt1.dtk2604.torch251` 是纯 Python 包，需要 Torch 2.5 及以上和 FlashAttention。带有 `torch251`、`torch271` 的二进制扩展应与当前 PyTorch 配套，不要交叉安装。
 
