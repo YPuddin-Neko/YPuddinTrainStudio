@@ -873,6 +873,7 @@ class JobLatest(_Out):
 class Job(_Out):
     id: str
     type: str
+    training_mode: Literal["adapter", "full"] | None = None
     name: str
     project_id: str | None
     version_id: str | None = None

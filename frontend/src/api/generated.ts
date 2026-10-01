@@ -4622,6 +4622,8 @@ export interface components {
             id: string;
             /** Type */
             type: string;
+            /** Training Mode */
+            training_mode?: ("adapter" | "full") | null;
             /** Name */
             name: string;
             /** Project Id */
@@ -5033,7 +5035,7 @@ export interface components {
             gpu_count: number;
             /**
              * Distributed Strategy
-             * @description 数据并行（DDP）每卡保留完整模型，可搭配 Prodigy（神童）和逐块梯度检查点；显存分片（FSDP）将参数、梯度和优化器状态分到多张卡，适合单卡装不下的主模型。分片需要至少两张 CUDA/DTK 显卡，支持冻结文本编码器的主模型全量微调、LoRA 和 LoKr，以及 AdamW、Adafactor 或 SGD；适配器分片暂不支持 FP8 底模和整层丢弃。可配逐块梯度检查点；实际速度取决于跨卡通信和模型。
+             * @description 数据并行（DDP）：每张卡保留完整模型，并行处理不同数据，通常比单卡每秒处理更多图片；每卡仍需容纳完整模型，加速幅度取决于卡间通信和负载。显存分片（FSDP）：同样并行处理数据，将参数、梯度和优化器状态分摊到多卡以节省显存。相比 DDP 增加参数通信，同等卡数和批量下通常更慢，具体取决于模型和卡间带宽；显存够用时优先选 DDP。需要至少两张 Linux CUDA/DTK 显卡，并冻结文本编码器。
              * @default ddp
              * @enum {string}
              */
@@ -11613,6 +11615,7 @@ export interface operations {
                 page_size?: number;
                 group?: ("active" | "waiting" | "history" | "archive") | null;
                 type?: ("train" | "cache" | "xyz") | null;
+                training_mode?: ("adapter" | "full") | null;
                 q?: string | null;
             };
             header?: never;

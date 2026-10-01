@@ -93,7 +93,7 @@
 .queue-job-name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--studio-text); font-weight:600; }
 .queue-job-name:hover { color:var(--studio-accent); }
 .queue-job-cell small { overflow-wrap:anywhere; white-space:normal; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:11px; }
-.queue-type { flex:none; padding:0 5px; border-radius:4px; background:var(--studio-muted); color:var(--studio-dim); font-family:var(--studio-font, system-ui); font-size:11px; line-height:18px; }
+.queue-type { flex:none; padding:0 5px; border-radius:4px; background:var(--studio-muted); color:var(--studio-dim); font-family:var(--studio-font, system-ui); font-size:11px; line-height:18px; white-space:nowrap; }
 .queue-table td:nth-child(2) { min-width:140px; max-width:220px; }
 .queue-status-cell { width:28%; min-width:200px; }
 .queue-status-note { max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

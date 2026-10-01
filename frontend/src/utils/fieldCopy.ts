@@ -41,7 +41,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'dataset.caption.cache_variants': ['缓存文本时每张图预生成的随机组合数。', 'Random caption variants cached per image.'],
 
   'loop.gpu_count': ['1 为单卡；多卡可选择数据并行或显存分片。', '1 uses one GPU; several can split data or memory.'],
-  'loop.distributed_strategy': ['数据并行分配训练数据；显存分片把模型分到多卡。', 'Data parallel splits data; sharding splits the model.'],
+  'loop.distributed_strategy': ['DDP 通常训练更快；FSDP 更省显存，但增加通信开销。', 'DDP is usually faster; FSDP saves memory with extra communication.'],
   'loop.grad_accum': ['累积几个批次再更新一次参数。', 'Batches accumulated before each update.'],
   'loop.epochs': ['完整遍历全部训练图片的次数。', 'Passes over the whole training set.'],
   'loop.max_steps': ['最多更新多少次，留空按轮数结束。', 'Most updates to run; blank stops by epochs.'],

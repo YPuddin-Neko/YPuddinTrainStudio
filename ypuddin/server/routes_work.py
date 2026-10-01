@@ -1854,8 +1854,39 @@ class JobPatch(GpuSelection):
 FINISHED = ("completed", "failed", "cancelled")
 
 
+def _job_training_mode(job: dict[str, Any]) -> Literal["adapter", "full"] | None:
+    if job.get("type") != "train":
+        return None
+    try:
+        config = json.loads(job.get("config_json") or "null")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(config, dict):
+        return None
+    training = config.get("training", {})
+    if not isinstance(training, dict):
+        return None
+    mode = training.get("mode", "adapter")
+    return mode if mode in ("adapter", "full") else None
+
+
+_JOB_TRAINING_MODE_SQL = """CASE
+    WHEN j.type='train' AND json_valid(j.config_json) THEN CASE
+        WHEN json_type(j.config_json)='object' THEN CASE
+            WHEN json_type(j.config_json, '$.training') IS NULL THEN 'adapter'
+            WHEN json_type(j.config_json, '$.training')='object' THEN CASE
+                WHEN json_type(j.config_json, '$.training.mode') IS NULL THEN 'adapter'
+                WHEN json_extract(j.config_json, '$.training.mode') IN ('adapter', 'full')
+                    THEN json_extract(j.config_json, '$.training.mode')
+            END
+        END
+    END
+END"""
+
+
 def _job_row(r: dict[str, Any]) -> dict[str, Any]:
     out = dict(r)
+    out["training_mode"] = _job_training_mode(r)
     out["progress"] = json.loads(r.get("progress_json") or "{}")
     out["latest"] = json.loads(r.get("latest_json") or "{}")
     out["gpu_devices"] = json.loads(out.pop("gpu_devices_json", None) or "[]")
@@ -1875,6 +1906,7 @@ def list_jobs(
     c: ServiceContext = Depends(ctx),
     group: Literal["active", "waiting", "history", "archive"] | None = None,
     type: Literal["train", "cache", "xyz"] | None = None,
+    training_mode: Literal["adapter", "full"] | None = None,
     q: str | None = None,
 ) -> dict[str, Any]:
     sql = " FROM jobs j LEFT JOIN projects p ON p.id=j.project_id LEFT JOIN project_versions v ON v.id=j.version_id"
@@ -1898,6 +1930,9 @@ def list_jobs(
     if type:
         conds.append("j.type=?")
         params.append(type)
+    if training_mode:
+        conds.append(f"({_JOB_TRAINING_MODE_SQL})=?")
+        params.append(training_mode)
     if project_id:
         conds.append("j.project_id=?")
         params.append(project_id)

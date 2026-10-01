@@ -371,7 +371,7 @@ export default function JobDetail() {
         </div>
       </header>
       <dl className="job-run-metadata" aria-label={text('运行信息','Run information')}>
-        <div><dt>{text('任务类型','Job type')}</dt><dd>{job ? jobTypeLabel(job.type, text) : '—'}</dd></div>
+        <div><dt>{text('任务类型','Job type')}</dt><dd>{job ? jobTypeLabel(job, text) : '—'}</dd></div>
         <div><dt>{text('开始时间','Started')}</dt><dd>{formatTime(job?.started_at)}</dd></div>
         <div><dt>{job?.type === 'train' ? text('训练时长','Training elapsed') : text('运行时长','Elapsed')}</dt><dd>{formatEta(elapsed)}</dd></div>
         <div><dt>{job?.type === 'train' ? text('训练配置','Training configuration') : text('任务配置','Task configuration')}</dt><dd>{configurationName ? `${configurationName} · ${text('参数快照','snapshot')}` : '—'}</dd></div>

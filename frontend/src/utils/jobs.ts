@@ -49,8 +49,12 @@ export function artifactKindLabel(kind: string, text: Text): string {
   return kind === 'model' ? text('完整模型', 'Full model') : kind === 'adapter' || kind === 'lora' ? text('适配器权重', 'Adapter weights') : kind === 'checkpoint' ? text('检查点', 'Checkpoint') : kind;
 }
 
-export function jobTypeLabel(type: string, text: Text): string {
-  return type === 'xyz' ? text('模型测试', 'Model testing') : type === 'cache' ? text('缓存', 'Cache') : text('训练', 'Training');
+export function jobTypeLabel(job: Pick<Job, 'type' | 'training_mode'>, text: Text): string {
+  if (job.type === 'xyz') return text('模型测试', 'Model testing');
+  if (job.type === 'cache') return text('缓存', 'Cache');
+  if (job.training_mode === 'full') return text('全量微调', 'Full fine-tuning');
+  if (job.training_mode === 'adapter') return text('LoRA 训练', 'LoRA training');
+  return text('训练', 'Training');
 }
 
 /** Month, day and time; the year only when it is not the current one. */

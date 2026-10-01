@@ -286,7 +286,7 @@
     "emaAlpha": "EMA 系数",
     "validationTitle": "验证损失（各固定时间步 + 均值）",
     "perfTitle": "训练速度与显存",
-    "samplingProgress": "生成预览 第 {k}/{n} 张 · 步 {done}/{total}",
+    "samplingProgress": "生成预览 {k}/{n} 张 · {done}/{total} 步",
     "followBottom": "跟随底部",
     "levelAll": "全部",
     "download": "下载",
