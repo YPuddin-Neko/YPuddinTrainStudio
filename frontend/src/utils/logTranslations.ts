@@ -144,8 +144,25 @@ export function logTone(message: string): 'pause' | 'resume' | 'success' | null 
   return TONES.find(([pattern]) => pattern.test(text))?.[1] ?? null;
 }
 
+// The log view reads every loaded line again whenever output arrives; each distinct line is matched once.
+const translations = new Map<string, string | null>();
+const TRANSLATION_CACHE_LIMIT = 20_000;
+
 /** The Chinese reading of a fixed trainer message, or null when the line has none. */
 export function translateLogMessage(message: string): string | null {
+  const cached = translations.get(message);
+  if (cached !== undefined) return cached;
+  const translated = readLogMessage(message);
+  // Lines carrying steps and timings rarely repeat, so the oldest readings make room once the cache is full.
+  if (translations.size >= TRANSLATION_CACHE_LIMIT) {
+    const oldest = translations.keys().next().value;
+    if (oldest !== undefined) translations.delete(oldest);
+  }
+  translations.set(message, translated);
+  return translated;
+}
+
+function readLogMessage(message: string): string | null {
   const rank = message.match(/^(\[rank\d+\]:\s*)([\s\S]*)$/);
   if (rank) {
     const translated = translateLogMessage(rank[2]);
