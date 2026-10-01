@@ -107,7 +107,14 @@ and with sd-scripts / ComfyUI / diffusion-pipe LoRA key conventions.
 
 1. `from library.qwen_image_autoencoder_kl import (...)` -> `from .qwen_image_vae import (...)`, which also
    supplies `load_safetensors`; `setup_logging` -> plain `logging`.
-2. Module docstring; `# ruff: noqa`. Model code otherwise byte-identical (verified with `diff`).
+2. Module docstring; `# ruff: noqa`.
+3. On HIP, attention makes each Q/K/V tensor contiguous and checks enabled fused SDPA backends
+   against the actual tensors. If none is available, it temporarily selects math SDPA and splits
+   queries into chunks of at most 2048 tokens, retaining the full K/V sequence and original single
+   head. Backend flags are restored afterward; non-HIP and available fused paths retain native
+   SDPA. The capability query's known missing-memory-efficient-backend warning is suppressed
+   locally because that case uses the math fallback; other warnings and execution errors propagate.
+   No parameters, checkpoint keys or main-model attention settings change.
 
 ## Not vendored
 

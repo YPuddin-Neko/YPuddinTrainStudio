@@ -8,8 +8,8 @@
 
 Source: ``sd-scripts/library/qwen_image_autoencoder_kl_2d.py`` (kohya-ss, Apache-2.0, commit 4e62430).  Reuses
 ``ChunkedConv2d`` / ``DiagonalGaussianDistribution`` / ``QwenImageRMS_norm`` / ``QwenImageUpsample`` /
-``convert_comfyui_state_dict`` / ``load_safetensors`` from :mod:`.qwen_image_vae`.  Local modifications are import
-paths only (see ``NOTICE.md``).
+``convert_comfyui_state_dict`` / ``load_safetensors`` from :mod:`.qwen_image_vae`.  Local modifications include
+import paths and a query-chunked HIP attention fallback (see ``NOTICE.md``).
 
 Why it exists: the official VAE is a causal *3-D* (video) autoencoder.  For a single frame every causal Conv3d pads
 two zero frames in front, so only the LAST temporal kernel tap ever multiplies real data, and the temporal
@@ -42,11 +42,13 @@ the posterior mode (deterministic).  ``enable_tiling`` is not implemented here (
 """
 
 import json
+import warnings
 from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from .qwen_image_vae import (
     ChunkedConv2d,
@@ -85,6 +87,47 @@ class QwenImageResidualBlock2D(nn.Module):
         return x + h
 
 
+def _vae_sdpa(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    if q.device.type != "cuda" or not torch.version.hip:
+        return F.scaled_dot_product_attention(q, k, v)
+
+    q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
+    cuda = torch.backends.cuda
+    flash_enabled = cuda.flash_sdp_enabled()
+    efficient_enabled = cuda.mem_efficient_sdp_enabled()
+    fused_available = False
+    if flash_enabled or efficient_enabled:
+        try:
+            params = cuda.SDPAParams(q, k, v, None, 0.0, False, False)
+        except TypeError:
+            # PyTorch 2.4 predates the enable_gqa constructor argument.
+            params = cuda.SDPAParams(q, k, v, None, 0.0, False)
+        fused_available = flash_enabled and cuda.can_use_flash_attention(params, debug=False)
+        if not fused_available and efficient_enabled:
+            with warnings.catch_warnings():
+                # Some HIP builds warn even for a quiet capability query. The
+                # missing backend is handled below; other warnings still pass.
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"^1?Torch was not compiled with memory efficient attention\."
+                    r"(?: \(Triggered internally at [^\r\n]+\))?$",
+                    category=UserWarning,
+                )
+                fused_available = cuda.can_use_efficient_attention(params, debug=False)
+    if fused_available:
+        return F.scaled_dot_product_attention(q, k, v)
+
+    # Keep the single attention head and all keys/values. Chunking only the
+    # queries bounds the math backend's otherwise quadratic score allocation.
+    with sdpa_kernel(SDPBackend.MATH):
+        if q.shape[-2] <= 2048:
+            return F.scaled_dot_product_attention(q, k, v)
+        return torch.cat(
+            [F.scaled_dot_product_attention(part, k, v) for part in q.split(2048, dim=-2)],
+            dim=-2,
+        )
+
+
 class QwenImageAttentionBlock2D(nn.Module):
     def __init__(self, dim: int) -> None:
         super().__init__()
@@ -101,7 +144,7 @@ class QwenImageAttentionBlock2D(nn.Module):
         qkv = qkv.reshape(batch_size, 1, channels * 3, -1)
         qkv = qkv.permute(0, 1, 3, 2).contiguous()
         q, k, v = qkv.chunk(3, dim=-1)
-        x = F.scaled_dot_product_attention(q, k, v)
+        x = _vae_sdpa(q, k, v)
         x = x.squeeze(1).permute(0, 2, 1).reshape(batch_size, channels, height, width)
         x = self.proj(x)
         return x + identity

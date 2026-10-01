@@ -111,6 +111,8 @@ HIP 版 PyTorch 沿用 `torch.cuda` 接口，`cuda:0` 在此环境中表示第�
 
 缺少 SDPA 所需的厂商动态库时，可能出现 `no matching libraries found for flash_attn_2_cuda`。应安装对应厂商包后重新检测。安装后的设备检测与导入状态分别显示。
 
+Anima / Krea 2 的图片 VAE 会按实际张量检查已启用的融合 SDPA 后端。HIP 环境不支持该形状时，仅在这次 VAE 注意力计算中使用数学实现，每块最多 2048 个查询，保留完整键和值；计算后恢复后端设置。主模型选择的 FlashAttention 不受此回退影响。
+
 Klein 显式选择 FlashAttention 时，通过专用处理器调用厂商 `flash_attn_func`，要求 HIP GPU 和一致的 FP16 / BF16 输入，不接受注意力 mask。该后端记录在训练状态中，不能与 SDPA 状态互相精确恢复。
 
 ## 可复现训练
