@@ -23,6 +23,8 @@ def factorization(dimension: int, factor: int = -1) -> tuple[int, int]:
         raise ValueError("dimension must be positive")
     if factor == 0 or factor < -1:
         raise ValueError("factor must be -1 or a positive integer")
+    if dimension == 1:
+        return 1, 1
     if factor > 0 and dimension % factor == 0:
         m, n = factor, dimension // factor
         return (m, n) if m <= n else (n, m)
