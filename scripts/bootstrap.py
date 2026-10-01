@@ -1517,7 +1517,11 @@ def ensure_frontend_dependencies(node: str, npm: str, runtime: list[str]) -> Non
 
 def frontend_error(reason: str, *, install: bool = False) -> NoReturn:
     if install:
-        die(f"{reason}\n  下载地址：https://nodejs.org/en/download\n[studio] 前端环境检查失败")
+        indent = " " * 9 + "\u3000" * 3
+        die(
+            f"{reason}\n{indent}下载地址：https://nodejs.org/en/download"
+            "\n[studio] 前端环境检查失败，启动脚本已退出。"
+        )
     headline, *details = reason.splitlines()
     die("\n".join([f"{headline.rstrip('。')}，已停止启动。", *details]))
 
