@@ -104,6 +104,11 @@ def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
         raise
 
 
+def release(version: str, parts: int = 2) -> tuple[int, ...]:
+    """Leading numbers of a version string: release("2.5.1+das.opt1.dtk2604") == (2, 5)."""
+    return tuple(int(n) for n in re.findall(r"\d+", version)[:parts])
+
+
 # --------------------------------------------------------------------------- environment probes
 def venv_python() -> Path:
     return VENV / ("Scripts/python.exe" if WIN else "bin/python")
@@ -333,7 +338,7 @@ def python_ok(exe: str) -> bool:
         v = subprocess.run(
             [exe, "-c", "import sys;print(sys.version_info[:2])"], capture_output=True, text=True
         ).stdout
-        major, minor = (int(x) for x in re.findall(r"\d+", v)[:2])
+        major, minor = release(v)
         return (major, minor) >= (3, 10) and (major, minor) < (3, 13)
     except Exception:  # noqa: BLE001
         return False
@@ -600,29 +605,39 @@ def validate_dtk_runtime(current: dict) -> None:
         die("DTK 环境需要厂商 HIP PyTorch；当前解释器不是 HIP 构建，未继续安装普通依赖。")
 
 
-def dtk_compatibility_constraints(versions: dict[str, str]) -> list[str]:
-    """Observed vendor-build incompatibilities missing from package metadata."""
+def dtk_shared_numpy_outdated(versions: dict[str, str], shared: bool) -> bool:
+    """A shared vendor environment's NumPy 1.x below the trainer's minimum of 1.26."""
+    return PROFILE == "linux-dtk" and shared and (1, 0) <= release(versions.get("numpy", "")) < (1, 26)
+
+
+def dtk_compatibility_constraints(versions: dict[str, str], shared: bool = False) -> list[str]:
+    """Observed vendor-build incompatibilities missing from package metadata.
+
+    With ``shared``, an outdated NumPy of the shared vendor environment is shadowed inside this
+    venv by a newer 1.x; the host copy is left as it is.
+    """
     constraints = []
     if PROFILE == "linux-dtk" and "torch" in versions:
-        torch_version = tuple(int(n) for n in re.findall(r"\d+", versions["torch"])[:2])
-        if torch_version < (2, 5):
+        if release(versions["torch"]) < (2, 5):
             constraints.append("transformers<5")
-        if versions["torch"] == DTK_NUMPY1_TORCH:
+        if versions["torch"] == DTK_NUMPY1_TORCH or dtk_shared_numpy_outdated(versions, shared):
             constraints.append("numpy>=1.26,<2")
     return constraints
 
 
-def dtk_compatibility_issues(versions: dict[str, str]) -> list[str]:
-    constraints = dtk_compatibility_constraints(versions)
+def dtk_compatibility_issues(versions: dict[str, str], constraints: list[str] | None = None) -> list[str]:
+    """Conflicts with ``constraints``, by default the ones ``versions`` itself implies."""
+    if constraints is None:
+        constraints = dtk_compatibility_constraints(versions)
     issues = []
     if "transformers<5" in constraints:
         transformers = versions.get("transformers", "")
-        if transformers and int(re.match(r"\d+", transformers)[0]) >= 5:
+        if transformers and release(transformers, 1) >= (5,):
             issues.append(
                 f"transformers<5 is required by DTK Torch {versions['torch']} (installed {transformers})"
             )
     numpy = versions.get("numpy", "")
-    if "numpy>=1.26,<2" in constraints and numpy and int(re.match(r"\d+", numpy)[0]) >= 2:
+    if "numpy>=1.26,<2" in constraints and numpy and release(numpy, 1) >= (2,):
         issues.append(
             f"DTK Torch {versions['torch']} 与 NumPy {numpy} 的桥接 ABI 不兼容，需要 numpy>=1.26,<2"
         )
@@ -1194,7 +1209,7 @@ def ensure_venv(
             current = torch_runtime()
         except Exception as exc:
             die(f"已有 PyTorch 无法加载：{exc}。请运行 doctor 检查，需要重建时使用 --reinstall。")
-        if tuple(int(n) for n in re.findall(r"\d+", current["version"])[:2]) < (2, 4):
+        if release(current["version"]) < (2, 4):
             die("已有 PyTorch 低于 2.4，请使用 --reinstall 重建环境。")
         if PROFILE == "linux-dtk":
             validate_dtk_runtime(current)
@@ -1279,14 +1294,10 @@ def ensure_venv(
         preserved = protected_versions(installed_versions())
     if "torch" not in preserved:
         die("无法确认已安装 PyTorch 的版本，停止安装。")
-    numpy_release = tuple(int(n) for n in re.findall(r"\d+", versions.get("numpy", ""))[:2])
-    upgrade_shared_numpy = PROFILE == "linux-dtk" and bool(shared) and (1, 0) <= numpy_release < (1, 26)
-    compatibility = dtk_compatibility_constraints(versions)
-    if upgrade_shared_numpy:
+    compatibility = dtk_compatibility_constraints(versions, shared=bool(shared))
+    if dtk_shared_numpy_outdated(versions, bool(shared)):
         # pip shadows an external package inside this venv without uninstalling the host copy.
         preserved.pop("numpy", None)
-        if "numpy>=1.26,<2" not in compatibility:
-            compatibility.append("numpy>=1.26,<2")
         log(f"[4/5] 在项目虚拟环境中更新 NumPy {versions['numpy']} 至 >=1.26,<2，保留宿主安装")
     log("[4/5] 安装训练器依赖")
     # Exact constraints apply to the whole dependency resolution, not just the
@@ -1307,11 +1318,8 @@ def ensure_venv(
     changed = [name for name, version in preserved.items() if after.get(name) != version]
     if changed:
         die("安装器意外改变了受保护的原生依赖：" + ", ".join(changed) + "，请检查环境。")
-    if upgrade_shared_numpy:
-        numpy_release = tuple(int(n) for n in re.findall(r"\d+", after.get("numpy", ""))[:2])
-        if not (1, 26) <= numpy_release < (2, 0):
-            die(f"项目虚拟环境需要 NumPy >=1.26,<2，安装后读到 {after.get('numpy') or '未安装'}；停止启动。")
-    issues = dependency_issues(extras) + dtk_compatibility_issues(after)
+    # Checked against the constraints of this install; the trainer's numpy>=1.26 is a declared dependency.
+    issues = dependency_issues(extras) + dtk_compatibility_issues(after, compatibility)
     if issues:
         die("安装后依赖仍不完整：" + "; ".join(issues[:12]) + "；下次启动会重试补齐。")
     if PROFILE == "linux-dtk":
