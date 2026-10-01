@@ -52,9 +52,14 @@ def owned_job_directories(job: dict) -> list[Path]:
     )
 
 
-def removal_problem(context: Any, job_id: str, folders: list[Path]) -> Literal["outside", "shared"] | None:
-    """Why the job's folders cannot be removed: reached through a link or outside the allowed
-    roots, or holding a folder another job records (an old or edited path may nest one there)."""
+def removal_problem(
+    context: Any,
+    owner_id: str,
+    folders: list[Path],
+    *,
+    owner_type: Literal["job", "project"] = "job",
+) -> Literal["outside", "shared"] | None:
+    """Reject linked/out-of-bounds folders and files owned by jobs outside this deletion."""
     targets = []
     for folder in folders:
         if any(part.is_symlink() for part in (folder, *folder.parents)) or not context.is_allowed(folder.resolve()):
@@ -62,9 +67,13 @@ def removal_problem(context: Any, job_id: str, folders: list[Path]) -> Literal["
         targets.append(folder.resolve())
     if not targets:
         return None
+    column = "project_id" if owner_type == "project" else "id"
     others = {
         path.resolve()
-        for row in context.db.fetchall("SELECT run_dir, samples_dir, config_json FROM jobs WHERE id!=?", (job_id,))
+        for row in context.db.fetchall(
+            f"SELECT run_dir, samples_dir, config_json FROM jobs WHERE {column} IS NULL OR {column}!=?",
+            (owner_id,),
+        )
         for path in job_directories(row)
     }
     return "shared" if any(path.is_relative_to(target) for path in others for target in targets) else None

@@ -408,6 +408,8 @@ def delete_project_cover(pid: str, c: ServiceContext = Depends(ctx)) -> dict:
 
 @router.delete("/projects/{pid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    from .job_paths import job_directories, removal_problem
+
     with c.db.lock:
         project = _get_project(c, pid)
         project_root = c.project_dir(pid)
@@ -430,13 +432,32 @@ def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Dep
                 status=409,
             )
         if delete_files:
+            # Include links in the preflight so no earlier directory is removed before rejecting one.
+            folders = list(dict.fromkeys([
+                *(
+                    directory
+                    for job in c.db.fetchall("SELECT * FROM jobs WHERE project_id=?", (pid,))
+                    for directory in job_directories(job)
+                    if directory.name == job["id"]
+                ),
+                project_root,
+            ]))
+            problem = removal_problem(c, pid, folders, owner_type="project")
+            if problem == "outside":
+                raise ApiError("项目目录不在允许访问的范围内或经过符号链接，无法删除。", code="project.path", status=403)
+            if problem == "shared":
+                raise ApiError("目录中包含其他任务的文件，无法删除。", code="project.files_in_use", status=409)
+            if users := _jobs_using(c, pid, folders, owner_type="project"):
+                raise ApiError(
+                    f"任务“{users[0]['name']}”还要用到这个项目的文件，请等它结束或取消后再删除。",
+                    code="project.files_in_use",
+                    status=409,
+                    details={"jobs": [row["id"] for row in users]},
+                )
             try:
-                for job in c.db.fetchall("SELECT * FROM jobs WHERE project_id=?", (pid,)):
-                    for directory in owned_job_directories(job):
-                        if directory.is_dir():
-                            shutil.rmtree(directory)
-                if project_root.exists():
-                    shutil.rmtree(project_root)
+                for directory in folders:
+                    if directory.exists():
+                        shutil.rmtree(directory)
             except OSError as exc:
                 raise ApiError(
                     "could not remove all project files; the archived project is retained so you can retry",
@@ -2058,7 +2079,13 @@ def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dic
     return _job_row(_get_job(c, jid))
 
 
-def _jobs_using(c: ServiceContext, jid: str, folders: list[Path]) -> list[dict[str, Any]]:
+def _jobs_using(
+    c: ServiceContext,
+    owner_id: str,
+    folders: list[Path],
+    *,
+    owner_type: Literal["job", "project"] = "job",
+) -> list[dict[str, Any]]:
     """Unfinished jobs whose saved paths point into these folders, such as a resume from them."""
     roots = [str(folder) for folder in folders]
 
@@ -2069,10 +2096,11 @@ def _jobs_using(c: ServiceContext, jid: str, folders: list[Path]) -> list[dict[s
             return any(uses(item) for item in value.values())
         return isinstance(value, list) and any(uses(item) for item in value)
 
+    column = "project_id" if owner_type == "project" else "id"
     rows = c.db.fetchall(
         "SELECT id, name, config_json, resume_from FROM jobs"
-        f" WHERE id!=? AND status IN {ACTIVE_JOBS[:-1]},'paused')",
-        (jid,),
+        f" WHERE ({column} IS NULL OR {column}!=?) AND status IN {ACTIVE_JOBS[:-1]},'paused')",
+        (owner_id,),
     )
     return [row for row in rows if uses(row["resume_from"]) or uses(json.loads(row["config_json"] or "{}"))]
 
