@@ -22,10 +22,10 @@ export function useDatasetImages(datasetId: string | undefined, targetPageSize =
   const [error, setError] = React.useState<string | null>(null);
   const request = React.useRef<AbortController | null>(null);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const loadedItems = React.useRef(items);
+  const loaded = React.useRef({ items, total });
   const previousQuery = React.useRef<{ scope: string; pageSize: number } | null>(null);
   const replacementPending = React.useRef(false);
-  React.useEffect(() => { loadedItems.current = items; }, [items]);
+  React.useEffect(() => { loaded.current = { items, total }; }, [items, total]);
 
   const fetchPage = React.useCallback(
     async (p: number, query: string, append: boolean) => {
@@ -63,11 +63,12 @@ export function useDatasetImages(datasetId: string | undefined, targetPageSize =
     const scope = JSON.stringify([datasetId, q, membership, sort]);
     const previous = previousQuery.current;
     previousQuery.current = { scope, pageSize };
-    const loaded = loadedItems.current.length;
+    const count = loaded.current.items.length;
     const resizing = previous?.scope === scope && previous.pageSize !== pageSize;
-    if (resizing && loaded && !replacementPending.current) {
-      const lastPage = Math.ceil(loaded / pageSize);
-      if (loaded % pageSize) void fetchPage(lastPage, q, true);
+    if (resizing && count && !replacementPending.current) {
+      const lastPage = Math.ceil(count / pageSize);
+      // Only a partly loaded last row needs the rest of its page; a fully loaded list stays as it is.
+      if (count % pageSize && count < loaded.current.total) void fetchPage(lastPage, q, true);
       else { setPage(lastPage); setLoading(false); }
     } else {
       if (!resizing) setItems([]);
