@@ -243,6 +243,7 @@ def _comparison(policy: ProxyPolicy, base: str, latest: TrainerCommit) -> tuple[
 class TrainerUpdates:
     def __init__(self, context, root: Path = SOURCE_ROOT):
         self.context = context
+        self.root = root.resolve()
         self.current = local_version(root)
         self._lock = threading.Lock()
         self._checking = threading.Lock()

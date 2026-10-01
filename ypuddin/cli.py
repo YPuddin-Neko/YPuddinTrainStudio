@@ -251,6 +251,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         uvicorn.Config(app, host=host, port=port, log_level="info", timeout_graceful_shutdown=5),
         event_bus=app.state.ctx.bus,
     )
+    server.on_started = app.state.trainer_installer.ready
     if args.control_file and args.original_python:
         import os
 

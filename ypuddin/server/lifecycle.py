@@ -75,9 +75,11 @@ class ServiceLifecycle:
         self.host: str | None = None
         self.port: int | None = None
         self.restarting = False
+        self.updating = False
         self.original_python: str | None = None
         self.restart_token: str | None = None
         self.model_downloads = None
+        self.vision_models = None
         self.dataset_pipeline = None
 
     def configure(
@@ -101,6 +103,8 @@ class ServiceLifecycle:
             return "start_with_studio_launcher"
         if self.restarting:
             return "restart_in_progress"
+        if self.updating:
+            return "update_in_progress"
         if self.context._active_imports or self.context.db.fetchone(
             "SELECT id FROM datasets WHERE index_status='indexing' LIMIT 1"
         ):
@@ -115,6 +119,10 @@ class ServiceLifecycle:
             d.get("status") in ("queued", "downloading", "verifying") for d in self.model_downloads.list()
         ):
             return "model_download_running"
+        if self.vision_models:
+            with self.vision_models.lock:
+                if any(task.get("status") in ("queued", "downloading", "verifying") for task in self.vision_models.tasks.values()):
+                    return "model_download_running"
         if self.context.db.fetchone(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='dataset_pipeline_operations'"
         ):
@@ -197,6 +205,19 @@ class ServiceLifecycle:
             timer.start()
             return result
 
+    def request_update(self, update_id: str):
+        if not self.updating or not self.control_file or not self.restart_token or not self.shutdown:
+            raise EnvironmentError(409, "Update launcher is unavailable")
+        atomic_json(self.control_file, {
+            "action": "update", "update_id": update_id, "python": sys.executable,
+            "host": self.host, "port": self.port, "environment_id": self.torch.current_environment(),
+            "worker_pid": os.getpid(), "restart_token": self.restart_token,
+        })
+        self.restarting = True
+        timer = threading.Timer(0.4, self.shutdown)
+        timer.daemon = True
+        timer.start()
+
 
 def saved_address(root: Path, host: str | None, port: int | None) -> tuple[str, int]:
     settings = {}
@@ -216,6 +237,12 @@ def pending_data_root(root: Path) -> Path | None:
 
 
 def launch_service(data_root: str, host: str | None, port: int | None) -> int:
+    from .trainer_install import (
+        UPDATE_ID_ENV,
+        apply_from_launcher,
+        rollback_from_launcher,
+        wait_for_updated_worker,
+    )
     root = Path(data_root).expanduser().resolve()
     environment_root = profile_root(root)
     folder = environment_root / "service"
@@ -242,6 +269,7 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
     original_address = host, port
     fallback = False
     child = None
+    pending_update = None
     terminated_signal = None
 
     def stop_owned_child(signum, _frame):
@@ -255,6 +283,8 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
         previous_sigterm = signal.signal(signal.SIGTERM, stop_owned_child)
     try:
         while True:
+            if terminated_signal is not None:
+                return 128 + terminated_signal
             control.unlink(missing_ok=True)
             command = [
                 python,
@@ -279,10 +309,18 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
             spawn_token = secrets.token_hex(32)
             child_env = dict(os.environ)
             child_env[RESTART_TOKEN_ENV] = spawn_token
+            child_env.pop(UPDATE_ID_ENV, None)
+            if pending_update:
+                child_env[UPDATE_ID_ENV] = pending_update
             try:
                 child = subprocess.Popen(command, env=child_env)
             except OSError as exc:
                 print(f"[studio] Cannot start the selected interpreter: {exc}", flush=True)
+                if pending_update:
+                    if not rollback_from_launcher(root, python, "无法启动更新后的 Python 服务。"):
+                        return 1
+                    pending_update = None
+                    continue
                 if python == original_python and (host, port) == original_address:
                     return 1
                 python, environment_id = original_python, None
@@ -290,6 +328,25 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                 selected.unlink(missing_ok=True)
                 fallback = True
                 continue
+            if pending_update:
+                if not wait_for_updated_worker(child, root, pending_update):
+                    if child.poll() is None:
+                        child.terminate()
+                        try:
+                            child.wait(timeout=8)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait(timeout=8)
+                    restored = rollback_from_launcher(root, python, "新版本未能正常启动，已停止本次更新。",
+                                                      repair_dependencies=terminated_signal is None)
+                    pending_update = None
+                    if terminated_signal is not None:
+                        return 128 + terminated_signal
+                    if not restored:
+                        print("[studio] 更新恢复检查失败，已停止启动。请查看更新日志并重新运行启动脚本修复环境。", flush=True)
+                        return 1
+                    continue
+                pending_update = None
             try:
                 code = child.wait()
             except KeyboardInterrupt:
@@ -309,7 +366,7 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                     pass
             if (
                 isinstance(request, dict)
-                and request.get("action") == "restart"
+                and request.get("action") in {"restart", "update"}
                 and type(request.get("worker_pid")) is int
                 and request["worker_pid"] > 0
                 and isinstance(request.get("restart_token"), str)
@@ -319,6 +376,15 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                 python, host, port = request["python"], request["host"], request["port"]
                 environment_id = request.get("environment_id")
                 fallback = False
+                if request["action"] == "update":
+                    pending_update = request.get("update_id")
+                    outcome = apply_from_launcher(root, pending_update, python)
+                    if outcome is None:
+                        print("[studio] 更新恢复检查失败，已停止启动。请查看更新日志并重新运行启动脚本修复环境。", flush=True)
+                        return 1
+                    if not outcome:
+                        pending_update = None
+                    continue
                 if environment_id:
                     atomic_json(selected, {"id": environment_id, "python": python})
                 else:

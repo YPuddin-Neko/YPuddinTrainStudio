@@ -8663,6 +8663,60 @@
           }
         }
       }
+    },
+    "/api/updates/install": {
+      "get": {
+        "summary": "Install Status",
+        "operationId": "install_status_api_updates_install_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainerInstallStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Install Update",
+        "operationId": "install_update_api_updates_install_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainerInstallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainerInstallStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -23712,6 +23766,171 @@
           "version"
         ],
         "title": "TrainerCurrentVersion"
+      },
+      "TrainerInstallOperation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "target_commit": {
+            "type": "string",
+            "title": "Target Commit"
+          },
+          "previous_commit": {
+            "type": "string",
+            "title": "Previous Commit"
+          },
+          "before_instance_id": {
+            "type": "string",
+            "title": "Before Instance Id"
+          },
+          "result_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Instance Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "preparing",
+              "downloading",
+              "building",
+              "applying",
+              "installing",
+              "restarting",
+              "succeeded",
+              "failed"
+            ],
+            "title": "State"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "started_at": {
+            "type": "number",
+            "title": "Started At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          },
+          "log": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Log"
+          },
+          "rolled_back": {
+            "type": "boolean",
+            "title": "Rolled Back",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "target_commit",
+          "previous_commit",
+          "before_instance_id",
+          "state",
+          "message",
+          "started_at",
+          "updated_at"
+        ],
+        "title": "TrainerInstallOperation"
+      },
+      "TrainerInstallRequest": {
+        "properties": {
+          "target_commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Target Commit"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_commit",
+          "request_id"
+        ],
+        "title": "TrainerInstallRequest"
+      },
+      "TrainerInstallStatus": {
+        "properties": {
+          "can_apply": {
+            "type": "boolean",
+            "title": "Can Apply"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrainerInstallOperation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "running_commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Commit"
+          },
+          "instance_id": {
+            "type": "string",
+            "title": "Instance Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "can_apply",
+          "reason",
+          "running_commit",
+          "instance_id"
+        ],
+        "title": "TrainerInstallStatus"
       },
       "TrainerLatestVersion": {
         "properties": {

@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import JSONResponse
 
 import ypuddin
 
@@ -46,6 +47,7 @@ from .regularization import RegularizationManager
 from .site_downloads import SiteDownloadManager
 from .supervisor import JobSupervisor
 from .torch_environments import TorchEnvironments
+from .trainer_install import TrainerInstaller
 from .trainer_updates import TrainerUpdates
 from .vision_downloads import VisionModels
 
@@ -70,8 +72,10 @@ def create_app(
     torch_environments = TorchEnvironments(context, environment)
     lifecycle = ServiceLifecycle(context, environment, torch_environments)
     lifecycle.model_downloads = model_downloads
+    trainer_installer = TrainerInstaller(context, trainer_updates, lifecycle)
     dataset_pipeline = DatasetPipeline(context)
     vision_models = VisionModels(context, credentials=model_downloads.credentials)
+    lifecycle.vision_models = vision_models
     dataset_pipeline.vision = vision_models
     dataset_pipeline.credentials = model_downloads.credentials
     regularization = RegularizationManager(context, credentials=model_downloads.credentials)
@@ -98,6 +102,7 @@ def create_app(
         try:
             yield
         finally:
+            await asyncio.to_thread(trainer_installer.close)
             bus.close()
             stats_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -134,7 +139,24 @@ def create_app(
     app.state.regularization = regularization
     app.state.site_downloads = site_downloads
     app.state.trainer_updates = trainer_updates
+    app.state.trainer_installer = trainer_installer
     errors.install(app)
+
+    @app.middleware("http")
+    async def update_admission(request, call_next):
+        mutation = request.url.path.startswith("/api/") and request.method not in {"GET", "HEAD", "OPTIONS"}
+        mutation = mutation and request.url.path not in {"/api/updates/install", "/api/updates/check"}
+        if not mutation:
+            return await call_next(request)
+        with db.lock:
+            if db.get_kv("environment.maintenance", {}).get("trainer_update"):
+                return JSONResponse(status_code=409, content=errors.envelope("updates.in_progress", "训练器正在更新，请稍后再试。"))
+            context._update_requests = getattr(context, "_update_requests", 0) + 1
+        try:
+            return await call_next(request)
+        finally:
+            with db.lock:
+                context._update_requests -= 1
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

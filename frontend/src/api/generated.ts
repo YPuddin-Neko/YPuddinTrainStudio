@@ -2658,6 +2658,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/updates/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Install Status */
+        get: operations["install_status_api_updates_install_get"];
+        put?: never;
+        /** Install Update */
+        post: operations["install_update_api_updates_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -8253,6 +8271,61 @@ export interface components {
             source: "git" | "package" | "unknown";
             /** Dirty */
             dirty?: boolean | null;
+        };
+        /** TrainerInstallOperation */
+        TrainerInstallOperation: {
+            /** Id */
+            id: string;
+            /** Target Commit */
+            target_commit: string;
+            /** Previous Commit */
+            previous_commit: string;
+            /** Before Instance Id */
+            before_instance_id: string;
+            /** Result Instance Id */
+            result_instance_id?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "preparing" | "downloading" | "building" | "applying" | "installing" | "restarting" | "succeeded" | "failed";
+            /** Message */
+            message: string;
+            /** Error */
+            error?: string | null;
+            /** Started At */
+            started_at: number;
+            /** Updated At */
+            updated_at: number;
+            /** Log */
+            log?: string[];
+            /**
+             * Rolled Back
+             * @default false
+             */
+            rolled_back: boolean;
+        };
+        /** TrainerInstallRequest */
+        TrainerInstallRequest: {
+            /** Target Commit */
+            target_commit: string;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+        };
+        /** TrainerInstallStatus */
+        TrainerInstallStatus: {
+            /** Can Apply */
+            can_apply: boolean;
+            /** Reason */
+            reason: string | null;
+            operation?: components["schemas"]["TrainerInstallOperation"] | null;
+            /** Running Commit */
+            running_commit: string | null;
+            /** Instance Id */
+            instance_id: string;
         };
         /** TrainerLatestVersion */
         TrainerLatestVersion: {
@@ -15036,6 +15109,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TrainerUpdateStatus"];
+                };
+            };
+        };
+    };
+    install_status_api_updates_install_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainerInstallStatus"];
+                };
+            };
+        };
+    };
+    install_update_api_updates_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrainerInstallRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainerInstallStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

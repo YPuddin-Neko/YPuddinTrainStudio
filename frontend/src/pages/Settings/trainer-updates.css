@@ -39,3 +39,19 @@
 .trainer-history-more { margin-top:12px; font-size:12px; }
 @container settings (max-width:560px) { .trainer-version-grid { grid-template-columns:1fr; } }
 @media(max-width:560px) { .trainer-version-grid { grid-template-columns:1fr; } }
+
+.trainer-install-reason { margin-top:9px; }
+.trainer-install-reason .ui-btn { margin-left:8px; }
+.trainer-install { margin-top:16px; border-top:1px solid var(--settings-line); padding-top:14px; }
+.trainer-install-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 12px; font-size:13px; margin-bottom:9px; }
+.trainer-install-heading > span { font-weight:550; }
+.trainer-install-heading > code { color:var(--settings-muted); font-size:12px; }
+.trainer-install[data-state=failed] .trainer-install-heading > span { color:var(--studio-danger); }
+.trainer-install > .ui-btn { margin-top:10px; }
+.trainer-install-log { margin-top:10px; }
+.trainer-install-log summary { display:flex; align-items:center; gap:5px; width:fit-content; cursor:pointer; font-size:12px; color:var(--settings-muted); list-style:none; }
+.trainer-install-log summary::-webkit-details-marker { display:none; }
+.trainer-install-log summary:focus-visible { outline:2px solid var(--studio-accent); outline-offset:3px; }
+.trainer-install-log pre { max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; line-height:1.6; padding:10px 12px; margin:8px 0 0; border:1px solid var(--settings-line); border-radius:4px; background:var(--settings-subtle); }
+.trainer-install-confirm { margin:0; line-height:1.7; }
+.trainer-install-confirm-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:20px; }

@@ -13,6 +13,12 @@ class StudioServer(uvicorn.Server):
     def __init__(self, config: uvicorn.Config, *, event_bus: EventBus):
         super().__init__(config)
         self.event_bus = event_bus
+        self.on_started = None
+
+    async def startup(self, sockets: list[socket.socket] | None = None) -> None:
+        await super().startup(sockets=sockets)
+        if self.started and self.on_started:
+            self.on_started()
 
     async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
         # Uvicorn drains HTTP connections before sending lifespan.shutdown.
