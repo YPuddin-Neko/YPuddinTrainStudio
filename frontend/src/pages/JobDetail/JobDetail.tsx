@@ -20,7 +20,6 @@ import JobLogView from './JobLogView';
 import JobMetricsPanel from './JobMetricsPanel';
 import OverflowStrip from '../../components/OverflowStrip';
 import { learningRateGroupName } from './metricPresentation';
-import StatStrip from './StatStrip';
 import SampleViewer from './SampleViewer';
 import ArtifactGrid from './ArtifactGrid';
 import ResumePointList from './ResumePointList';
@@ -367,7 +366,8 @@ export default function JobDetail() {
       {job?.error && <div role="alert" className="job-failure"><div><strong>{job.type === 'train' ? text('训练失败', 'Training failed') : text('任务失败', 'Job failed')}</strong><p>{job.error}</p></div>{activeTab !== 'logs' && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setActiveTab('logs')}><Terminal size={14}/>{text('查看日志', 'Open log')}</button>}</div>}
       {/* 1. 头部指标与阶段时间线 */}
       {job?.type !== 'xyz' && <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
-        <StatStrip label={text('训练核心指标','Training metrics')}>
+        <OverflowStrip snap role="group" label={text('训练核心指标','Training metrics')} containerClassName="job-stat-strip" className="job-stat-grid"
+          pageLabels={{ previous: text('上一组指标', 'Previous metrics'), next: text('下一组指标', 'Next metrics') }}>
           <StatCard label={text('步数','Steps')} value={`${job?.progress?.step ?? '—'} / ${job?.progress?.total_steps ?? '—'}`}/>
           <StatCard label={text('轮次','Epochs')} value={`${epochProgress} / ${totalEpochs ?? '—'}`}/>
           <StatCard label="Loss" value={lossNumber(job?.latest?.loss)} detail={<StepChange delta={lossChange} text={text}/>}/>
@@ -376,7 +376,7 @@ export default function JobDetail() {
             value={learningRates.length > 1 ? <span className="job-learning-rates">{learningRateRows.map((row, index) => <span key={index}>{row.map(([name, rate]) => <span key={name}><small>{learningRateGroupName(name)}</small>{rate.toExponential(2)}</span>)}</span>)}</span> : learningRates.length ? learningRates[0][1].toExponential(2) : '—'}/>
           <StatCard label={t('job.speed')} value={job?.progress?.it_s != null ? `${Number(job.progress.it_s).toFixed(2)} it/s` : '—'}/>
           <StatCard label={t('job.eta')} value={job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s)}/>
-        </StatStrip>
+        </OverflowStrip>
 
         {job && <JobStepper status={job.status} phase={job.progress?.phase || ''} progress={job.progress}/>}
 

@@ -27,14 +27,13 @@
 .dark .job-failure strong { color:#fca5a5; }
 .job-failure > .ui-btn { flex:none; }
 .job-monitor-summary .text-2xl { font-size:20px; }
-.job-stat-strip{display:flex;align-items:center;gap:6px;min-width:0}
-/* One line: the cards share the width, and once they are at their narrowest the line scrolls (StatStrip adds arrows). */
-.job-stat-grid{flex:1;min-width:0;display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none}
-.job-stat-grid::-webkit-scrollbar{display:none}
-.job-stat-strip.has-before{--job-stat-fade-before:16px}
-.job-stat-strip.has-after{--job-stat-fade-after:16px}
-.job-stat-strip.has-before .job-stat-grid,.job-stat-strip.has-after .job-stat-grid{mask-image:linear-gradient(to right,transparent,#000 var(--job-stat-fade-before,0px),#000 calc(100% - var(--job-stat-fade-after,0px)),transparent)}
-.job-stat-page{flex:none;border-radius:999px}
+.overflow-strip.job-stat-strip{gap:6px}
+/* One line: the cards share the width, and once they are at their narrowest the line scrolls with arrows (OverflowStrip). */
+.overflow-strip-track.job-stat-grid{display:flex;gap:10px;scroll-snap-type:x mandatory}
+.job-stat-strip[data-before]{--job-stat-fade-before:16px}
+.job-stat-strip[data-after]{--job-stat-fade-after:16px}
+.job-stat-strip:is([data-before],[data-after]) .job-stat-grid{mask-image:linear-gradient(to right,transparent,#000 var(--job-stat-fade-before,0px),#000 calc(100% - var(--job-stat-fade-after,0px)),transparent)}
+.job-stat-strip > .overflow-strip-page{border-radius:999px}
 .job-stat{position:relative;flex:1 0 132px;scroll-snap-align:start;background:var(--studio-canvas);border-radius:7px;padding:10px 12px}
 .job-stat-label{font-size:12px;line-height:18px;color:var(--studio-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .job-stat.has-help .job-stat-label{padding-right:22px}

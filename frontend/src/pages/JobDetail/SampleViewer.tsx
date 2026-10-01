@@ -132,9 +132,10 @@ export default function SampleViewer({ samples, stepsPerEpoch, loaded, selected,
               <LazyImage src={src} alt={current.prompt} draggable={false} className="sample-stage-image"
                 fallback={<span className="sample-stage-failed"><ImageOff size={26} aria-hidden="true"/>{text('采样图读取失败', 'The preview could not be loaded')}</span>}/>
             </button>
+            {/* At either end the arrow keeps keyboard focus and only reports that it is unavailable; go() ignores it. */}
             {shown.length > 1 && <>
-              <button type="button" className="ui-btn ui-btn-icon sample-stage-nav sample-stage-previous" onClick={() => go(index - 1)} disabled={index === 0} aria-label={text('上一张', 'Previous')} title={text('上一张（←）', 'Previous (←)')}><ChevronLeft size={18} aria-hidden="true"/></button>
-              <button type="button" className="ui-btn ui-btn-icon sample-stage-nav sample-stage-next" onClick={() => go(index + 1)} disabled={index === shown.length - 1} aria-label={text('下一张', 'Next')} title={text('下一张（→）', 'Next (→)')}><ChevronRight size={18} aria-hidden="true"/></button>
+              <button type="button" className="ui-btn ui-btn-icon sample-stage-nav sample-stage-previous" onClick={() => go(index - 1)} aria-disabled={index === 0 || undefined} aria-label={text('上一张', 'Previous')} title={text('上一张（←）', 'Previous (←)')}><ChevronLeft size={18} aria-hidden="true"/></button>
+              <button type="button" className="ui-btn ui-btn-icon sample-stage-nav sample-stage-next" onClick={() => go(index + 1)} aria-disabled={index === shown.length - 1 || undefined} aria-label={text('下一张', 'Next')} title={text('下一张（→）', 'Next (→)')}><ChevronRight size={18} aria-hidden="true"/></button>
             </>}
           </div>
           <div ref={strip} className="sample-strip" aria-label={text('采样图列表', 'Preview list')}>

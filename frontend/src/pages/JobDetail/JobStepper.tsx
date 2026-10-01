@@ -72,7 +72,8 @@ export default function JobStepper({ status, phase, progress }: { status: string
     stopping: text('正在保存恢复点', 'saving the resume point'), stopped: text('已取消', 'cancelled'), resumed: text('暂停后已恢复', 'resumed after a pause'), idle: text('未发生', 'did not occur'),
   };
 
-  return <OverflowStrip className="job-stage-scroll" containerClassName="job-stage-strip" role="group" label={text('任务阶段', 'Job stages')} activeKey={`${status}:${phase}`}><ol className="job-stepper" aria-label={text('任务阶段', 'Job stages')}>
+  // The strip names the group; the list inside it needs no second name.
+  return <OverflowStrip className="job-stage-scroll" containerClassName="job-stage-strip" role="group" label={text('任务阶段', 'Job stages')} activeKey={`${status}:${phase}`}><ol className="job-stepper">
     {!known && status === 'running' && <li className="job-step" data-state="current" title={phase || undefined}>
       <Loader2 size={14} className="animate-spin" aria-hidden="true"/><span>{t(`phase.${phase}`, t('job.phaseInProgress', '进行中'))}</span>
     </li>}
