@@ -143,16 +143,28 @@ def evaluation(method):
 class _ProgressLog:
     """Log the initial cache check and throttle progress, which includes existing entries."""
 
-    def __init__(self, label: str, *, start_label: str) -> None:
-        self.label, self.start_label = label, start_label
+    def __init__(self, kind: str, *, shared: bool = False) -> None:
+        self.kind, self.shared = kind, shared
+        subject = f"{'shared ' if shared else ''}{kind} cache"
+        self.label, self.start_label = f"{subject} preparation", f"checking {subject}"
+        self.done = 0
         self.started = time.monotonic()
         self.last = 0.0
 
     def __call__(self, done: int, total: int) -> None:
+        self.done = done
         now = time.monotonic()
         if done == 0 or (done < total and now - self.last >= 15):
             self.last = now
             log.info("%s: %d/%d", self.start_label if done == 0 else self.label, done, total)
+
+    def shared_result(self, written: int) -> None:
+        if written:
+            log.info("shared %s cache ready: %d entries added in %.1fs", self.kind, written, self.elapsed)
+        else:
+            log.info(
+                "reusing shared %s cache: %d items checked; no re-encoding needed", self.kind, self.done
+            )
 
     @property
     def elapsed(self) -> float:
@@ -448,7 +460,7 @@ class Trainer:
 
         if cfg.dataset.cache_latents:
             self.emit("phase.changed", phase="caching_latents")
-            latent_log = _ProgressLog("VAE cache preparation", start_label="checking VAE cache")
+            latent_log = self._cache_progress_log("VAE")
             n = cache_latents(
                 self.bundle,
                 self.loaded.latent.encode,
@@ -460,7 +472,9 @@ class Trainer:
                     latent_log(d, t),
                 ),
             )
-            if n:
+            if latent_log.shared:
+                latent_log.shared_result(n)
+            elif n:
                 log.info("cached %d latents in %.1fs", n, latent_log.elapsed)
             else:
                 log.info("all latents were already cached")
@@ -470,6 +484,10 @@ class Trainer:
         if self.text_mode == "cached":
             self.emit("phase.changed", phase="caching_text")
             self._build_text_cache(cache_root)
+
+    def _cache_progress_log(self, kind: str) -> _ProgressLog:
+        distributed = getattr(self, "distributed", None)
+        return _ProgressLog(kind, shared=distributed is not None and distributed.world_size > 1)
 
     def _model_identity(self) -> str:
         """Bind full-state resume to actual model assets, independently of their absolute paths."""
@@ -906,7 +924,7 @@ class Trainer:
             for p in prompts:
                 captions.update(((TextCache.PROMPTS, p.prompt), (TextCache.PROMPTS, p.negative)))
         ordered = sorted(captions)
-        text_log = _ProgressLog("text cache preparation", start_label="checking text cache")
+        text_log = self._cache_progress_log("text")
         n = build_text_cache(
             ordered,
             self.text_cache,
@@ -918,7 +936,9 @@ class Trainer:
             ),
             total=len(ordered),
         )
-        if n:
+        if text_log.shared:
+            text_log.shared_result(n)
+        elif n:
             log.info(
                 "cached %d text encodings (%d captions of images and prompts) in %.1fs",
                 n,
