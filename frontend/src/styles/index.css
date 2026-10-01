@@ -193,10 +193,8 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .bucket-group + .bucket-group { margin-top:10px; padding-top:8px; border-top:1px solid var(--studio-line); }
 .bucket-group-heading { display:flex; align-items:baseline; justify-content:space-between; gap:6px; margin:0 0 6px; font-size:11px; font-weight:600; font-variant-numeric:tabular-nums; }
 .bucket-group-heading small { font-size:10px; font-weight:400; color:var(--studio-dim); }
-.bucket-tile { min-width:0; border:1px solid var(--studio-line); border-radius:5px; padding:6px 4px; background:var(--studio-muted); }
-.bucket-tile:hover, .bucket-tile.is-selected { border-color:var(--studio-accent); }
+.bucket-tile { min-width:0; border:1px solid var(--studio-line); border-radius:5px; padding:6px 4px; background:var(--studio-muted); text-align:center; }
 .bucket-shape-space { height:60px; display:flex; align-items:center; justify-content:center; }
-.bucket-shape { border:1px solid color-mix(in srgb,var(--studio-accent) 60%,var(--studio-line)); background:color-mix(in srgb,var(--studio-accent) 10%,var(--studio-panel)); border-radius:3px; display:flex; align-items:center; justify-content:center; color:var(--studio-accent); font-size:12px; font-weight:600; }
 .bucket-size { display:block; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-variant-numeric:tabular-nums; font-size:9px; margin-top:5px; }
 /* Native tiles: the source size in grey, what was done, an arrow, then the training size. */
 .bucket-inspector .bucket-grid.has-routes { grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); }
@@ -210,8 +208,6 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .bucket-count-track span { display:block; height:100%; background:var(--studio-accent); border-radius:3px; }
 .inspector-note { font-size:10px; color:var(--studio-dim); line-height:1.65; margin-top:9px; }
 .bucket-empty { display:flex; flex-direction:column; align-items:center; padding:22px 10px; gap:10px; color:var(--studio-dim); font-size:11px; line-height:1.7; text-align:center; background:var(--studio-muted); border-radius:6px; }
-.bucket-selection { margin-top:7px; padding:7px 9px; border:1px solid var(--studio-line); border-radius:5px; font-size:10px; display:flex; flex-wrap:wrap; gap:4px 10px; }
-.bucket-selection strong { color:var(--studio-accent); }
 .bucket-table-wrap { max-height:288px; overflow:auto; }
 .bucket-table { width:100%; font-size:10px; font-variant-numeric:tabular-nums; }
 .bucket-table th { color:var(--studio-dim); font-weight:500; text-align:right; padding:5px; position:sticky; top:0; background:var(--studio-panel); }
@@ -244,11 +240,6 @@ input::placeholder, textarea::placeholder { color:var(--studio-dim); opacity:1; 
 .estimate-memory.is-over .estimate-meter > span { background:#dc2626; }
 .dark .estimate-memory.is-tight strong { color:#fbbf24; }
 .dark .estimate-memory.is-over > div > span, .dark .estimate-memory.is-over strong { color:#fca5a5; }
-/* How a selected size is reached from its sources. */
-.size-route { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
-.size-route p { margin:0; color:var(--studio-dim); line-height:1.55; font-variant-numeric:tabular-nums; word-break:keep-all; overflow-wrap:anywhere; }
-.size-route small, .size-route-more { flex:none; color:var(--studio-dim); font-size:10px; white-space:nowrap; font-variant-numeric:tabular-nums; }
-.bucket-selection-routes { display:grid; flex-basis:100%; gap:2px; padding-top:5px; border-top:1px solid var(--studio-line); }
 .estimate-alert { display:grid; gap:6px; margin-top:10px; padding:10px 11px; border:1px solid color-mix(in srgb,#dc2626 30%,var(--studio-line)); border-radius:7px; background:color-mix(in srgb,#dc2626 6%,var(--studio-panel)); font-size:11px; line-height:1.6; }
 .estimate-alert strong { color:#b91c1c; font-size:12px; }
 .dark .estimate-alert strong { color:#fca5a5; }

@@ -44,7 +44,6 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
   const text = useWorkspaceText();
   const routeId = useId();
   const [view, setView] = useState<'shape' | 'table'>('shape');
-  const [selected, setSelected] = useState<string | null>(null);
   const buckets = plan?.buckets || [];
   const native = plan?.native;
   const nativeMode = dataset ? dataset.resolution_mode === 'native' : !!native;
@@ -134,7 +133,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
     const source = bucket.sources?.[0];
     const variants = Math.max(bucket.source_variants || 0, bucket.sources?.length || 0);
     const geometryTitle = source ? routeSteps(bucket, source).join(' → ') + (variants > 1 ? text(`；图示为 ${source.images} 张图片的尺寸`, `; shows the size of ${source.images} images`) : '') : undefined;
-    return <button type="button" key={key} className={`bucket-tile${key === selected ? ' is-selected' : ''}${route ? ' has-route' : ''}`} aria-pressed={key === selected} aria-label={`${grouped ? `${baseLabel(bucket.base)} · ` : ''}${bucket.w} × ${bucket.h}, ${bucket.items} ${text('样本', 'samples')}`} aria-describedby={route ? `${routeId}-${key}` : undefined} onClick={() => setSelected(key === selected ? null : key)}>
+    return <li key={key} className={`bucket-tile${route ? ' has-route' : ''}`} aria-label={`${grouped ? `${baseLabel(bucket.base)} · ` : ''}${bucket.w} × ${bucket.h}, ${bucket.items} ${text('样本', 'samples')}`} aria-describedby={route ? `${routeId}-${key}` : undefined}>
       <span className="bucket-shape-space" title={geometryTitle}><BucketGeometry size={bucket} route={source} fit={fitMode} anchor={cropAnchor} count={bucket.items}/></span>
       {route && <span className="bucket-route" aria-hidden="true">
         <span className="bucket-route-source" title={route.source}>{route.source}</span>
@@ -144,7 +143,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
       <span className="bucket-size">{bucket.w} × {bucket.h}</span>
       <span className="bucket-count-track"><span style={{width: `${bucket.items / maxCount * 100}%`}} /></span>
       {route && <span id={`${routeId}-${key}`} className="sr-only">{text(`原图 ${route.source}，${route.step}`, `Source ${route.source}, ${route.step}`)}</span>}
-    </button>;
+    </li>;
   };
   return <section className="bucket-inspector" aria-label={native ? text('原生尺寸与训练估算', 'Native sizes and training estimates') : text('数据分桶与训练估算', 'Buckets and training estimates')}>
     <div className="inspector-heading"><h3><BarChart3 size={15} />{text('数据分布', 'Dataset distribution')}</h3>{loading && <Loader2 size={14} className="animate-spin" aria-label={text('正在更新', 'Updating')} />}</div>
@@ -165,9 +164,9 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
         {view === 'shape' ? <div className="bucket-groups" data-testid="plan-buckets">{groups.map(group => grouped
           ? <section key={group.base} className="bucket-group" aria-label={baseLabel(group.base)}>
             <h5 className="bucket-group-heading"><span>{baseLabel(group.base)}</span><small>{text(`${group.buckets.length} 个分桶 · ${group.items} 样本`, `${group.buckets.length} buckets · ${group.items} samples`)}</small></h5>
-            <div className={gridClass}>{group.buckets.map(tile)}</div>
+            <ul className={gridClass} role="list">{group.buckets.map(tile)}</ul>
           </section>
-          : <div key={group.base} className={gridClass}>{group.buckets.map(tile)}</div>)}</div>
+          : <ul key={group.base} className={gridClass} role="list">{group.buckets.map(tile)}</ul>)}</div>
           : <div className="bucket-table-wrap" data-testid="plan-buckets"><table className="bucket-table"><thead><tr>{grouped && <th>{text('分辨率', 'Resolution')}</th>}<th>{text('尺寸', 'Size')}</th><th>{text('样本', 'Items')}</th><th>{native ? <span className="bucket-column-help">{text('计算次数', 'Model runs')}<ConfigHelp label={text('计算次数说明', 'Model runs help')}>{text('每轮对这个尺寸运行模型的次数。同尺寸图片在不超过图像面积上限时合并为一次计算；单张已接近上限时逐张计算，因此常与样本数相同。', 'How many times the model runs on this size per epoch. Same-size images are combined while they fit the image area limit; images near the limit run one at a time, so this often equals the sample count.')}</ConfigHelp></span> : text('批次', 'Batches')}</th></tr></thead><tbody>{buckets.map(bucket => <tr key={bucketKey(bucket)}>{grouped && <td>{bucket.base}</td>}<td>{bucket.w} × {bucket.h}</td><td>{bucket.items}</td><td>{bucket.batches ?? '—'}</td></tr>)}</tbody></table></div>}
       </>}
       {plan?.image_fit && <div className="image-fit-summary">
