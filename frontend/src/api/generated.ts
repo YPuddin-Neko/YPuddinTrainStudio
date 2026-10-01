@@ -4060,6 +4060,7 @@ export interface components {
              * Sampling Samplers
              * @default [
              *       "euler",
+             *       "euler_ancestral",
              *       "heun",
              *       "er_sde"
              *     ]
@@ -7174,12 +7175,19 @@ export interface components {
              */
             seed: number;
             /**
+             * Noise
+             * @description 按哪个软件的方式由种子生成噪声，默认 comfyui：初始噪声在 CPU 上生成；a1111 按 A1111 WebUI 的默认设置在显卡上为每张图生成。Euler a、ER-SDE 每步加入的噪声也随之变化。采样设置相同时，同一种子的构图与所选软件一致。
+             * @default comfyui
+             * @enum {string}
+             */
+            noise: "comfyui" | "a1111";
+            /**
              * Sampler
-             * @description 预览图的采样算法，默认 Euler 每步评估一次；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。
+             * @description 预览图的采样算法，默认 Euler 每步评估一次；Euler a（euler_ancestral）每步去噪后再加入新的随机噪声；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。
              * @default euler
              * @enum {string}
              */
-            sampler: "euler" | "heun" | "er_sde";
+            sampler: "euler" | "euler_ancestral" | "heun" | "er_sde";
             /**
              * Scheduler
              * @description 预览采样使用的噪声时间点。默认 uniform 使用均匀网格并应用 shift；simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。
@@ -8566,7 +8574,7 @@ export interface components {
              * Key
              * @enum {string}
              */
-            key: "steps" | "cfg" | "seed" | "sampler" | "scheduler" | "shift" | "adapter_scale" | "checkpoint";
+            key: "steps" | "cfg" | "seed" | "sampler" | "scheduler" | "noise" | "shift" | "adapter_scale" | "checkpoint";
             /** Values */
             values: unknown[];
         };
@@ -8678,6 +8686,12 @@ export interface components {
              * @default uniform
              */
             scheduler: string;
+            /**
+             * Noise
+             * @default comfyui
+             * @enum {string}
+             */
+            noise: "comfyui" | "a1111";
             /** Shift */
             shift?: number | null;
             /** Guidance */

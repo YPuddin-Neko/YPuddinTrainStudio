@@ -15,6 +15,8 @@ import numpy as np
 import torch
 from torch import Tensor
 
+from .noise import SeedNoise
+
 _LOG_10 = math.log(10.0)
 
 
@@ -128,13 +130,15 @@ def er_sde_sample(
     on_step: Callable[[int, int], None] | None = None,
     max_order: int = 3,
     s_noise: float = 1.0,
+    noise: SeedNoise | None = None,
 ) -> Tensor:
     """Sample with the author's ER-SDE Taylor update, using ``predict(x,t) -> velocity``.
 
     ``sigmas`` are RF times, strictly decreasing from ``0 < t0 < 1`` to exactly zero.
-    Denoised=x-t*v, alpha=1-t, lambda=t/alpha. The caller owns the schedule. An initial
-    unit Gaussian and every stochastic increment use only the supplied CPU generator
-    (or a fresh private generator). Global training RNG state is never consumed.
+    Denoised=x-t*v, alpha=1-t, lambda=t/alpha. The caller owns the schedule. ``noise``
+    (``SeedNoise``) gives the initial unit Gaussian and every stochastic increment; without
+    it they come from the CPU ``generator`` (or a fresh private one) as in ComfyUI. Global
+    training RNG state is never consumed.
 
     Start-up uses orders 1, 2, then 3; max_order can cap this at 1 or 2. The terminal
     zero step returns denoised directly. s_noise scales stochastic increments; zero
@@ -168,16 +172,12 @@ def er_sde_sample(
         or any(first <= second for first, second in zip(times, times[1:], strict=False))
     ):
         raise ValueError("ER-SDE times must strictly decrease from 0 < t0 < 1 to exactly zero")
-    if generator is not None and generator.device.type != "cpu":
-        raise ValueError("ER-SDE requires a CPU random generator")
-    if generator is None:
-        generator = torch.Generator(device="cpu")
-        generator.seed()
+    if noise is None:
+        if generator is not None and generator.device.type != "cpu":
+            raise ValueError("ER-SDE requires a CPU random generator")
+        noise = SeedNoise(generator, device=device)
     device = torch.device(device)
     work_dtype = torch.float64 if dtype == torch.float64 else torch.float32
-
-    def noise():
-        return torch.randn(shape, generator=generator, dtype=work_dtype, device="cpu").to(device=device)
 
     def velocity(function, model_x, batch_t):
         value = function(model_x, batch_t)
@@ -191,7 +191,7 @@ def er_sde_sample(
             raise ValueError("ER-SDE velocity prediction must remain on the sampling device")
         return _finite(value.to(dtype=work_dtype), "velocity prediction")
 
-    x = noise()
+    x = noise.first(shape).to(dtype=work_dtype)
     device = x.device  # Canonicalize unspecified CUDA indices to the actual device.
     old_denoised = previous_delta = None
     old_lambda = previous_span = None
@@ -241,7 +241,7 @@ def er_sde_sample(
             if s_noise:
                 deviation = following * math.sqrt(-math.expm1(-2.0 * log_g_ratio)) * s_noise
                 if deviation:
-                    updated = updated + deviation * noise()
+                    updated = updated + deviation * noise.next(shape, work_dtype)
             x = _finite(updated, "updated latent")
             old_lambda = current_lambda
             previous_delta = delta

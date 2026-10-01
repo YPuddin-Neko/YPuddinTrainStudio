@@ -9,8 +9,9 @@ import torch
 from torch import Tensor
 
 from .euler import euler_sample, flow_schedule
+from .noise import SeedNoise
 
-SAMPLERS = ("euler", "heun", "er_sde")
+SAMPLERS = ("euler", "euler_ancestral", "heun", "er_sde")
 SCHEDULERS = ("uniform", "simple", "sgm_uniform", "normal")
 
 
@@ -76,8 +77,12 @@ def sample(
     device: torch.device | str = "cpu",
     dtype: torch.dtype = torch.float32,
     on_step: Callable[[int, int], None] | None = None,
+    noise: str = "comfyui",
 ) -> Tensor:
-    """Generate a preview from velocity predictions using the selected integration method."""
+    """Generate a preview from velocity predictions using the selected integration method.
+
+    ``noise`` names whose way the seed in ``generator`` becomes noise (``SeedNoise``).
+    """
     if sampler not in SAMPLERS:
         raise ValueError(f"unknown sampler: {sampler}")
     if not math.isfinite(cfg) or cfg < 0:
@@ -91,6 +96,7 @@ def sample(
     if generator is None:
         generator = torch.Generator(device="cpu")
         generator.seed()
+    seeded = SeedNoise(generator, noise, device)
     times = noise_schedule(
         steps, shift, scheduler, dtype=torch.float64 if sampler == "er_sde" else torch.float32
     )
@@ -112,6 +118,7 @@ def sample(
             on_step=on_step,
             max_order=er_sde_order,
             s_noise=er_sde_s_noise,
+            noise=seeded,
         )
     if sampler == "euler" and scheduler == "uniform":
         return euler_sample(
@@ -125,9 +132,10 @@ def sample(
             device=device,
             dtype=dtype,
             on_step=on_step,
+            noise=seeded,
         )
     times = times.to(device)
-    x = torch.randn(shape, generator=generator, device="cpu").to(device=device, dtype=dtype)
+    x = seeded.first(shape).to(device=device, dtype=dtype)
 
     def velocity(latent: Tensor, time: Tensor) -> Tensor:
         batch_time = time.expand(shape[0]).float()
@@ -138,6 +146,11 @@ def sample(
         return v.to(dtype)
 
     for index, (current, following) in enumerate(zip(times[:-1], times[1:], strict=True)):
+        if sampler == "euler_ancestral":
+            x = _ancestral_step(x, current, following, velocity(x, current), seeded)
+            if on_step is not None:
+                on_step(index + 1, steps)
+            continue
         delta = (following - current).to(dtype)
         first = velocity(x, current)
         proposed = x + delta * first
@@ -148,3 +161,18 @@ def sample(
         if on_step is not None:
             on_step(index + 1, steps)
     return x
+
+
+def _ancestral_step(x: Tensor, current: Tensor, following: Tensor, v: Tensor, seeded: SeedNoise) -> Tensor:
+    """One rectified-flow Euler ancestral step (eta 1), ComfyUI's ``sample_euler_ancestral_RF``: step down
+    to ``following² / current`` toward the denoised estimate, then add fresh noise back up to ``following``."""
+    denoised = x - current * v
+    if float(following) == 0:
+        return denoised
+    # ComfyUI's downstep ratio at eta 1, kept in its order of float operations.
+    down = following * (1 + (following / current - 1))
+    ratio = down / current
+    x = ratio * x + (1 - ratio) * denoised
+    alpha_next, alpha_down = 1 - following, 1 - down
+    renoise = (following.square() - down.square() * alpha_next.square() / alpha_down.square()).sqrt()
+    return (alpha_next / alpha_down) * x + seeded.next(tuple(x.shape)).to(x.dtype) * renoise

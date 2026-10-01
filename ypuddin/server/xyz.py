@@ -24,10 +24,13 @@ AXES = {
     "seed": "Seed",
     "sampler": "Sampler",
     "scheduler": "Scheduler",
+    "noise": "Noise",
     "shift": "Shift",
     "adapter_scale": "Adapter strength",
     "checkpoint": "Checkpoint",
 }
+# How the grid names each way of drawing a seed's noise.
+NOISE_LABELS = {"comfyui": "ComfyUI", "a1111": "A1111"}
 # Cells are separate images; the bound only catches runaway grids such as a mistyped range.
 MAX_CELLS = 1000
 # A worker keeps an adapter comparison's base model this long for the next comparison.
@@ -59,13 +62,15 @@ def resident_label(job: dict[str, Any]) -> str:
 
 class XyzAxis(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    key: Literal["steps", "cfg", "seed", "sampler", "scheduler", "shift", "adapter_scale", "checkpoint"]
+    key: Literal["steps", "cfg", "seed", "sampler", "scheduler", "noise", "shift", "adapter_scale", "checkpoint"]
     values: list[Any] = Field(min_length=1)
 
     @model_validator(mode="after")
     def typed_values(self):
         for value in self.values:
-            if self.key in {"sampler", "scheduler", "checkpoint"}:
+            if self.key == "noise":
+                valid = value in NOISE_LABELS
+            elif self.key in {"sampler", "scheduler", "checkpoint"}:
                 valid = isinstance(value, str) and bool(value.strip()) and len(value) <= 200
             elif self.key in {"steps", "seed"}:
                 valid = type(value) is int and (
@@ -98,6 +103,7 @@ class XyzRequest(GpuSelection):
     seed: int = Field(1, ge=0, lt=2**63)
     sampler: str = "euler"
     scheduler: str = "uniform"
+    noise: Literal["comfyui", "a1111"] = "comfyui"
     shift: float | None = Field(None, gt=0, le=100, allow_inf_nan=False)
     guidance: float | None = Field(None, ge=0, le=30, allow_inf_nan=False)
     adapter_scale: float = Field(1, ge=-4, le=4, allow_inf_nan=False)
@@ -420,7 +426,7 @@ def options(context, source_id):
     own = [row for row in checkpoints if row["job_id"] == source_id]
     defaults = {
         key: getattr(sampling, key)
-        for key in ("width", "height", "steps", "cfg", "sampler", "scheduler", "shift", "guidance")
+        for key in ("width", "height", "steps", "cfg", "sampler", "scheduler", "noise", "shift", "guidance")
     }
     defaults.update(
         prompt=prompt.prompt if prompt else "",
@@ -459,6 +465,8 @@ def options(context, source_id):
     for axis in axes:
         if axis["key"] in {"sampler", "scheduler"}:
             axis["values"] = list(getattr(family.spec, "sampling_" + axis["key"] + "s"))
+        elif axis["key"] == "noise":
+            axis["values"] = list(NOISE_LABELS)
     return {
         "source_job_id": source_id,
         "family": model.family,
@@ -575,6 +583,7 @@ def start(context, source_id: str, request: XyzRequest):
                         "cfg",
                         "sampler",
                         "scheduler",
+                        "noise",
                         "shift",
                         "guidance",
                     )

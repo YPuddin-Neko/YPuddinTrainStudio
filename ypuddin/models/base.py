@@ -63,7 +63,7 @@ class ModelSpec:
     optional_weights: tuple[str, ...] = ()  # fields supplied by a bundled checkpoint unless overridden
     directory_only_weights: tuple[str, ...] = ()  # cannot be prepared by single-file downloads
     attention_backends: tuple[str, ...] = ("auto", "sdpa", "xformers", "flash_attn")
-    sampling_samplers: tuple[str, ...] = ("euler", "heun", "er_sde")
+    sampling_samplers: tuple[str, ...] = ("euler", "euler_ancestral", "heun", "er_sde")
     sampling_schedulers: tuple[str, ...] = ("uniform", "simple", "sgm_uniform", "normal")
     objective_timestep_sampling: tuple[str, ...] = (
         "uniform",

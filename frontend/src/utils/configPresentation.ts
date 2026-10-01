@@ -74,7 +74,7 @@ const labels: Record<string, string> = {
   'sampling.every_epochs': '每隔几轮预览', 'sampling.at_start': '开始前生成预览', 'sampling.prompts': '预览提示词',
   'sampling.prompts_file': '提示词文件', 'sampling.steps': '采样步数', 'sampling.cfg': 'CFG 引导强度',
   'sampling.shift': '采样时间步偏移', 'sampling.width': '预览宽度', 'sampling.height': '预览高度',
-  'sampling.seed': '预览种子', 'sampling.sampler': '采样器', 'validation.enabled': '启用验证集',
+  'sampling.seed': '预览种子', 'sampling.noise': '出图方式', 'sampling.sampler': '采样器', 'validation.enabled': '启用验证集',
   'validation.split_ratio': '验证集划分比例', 'validation.sources': '独立验证数据源', 'validation.every_steps': '每隔几步验证',
   'validation.every_epochs': '每隔几轮验证', 'validation.timesteps': '验证时间步', 'validation.max_images': '验证图片上限',
   'validation.seed': '验证种子', 'logging.tensorboard': 'TensorBoard 日志', 'logging.wandb': 'Weights & Biases',
@@ -88,6 +88,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path === 'dataset.crop_anchor') return 'Crop anchor';
   if (english && path === 'adapter.resume_weights') return 'Weights to continue training';
   if (english && path === 'adapter.dora_axis') return 'DoRA axis';
+  if (english && path === 'sampling.noise') return 'Noise source';
   if (english && path === 'adapter.layer_types') return 'Layer types';
   if (english && path === 'adapter.conv_rank') return 'Convolution rank';
   if (english && path === 'adapter.conv_alpha') return 'Convolution alpha';
@@ -273,7 +274,8 @@ export function configOptionLabel(path: string, option: string, english = false)
     'model.dtype': {auto:['跟随模型','Follow model'],bf16:['BF16','BF16'],fp16:['FP16','FP16'],fp32:['FP32','FP32']},
     'model.krea2_variant': {auto:['读取模型记录','Read model record'],raw:['训练模型','Raw'],turbo:['仅采样','Turbo']},
     'model.flux2_variant': { auto: ['自动读取模型配置', 'Read model configuration'], dev: ['已停用', 'FLUX.2 dev'], 'klein-base-4b': ['Klein 基础版 4B', 'Klein base 4B'], 'klein-base-9b': ['Klein 基础版 9B', 'Klein base 9B'] },
-    'sampling.sampler': { euler:['欧拉', 'Euler'], heun:['二阶修正', 'Heun'], er_sde:['随机微分方程', 'ER-SDE'] },
+    'sampling.sampler': { euler:['欧拉', 'Euler'], euler_ancestral:['欧拉祖先采样', 'Euler a'], heun:['二阶修正', 'Heun'], er_sde:['随机微分方程', 'ER-SDE'] },
+    'sampling.noise': { comfyui:['ComfyUI', 'ComfyUI'], a1111:['A1111 WebUI', 'A1111 WebUI'] },
     'sampling.scheduler': { uniform:['均匀', 'Uniform'], simple:['简单', 'Simple'], sgm_uniform:['SGM 均匀', 'SGM Uniform'], normal:['常规', 'Normal'] },
     'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
     'dataset.resolution_mode': { bucket: ['按设定分辨率训练', 'Bucket'], native: ['按原图尺寸训练', 'Native'] },

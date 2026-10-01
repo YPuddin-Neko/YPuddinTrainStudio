@@ -24,6 +24,8 @@ from torch import Tensor
 from ypuddin.config import ObjectiveConfig
 from ypuddin.objectives.ddpm import DDPMObjective, unit_to_timesteps
 
+from .noise import SeedNoise
+
 
 def sampling_timestep(t: Tensor, num_train_timesteps: int = 1000) -> Tensor:
     """Continuous denoiser index for an explicitly marked inference forward.
@@ -35,13 +37,17 @@ def sampling_timestep(t: Tensor, num_train_timesteps: int = 1000) -> Tensor:
     return (t.float() * num_train_timesteps).clamp(max=num_train_timesteps - 1)
 
 
-def _schedule(obj: DDPMObjective, steps: int) -> tuple[Tensor, Tensor]:
+def _sigma_table(obj: DDPMObjective) -> Tensor:
     alpha_bar = obj.alphas_cumprod.clone()
     if obj.zero_terminal_snr:
         # EulerDiscreteScheduler uses this finite inference endpoint to avoid
         # infinite sigma. Keep the training schedule's exact terminal alpha=0.
         alpha_bar[-1] = 2**-24
-    table = ((1 - alpha_bar) / alpha_bar).sqrt()
+    return ((1 - alpha_bar) / alpha_bar).sqrt()
+
+
+def _schedule(obj: DDPMObjective, steps: int) -> tuple[Tensor, Tensor]:
+    table = _sigma_table(obj)
     # Float64 construction then float32 agrees with Diffusers' numpy linspace.
     # Like that schedule, steps=1 selects index 0 (not the highest training index).
     indices = torch.linspace(0, obj.num_train_timesteps - 1, steps, dtype=torch.float64).flip(0).float()
@@ -72,20 +78,24 @@ def sample_ddpm(
     shift: float = 1.0,
     er_sde_order: int = 3,
     er_sde_s_noise: float = 1.0,
+    noise: str = "comfyui",
 ) -> Tensor:
     """Return clean latents from epsilon/v predictions; never silently fall back.
 
-    Euler uses ``steps`` model evaluations; Heun uses ``2*steps-1`` (terminal
-    Euler step). Guidance may double this. on_step fires once per logical step,
+    Euler and Euler ancestral use ``steps`` model evaluations; Heun uses ``2*steps-1``
+    (terminal Euler step). Guidance may double this. on_step fires once per logical step,
     matching training preview progress/cancellation. Integration uses float32;
-    model inputs and returned latents use dtype. An explicit CPU RNG is supported
-    for every execution device, and only initial noise consumes random numbers.
+    model inputs and returned latents use dtype. ``noise`` names whose way the seed in
+    ``generator`` becomes the starting noise and Euler ancestral's fresh noise (``SeedNoise``),
+    including ComfyUI's sqrt(1 + sigma^2) and A1111's sigma scaling of the start.
 
     ER-SDE arguments remain accepted/validated for dispatcher compatibility, but
     are inactive for Euler/Heun. Selecting ER-SDE itself is unsupported.
     """
-    if sampler not in ("euler", "heun"):
-        raise ValueError(f"DDPM sampler {sampler!r} is unsupported; choose 'euler' or 'heun'")
+    if sampler not in ("euler", "euler_ancestral", "heun"):
+        raise ValueError(
+            f"DDPM sampler {sampler!r} is unsupported; choose 'euler', 'euler_ancestral' or 'heun'"
+        )
     if scheduler != "uniform":
         raise ValueError(f"DDPM scheduler {scheduler!r} is unsupported; choose 'uniform' (linspace)")
     if not math.isfinite(shift) or shift != 1:
@@ -113,9 +123,14 @@ def sample_ddpm(
     indices, sigmas = _schedule(obj, steps)
     sigmas = sigmas.to(device)
     times = (indices / num_train_timesteps).to(device)
-    noise_device = generator.device if generator is not None else torch.device("cpu")
-    y = torch.randn(shape, generator=generator, device=noise_device, dtype=torch.float32).to(device)
-    y = y * sigmas[0]
+    seeded = SeedNoise(generator, noise, device)
+    y = seeded.first(shape)
+    start, top = float(sigmas[0]), float(_sigma_table(obj)[-1])
+    if noise == "comfyui" and (math.isclose(start, top, rel_tol=1e-5) or start > top):
+        # ComfyUI's noise_scaling for a run from the model's largest sigma; A1111 scales by sigma.
+        y = y * (1 + sigmas[0].square()).sqrt()
+    else:
+        y = y * sigmas[0]
 
     def derivative(state: Tensor, sigma: Tensor, time: Tensor) -> Tensor:
         root = (1 + sigma.square()).sqrt()
@@ -139,8 +154,20 @@ def sample_ddpm(
 
     for index in range(steps):
         current, following = sigmas[index], sigmas[index + 1]
-        delta = following - current
         first = derivative(y, current, times[index])
+        if sampler == "euler_ancestral":
+            # k-diffusion's ancestral step (eta 1): Euler down to sigma_down, then fresh noise up to sigma_next.
+            spread = following.square() * (current.square() - following.square()) / current.square()
+            up = torch.minimum(following, spread.sqrt())
+            down = (following.square() - up.square()).sqrt()
+            if float(down) == 0:
+                y = y - current * first
+            else:
+                y = y + (down - current) * first + seeded.next(shape) * up
+            if on_step is not None:
+                on_step(index + 1, steps)
+            continue
+        delta = following - current
         proposed = y + delta * first
         if sampler == "heun" and index < steps - 1:
             second = derivative(proposed, following, times[index + 1])

@@ -59,7 +59,7 @@ class SDXLFamily(ModelFamily):
             ("vae_path", "SDXL VAE", "可选：覆盖模型内含的 VAE"),
         ),
         optional_weights=("text_encoder_path", "text_encoder_2_path", "vae_path"),
-        sampling_samplers=("euler", "heun"),
+        sampling_samplers=("euler", "euler_ancestral", "heun"),
         sampling_schedulers=("uniform",),
         objective_timestep_sampling=("uniform", "logit_normal"),
         objective_weighting=("none", "min_snr"),

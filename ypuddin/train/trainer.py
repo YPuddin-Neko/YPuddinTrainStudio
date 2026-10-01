@@ -2200,6 +2200,7 @@ class Trainer:
                 cfg=cfg_scale,
                 predict_uncond=predict_uncond,
                 generator=torch.Generator().manual_seed(seed),
+                noise=scfg.noise,
                 device=self.device,
                 dtype=torch.float32,
                 on_step=on_step,

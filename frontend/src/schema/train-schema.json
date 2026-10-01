@@ -2971,11 +2971,29 @@
             "show_when": "sampling.enabled == true"
           }
         },
+        "noise": {
+          "default": "comfyui",
+          "description": "按哪个软件的方式由种子生成噪声，默认 comfyui：初始噪声在 CPU 上生成；a1111 按 A1111 WebUI 的默认设置在显卡上为每张图生成。Euler a、ER-SDE 每步加入的噪声也随之变化。采样设置相同时，同一种子的构图与所选软件一致。",
+          "enum": [
+            "comfyui",
+            "a1111"
+          ],
+          "title": "Noise",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "sampling",
+            "order": 115,
+            "show_when": "sampling.enabled == true"
+          }
+        },
         "sampler": {
           "default": "euler",
-          "description": "预览图的采样算法，默认 Euler 每步评估一次；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。",
+          "description": "预览图的采样算法，默认 Euler 每步评估一次；Euler a（euler_ancestral）每步去噪后再加入新的随机噪声；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。",
           "enum": [
             "euler",
+            "euler_ancestral",
             "heun",
             "er_sde"
           ],

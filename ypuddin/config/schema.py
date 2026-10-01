@@ -1344,9 +1344,17 @@ class SamplingConfig(_Strict):
         help="预览初始噪声种子，默认 0：每次训练开始时随机生成一个种子，本次训练的所有预览都使用它，续训沿用同一个。手动输入种子值会固定训练时使用的种子。未单独设种子的第 i 条提示词使用该种子 + i（从 0 计）。与训练随机种子独立。",
         ui_=ui("sampling", advanced=True, order=110, show_when="sampling.enabled == true"),
     )
-    sampler: Literal["euler", "heun", "er_sde"] = F(
+    noise: Literal["comfyui", "a1111"] = F(
+        "comfyui",
+        help=(
+            "按哪个软件的方式由种子生成噪声，默认 comfyui：初始噪声在 CPU 上生成；a1111 按 A1111 WebUI 的默认设置在显卡上"
+            "为每张图生成。Euler a、ER-SDE 每步加入的噪声也随之变化。采样设置相同时，同一种子的构图与所选软件一致。"
+        ),
+        ui_=ui("sampling", advanced=True, order=115, control="select", show_when="sampling.enabled == true"),
+    )
+    sampler: Literal["euler", "euler_ancestral", "heun", "er_sde"] = F(
         "euler",
-        help="预览图的采样算法，默认 Euler 每步评估一次；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。",
+        help="预览图的采样算法，默认 Euler 每步评估一次；Euler a（euler_ancestral）每步去噪后再加入新的随机噪声；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。",
         ui_=ui("sampling", advanced=True, order=120, control="select", show_when="sampling.enabled == true"),
     )
     scheduler: Literal["uniform", "simple", "sgm_uniform", "normal"] = F(

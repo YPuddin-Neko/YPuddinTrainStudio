@@ -15,6 +15,7 @@ from ypuddin.models.precision import model_load_precision
 
 from .xyz import (
     AXES,
+    NOISE_LABELS,
     RESIDENT_IDLE_SECONDS,
     XyzRequest,
     checkpoint_signature,
@@ -298,7 +299,11 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
             axes[key] = axis.model_dump() | {
                 "label": AXES[axis.key],
                 "labels": [
-                    checkpoints[value]["name"] if axis.key == "checkpoint" else str(value)
+                    checkpoints[value]["name"]
+                    if axis.key == "checkpoint"
+                    else NOISE_LABELS[value]
+                    if axis.key == "noise"
+                    else str(value)
                     for value in axis.values
                 ],
             }
@@ -512,6 +517,7 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                     if uncond is not None
                     else None,
                     generator=torch.Generator().manual_seed(cell["seed"]),
+                    noise=cell.get("noise", "comfyui"),
                     device=device,
                     on_step=step,
                 )

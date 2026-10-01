@@ -9,6 +9,8 @@ from torch import Tensor
 
 from ypuddin.objectives import mobius_shift
 
+from .noise import SeedNoise
+
 
 def flow_schedule(steps: int, shift: float = 1.0, device: torch.device | str = "cpu") -> Tensor:
     """Descending timesteps ``t_0 = 1 > ... > t_steps = 0`` with an optional Möbius shift."""
@@ -32,12 +34,15 @@ def euler_sample(
     device: torch.device | str = "cpu",
     dtype: torch.dtype = torch.float32,
     on_step: Callable[[int, int], None] | None = None,
+    noise: SeedNoise | None = None,
 ) -> Tensor:
     """``predict(x_t, t) -> v``; integrates ``dx/dt = v`` from ``t=1`` (noise) down to ``t=0``.
 
-    ``on_step(done, total)`` is called after every integration step (progress reporting).
+    ``on_step(done, total)`` is called after every integration step (progress reporting). ``noise`` gives
+    the starting noise; without it ``generator`` does, as in ComfyUI.
     """
-    x = torch.randn(shape, generator=generator, device="cpu").to(device=device, dtype=dtype)
+    start = noise if noise is not None else SeedNoise(generator, device=device)
+    x = start.first(shape).to(device=device, dtype=dtype)
     ts = flow_schedule(steps, shift, device=device)
     for i in range(steps):
         t_cur, t_next = ts[i], ts[i + 1]

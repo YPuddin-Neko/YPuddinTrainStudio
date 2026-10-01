@@ -295,9 +295,22 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         : text('类信噪比加权的截断值，默认 5：越小，高噪声步的权重降得越多。只在选择类信噪比加权时生效，不改变时间步抽样。', 'The SNR-like cap, 5 by default: smaller values lower high-noise steps further. Used only with SNR-like weighting; sampling is unchanged.');
     case 'objective.res_shift_tokens':
       return text(`按图像 token 数插值偏移量的两个参考点，${name} 默认 256 和 ${family.name === 'krea2' ? 6400 : 4096}。它们不是图像尺寸上限，范围外会外推；与下方 mu 成对使用。`, `The two image token counts the shift is interpolated between; ${name} uses 256 and ${family.name === 'krea2' ? 6400 : 4096}. They are not size limits (values outside extrapolate) and pair with the mu values below.`);
+    case 'sampling.noise':
+      return join([
+        text('同一种子在 ComfyUI 和 A1111 WebUI 中生成的噪声不同，出图构图也不同：', 'The same seed gives different noise, and so a different composition, in ComfyUI and A1111 WebUI:'),
+        ...optionLines({
+          comfyui: ['初始噪声在 CPU 上按种子生成，与显卡型号无关。', 'starting noise is drawn from the seed on the CPU, whatever the GPU.'],
+          a1111: onGpu(runtime)
+            ? ['按其默认设置，在显卡上为每张图按种子生成噪声。', "as its default settings do, each image's noise is drawn from its seed on the GPU."]
+            : ['按其默认设置生成；这台机器没有 NVIDIA 或海光显卡，A1111 在 CPU 上生成，初始噪声与 ComfyUI 相同。', "as its default settings do; without an NVIDIA or Hygon GPU A1111 draws on the CPU, so the starting noise equals ComfyUI's."],
+        }),
+        ddpm && text(`${name} 的初始噪声也按所选软件的方式缩放。`, `${name} also scales the starting noise the way the chosen app does.`),
+        text('Euler a、ER-SDE 每步加入的噪声也按所选方式生成。其他采样设置相同时，同一种子在对应软件中出图构图相同。只影响预览图，不影响训练。', 'Euler a and ER-SDE draw their per-step noise the chosen way too. With the other sampling settings equal, a seed composes the same in that app. Affects previews only, not training.'),
+      ]);
     case 'sampling.sampler': {
       const describe: Record<string, [string, string]> = {
         euler: ['每步计算一次，最快，适合日常预览。', 'one evaluation per step, the fastest; good for routine previews.'],
+        euler_ancestral: ['每步去噪后再加入新的随机噪声，画面变化更多；即 A1111 的 Euler a、ComfyUI 的 euler_ancestral。', 'adds fresh random noise after every step for more varied images; A1111 calls it Euler a, ComfyUI euler_ancestral.'],
         heun: ['先预测再校正，每步多算一次，更精细但更慢。', 'predicts then corrects, one extra evaluation per step: finer but slower.'],
         er_sde: ['结合前几步结果和随机噪声，阶数和噪声强度见下方。', 'combines earlier steps with random noise; order and noise strength are below.'],
       };

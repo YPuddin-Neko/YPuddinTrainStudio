@@ -14,7 +14,7 @@ import ProgressBar from '../ProgressBar';
 import { gpuDeviceLabel } from '../../utils/gpuDevices';
 import Dialog from '../Dialog';
 import { LazyImage } from '../Loading';
-import { axisCount, axisNames, checkpointLabel, isActive, isWaiting, parseAxis, taskProgress, useStatusLabel, type AxisKey, type XyzAxis, type XyzCell, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
+import { axisCount, axisNames, checkpointLabel, choiceLabel, isActive, isWaiting, parseAxis, taskProgress, useStatusLabel, type AxisKey, type XyzAxis, type XyzCell, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
 import XyzHistory from './XyzHistory';
 import './xyz-sampling.css';
 import { SlidingIndicator } from '../motion';
@@ -57,7 +57,7 @@ function AxisEditor({ position, draft, onChange, options, used, disabled, weight
   const title = position === 'X' ? text('X · 横向比较', 'X · Columns') : position === 'Y' ? text('Y · 纵向比较', 'Y · Rows') : text('Z · 分页比较', 'Z · Pages');
   const icon = position === 'X' ? <ArrowRight size={14}/> : position === 'Y' ? <ArrowDown size={14}/> : <Layers size={14}/>;
   const current = options.axes.find(axis => axis.key === draft?.key);
-  const choices = draft?.key === 'checkpoint' ? options.checkpoints.map(cp => ({ value: cp.id, label: checkpointLabel(options, cp) })) : current?.values?.map(value => ({ value: String(value), label: String(value) }));
+  const choices = draft?.key === 'checkpoint' ? options.checkpoints.map(cp => ({ value: cp.id, label: checkpointLabel(options, cp) })) : current?.values?.map(value => ({ value: String(value), label: choiceLabel(draft!.key, value) }));
   const values = draft ? parseAxis(draft.key, draft.raw).values.map(String) : [];
   return <fieldset className="xyz-axis" disabled={disabled}>
     <legend>{icon}{title}</legend>
@@ -106,7 +106,8 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const source = `/jobs/${encodeURIComponent(sourceJobId)}/xyz`;
   const displayValue = (axis: XyzAxis | null | undefined, value: string | number | null) => {
     const checkpoint = axis?.key === 'checkpoint' ? options?.checkpoints.find(cp => cp.id === value) : undefined;
-    return checkpoint && options ? checkpointLabel(options, checkpoint) : String(value ?? '');
+    if (checkpoint && options) return checkpointLabel(options, checkpoint);
+    return axis && value != null && ['sampler', 'scheduler', 'noise'].includes(axis.key) ? choiceLabel(axis.key, value) : String(value ?? '');
   };
   // Products from every run of the version are picked run first, then product.
   const runs = options ? [...new Map(options.checkpoints.map(cp => [cp.job_id || '', cp.job_name || ''])).entries()].map(([value, label]) => ({ value, label: value === sourceRun(options) ? text(`${label}（来源任务）`, `${label} (source run)`) : label })) : [];
@@ -247,7 +248,8 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
     const { x, y, z, gpu_devices, ...fixed } = request;
     setGpuDevices(gpu_devices || []);
     delete fixed.name;
-    setValues(compatibleValues(fixed, options));
+    // Comparisons from before the choice drew their noise the ComfyUI way.
+    setValues(compatibleValues({ ...fixed, noise: fixed.noise || 'comfyui' }, options));
     setDrafts(compatibleDrafts([x, y, z].map(axis => axis ? { key: axis.key, raw: axis.values.join(', ') } : null), options));
     setCollapsed(false);
     setError('');
@@ -285,7 +287,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
           <div className="xyz-axes">{(['X', 'Y', 'Z'] as const).map((position, index) => <AxisEditor key={position} position={position} draft={drafts[index]} options={options} disabled={locked} weights={weights} used={drafts.filter((_, other) => other !== index).flatMap(draft => draft ? [draft.key] : [])} onChange={draft => changeAxis(index, draft)}/>)}</div>
           <details className="xyz-settings"><summary>{text('固定参数', 'Fixed parameters')}<span>{values.width} × {values.height} · Seed {values.seed}</span></summary><fieldset className="xyz-fields" disabled={locked}>
             {(['width', 'height', 'seed', 'steps', 'cfg', 'adapter_scale'] as const).filter(key => !fullModel || key !== 'adapter_scale').map(key => <label key={key}><span>{key === 'width' ? text('宽度', 'Width') : key === 'height' ? text('高度', 'Height') : name(key)}</span><input aria-label={`${text('固定', 'Fixed')} ${key}`} type="number" min={key === 'adapter_scale' ? -4 : key === 'cfg' || key === 'seed' ? 0 : 1} step={key === 'cfg' || key === 'adapter_scale' ? 0.1 : 1} required disabled={axes.some(axis => axis?.key === key)} value={values[key]} onChange={event => update(key, Number(event.target.value))}/></label>)}
-            {(['sampler', 'scheduler'] as const).map(key => <label key={key}><span>{name(key)}</span><StudioSelect aria-label={`${text('固定', 'Fixed')} ${name(key)}`} disabled={locked || axes.some(axis => axis?.key === key)} value={values[key]} options={(options.axes.find(axis => axis.key === key)?.values || [values[key]]).map(value => ({ value: String(value), label: String(value) }))} onValueChange={value => update(key, value)}/></label>)}
+            {(['sampler', 'scheduler', 'noise'] as const).map(key => <label key={key}><span>{name(key)}</span><StudioSelect aria-label={`${text('固定', 'Fixed')} ${name(key)}`} disabled={locked || axes.some(axis => axis?.key === key)} value={values[key]} options={(options.axes.find(axis => axis.key === key)?.values || [values[key]]).map(value => ({ value: String(value), label: choiceLabel(key, value) }))} onValueChange={value => update(key, value)}/></label>)}
             <label className="xyz-span"><span>{text('负面提示词', 'Negative prompt')}</span><textarea rows={2} value={values.negative} onChange={event => update('negative', event.target.value)}/></label>
           </fieldset></details>
         </div>
@@ -323,7 +325,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
       {deleteError && <p role="alert" className="xyz-task-error">{deleteError}</p>}
       <div className="task-actions"><button type="button" className="ui-btn" disabled={deleteBusy} onClick={() => setDeleting(null)}>{text('取消', 'Cancel')}</button><button type="button" className="ui-btn ui-btn-danger" disabled={deleteBusy} onClick={() => void remove()}>{deleteBusy ? text('正在删除…', 'Deleting…') : text('删除记录和图片', 'Delete record and images')}</button></div>
     </Dialog>}
-    {preview && <Dialog title={`${text('模型测试图片', 'Model test image')} · ${displayValue(request?.x, preview.x_value)}`} wide onClose={() => setPreview(null)}><div className="xyz-full-frame"><LazyImage className="xyz-full-image" src={imageUrl(preview.url)} alt={request?.prompt} width={request?.width} height={request?.height}/></div><div className="xyz-image-details"><span>Seed {preview.seed} · {preview.steps} {text('步', 'steps')} · CFG {preview.cfg} · {preview.sampler} / {preview.scheduler}{!fullModel && <> · LoRA {preview.adapter_scale}</>}</span><a className="ui-btn ui-btn-sm" href={imageUrl(preview.url)} download><Download size={14}/>{text('下载原图', 'Download image')}</a></div></Dialog>}
+    {preview && <Dialog title={`${text('模型测试图片', 'Model test image')} · ${displayValue(request?.x, preview.x_value)}`} wide onClose={() => setPreview(null)}><div className="xyz-full-frame"><LazyImage className="xyz-full-image" src={imageUrl(preview.url)} alt={request?.prompt} width={request?.width} height={request?.height}/></div><div className="xyz-image-details"><span>Seed {preview.seed} · {preview.steps} {text('步', 'steps')} · CFG {preview.cfg} · {choiceLabel('sampler', preview.sampler)} / {choiceLabel('scheduler', preview.scheduler)} · {choiceLabel('noise', preview.noise || 'comfyui')}{!fullModel && <> · LoRA {preview.adapter_scale}</>}</span><a className="ui-btn ui-btn-sm" href={imageUrl(preview.url)} download><Download size={14}/>{text('下载原图', 'Download image')}</a></div></Dialog>}
   </section>;
 }
 

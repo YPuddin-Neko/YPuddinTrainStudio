@@ -1,11 +1,12 @@
+import { configOptionLabel } from '../../utils/configPresentation';
 import { useWorkspaceText } from '../../utils/workspaceText';
 
-export type AxisKey = 'steps' | 'cfg' | 'seed' | 'sampler' | 'scheduler' | 'shift' | 'adapter_scale' | 'checkpoint';
+export type AxisKey = 'steps' | 'cfg' | 'seed' | 'sampler' | 'scheduler' | 'noise' | 'shift' | 'adapter_scale' | 'checkpoint';
 export type AxisValue = number | string;
 export interface XyzAxis { key: AxisKey; values: AxisValue[] }
 export interface SamplingValues {
   prompt: string; negative: string; width: number; height: number; steps: number; cfg: number;
-  seed: number; sampler: string; scheduler: string; shift: number | null; guidance: number | null;
+  seed: number; sampler: string; scheduler: string; noise: string; shift: number | null; guidance: number | null;
   adapter_scale: number; checkpoint_id: string | null; sampling_model_id: string | null;
 }
 export interface XyzRequest extends SamplingValues { gpu_devices?: string[]; name?: string; x: XyzAxis; y?: XyzAxis | null; z?: XyzAxis | null }
@@ -21,7 +22,7 @@ export interface XyzOptions {
 }
 export interface XyzCell {
   index: number; x: number; y: number; z: number; x_value: AxisValue; y_value: AxisValue | null; z_value: AxisValue | null;
-  seed: number; steps: number; cfg: number; sampler: string; scheduler: string; shift: number | null;
+  seed: number; steps: number; cfg: number; sampler: string; scheduler: string; noise?: string; shift: number | null;
   adapter_scale: number; checkpoint_id: string | null; file: string; url: string;
 }
 export interface XyzTask {
@@ -61,13 +62,17 @@ export function taskProgress(task: XyzTask): number | null {
 
 export const axisNames: Record<AxisKey, [string, string]> = {
   steps: ['采样步数', 'Steps'], cfg: ['CFG 引导强度', 'CFG'], seed: ['随机种子', 'Seed'],
-  sampler: ['采样器', 'Sampler'], scheduler: ['调度器', 'Scheduler'], shift: ['时间步偏移', 'Shift'],
+  sampler: ['采样器', 'Sampler'], scheduler: ['调度器', 'Scheduler'], noise: ['出图方式', 'Noise source'], shift: ['时间步偏移', 'Shift'],
   adapter_scale: ['LoRA 强度', 'LoRA strength'], checkpoint: ['训练权重', 'Checkpoint'],
 };
 export function parseAxis(key: AxisKey, raw: string): XyzAxis {
   const tokens = raw.split(/[,，\n]+/).map(value => value.trim()).filter(Boolean);
-  const numeric = !['sampler', 'scheduler', 'checkpoint'].includes(key);
+  const numeric = !['sampler', 'scheduler', 'noise', 'checkpoint'].includes(key);
   return { key, values: tokens.map(value => numeric ? Number(value) : value) };
+}
+/** How the page names a sampler, scheduler or noise source value. */
+export function choiceLabel(key: AxisKey, value: string | number) {
+  return configOptionLabel(key === 'noise' ? 'sampling.noise' : `sampling.${key}`, String(value));
 }
 export function axisCount(axes: (XyzAxis | null | undefined)[]) {
   return axes.reduce((total, axis) => total * (axis ? axis.values.length : 1), 1);

@@ -529,7 +529,7 @@ class FamilyInfo(_Out):
     label: str
     architecture: str
     objective: str = "rectified_flow"
-    sampling_samplers: list[str] = ["euler", "heun", "er_sde"]
+    sampling_samplers: list[str] = ["euler", "euler_ancestral", "heun", "er_sde"]
     sampling_schedulers: list[str] = ["uniform", "simple", "sgm_uniform", "normal"]
     objective_timestep_sampling: list[str] = [
         "uniform",
