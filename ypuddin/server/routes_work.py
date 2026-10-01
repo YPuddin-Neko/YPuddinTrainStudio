@@ -2625,17 +2625,32 @@ def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
             out["legacy_text_keys"] = has_legacy_text_keys(keys, header)
         if not meta and header is not None:
             meta = header
-            try:
-                args = json.loads(header.get("ypuddin.adapter", "{}"))
-            except json.JSONDecodeError:
-                args = {}
+            args = {}
+            for field in ("ss_network_args", "ypuddin.adapter"):
+                try:
+                    decoded = json.loads(header.get(field, "{}"))
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(decoded, dict):
+                    args.update(decoded)
+            rank = header.get("ss_network_dim", args.get("rank"))
+            if isinstance(rank, str) and rank.isdecimal():
+                rank = int(rank)
+            alpha = header.get("ss_network_alpha", args.get("alpha"))
+            if alpha != "full":
+                try:
+                    alpha = float(alpha)
+                except (TypeError, ValueError):
+                    alpha = None
+                if alpha is not None and not math.isfinite(alpha):
+                    alpha = None
             out.update(
                 {
                     "algo": args.get("algo"),
-                    "rank": args.get("rank"),
-                    "alpha": args.get("alpha"),
+                    "rank": rank,
+                    "alpha": alpha,
                     "factor": args.get("factor"),
-                    "family": header.get("ypuddin.family"),
+                    "family": header.get("ypuddin.family") or header.get("ss_base_model_version") or args.get("model_family"),
                 }
             )
     out["metadata"] = {k: v for k, v in meta.items() if k != "ypuddin.targets"}

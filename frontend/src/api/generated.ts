@@ -2824,7 +2824,7 @@ export interface components {
             /** Rank */
             rank?: number | string | null;
             /** Alpha */
-            alpha?: number | null;
+            alpha?: number | "full" | null;
             /** Factor */
             factor?: number | null;
             /** Family */
@@ -3110,7 +3110,7 @@ export interface components {
             save_dtype: "bf16" | "fp16" | "fp32";
             /**
              * Save Training Metadata
-             * @description 额外将学习率、优化器、分辨率等训练配方写入 LoRA/LoKr 文件；关闭时仍保留适配器结构、步数、轮数等基础元数据。不包含本机目录、图片标签、提示词或访问密钥。
+             * @description 默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。
              * @default false
              */
             save_training_metadata: boolean;

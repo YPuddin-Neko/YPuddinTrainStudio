@@ -1231,7 +1231,7 @@ class CheckpointConfig(_Strict):
     )
     save_training_metadata: bool = F(
         False,
-        help="额外将学习率、优化器、分辨率等训练配方写入 LoRA/LoKr 文件；关闭时仍保留适配器结构、步数、轮数等基础元数据。不包含本机目录、图片标签、提示词或访问密钥。",
+        help="默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
         ui_=ui("checkpoint", advanced=True, order=65, control="switch", show_when="training.mode == 'adapter'"),
     )
     save_on_finish: bool = F(

@@ -1061,7 +1061,7 @@ class Artifact(_Out):
     created_at: float
     algo: str | None = None
     rank: int | str | None = None
-    alpha: float | None = None
+    alpha: float | Literal["full"] | None = None
     factor: int | None = None
     family: str | None = None
     # Files exported before 2026-09-28 named a single text encoder lora_te1_, which ComfyUI skips.

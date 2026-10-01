@@ -1136,6 +1136,7 @@ class Trainer:
             dataset_fingerprint=self.bundle.plan.fingerprint,
             steps=self.progress.step,
             epoch=self.progress.epoch,
+            include_training_metadata=self.cfg.checkpoint.save_training_metadata,
         )
         if self.cfg.checkpoint.save_training_metadata:
             from ypuddin.adapters.recipe import training_recipe_metadata
@@ -1144,12 +1145,12 @@ class Trainer:
                 self.cfg, self.bundle, self.progress,
                 world_size=getattr(getattr(self, "distributed", None), "world_size", 1),
             ))
-        if isinstance(self.adapters, ComponentAdapterSet):
+        if self.cfg.checkpoint.save_training_metadata and isinstance(self.adapters, ComponentAdapterSet):
             metadata["ypuddin.components"] = json.dumps(sorted(self.adapters.components))
             metadata["ypuddin.component_prefixes"] = json.dumps(
                 {name: item.prefix for name, item in self.adapters.components.items()}
             )
-        if self.cfg.dataset.resolution_mode == "native":
+        if self.cfg.checkpoint.save_training_metadata and self.cfg.dataset.resolution_mode == "native":
             metadata["ypuddin.resolution_mode"] = "native"
             metadata["ypuddin.native_max_pixels"] = str(self.cfg.dataset.native_max_pixels)
             metadata["ypuddin.native_max_side"] = str(self.cfg.dataset.native_max_side)
@@ -1187,6 +1188,7 @@ class Trainer:
             tensors,
             self._adapter_metadata(),
             dtype=self.cfg.checkpoint.save_dtype,
+            include_hash=self.cfg.checkpoint.save_training_metadata,
         )
         self.emit("checkpoint.saved", kind="weights", step=self.progress.step, path=str(path), ema=False)
         if self.ema is not None:
@@ -1195,6 +1197,7 @@ class Trainer:
                 self.ema,
                 self._adapter_metadata(),
                 dtype=self.cfg.checkpoint.save_dtype,
+                include_hash=self.cfg.checkpoint.save_training_metadata,
             )
             self.emit(
                 "checkpoint.saved", kind="weights", step=self.progress.step, path=str(ema_path), ema=True

@@ -345,7 +345,8 @@ class ShardedTrainer(DistributedTrainer):
             path = self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.safetensors"
             self._primary_call(
                 lambda: save_adapter_file(
-                    path, tensors, self._adapter_metadata(), dtype=self.cfg.checkpoint.save_dtype
+                    path, tensors, self._adapter_metadata(), dtype=self.cfg.checkpoint.save_dtype,
+                    include_hash=self.cfg.checkpoint.save_training_metadata,
                 )
             )
             self.emit("checkpoint.saved", kind="weights", step=self.progress.step, path=str(path), ema=False)

@@ -69,6 +69,7 @@ def build_metadata(
     dataset_fingerprint: str | None = None,
     steps: int | None = None,
     epoch: int | None = None,
+    include_training_metadata: bool = True,
 ) -> dict[str, str]:
     """kohya ``ss_*`` + ModelSpec ``modelspec.*`` + our ``ypuddin.*`` keys (all values are strings)."""
     adapter_cfg = {key: value for key, value in adapter_cfg.items() if key != "resume_weights"}
@@ -92,8 +93,10 @@ def build_metadata(
     ):
         # Full factors ignore alpha; mixed per-layer rules retain the configured numeric value.
         alpha = "full"
-    args = ("algo", "factor", "decompose_both", "rs_lora", "dora", "preset", "init")
-    if algo == "tlora":
+    args = ("algo", "factor", "decompose_both", "rs_lora", "dora")
+    if include_training_metadata:
+        args += ("preset", "init")
+    if algo == "tlora" and include_training_metadata:
         args += ("tlora_min_rank", "tlora_power", "tlora_ortho")
     if adapter_cfg.get("dora"):
         args += ("dora_axis",)
@@ -114,6 +117,19 @@ def build_metadata(
         "ss_network_dim": str(rank),
         "ss_network_alpha": str(alpha),
         "ss_network_args": json.dumps(network_args, ensure_ascii=False),
+        "ypuddin.family": family,
+    }
+    if not include_training_metadata:
+        # Flattened convolution factors cannot always recover their spatial dimensions.
+        kernels = {
+            name: {"kernel": layer["kernel"]}
+            for name, layer in targets.items()
+            if isinstance(layer, dict) and layer.get("kernel")
+        }
+        if kernels:
+            meta["ypuddin.targets"] = json.dumps(kernels, ensure_ascii=False)
+        return meta
+    meta.update({
         "ss_base_model_version": family,
         "ss_training_finished_at": str(time.time()),
         "modelspec.sai_model_spec": "1.0.1",
@@ -123,10 +139,9 @@ def build_metadata(
         "modelspec.date": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "ypuddin.version": ypuddin.__version__,
         "ypuddin.format": "1",
-        "ypuddin.family": family,
         "ypuddin.targets": json.dumps(targets, ensure_ascii=False),
         "ypuddin.adapter": json.dumps(adapter_cfg, ensure_ascii=False),
-    }
+    })
     if resolution:
         meta["modelspec.resolution"] = resolution
         meta["ss_resolution"] = resolution
@@ -144,7 +159,8 @@ def build_metadata(
 
 
 def save_adapter_file(
-    path: str | Path, tensors: dict[str, Tensor], metadata: dict[str, str], *, dtype: str = "bf16"
+    path: str | Path, tensors: dict[str, Tensor], metadata: dict[str, str], *, dtype: str = "bf16",
+    include_hash: bool = True,
 ) -> Path:
     """Atomically write weights in ``dtype``, preserving numeric alpha scalars in fp32."""
     p = Path(path)
@@ -158,7 +174,8 @@ def save_adapter_file(
         else:
             out[k] = t.to(target)
     meta = dict(metadata)
-    meta["modelspec.hash_sha256"] = "0x" + sha256_of_tensors(out)
+    if include_hash:
+        meta["modelspec.hash_sha256"] = "0x" + sha256_of_tensors(out)
     tmp = p.with_suffix(p.suffix + ".tmp")
     save_file(out, str(tmp), metadata=meta)
     tmp.replace(p)
