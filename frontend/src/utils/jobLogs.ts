@@ -51,7 +51,8 @@ export function groupLogLines(lines: JobLogLine[]): LogEntry[] {
       || (kind === 'traceback' && RANK[current.level] >= RANK.warn));
     if (joins && current) {
       current.detail.push(line.msg);
-      if (RANK[level] > RANK[current.level]) current.level = level;
+      // Continuation text reads as info and keeps the record's level; an attached traceback raises a warning to an error.
+      if (level !== 'info' && RANK[level] > RANK[current.level]) current.level = level;
       if (kind === 'traceback') traceback = true;
       continue;
     }
