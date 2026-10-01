@@ -16,6 +16,7 @@ import ProgressBar from '../../components/ProgressBar';
 import { JobStatus } from '../Queue/jobPresentation';
 import ProjectDataImport from './ProjectDataImport';
 import ProjectOverview from './ProjectOverview';
+import ProjectDataSummary from './ProjectDataSummary';
 import DatasetPipelinePanel from '../../components/datasets/DatasetPipelinePanel';
 import ProjectDatasetCards, { type WorkspaceDataset } from '../../components/datasets/ProjectDatasetCards';
 import '../../styles/project-workspace.css';
@@ -73,13 +74,9 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
   const datasets = datasetsQuery.data || [];
   const jobs = jobsQuery.data?.items || [];
   const activeJob = jobs.find(job => ['running','pausing','cancelling'].includes(job.status));
-  const imageCount = datasets.reduce((count,dataset) => count + (dataset.stats?.images || 0),0);
-  const captionCount = datasets.reduce((count,dataset) => count + (dataset.stats?.captioned || 0),0);
-  const maskCount = datasets.reduce((count,dataset) => count + (dataset.stats?.masks || 0),0);
-  const indexing = datasets.some(dataset => dataset.index_status === 'indexing');
   const unavailable = versions.enabled && !versions.loading && !versions.current;
-  return <div className="project-workspace" data-testid="project-detail-page">
-    <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active={step} refresh={versions.refresh} error={versions.error} title={step === 'overview' ? project.name : undefined} titleBadge={step === 'overview' && project.archived ? <span className="workspace-title-badge">{text('已归档','Archived')}</span> : undefined} status={step === 'data' && datasetsQuery.isSuccess ? <div className="project-data-summary" aria-label={text('本版本数据统计','Version data summary')}>{[{label:text('图片','Images'),value:imageCount},{label:text('标签','Captions'),value:captionCount},{label:text('遮罩','Masks'),value:maskCount}].map(item=><span key={item.label}>{item.label} <strong>{item.value}</strong></span>)}{indexing && <Loader2 size={12} className="animate-spin" aria-label={text('索引中','Indexing')}/>}</div> : undefined}/>
+  return <div className="project-workspace" data-step={step} data-testid="project-detail-page">
+    <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active={step} refresh={versions.refresh} error={versions.error} title={step === 'overview' ? project.name : undefined} titleBadge={step === 'overview' && project.archived ? <span className="workspace-title-badge">{text('已归档','Archived')}</span> : undefined} status={step === 'data' && datasetsQuery.isSuccess ? <ProjectDataSummary datasets={datasets}/> : undefined}/>
     {unavailable && <div role="alert" className="workspace-message error">{text('该版本不存在或不属于当前项目。','This version does not belong to this project.')}<Link className="ui-link" to={projectUrl(id)}>{text('返回当前版本','Return to current version')}</Link></div>}
     {scopedReady && [{key:'config',query:configQuery,label:text('版本配置读取失败','Version configuration could not be loaded')},{key:'datasets',query:datasetsQuery,label:text('数据集列表读取失败','Dataset list could not be loaded')},{key:'jobs',query:jobsQuery,label:text('活动任务读取失败','Active jobs could not be loaded')}].map(item=>item.query.error && <div key={item.key} role="alert" className="workspace-message error">{item.label}: {formatApiError(item.query.error)}<button type="button" className="ui-btn ui-btn-sm" aria-label={`${text('重试','Retry')} · ${item.label}`} onClick={()=>void item.query.refetch()}>{t('common.retry')}</button></div>)}
     {activeJob && step !== 'overview' && <Link to={`/jobs/${activeJob.id}`} className="version-run-status"><JobStatus status={activeJob.status}/><strong>{activeJob.name}</strong>{activeJob.progress?.total_steps ? <><ProgressBar className="version-run-progress" label={text('训练进度','Training progress')} value={activeJob.progress.step ?? 0} max={activeJob.progress.total_steps}/><span className="tabular-nums">{activeJob.progress.step ?? 0} / {activeJob.progress.total_steps}</span></> : null}<span className="run-status-action">{text('查看训练监控','View training monitor')}<ArrowRight size={14}/></span></Link>}

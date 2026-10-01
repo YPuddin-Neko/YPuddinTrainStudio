@@ -1,6 +1,11 @@
-.project-data-summary { display:flex; align-items:center; gap:14px; color:var(--studio-dim); font-size:11px; }
-.project-data-summary span { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
-.project-data-summary strong { color:var(--studio-text); font-weight:600; font-variant-numeric:tabular-nums; }
+.app-shell .project-workspace[data-step=data] > .workspace-page-heading { flex-wrap:wrap; }
+.app-shell .project-workspace[data-step=data] > .workspace-page-heading .project-heading-status { max-width:100%; min-width:0; }
+.project-data-summary { display:flex; flex:0 1 auto; align-items:center; gap:8px; width:auto; max-width:100%; color:var(--studio-dim); }
+.project-data-summary > svg { flex:none; color:var(--studio-accent); }
+.project-data-summary-counts { display:flex; flex:0 1 auto; flex-wrap:wrap; align-items:center; justify-content:flex-start; width:max-content; max-width:100%; gap:6px; margin:0; padding:0; }
+.project-data-summary-counts > div { display:flex; flex:0 0 auto; align-items:center; gap:8px; min-width:0; padding:5px 10px; border-radius:4px; background:var(--studio-panel); }
+.project-data-summary-counts dt { margin:0; font-size:12px; font-weight:400; line-height:18px; white-space:nowrap; }
+.project-data-summary-counts dd { margin:0; color:var(--studio-text); font-size:13px; line-height:18px; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .project-workspace .version-data-layout { grid-template-columns:minmax(0,1fr); gap:16px; }
 .project-workspace .version-dataset-row { flex-wrap:nowrap; padding:9px 11px; gap:10px; margin-bottom:0; border-radius:0; border-width:0 0 1px; }
 .project-workspace .version-dataset-row p { margin-top:2px; font-size:11px; }
@@ -9,7 +14,6 @@
 .project-workspace .version-dataset-list > .workspace-section-title { margin-bottom:3px; }
 .project-workspace .version-dataset-row:focus-visible { outline:2px solid var(--studio-accent); outline-offset:-2px; }
 @media(max-width:600px) {
-  .project-data-summary { gap:8px; font-size:10px; }
   .project-workspace .version-dataset-row { flex-wrap:wrap; }
   .project-workspace .dataset-index-status { margin-left:30px; }
 }
