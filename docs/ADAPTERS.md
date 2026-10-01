@@ -6,7 +6,7 @@
 
 `AdaptedLinear` 包装所选的线性层，底模权重保存在 `FrozenLinear`；`AdaptedConv` 包装所选的卷积层（Conv1d / Conv2d / Conv3d），底模仍是原卷积模块。两者共用 `AdaptedLayer`：分开计算执行 `base(x) + adapter(x)`；合并计算先得到 `W0 + ΔW`（Full 另加 `b0 + Δb`）再做该层自己的线性或卷积运算。DoRA、LoHa、LyCORIS Full 和分组卷积只能合并计算，T-LoRA 只能分开计算；“权重计算方式”手动选择另一种方式会报错。
 
-T-LoRA 和 LyCORIS Full 不使用 DoRA：选择这两种算法时，“启用 DoRA”自动关闭并置灰；“逐层覆盖规则”中使用这两种算法的层不启用 DoRA。海光 DTK 的可复现计算配方不支持 DoRA，开启 DoRA 时“可复现训练”关闭并置灰。
+T-LoRA 和 LyCORIS Full 不使用 DoRA：选择这两种算法时，“启用 DoRA”自动关闭；“逐层覆盖规则”中使用这两种算法的层不启用 DoRA。海光 DTK 的可复现计算配方不支持 DoRA，开启 DoRA 时“可复现训练”关闭。
 
 | 算法 | 权重增量 | 实现 |
 | --- | --- | --- |
