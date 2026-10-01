@@ -56,6 +56,10 @@ OrthoLoRA 冻结底模权重的主要奇异向量与奇异值，训练 Cayley �
 
 LoRA、LoKr、LoHa 和 Full 使用对应的 Kohya / LyCORIS 键布局，Full 在层有偏置时另存 `diff_b`。OrthoLoRA 导出为同秩 LoRA；正交初始化的 T-LoRA 导出为两倍秩的 LoRA，用两个项精确表示训练后的增量。导出文件只包含推理权重；完整恢复点另存优化器、调度器、随机状态和原始训练参数。
 
+“权重保存精度”控制导出权重及 DoRA 幅度的精度；缩放用的 `alpha` 标量保留 FP32。该设置不改变训练参数或完整恢复点的精度。
+
+LoKr 选择完整因子矩阵，且所有导出层的两个因子均未拆分时，元数据中的 Dim / Alpha 显示为 `full / full`。实际权重中的 `alpha` 仍为数值 `1`；完整因子矩阵不受配置中的 Alpha 影响。存在低秩或其他算法的混合规则时，仍保留配置的 Alpha 数值。
+
 OrthoLoRA 和正交 T-LoRA 的通用 LoRA 文件不能还原原始训练参数，继续原任务应使用完整恢复点。以普通 LoRA 加载这些文件开展新训练是另一种参数化。
 
 Anima、Krea 2、FLUX.2 的文本编码器使用 `lora_te_` 前缀，SDXL 使用 `lora_te1_` / `lora_te2_`。读取端保留旧键名兼容，旧产物的修复入口只改键名。

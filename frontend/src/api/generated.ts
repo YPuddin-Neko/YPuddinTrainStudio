@@ -3103,14 +3103,14 @@ export interface components {
             keep_last_n?: number | null;
             /**
              * Save Dtype
-             * @description 导出权重文件的精度，默认 bf16；不会改变当前训练参数或完整恢复状态的精度。选择 fp32 会增大文件，可用于减少导出舍入。
+             * @description 导出权重文件的精度，包含 DoRA 幅度，默认 bf16；缩放用的 alpha 标量保留 fp32。不会改变当前训练参数或完整恢复状态的精度。选择 fp32 会增大文件，减少导出舍入。
              * @default bf16
              * @enum {string}
              */
             save_dtype: "bf16" | "fp16" | "fp32";
             /**
              * Save Training Metadata
-             * @description 将学习率、优化器、分辨率等训练参数写入导出的 LoRA/LoKr 文件，供元数据查看器读取；不包含本机目录、图片标签、提示词或访问密钥。
+             * @description 额外将学习率、优化器、分辨率等训练配方写入 LoRA/LoKr 文件；关闭时仍保留适配器结构、步数、轮数等基础元数据。不包含本机目录、图片标签、提示词或访问密钥。
              * @default false
              */
             save_training_metadata: boolean;

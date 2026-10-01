@@ -144,7 +144,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'validation.seed': ['验证加噪使用的随机种子。', 'Random seed for validation noise.'],
 
   'checkpoint.name': ['导出权重的文件名前缀。', 'File name prefix for exported weights.'],
-  'checkpoint.save_dtype': ['导出权重的精度，FP32 文件更大。', 'Precision of exported weights; FP32 is larger.'],
+  'checkpoint.save_dtype': ['导出权重及 DoRA 幅度的精度，FP32 文件更大。', 'Precision of exported weights and DoRA magnitudes; FP32 is larger.'],
   'checkpoint.output_dir': ['训练权重的保存位置。', 'Where trained weights are saved.'],
   'checkpoint.save_every_steps': ['每隔多少步导出一次权重。', 'Export weights every N steps.'],
   'checkpoint.save_every_epochs': ['每隔多少轮导出一次权重。', 'Export weights every N epochs.'],
@@ -203,6 +203,7 @@ export const FIELD_HELP: Record<string, Copy> = {
   'adapter.mode': ['分开计算：底模和适配器各自计算后相加，不改变底模权重精度。合并计算：先把适配器合并进权重再计算，DoRA 需要这种方式。自动：能分开计算时分开计算，否则合并。', 'Separate computes the base model and the adapter independently and adds them, keeping base precision. Merged folds the adapter into the weight first, which DoRA requires. Automatic uses separate computation when possible.'],
   'adapter.param_dtype': ['适配器可训练参数的存储精度。默认 FP32 最稳定；BF16 节省显存，但较小的更新可能被舍入。', 'Storage precision of trainable adapter parameters. FP32 is the stable default; BF16 saves memory but small updates may be rounded away.'],
   'adapter.lr_scale': ['按参数类别设置学习率倍率。例如 LoRA+ 常把 up 设为 16，LoKr 可单独调整 w1。不熟悉时留空。', 'Learning-rate multipliers by parameter type. LoRA+ commonly sets up to 16, and LoKr can adjust w1 separately. Leave empty if unsure.'],
+  'checkpoint.save_dtype': ['导出权重及 DoRA 幅度的精度，默认 BF16；缩放用的 alpha 标量保留 FP32。不会改变当前训练参数或完整恢复状态的精度。FP32 文件更大，导出舍入更少。', 'Precision of exported weights and DoRA magnitudes, BF16 by default; numeric alpha scalars stay FP32 to preserve scaling. Training parameters and full recovery states keep their original precision. FP32 exports are larger with less rounding.'],
   'checkpoint.output_dir': ['导出权重的保存根目录，任务按项目、版本和任务 ID 分开保存。未单独指定的恢复点和日志也保存在这里。', 'Root for exported weights, organized by project, version and job ID. Recovery points and logs also go here unless configured separately.'],
   'checkpoint.state_dir': ['保存续训所需的权重、优化器、步数与随机状态。留空使用“设置 → 存储路径”中的恢复点目录；该项也未设置时保存在版本目录的 jobs/<任务>/resume。自定义目录下按项目、版本和任务分开存放。', 'Stores weights, optimizer, step and random state for resuming. Blank uses the recovery directory in Settings → Storage paths, or jobs/<job>/resume in the version folder if unset. Custom roots are organized by project, version and job.'],
   'sampling.noise': ['同一种子在 ComfyUI 和 A1111 WebUI 中生成的噪声不同，出图构图也不同。\nComfyUI：初始噪声在 CPU 上按种子生成，与显卡型号无关。\nA1111 WebUI：按其默认设置，在显卡上为每张图按种子生成噪声。\nEuler a、ER-SDE 每步加入的噪声也按所选方式生成。其他采样设置相同时，同一种子在对应软件中出图构图相同。只影响预览图，不影响训练。', "The same seed gives different noise, and so a different composition, in ComfyUI and A1111 WebUI.\nComfyUI: starting noise is drawn from the seed on the CPU, whatever the GPU.\nA1111 WebUI: as its default settings do, each image's noise is drawn from its seed on the GPU.\nEuler a and ER-SDE draw their per-step noise the chosen way too. With the other sampling settings equal, a seed composes the same in that app. Affects previews only, not training."],

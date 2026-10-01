@@ -83,6 +83,15 @@ def build_metadata(
         return rank, alpha
 
     rank, alpha = exported(adapter_cfg.get("rank"), adapter_cfg.get("alpha"))
+    if algo == "lokr" and rank == "full" and targets and all(
+        isinstance(layer, dict)
+        and layer.get("algo") == "lokr"
+        and layer.get("w1_lowrank") is False
+        and layer.get("w2_lowrank") is False
+        for layer in targets.values()
+    ):
+        # Full factors ignore alpha; mixed per-layer rules retain the configured numeric value.
+        alpha = "full"
     args = ("algo", "factor", "decompose_both", "rs_lora", "dora", "preset", "init")
     if algo == "tlora":
         args += ("tlora_min_rank", "tlora_power", "tlora_ortho")
@@ -137,14 +146,14 @@ def build_metadata(
 def save_adapter_file(
     path: str | Path, tensors: dict[str, Tensor], metadata: dict[str, str], *, dtype: str = "bf16"
 ) -> Path:
-    """Atomically write tensors (cast to ``dtype``, ``alpha``/``dora_scale`` kept fp32) with metadata."""
+    """Atomically write weights in ``dtype``, preserving numeric alpha scalars in fp32."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     out: dict[str, Tensor] = {}
     target = SAVE_DTYPES[dtype]
     for k, t in tensors.items():
         t = t.detach().cpu().contiguous()
-        if k.endswith(".alpha") or k.endswith(".dora_scale"):
+        if k.endswith(".alpha"):
             out[k] = t.to(torch.float32)
         else:
             out[k] = t.to(target)
