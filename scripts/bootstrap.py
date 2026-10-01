@@ -46,6 +46,7 @@ import webbrowser
 import zipfile
 from email.parser import BytesParser
 from pathlib import Path
+from typing import NoReturn
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -1396,10 +1397,10 @@ def frontend_stale() -> bool:
 def node_runtime(node: str) -> list[str] | None:
     """Version, platform, architecture and native-module ABI of a Node.js executable."""
     expression = "JSON.stringify([process.version, process.platform, process.arch, process.versions.modules])"
+    result = subprocess.run([node, "-p", expression], capture_output=True, text=True, check=True)
     try:
-        result = subprocess.run([node, "-p", expression], capture_output=True, text=True, check=True)
         runtime = json.loads(result.stdout)
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except ValueError:
         return None
     if isinstance(runtime, list) and len(runtime) == 4 and all(isinstance(v, str) and v for v in runtime):
         return runtime
@@ -1514,23 +1515,49 @@ def ensure_frontend_dependencies(node: str, npm: str, runtime: list[str]) -> Non
         temporary.replace(marker)
 
 
-def prepare_frontend() -> str | None:
-    """npm, once Node.js is checked and the frontend dependencies are installed or reused.
+def frontend_error(reason: str, *, install: bool = False) -> NoReturn:
+    if install:
+        die(f"{reason}\n  下载地址：https://nodejs.org/en/download\n[studio] 前端环境检查失败")
+    headline, *details = reason.splitlines()
+    die("\n".join([f"{headline.rstrip('。')}，已停止启动。", *details]))
 
-    None when npm is not installed; an unsupported or missing Node.js stops the launcher.
-    """
+
+def frontend_command_error(
+    stage: str, error: OSError | subprocess.SubprocessError, *, install: bool = False
+) -> NoReturn:
+    if isinstance(error, subprocess.CalledProcessError):
+        detail = f"{stage}失败（退出码 {error.returncode}）。"
+        for output in (error.stdout, error.stderr):
+            if output and output.strip():
+                detail += (
+                    "\n" + (output.decode(errors="replace") if isinstance(output, bytes) else output).strip()
+                )
+    else:
+        detail = f"{stage}失败：{error}"
+    frontend_error(detail, install=install)
+
+
+def prepare_frontend() -> str:
+    """Return npm after verifying Node.js and preparing dependencies, or stop startup."""
     npm = shutil.which("npm") or shutil.which("npm.cmd")
-    if not npm:
-        return None
     node = shutil.which("node")
-    if not node:
-        die("前端需要 Node.js 20.19+ 或 22.12+，请安装后重试")
-    runtime = node_runtime(node)
+    if not node or not npm:
+        frontend_error(
+            "前端环境检查失败 需要安装 Node.js 20.19+（20.x）、22.12+（22.x）或更新版本。",
+            install=True,
+        )
+    try:
+        runtime = node_runtime(node)
+    except (OSError, subprocess.SubprocessError) as error:
+        frontend_command_error(f"运行 Node.js（{node}）", error, install=True)
     if runtime is None:
-        die(f"无法运行 Node.js（{node}），请检查安装后重试")
+        frontend_error(f"无法读取 Node.js 版本信息（{node}）。", install=True)
     if not node_supported(runtime[0]):
-        die(f"Node.js {runtime[0]} 不支持当前前端；需要 20.19+ 或 22.12+")
-    ensure_frontend_dependencies(node, npm, runtime)
+        frontend_error(f"Node.js {runtime[0]} 不支持当前前端，需要 20.19+ 或 22.12+。", install=True)
+    try:
+        ensure_frontend_dependencies(node, npm, runtime)
+    except (OSError, subprocess.SubprocessError) as error:
+        frontend_command_error("安装前端依赖", error)
     return npm
 
 
@@ -1539,15 +1566,13 @@ def build_frontend(force: bool = False) -> bool:
         log("[5/5] 前端构建已是最新，跳过")
         return True
     npm = prepare_frontend()
-    if not npm:
-        if (FRONTEND / "dist" / "index.html").exists():
-            die(
-                "前端与当前源码不一致。请安装 Node.js 20.19+ / 22.12+ 后重启，或使用包含最新前端的完整发布包。"
-            )
-        log("[5/5] 没有找到 Node.js / npm，跳过前端构建（需要 Node.js 20.19+ 或 22.12+）")
-        return False
     log("[5/5] 构建前端界面")
-    run([npm, "run", "build"], cwd=FRONTEND)
+    try:
+        run([npm, "run", "build"], cwd=FRONTEND)
+    except (OSError, subprocess.SubprocessError) as error:
+        frontend_command_error("构建前端界面", error)
+    if frontend_stale():
+        frontend_error("前端构建产物缺失或与当前源码不一致，请检查上方构建输出。")
     return True
 
 
@@ -1606,10 +1631,12 @@ def serve(host: str | None, port: int | None, data_root: str, open_browser: bool
     proc = subprocess.Popen(cmd, cwd=ROOT, env=_env())
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/"
     if wait_for(url + "api/health"):
-        log(f"服务已就绪：{url}（按 Ctrl+C 停止）")
-        if not (FRONTEND / "dist" / "index.html").exists():
-            log("前端未构建，当前只提供 API")
-        if open_browser:
+        has_frontend = (FRONTEND / "dist" / "index.html").exists()
+        if has_frontend:
+            log(f"服务已就绪：{url}（按 Ctrl+C 停止）")
+        else:
+            log(f"API 服务已就绪：{url}api/health（按 Ctrl+C 停止）")
+        if open_browser and has_frontend:
             webbrowser.open(url)
     else:
         log("服务 60 秒内没有响应，请查看上面的输出")
@@ -1624,8 +1651,6 @@ def dev(host: str | None, port: int | None, data_root: str, fe_port: int, open_b
     data_root = configured_data_root(data_root)
     host, port = server_address(host, port, data_root)
     npm = prepare_frontend()
-    if not npm:
-        die("dev 模式需要 Node.js / npm")
     backend = subprocess.Popen(
         [str(venv_bin("ypuddin")), "serve", "--host", host, "--port", str(port), "--data-root", data_root],
         cwd=ROOT,
@@ -1848,9 +1873,7 @@ def main(argv: list[str]) -> int:
         gpus = nvidia_gpus()
         gpu_desc = "、".join(n for n, _ in gpus) if gpus else "未检测到 NVIDIA 显卡"
     torch_label = "MPS" if PROFILE == "macos-mps" else torch_tag
-    log(
-        f"[1/5] 环境检查：Python {platform.python_version()} · 显卡：{gpu_desc} · PyTorch：{torch_label}"
-    )
+    log(f"[1/5] 环境检查：Python {platform.python_version()} · 显卡：{gpu_desc} · PyTorch：{torch_label}")
     ensure_venv(
         torch_tag,
         index_mode=opts["index"],
@@ -1887,8 +1910,8 @@ def main(argv: list[str]) -> int:
             opts["browser"],
         )
     if command == "run":
-        if opts["frontend"]:
-            build_frontend()
+        if opts["frontend"] and not build_frontend():
+            frontend_error("前端构建未完成。")
         return serve(
             opts["host"], int(opts["port"]) if opts["port"] else None, opts["data_root"], opts["browser"]
         )

@@ -30,6 +30,8 @@ cd YPuddinTrainStudio
 
 脚本自动查找 Python，创建当前平台的虚拟环境，安装依赖并按需构建前端。系统没有适用的 Python、但已安装 `uv` 时，常规启动入口可通过 `uv` 下载 Python 3.12。
 
+需要构建前端时，从 [Node.js 官网](https://nodejs.org/en/download) 下载 LTS 安装包，保留 npm 和添加到 `PATH` 的选项。安装后重新打开终端，再运行启动脚本。缺少 Node.js 或 npm、依赖安装失败或构建失败时，默认启动会报错并停止；已有与当前源码一致且校验通过的前端构建时，可直接复用，无需 Node.js。仅运行 API 的部署可显式使用 `--no-frontend` 跳过构建。
+
 默认地址为 `http://127.0.0.1:8123/`。注意力扩展、8-bit 优化器依赖的 bitsandbytes 和打标与遮罩所需的 ONNX Runtime 分别在“设置 → 运行环境”的“注意力加速”“LoRA 环境”“打标与遮罩”中单独安装。ONNX Runtime 在 NVIDIA 显卡上使用 GPU 版，装好后不需要重启服务。
 
 ## 启动参数
@@ -117,6 +119,7 @@ Windows 可通过任务计划程序启动对应环境的 `ypuddin.exe`，参数�
 | `torchvision::nms does not exist` | 检查 Torch 与 TorchVision 的版本及 CUDA 构建后缀；重新运行原启动脚本执行兼容检查 |
 | `no kernel image is available` | 检查 PyTorch CUDA 构建是否包含当前显卡架构 |
 | 页面资源 404 或更新后显示旧界面 | 执行启动入口的 `build` 子命令 |
+| 找不到 Node.js 或 npm | 安装上方链接的 Node.js LTS，保留 npm 和 `PATH` 选项，重新打开终端后运行启动脚本 |
 | 前端构建拒绝 Node.js 版本 | 使用表中支持的 Node.js 版本后重新构建 |
 | 下载失败 | 核对下载源、服务器代理、访问密钥及模型仓库权限 |
 | 端口被占用 | 使用 `--port` 更换端口，或检查已有服务进程 |
