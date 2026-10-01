@@ -2376,15 +2376,17 @@ def job_log(
     tail: bool = False,
     before: int | None = None,
 ) -> dict[str, Any]:
-    # Keep the file page and saved outcome on the same side of the exit-record append.
+    # The exit record is appended under this lock with the outcome it records, so a snapshot that
+    # sees a stopped worker sees its final file; the page itself is read without holding the lock.
     with c.db.lock:
         r = _get_job(c, jid)
         # A live worker may be mid-line; a stopped one has written its final output.
         live = c.supervisor.is_running(jid) and r.get("exit_code") is None
         path = log_file(r)
-        page = read_log(path, offset=offset, limit=limit, tail=tail, before=before, complete_only=live)
-        # This separate record must never advance the worker file's byte cursor.
-        page["terminal"] = None if live else missing_failure_record(path, r)
+        terminal = None if live else missing_failure_record(path, r)
+    page = read_log(path, offset=offset, limit=limit, tail=tail, before=before, complete_only=live)
+    # This separate record must never advance the worker file's byte cursor.
+    page["terminal"] = terminal
     return page
 
 
