@@ -4354,6 +4354,35 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * GpuMetricSeries
+         * @description Per-device driver readings aligned with JobMetrics.steps; memory is in MiB.
+         */
+        GpuMetricSeries: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Index */
+            index: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cuda" | "mps" | "dtk" | "rocm";
+            /** Power W */
+            power_w: (number | null)[];
+            /** Temp C */
+            temp_c: (number | null)[];
+            /** Util Pct */
+            util_pct: (number | null)[];
+            /** Mem Used Mb */
+            mem_used_mb: (number | null)[];
+            /** Mem Total Mb */
+            mem_total_mb: (number | null)[];
+        } & {
+            [key: string]: unknown;
+        };
         /** GpuStats */
         GpuStats: {
             /** Index */
@@ -4768,6 +4797,8 @@ export interface components {
             gpu_temp_c?: (number | null)[];
             /** Gpu Util Pct */
             gpu_util_pct?: (number | null)[];
+            /** Gpu Devices */
+            gpu_devices?: components["schemas"]["GpuMetricSeries"][];
         } & {
             [key: string]: unknown;
         };
@@ -5164,6 +5195,12 @@ export interface components {
              */
             activation_checkpointing: "none" | "block" | "unsloth";
             /**
+             * Vae Attention Chunking
+             * @description 默认关闭。Anima / Krea 2 的图片 VAE 在 HIP 环境无可用融合注意力后端时，开启后将数学注意力按最多 2048 个查询分块，保留完整键和值，减少临时显存；实际速度取决于设备和图片尺寸。可用的融合后端仍优先使用，不改变主模型注意力。
+             * @default false
+             */
+            vae_attention_chunking: boolean;
+            /**
              * Offload Text Encoder
              * @description 在线编码标签时，在每次编码后把文本编码器移到 CPU，默认关闭；可减少驻留显存但增加传输。cached 文本模式已预编码并卸载编码器，无需依靠此开关。
              * @default false
@@ -5196,6 +5233,11 @@ export interface components {
             title: string;
             /** Series */
             series: components["schemas"]["MetricSeriesSetting"][];
+            /**
+             * Gpu
+             * @default primary
+             */
+            gpu: string;
         };
         /** MetricSeriesSetting */
         MetricSeriesSetting: {
@@ -5203,7 +5245,7 @@ export interface components {
              * Metric
              * @enum {string}
              */
-            metric: "loss" | "loss_ema" | "lr" | "grad_norm" | "it_s" | "vram" | "gpu_power" | "gpu_temp" | "gpu_util" | "validation";
+            metric: "loss" | "loss_ema" | "lr" | "grad_norm" | "it_s" | "vram" | "gpu_power" | "gpu_temp" | "gpu_util" | "gpu_memory" | "validation";
             /** Color */
             color: string;
         };

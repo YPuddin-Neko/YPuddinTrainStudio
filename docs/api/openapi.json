@@ -13176,6 +13176,117 @@
         ],
         "title": "GpuInfo"
       },
+      "GpuMetricSeries": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cuda",
+              "mps",
+              "dtk",
+              "rocm"
+            ],
+            "title": "Kind"
+          },
+          "power_w": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Power W"
+          },
+          "temp_c": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Temp C"
+          },
+          "util_pct": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Util Pct"
+          },
+          "mem_used_mb": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Mem Used Mb"
+          },
+          "mem_total_mb": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Mem Total Mb"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "index",
+          "kind",
+          "power_w",
+          "temp_c",
+          "util_pct",
+          "mem_used_mb",
+          "mem_total_mb"
+        ],
+        "title": "GpuMetricSeries",
+        "description": "Per-device driver readings aligned with JobMetrics.steps; memory is in MiB."
+      },
       "GpuStats": {
         "properties": {
           "index": {
@@ -14589,6 +14700,13 @@
             },
             "type": "array",
             "title": "Gpu Util Pct"
+          },
+          "gpu_devices": {
+            "items": {
+              "$ref": "#/components/schemas/GpuMetricSeries"
+            },
+            "type": "array",
+            "title": "Gpu Devices"
           }
         },
         "additionalProperties": true,
@@ -15797,6 +15915,19 @@
               "order": 20
             }
           },
+          "vae_attention_chunking": {
+            "type": "boolean",
+            "title": "Vae Attention Chunking",
+            "description": "默认关闭。Anima / Krea 2 的图片 VAE 在 HIP 环境无可用融合注意力后端时，开启后将数学注意力按最多 2048 个查询分块，保留完整键和值，减少临时显存；实际速度取决于设备和图片尺寸。可用的融合后端仍优先使用，不改变主模型注意力。",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "memory",
+              "order": 25,
+              "show_when": "model.family == \"anima\" || model.family == \"krea2\""
+            }
+          },
           "offload_text_encoder": {
             "type": "boolean",
             "title": "Offload Text Encoder",
@@ -15861,6 +15992,13 @@
             "maxItems": 6,
             "minItems": 1,
             "title": "Series"
+          },
+          "gpu": {
+            "type": "string",
+            "maxLength": 24,
+            "pattern": "^(primary|average|mps|cuda:(0|[1-9][0-9]*))$",
+            "title": "Gpu",
+            "default": "primary"
           }
         },
         "additionalProperties": false,
@@ -15886,6 +16024,7 @@
               "gpu_power",
               "gpu_temp",
               "gpu_util",
+              "gpu_memory",
               "validation"
             ],
             "title": "Metric"

@@ -27,6 +27,7 @@ export default function PageSettings({ focus }: { focus?: 'charts' }) {
   const [saved, setSaved] = React.useState('');
   const [error, setError] = React.useState('');
   const [saving, setSaving] = React.useState(false);
+  const [sorting, setSorting] = React.useState(false);
   const [done, setDone] = React.useState(false);
 
   const load = React.useCallback((signal?: AbortSignal) => {
@@ -58,6 +59,7 @@ export default function PageSettings({ focus }: { focus?: 'charts' }) {
   const dirty = draftKey(draft) !== saved;
   const change = (patch: Partial<Draft>) => { setDraft({ ...draft, ...patch }); setDone(false); };
   const save = async () => {
+    if (sorting) return;
     setSaving(true); setError('');
     try {
       // The built-in chart layout is stored as none, so a later change to the defaults still reaches it.
@@ -89,11 +91,11 @@ export default function PageSettings({ focus }: { focus?: 'charts' }) {
             options={[{ value: 'system', label: t('settings.themeSystem') }, { value: 'light', label: t('settings.themeLight') }, { value: 'dark', label: t('settings.themeDark') }]} data-testid="settings-theme"/>
         </div></div>
       </section>
-      <MetricChartEditor id="page-charts" charts={draft.charts} onChange={charts => change({ charts })}/>
+      <MetricChartEditor id="page-charts" onSortingChange={setSorting} charts={draft.charts} onChange={charts => change({ charts })}/>
     </fieldset>
     <div className="settings-save">
       <span role="status" className="settings-note">{done && text('已保存，已立即生效。', 'Saved and applied.')}</span>
-      <button type="button" className="ui-btn ui-btn-primary" disabled={saving || !dirty} onClick={() => void save()} data-testid="page-settings-save">{saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}<span>{saving ? t('settings.saving') : t('settings.save')}</span></button>
+      <button type="button" className="ui-btn ui-btn-primary" disabled={saving || sorting || !dirty} onClick={() => void save()} data-testid="page-settings-save">{saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}<span>{saving ? t('settings.saving') : t('settings.save')}</span></button>
     </div>
   </SettingsSections></div>;
 }

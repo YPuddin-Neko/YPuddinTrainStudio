@@ -8,6 +8,8 @@
 .job-metrics-chart { display:flex; flex-direction:column; min-width:0; padding:12px; border:1px solid var(--studio-line); border-radius:7px; background:var(--studio-panel); }
 .job-metrics-chart.is-wide { grid-column:1 / -1; }
 .job-metrics-chart h2 { font-size:13px; font-weight:600; }
+.job-metrics-chart-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; min-width:0; }
+.job-metrics-chart-heading .job-metrics-gpu-select { width:210px; max-width:100%; }
 .job-metrics-chart > p { margin-top:4px; margin-bottom:6px; font-size:11px; line-height:1.6; color:var(--studio-dim); }
 .job-metrics-ranges { display:flex; flex-wrap:wrap; justify-content:center; gap:10px 24px; list-style:none; margin:6px 0 0; padding:0; }
 .job-metrics-ranges > li { display:flex; align-items:center; gap:8px; min-width:0; max-width:100%; font-size:11px; }

@@ -1,6 +1,6 @@
 import type { components } from '../api/generated';
 
-export type MetricChartSetting = components['schemas']['MetricChartSetting'];
+export type MetricChartSetting = Omit<components['schemas']['MetricChartSetting'], 'gpu'> & { gpu?: string };
 export type MetricSeriesSetting = components['schemas']['MetricSeriesSetting'];
 export type MetricKey = MetricSeriesSetting['metric'];
 
@@ -21,6 +21,7 @@ export const METRICS: Record<MetricKey, MetricInfo> = {
   grad_norm: { label: ['梯度范数', 'Gradient norm'], unit: 'Norm', color: '#d97706' },
   it_s: { label: ['训练速度', 'Training speed'], unit: 'it/s', color: '#10b981' },
   vram: { label: ['显存', 'VRAM'], unit: 'GB', color: '#ec4899', gpu: true },
+  gpu_memory: { label: ['设备显存', 'Device memory'], unit: 'GB', color: '#ec4899', gpu: true },
   gpu_power: { label: ['GPU 功率', 'GPU power'], unit: 'W', color: '#8b5cf6', gpu: true },
   gpu_temp: { label: ['GPU 温度', 'GPU temperature'], unit: '°C', color: '#ef4444', gpu: true },
   gpu_util: { label: ['GPU 利用率', 'GPU utilization'], unit: '%', color: '#0ea5e9', gpu: true },
@@ -62,7 +63,7 @@ export function cloneCharts(charts: MetricChartSetting[]): MetricChartSetting[] 
 
 /** Compares layouts by content; colors from a color input come back lowercase. */
 export function layoutKey(charts: MetricChartSetting[]): string {
-  return JSON.stringify(charts.map(chart => [chart.id, chart.title, chart.series.map(item => [item.metric, item.color.toLowerCase()])]));
+  return JSON.stringify(charts.map(chart => [chart.id, chart.title, chart.gpu ?? 'primary', chart.series.map(item => [item.metric, item.color.toLowerCase()])]));
 }
 
 const DEFAULT_KEY = layoutKey(DEFAULT_METRIC_CHARTS);

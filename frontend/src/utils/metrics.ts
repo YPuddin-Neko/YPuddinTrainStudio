@@ -1,4 +1,5 @@
 import { JobMetrics, ValidationPoint } from '../api/types';
+import { appendGpuDeviceStep } from './gpuMetricSeries';
 
 export function smoothLoss(values: Array<number | null>, alpha: number): Array<number | null> {
   let ema: number | null = null;
@@ -19,7 +20,7 @@ export function appendMetricStep(previous: JobMetrics, event: Record<string, any
     vram_mb: [...previous.vram_mb, event.vram_mb ?? null],
     vram_metric: event.vram_metric ?? previous.vram_metric,
     it_s: [...previous.it_s, event.it_s ?? null],
-    ...gpuSeries(previous, event) };
+    ...gpuSeries(previous, event), gpu_devices: appendGpuDeviceStep(previous, event.gpu_devices) };
 }
 
 const GPU_KEYS = ['gpu_power_w', 'gpu_temp_c', 'gpu_util_pct'] as const;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import csv
 import io
 import json
@@ -278,17 +279,17 @@ class BackgroundReading:
     """
 
     def __init__(
-        self, read: Callable[[], dict[str, float]], interval: float = 3.0, idle: float = 60.0
+        self, read: Callable[[], dict[str, Any]], interval: float = 3.0, idle: float = 60.0
     ) -> None:
         self._read, self._interval, self._idle = read, interval, idle
         self._lock = threading.Lock()
         self._closed = threading.Event()
         self._thread: threading.Thread | None = None
-        self._value: dict[str, float] = {}
+        self._value: dict[str, Any] = {}
         self._read_at = 0.0
         self._asked_at = 0.0
 
-    def latest(self) -> dict[str, float]:
+    def latest(self) -> dict[str, Any]:
         """The last reading while it is recent; empty until the first one arrives."""
         now = time.monotonic()
         with self._lock:
@@ -297,7 +298,7 @@ class BackgroundReading:
                 self._thread = threading.Thread(target=self._run, name="gpu-reading", daemon=True)
                 self._thread.start()
             recent = now - self._read_at <= max(10.0, 3 * self._interval)
-            return dict(self._value) if recent else {}
+            return copy.deepcopy(self._value) if recent else {}
 
     def _run(self) -> None:
         while not self._closed.is_set():
@@ -306,7 +307,7 @@ class BackgroundReading:
             except Exception:  # noqa: BLE001 - a failed reading is no reading
                 value = {}
             with self._lock:
-                self._value, self._read_at = dict(value), time.monotonic()
+                self._value, self._read_at = copy.deepcopy(value), time.monotonic()
                 unused = self._read_at - self._asked_at > self._idle
             if unused or self._closed.wait(self._interval):
                 return
@@ -470,6 +471,30 @@ def nvml_device_reading(uuid: str | None, name: str) -> dict[str, float]:
     entry: dict[str, Any] = {"uuid": uuid, "name": name}
     _nvml_metrics([entry])
     return {key: entry[key] for key in ("power_w", "temp_c", "util_pct") if key in entry}
+
+
+def training_gpu_reading(entries: list[dict[str, Any]], primary_id: str) -> dict[str, Any]:
+    """Sample participating devices without allocating tensors or changing the current device."""
+    readings = [dict(entry) for entry in entries]
+    try:
+        if readings and readings[0]["kind"] in {"dtk", "rocm"}:
+            for entry, reading in zip(readings, _hip_sysfs_metrics(entries), strict=True):
+                entry.update(reading)
+        elif readings and readings[0]["kind"] == "mps":
+            readings[0].update(apple_gpu_reading(), name=_apple_name())
+        else:
+            _nvml_metrics([entry for entry in readings if entry.get("uuid") or entry.get("name")])
+    except Exception:  # noqa: BLE001 - retain device identities when driver telemetry fails
+        pass
+    for entry in readings:
+        entry.setdefault("name", f"GPU {entry['index']}")
+    keys = ("id", "index", "name", "kind", "power_w", "temp_c", "util_pct", "mem_used_mb", "mem_total_mb")
+    devices = [{key: entry[key] for key in keys if entry.get(key) is not None} for entry in readings]
+    primary = next((entry for entry in devices if entry["id"] == primary_id), {})
+    return {
+        "gpu_devices": devices,
+        **{f"gpu_{key}": primary[key] for key in ("power_w", "temp_c", "util_pct") if key in primary},
+    }
 
 
 @lru_cache(maxsize=1)

@@ -33,6 +33,7 @@ from .dataset_uploads import UploadBatch, read_upload, staged_upload
 from .db import new_id, now
 from .environment import maintenance_reason
 from .errors import ApiError, NotFound
+from .gpu_metrics import device_metric_series
 from .gpu_selection import GpuSelection, selection_error
 from .hardware import gpu_info
 from .import_progress import ImportProgress
@@ -2318,7 +2319,8 @@ def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx))
     lr: dict[str, list[float]] = {}
     validation = []
     vram_metric = None
-    for ev in _events_file(c, jid):
+    events = _events_file(c, jid)
+    for ev in events:
         if ev.get("type") == "step" and ev["step"] > since_step:
             vram_metric = ev.get("vram_metric") or vram_metric
             steps.append(ev["step"])
@@ -2348,6 +2350,7 @@ def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx))
         "gpu_power_w": power if any(value is not None for value in power) else [],
         "gpu_temp_c": temperature if any(value is not None for value in temperature) else [],
         "gpu_util_pct": load if any(value is not None for value in load) else [],
+        "gpu_devices": device_metric_series(events, since_step),
     }
 
 

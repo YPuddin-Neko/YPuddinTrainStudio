@@ -114,7 +114,7 @@ class SettingsServer(_Out):
 
 
 MetricKey = Literal[
-    "loss", "loss_ema", "lr", "grad_norm", "it_s", "vram", "gpu_power", "gpu_temp", "gpu_util", "validation"
+    "loss", "loss_ema", "lr", "grad_norm", "it_s", "vram", "gpu_power", "gpu_temp", "gpu_util", "gpu_memory", "validation"
 ]
 
 
@@ -131,6 +131,7 @@ class MetricChartSetting(BaseModel):
     id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
     title: str = Field("", max_length=40)
     series: list[MetricSeriesSetting] = Field(min_length=1, max_length=6)
+    gpu: str = Field("primary", pattern=r"^(primary|average|mps|cuda:(0|[1-9][0-9]*))$", max_length=24)
 
 
 class SettingsUi(_Out):
@@ -929,6 +930,20 @@ class ValidationPoint(_Out):
     mean: float
 
 
+class GpuMetricSeries(_Out):
+    """Per-device driver readings aligned with JobMetrics.steps; memory is in MiB."""
+
+    id: str
+    name: str
+    index: int
+    kind: Literal["cuda", "mps", "dtk", "rocm"]
+    power_w: list[float | None]
+    temp_c: list[float | None]
+    util_pct: list[float | None]
+    mem_used_mb: list[float | None]
+    mem_total_mb: list[float | None]
+
+
 class JobMetrics(_Out):
     steps: list[int]
     loss: list[float | None]
@@ -943,6 +958,7 @@ class JobMetrics(_Out):
     gpu_power_w: list[float | None] = Field(default_factory=list)
     gpu_temp_c: list[float | None] = Field(default_factory=list)
     gpu_util_pct: list[float | None] = Field(default_factory=list)
+    gpu_devices: list[GpuMetricSeries] = Field(default_factory=list)
 
 
 class JobSample(_Out):

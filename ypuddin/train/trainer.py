@@ -173,8 +173,7 @@ class _ProgressLog:
 
 class Trainer:
     is_primary = True
-    # Log pacing and GPU identity; class defaults also serve trainers built without __init__ in tests.
-    _gpu_identity: tuple[str | None, str] | None = None
+    # Class defaults also serve trainers built without __init__ in tests.
     _gpu_sampler: Any = None
     _last_step_log = 0.0
     # The control request that is ending the run, and where the current epoch began.
@@ -1662,27 +1661,55 @@ class Trainer:
         per_epoch = self.progress.steps_per_epoch
         return round(self.progress.step / per_epoch, 3) if per_epoch else None
 
-    def _gpu_reading(self) -> dict[str, float]:
-        """This run's GPU power, temperature and load from the driver; empty elsewhere."""
-        if self.device.type == "mps":
-            # Apple's sensors are slow to read; a background thread keeps the latest reading for each step.
-            if self._gpu_sampler is None:
-                from ypuddin.server.hardware import BackgroundReading, apple_gpu_reading
-
-                self._gpu_sampler = BackgroundReading(apple_gpu_reading)
-            return {f"gpu_{key}": value for key, value in self._gpu_sampler.latest().items()}
-        if self.device.type != "cuda":
+    def _gpu_reading(self) -> dict[str, Any]:
+        """Read this run's devices in the background; legacy scalars describe the primary GPU."""
+        if not self.is_primary or self.device.type not in {"cuda", "mps"}:
             return {}
         try:
-            if self._gpu_identity is None:
-                props = torch.cuda.get_device_properties(self.device)
-                self._gpu_identity = (str(props.uuid) if getattr(props, "uuid", None) else None, props.name)
-            from ypuddin.server.hardware import nvml_device_reading
+            if self._gpu_sampler is None:
+                from ypuddin.server.hardware import BackgroundReading, training_gpu_reading
 
-            reading = nvml_device_reading(*self._gpu_identity)
-        except Exception:  # noqa: BLE001
+                if self.device.type == "mps":
+                    primary = "mps"
+                    entries = [{"id": primary, "index": 0, "name": "Apple GPU", "kind": "mps"}]
+                else:
+                    index = self.device.index if self.device.index is not None else torch.cuda.current_device()
+                    primary = f"cuda:{index}"
+                    indices = [index]
+                    context = getattr(self, "distributed", None)
+                    # Only torchrun proves which local devices participate. A visible device or
+                    # a configured gpu_count alone does not make it part of this training run.
+                    try:
+                        local_world = int(os.environ.get("LOCAL_WORLD_SIZE", "0"))
+                    except ValueError:
+                        local_world = 0
+                    if (
+                        context is not None
+                        and 0 <= context.local_rank < local_world <= context.world_size
+                        and index == context.local_rank
+                    ):
+                        indices = [index, *(ordinal for ordinal in range(local_world) if ordinal != index)]
+                    hip = getattr(torch.version, "hip", None)
+                    kind = ("dtk" if current_profile() == "linux-dtk" else "rocm") if hip else "cuda"
+                    entries = []
+                    for ordinal in indices:
+                        entry = {"id": f"cuda:{ordinal}", "index": ordinal, "kind": kind}
+                        try:
+                            props = torch.cuda.get_device_properties(torch.device("cuda", ordinal))
+                            entry.update(
+                                name=props.name,
+                                uuid=str(props.uuid) if getattr(props, "uuid", None) else None,
+                                pci_bus_id=str(props.pci_bus_id) if getattr(props, "pci_bus_id", None) else None,
+                            )
+                            if getattr(props, "total_memory", 0) > 0:
+                                entry["mem_total_mb"] = props.total_memory / 2**20
+                        except Exception:  # noqa: BLE001 - keep missing device readings separate
+                            pass
+                        entries.append(entry)
+                self._gpu_sampler = BackgroundReading(partial(training_gpu_reading, entries, primary))
+            return self._gpu_sampler.latest()
+        except Exception:  # noqa: BLE001 - unavailable driver telemetry must not stop training
             return {}
-        return {f"gpu_{key}": value for key, value in reading.items()}
 
     def _close_logs(self, *, failed: bool = False) -> None:
         if self._logs is not None:

@@ -3,7 +3,7 @@ import React from 'react';
 import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
-import { Job, JobMetrics, JobSample, JobCheckpoint } from '../../api/types';
+import { Job, JobMetrics, JobSample, JobCheckpoint, ValidationPoint } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { Activity, Archive, ArchiveRestore, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Minus } from 'lucide-react';
@@ -30,6 +30,7 @@ import { useEnterAnimation } from '../../utils/motion';
 import TopbarBreadcrumb from '../../components/TopbarBreadcrumb';
 
 type VersionedJob = Job & { version_id?: string | null; latest: Job['latest'] & {loss_mean?:number|null; loss_count?:number|null; loss_mean_scope?:string|null} };
+type PendingMetrics = { id: string; pending: boolean; steps: Record<string, any>[]; validation: ValidationPoint[] };
 
 function mergeSamples(previous: JobSample[], incoming: JobSample[]): JobSample[] {
   // Step and epoch triggers may share step/seed while saving different image files.
@@ -144,6 +145,7 @@ export default function JobDetail() {
   }, [job?.started_at, job?.status]);
   const [resolvedVersion, setResolvedVersion] = React.useState<{ projectId: string; versionId: string; name: string } | null>(null);
   const [metrics, setMetrics] = React.useState<JobMetrics | null>(null);
+  const metricsRequestRef = React.useRef<PendingMetrics | null>(null);
   const [samples, setSamples] = React.useState<JobSample[]>([]);
   const [samplesLoaded, setSamplesLoaded] = React.useState(false);
   const [selectedSample, setSelectedSample] = React.useState<string | null>(null);
@@ -179,9 +181,22 @@ export default function JobDetail() {
     const controller = new AbortController();
     const options = { signal: controller.signal };
     const ignoreAbort = (error: Error) => { if (!controller.signal.aborted) setDataError(formatApiError(error)); };
+    const pending: PendingMetrics = { id, pending: true, steps: [], validation: [] };
+    metricsRequestRef.current = pending;
+    const finishMetrics = (snapshot: JobMetrics) => {
+      if (controller.signal.aborted || metricsRequestRef.current !== pending) return;
+      // Events arriving during the history request must survive its older snapshot.
+      let next = pending.steps.sort((a, b) => a.step - b.step).reduce(appendMetricStep, snapshot);
+      for (const point of pending.validation) next = { ...next, validation: mergeValidationPoint(next.validation || [], point) };
+      pending.pending = false; pending.steps = []; pending.validation = [];
+      setMetrics(next);
+    };
     setDataError(''); setJob(null); setMetrics(null); setSamples([]); setSamplesLoaded(false); setSelectedSample(null); setCheckpoints([]); setCheckpointsLoaded(false); setConfigSnapshot(null); setSampleProgress(null);
     apiClient.get<VersionedJob>(`/jobs/${id}`, options).then(setJob).catch(ignoreAbort);
-    apiClient.get<JobMetrics>(`/jobs/${id}/metrics`, options).then(setMetrics).catch(ignoreAbort);
+    apiClient.get<JobMetrics>(`/jobs/${id}/metrics`, options).then(finishMetrics).catch(error => {
+      ignoreAbort(error);
+      finishMetrics({ steps: [], loss: [], loss_ema: [], lr: {}, grad_norm: [], vram_mb: [], it_s: [], validation: [] });
+    });
     void refreshSamples();
     apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`, options).then(setCheckpoints).catch(ignoreAbort).finally(() => { if (!controller.signal.aborted) setCheckpointsLoaded(true); });
     apiClient.get<any>(`/jobs/${id}/config`, options).then(setConfigSnapshot).catch(ignoreAbort);
@@ -228,7 +243,10 @@ export default function JobDetail() {
   useEventStream(EVENT_TYPES.JOB_STEP, (data: any) => {
     if (data.job_id === id) {
       setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
-      setMetrics((prev) => prev ? appendMetricStep(prev, data) : prev);
+      const pending = metricsRequestRef.current;
+      if (!pending || pending.id !== id) return;
+      if (pending.pending) pending.steps.push(data);
+      else setMetrics((prev) => prev ? appendMetricStep(prev, data) : prev);
     }
   });
 
@@ -264,15 +282,15 @@ export default function JobDetail() {
   // validation 增量：按 step 去重合并
   useEventStream(EVENT_TYPES.JOB_VALIDATION, (data: any) => {
     if (data.job_id !== id) return;
+    const pending = metricsRequestRef.current;
+    if (!pending || pending.id !== id) return;
+    const point = { step: data.step, per_t: data.per_t || {}, mean: data.mean };
+    if (pending.pending) { pending.validation.push(point); return; }
     setMetrics((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        validation: mergeValidationPoint(prev.validation || [], {
-          step: data.step,
-          per_t: data.per_t || {},
-          mean: data.mean,
-        }),
+        validation: mergeValidationPoint(prev.validation || [], point),
       };
     });
   });
