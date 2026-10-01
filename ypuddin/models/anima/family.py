@@ -152,11 +152,13 @@ class AnimaLatent(LatentPipeline):
         device: torch.device | str = "cpu",
         dtype: torch.dtype = torch.float32,
         use_2d: bool = True,
+        vae_attention_chunking: bool = False,
     ):
         self.path = Path(vae_path)
         self.device = torch.device(device)
         self.dtype = dtype
         self.use_2d = use_2d
+        self.vae_attention_chunking = vae_attention_chunking
         self.vae: nn.Module | None = None
         self._loaded_once = False
         from ypuddin.models.fingerprints import content_fingerprint
@@ -184,7 +186,12 @@ class AnimaLatent(LatentPipeline):
                 # A cold resume can reach this lazy load after restoring training
                 # RNG; model construction must not advance that saved stream.
                 with torch.random.fork_rng(devices=[]):
-                    vae = load_vae(str(self.path), device="cpu")
+                    if self.use_2d:
+                        vae = load_vae(
+                            str(self.path), device="cpu", attention_chunking=self.vae_attention_chunking
+                        )
+                    else:
+                        vae = load_vae(str(self.path), device="cpu")
             finally:
                 vendor_log.setLevel(level)
             vae = vae.to(device=self.device, dtype=self.dtype)
@@ -305,7 +312,8 @@ class AnimaFamily(ModelFamily):
         dit.attn_mode = self.resolve_attention(cfg.attention, device)
         text = AnimaText(cfg.text_encoder_path, tokenizer_path=cfg.tokenizer_path, dtype=dtype, device=device)
         latent = AnimaLatent(
-            cfg.vae_path, device=device, dtype=torch.float32 if torch.device(device).type == "cpu" else dtype
+            cfg.vae_path, device=device, dtype=torch.float32 if torch.device(device).type == "cpu" else dtype,
+            vae_attention_chunking=memory.vae_attention_chunking,
         )
         log.info(
             "loaded Anima DiT: width=%s blocks=%s heads=%s",

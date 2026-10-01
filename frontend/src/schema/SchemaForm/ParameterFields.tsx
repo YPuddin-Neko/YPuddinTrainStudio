@@ -48,7 +48,7 @@ const layouts: Record<string, Section[]> = {
     section('options', ['group_lr', 'args'], ['优化器选项', 'Optimizer options']),
   ],
   scheduler: [section('curve', ['type', 'warmup_steps', 'min_lr_ratio', 'num_cycles', 'power', 'decay_steps'])],
-  memory: [section('resources', ['model.attention', 'base_precision', 'blocks_to_swap', 'activation_checkpointing', 'offload_text_encoder', 'compile', 'allow_tf32'])],
+  memory: [section('resources', ['model.attention', 'base_precision', 'blocks_to_swap', 'activation_checkpointing', 'vae_attention_chunking', 'offload_text_encoder', 'compile', 'allow_tf32'])],
   objective: [
     section('noise', ['timestep_sampling', 'logit_mean', 'logit_std', 'shift', 'mode_scale', 'res_shift_tokens', 'res_shift_mu', 't_min', 't_max', 'stratified'], ['噪声与时间步', 'Noise and timesteps']),
     section('loss', ['loss', 'huber_c', 'weighting', 'snr_gamma', 'ip_noise_gamma', 'v_pred_like_loss', 'scale_v_pred_loss_like_noise_pred', 'debiased_estimation_loss'], ['损失与加权', 'Loss and weighting']),

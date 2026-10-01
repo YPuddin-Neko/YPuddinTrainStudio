@@ -1069,6 +1069,14 @@ class MemoryConfig(_Strict):
         help="减少反向前保存的中间激活，默认关闭，全程保留；开启后在反向时逐块重算，开启并卸载到内存还把块输入暂存到内存。会增加重算或传输工作，显存不足时再按模型支持情况选择。DDP 和 FSDP 可选关闭或开启，不支持开启并卸载到内存。",
         ui_=ui("memory", order=20, control="select"),
     )
+    vae_attention_chunking: bool = F(
+        False,
+        help="默认关闭。Anima / Krea 2 的图片 VAE 在 HIP 环境无可用融合注意力后端时，开启后将数学注意力按最多 2048 个查询分块，保留完整键和值，减少临时显存；实际速度取决于设备和图片尺寸。可用的融合后端仍优先使用，不改变主模型注意力。",
+        ui_=ui(
+            "memory", order=25, control="switch", advanced=True,
+            show_when='model.family == "anima" || model.family == "krea2"',
+        ),
+    )
     offload_text_encoder: bool = F(
         False,
         help="在线编码标签时，在每次编码后把文本编码器移到 CPU，默认关闭；可减少驻留显存但增加传输。cached 文本模式已预编码并卸载编码器，无需依靠此开关。",

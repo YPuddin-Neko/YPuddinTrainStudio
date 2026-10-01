@@ -100,6 +100,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
 
   'memory.base_precision': ['降低冻结底模精度可省显存，可能影响质量。', 'Lower frozen-weight precision saves memory; may cost quality.'],
   'memory.blocks_to_swap': ['暂放到内存的模型块数，省显存但更慢。', 'Blocks parked in system memory; saves VRAM, runs slower.'],
+  'memory.vae_attention_chunking': ['减少 HIP VAE 数学注意力的临时显存，默认关闭。', 'Reduces temporary memory for HIP VAE math attention; off by default.'],
   'memory.activation_checkpointing': ['大幅减少显存，训练稍慢；显存不够时优先开启。', 'Much less memory, slightly slower; turn on first when memory is short.'],
 
   'objective.timestep_sampling': ['训练时噪声强度的抽样分布。', 'Distribution of training noise levels.'],
@@ -158,6 +159,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
 };
 
 export const FIELD_HELP: Record<string, Copy> = {
+  'memory.vae_attention_chunking': ['默认关闭。用于 Anima / Krea 2 在 HIP 环境下的图片 VAE，编码和解码均适用。\n开启后，仅在 VAE 没有可用融合注意力后端时，把查询按最多 2048 个一组计算，仍使用整张图的键和值，减少数学注意力的临时显存；可能增加耗时。可用的融合后端仍优先使用。\n这不是按图片区域切块的 Tiled VAE，也不改变主模型的注意力后端。', 'Off by default. Applies to image VAE encoding and decoding for Anima / Krea 2 on HIP.\nWhen enabled, and only when no fused VAE attention backend is available, queries are processed in chunks of up to 2048 while retaining keys and values for the whole image. This reduces temporary memory for math attention and may take longer. Available fused backends still take priority.\nThis is not spatial Tiled VAE and does not change the main model attention backend.'],
   // What each weight is for; the model's own hint about files follows on the next line.
   'model.dit_path': ['生成图像的主模型权重，训练针对的就是它。', 'Weights of the model that generates the images; training targets it.'],
   'model.text_encoder_path': ['把标签文字转换成主模型能理解的特征。', 'Turns caption text into features the main model understands.'],

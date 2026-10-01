@@ -1,5 +1,5 @@
 import type { FamilyInfo, FamilyPreset } from '../api/types';
-import { configFieldLabel, configOptionLabel } from './configPresentation';
+import { configFieldHelp, configFieldLabel, configOptionLabel } from './configPresentation';
 
 /**
  * Settings that depend on the selected model and on the machine the service runs on. A setting neither uses is
@@ -53,6 +53,9 @@ export function unusedSettingReason(path: string, { family, config, english }: F
   const text = (zh: string, en: string) => english ? en : zh;
   const name = modelName(family);
   switch (path) {
+    case 'memory.vae_attention_chunking':
+      if (family.name !== 'anima' && family.name !== 'krea2') return text('此项仅用于 Anima / Krea 2 的图片 VAE。', 'This setting applies only to the Anima / Krea 2 image VAE.');
+      return runtime && runtime !== 'hip' ? text('此项仅在 HIP 环境生效，当前设备不使用 VAE 注意力分块。', 'This setting applies only on HIP; this device does not use VAE attention chunking.') : undefined;
     case 'memory.allow_tf32':
       return runtime === 'mps' || runtime === 'cpu' ? text('当前设备不使用 TF32。', 'This device does not use TF32.') : undefined;
     case 'memory.compile':
@@ -138,6 +141,8 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         text('只影响主模型，文本编码器和 VAE 不受影响。', 'Affects the main model only; the text encoder and VAE are unchanged.'),
       ]);
     }
+    case 'memory.vae_attention_chunking':
+      return unusedSettingReason(path, context) || configFieldHelp(path, undefined, english);
     case 'memory.allow_tf32':
       return runtime === 'hip'
         ? text('允许显卡用 TF32 计算 FP32 矩阵乘法（需显卡支持）：更快，精度略低。可复现训练会自动关闭。', 'Lets the GPU run FP32 matrix multiplications in TF32 where supported: faster, slightly less precise. Reproducible training turns it off.')

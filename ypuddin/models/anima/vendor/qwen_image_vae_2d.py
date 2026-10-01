@@ -87,7 +87,9 @@ class QwenImageResidualBlock2D(nn.Module):
         return x + h
 
 
-def _vae_sdpa(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+def _vae_sdpa(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *, query_chunking: bool = False
+) -> torch.Tensor:
     if q.device.type != "cuda" or not torch.version.hip:
         return F.scaled_dot_product_attention(q, k, v)
 
@@ -120,7 +122,7 @@ def _vae_sdpa(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor
     # Keep the single attention head and all keys/values. Chunking only the
     # queries bounds the math backend's otherwise quadratic score allocation.
     with sdpa_kernel(SDPBackend.MATH):
-        if q.shape[-2] <= 2048:
+        if not query_chunking or q.shape[-2] <= 2048:
             return F.scaled_dot_product_attention(q, k, v)
         return torch.cat(
             [F.scaled_dot_product_attention(part, k, v) for part in q.split(2048, dim=-2)],
@@ -134,6 +136,7 @@ class QwenImageAttentionBlock2D(nn.Module):
         self.norm = QwenImageRMS_norm(dim, images=True)
         self.to_qkv = nn.Conv2d(dim, dim * 3, 1)
         self.proj = nn.Conv2d(dim, dim, 1)
+        self.query_chunking = False
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         identity = x
@@ -144,7 +147,7 @@ class QwenImageAttentionBlock2D(nn.Module):
         qkv = qkv.reshape(batch_size, 1, channels * 3, -1)
         qkv = qkv.permute(0, 1, 3, 2).contiguous()
         q, k, v = qkv.chunk(3, dim=-1)
-        x = _vae_sdpa(q, k, v)
+        x = _vae_sdpa(q, k, v, query_chunking=self.query_chunking)
         x = x.squeeze(1).permute(0, 2, 1).reshape(batch_size, channels, height, width)
         x = self.proj(x)
         return x + identity
@@ -353,6 +356,7 @@ class AutoencoderKLQwenImage2D(nn.Module):
         ],
         input_channels: int = 3,
         spatial_chunk_size: Optional[int] = None,
+        attention_chunking: bool = False,
     ) -> None:
         super().__init__()
 
@@ -387,6 +391,9 @@ class AutoencoderKLQwenImage2D(nn.Module):
         self.spatial_chunk_size = None
         if spatial_chunk_size is not None and spatial_chunk_size > 0:
             self.enable_spatial_chunking(spatial_chunk_size)
+        for module in self.modules():
+            if isinstance(module, QwenImageAttentionBlock2D):
+                module.query_chunking = attention_chunking
 
     @property
     def dtype(self):
@@ -542,6 +549,7 @@ def load_vae(
     disable_mmap: bool = False,
     spatial_chunk_size: Optional[int] = None,
     disable_cache: bool = False,
+    attention_chunking: bool = False,
 ) -> AutoencoderKLQwenImage2D:
     """Load the official Qwen-Image VAE as an image-only 2D VAE.
 
@@ -624,6 +632,7 @@ def load_vae(
         latents_std=config["latents_std"],
         input_channels=input_channels,
         spatial_chunk_size=spatial_chunk_size,
+        attention_chunking=attention_chunking,
     )
 
     logger.info(f"Loading VAE from {vae_path}")

@@ -60,7 +60,7 @@ const labels: Record<string, string> = {
   'scheduler.type': '学习率调度', 'scheduler.warmup_steps': '预热步数 / 比例', 'scheduler.min_lr_ratio': '最低学习率比例',
   'scheduler.num_cycles': '调度周期数', 'scheduler.power': '多项式幂', 'scheduler.decay_steps': '衰减步数',
   'memory.base_precision': '底模存储精度', 'memory.blocks_to_swap': '换出到 CPU 的层数',
-  'memory.activation_checkpointing': '梯度检查点', 'memory.offload_text_encoder': '卸载文本编码器',
+  'memory.activation_checkpointing': '梯度检查点', 'memory.vae_attention_chunking': 'VAE 注意力分块', 'memory.offload_text_encoder': '卸载文本编码器',
   'memory.compile': '编译模型', 'memory.allow_tf32': '允许 TF32', 'loop.max_steps': '最大训练步数',
   'loop.epochs': '训练轮数', 'loop.grad_accum': '梯度累积', 'loop.mixed_precision': '混合精度', 'loop.seed': '随机种子',
   'loop.gpu_count': '训练显卡数量',
@@ -99,6 +99,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path.startsWith('dataset.native_')) return ({'dataset.native_max_pixels':'Image area limit (equivalent side, px)','dataset.native_max_side':'Longest side limit (px)','dataset.native_overflow':'When a size limit is exceeded'} as Record<string,string>)[path] || fallback;
   if (english && path === 'model.sdxl_max_token_length') return 'SDXL caption length';
   if (english && path === 'memory') return 'Memory estimate';
+  if (english && path === 'memory.vae_attention_chunking') return 'VAE attention chunking';
   if (path === 'loop.gpu_count') return english ? 'Training GPU count' : labels[path];
   if (path === 'loop.distributed_strategy') return english ? 'Multi-GPU training strategy' : labels[path];
   if (path === 'loop.deterministic') return english ? 'Reproducible training' : labels[path];
