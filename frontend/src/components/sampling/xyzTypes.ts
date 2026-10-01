@@ -62,7 +62,7 @@ export function taskProgress(task: XyzTask): number | null {
 
 export const axisNames: Record<AxisKey, [string, string]> = {
   steps: ['采样步数', 'Steps'], cfg: ['CFG 引导强度', 'CFG'], seed: ['随机种子', 'Seed'],
-  sampler: ['采样器', 'Sampler'], scheduler: ['调度器', 'Scheduler'], noise: ['出图方式', 'Noise source'], shift: ['时间步偏移', 'Shift'],
+  sampler: ['采样器', 'Sampler'], scheduler: ['调度器', 'Scheduler'], noise: ['噪声生成方式', 'Noise generation'], shift: ['时间步偏移', 'Shift'],
   adapter_scale: ['LoRA 强度', 'LoRA strength'], checkpoint: ['训练权重', 'Checkpoint'],
 };
 export function parseAxis(key: AxisKey, raw: string): XyzAxis {

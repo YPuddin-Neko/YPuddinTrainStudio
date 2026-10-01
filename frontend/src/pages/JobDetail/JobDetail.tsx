@@ -151,9 +151,12 @@ export default function JobDetail() {
   const [selectedSample, setSelectedSample] = React.useState<string | null>(null);
   const [checkpoints, setCheckpoints] = React.useState<JobCheckpoint[]>([]);
   const [checkpointsLoaded, setCheckpointsLoaded] = React.useState(false);
-  const [deleting, setDeleting] = React.useState<JobCheckpoint | null>(null);
+  const [deleting, setDeleting] = React.useState<JobCheckpoint[] | null>(null);
   const [deleteBusy, setDeleteBusy] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState('');
+  const [deleteProgress, setDeleteProgress] = React.useState({ done: 0, total: 0 });
+  const deleteJobId = React.useRef(id); deleteJobId.current = id;
+  React.useEffect(() => { setDeleting(null); setDeleteBusy(false); setDeleteError(''); }, [id]);
   const [configSnapshot, setConfigSnapshot] = React.useState<any>(null);
   const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
@@ -300,15 +303,29 @@ export default function JobDetail() {
   // Exported weights are outputs; full training states are resume points with their own tab.
   const outputs = checkpoints.filter(item => item.kind !== 'full');
   const resumePoints = checkpoints.filter(item => item.kind === 'full');
+  const requestCheckpointDelete = (items: JobCheckpoint[]) => {
+    setDeleteError('');
+    setDeleting([...new Map(items.map(item => [item.path, item])).values()]);
+  };
   const removeCheckpoint = async () => {
-    if (!deleting || !id) return;
-    setDeleteBusy(true); setDeleteError('');
-    try {
-      await apiClient.delete(`/jobs/${encodeURIComponent(id)}/checkpoints`, { params: { path: deleting.path }, silent: true });
-      setCheckpoints(previous => previous.filter(item => item.path !== deleting.path));
-      setDeleting(null);
-    } catch (failure) { setDeleteError(formatApiError(failure)); }
-    finally { setDeleteBusy(false); }
+    if (!deleting?.length || !id || deleteBusy) return;
+    const jobId = id;
+    setDeleteBusy(true); setDeleteError(''); setDeleteProgress({ done: 0, total: deleting.length });
+    const failed: JobCheckpoint[] = [];
+    const errors: string[] = [];
+    for (const [index, item] of deleting.entries()) {
+      try {
+        await apiClient.delete(`/jobs/${encodeURIComponent(jobId)}/checkpoints`, { params: { path: item.path }, silent: true });
+        if (deleteJobId.current === jobId) setCheckpoints(previous => previous.filter(point => point.path !== item.path));
+      } catch (failure) {
+        failed.push(item);
+        errors.push(`${item.path.replace(/\\/g, '/').split('/').pop()}: ${formatApiError(failure)}`);
+      }
+      if (deleteJobId.current === jobId) setDeleteProgress({ done: index + 1, total: deleting.length });
+    }
+    if (deleteJobId.current === jobId) {
+      setDeleting(failed.length ? failed : null); setDeleteError(errors.join('\n')); setDeleteBusy(false);
+    }
   };
 
   const tabs = [
@@ -441,20 +458,25 @@ export default function JobDetail() {
 
       {activeTab === 'samples' && <SampleViewer samples={samples} stepsPerEpoch={stepsPerEpoch} loaded={samplesLoaded} selected={selectedSample} onSelect={setSelectedSample}/>}
 
-      {activeTab === 'checkpoints' && <ArtifactGrid checkpoints={outputs} stepsPerEpoch={stepsPerEpoch} loaded={checkpointsLoaded}
-        onOpenSample={url => { setSelectedSample(url); setActiveTab('samples'); }} onDelete={item => { setDeleteError(''); setDeleting(item); }}/>}
+      {activeTab === 'checkpoints' && <ArtifactGrid key={id} checkpoints={outputs} stepsPerEpoch={stepsPerEpoch} loaded={checkpointsLoaded}
+        onOpenSample={url => { setSelectedSample(url); setActiveTab('samples'); }} deleting={deleteBusy} onDelete={item => requestCheckpointDelete([item])} onDeleteMany={requestCheckpointDelete}/>}
 
-      {activeTab === 'states' && <ResumePointList points={resumePoints} stepsPerEpoch={stepsPerEpoch} loaded={checkpointsLoaded} resumeFrom={job?.resume_from ?? null} jobStatus={job?.status}
-        resuming={resuming} canResume={!!configSnapshot} onResume={point => void resumeCheckpoint(point)} onDelete={item => { setDeleteError(''); setDeleting(item); }}/>}
+      {activeTab === 'states' && <ResumePointList key={id} points={resumePoints} stepsPerEpoch={stepsPerEpoch} loaded={checkpointsLoaded} resumeFrom={job?.resume_from ?? null} jobStatus={job?.status}
+        resuming={resuming} canResume={!!configSnapshot} onResume={point => void resumeCheckpoint(point)} deleting={deleteBusy} onDelete={item => requestCheckpointDelete([item])} onDeleteMany={requestCheckpointDelete}/>}
 
-      {deleting && <Dialog title={deleting.kind === 'full' ? text('删除恢复点', 'Delete resume point') : text('删除产物', 'Delete output')} onClose={() => setDeleting(null)} closeDisabled={deleteBusy}>
+      {!!deleting?.length && <Dialog title={deleting[0].kind === 'full' ? text('删除恢复点', deleting.length > 1 ? 'Delete resume points' : 'Delete resume point') : text('删除产物', deleting.length > 1 ? 'Delete outputs' : 'Delete output')} onClose={() => setDeleting(null)} closeDisabled={deleteBusy}>
         <div className="checkpoint-delete">
-          <p>{deleting.kind === 'full'
-            ? text(`将从磁盘删除恢复点“${deleting.path.replace(/\\/g, '/').split('/').pop()}”（第 ${deleting.step} 步）。删除后无法再从这一步继续训练。`, `The resume point at step ${deleting.step} will be removed from disk; training can no longer continue from it.`)
-            : text(`将从磁盘删除“${deleting.path.replace(/\\/g, '/').split('/').pop()}”（第 ${deleting.step} 步），无法恢复。`, `The file saved at step ${deleting.step} will be removed from disk and cannot be restored.`)}</p>
+          <p>{deleting.length > 1
+            ? deleting[0].kind === 'full'
+              ? text(`将从磁盘删除所选的 ${deleting.length} 个恢复点，删除后无法再从这些位置继续训练。`, `Delete ${deleting.length} selected resume points from disk? Training can no longer continue from these points.`)
+              : text(`将从磁盘删除所选的 ${deleting.length} 个产物，无法恢复。`, `Delete ${deleting.length} selected outputs from disk? This cannot be undone.`)
+            : deleting[0].kind === 'full'
+              ? text(`将从磁盘删除恢复点“${deleting[0].path.replace(/\\/g, '/').split('/').pop()}”（第 ${deleting[0].step} 步）。删除后无法再从这一步继续训练。`, `The resume point at step ${deleting[0].step} will be removed from disk; training can no longer continue from it.`)
+              : text(`将从磁盘删除“${deleting[0].path.replace(/\\/g, '/').split('/').pop()}”（第 ${deleting[0].step} 步），无法恢复。`, `The file saved at step ${deleting[0].step} will be removed from disk and cannot be restored.`)}</p>
+          {deleting.length > 1 && <ul className="checkpoint-delete-list">{deleting.map(item => <li key={item.path}>{item.path.replace(/\\/g, '/').split('/').pop()}</li>)}</ul>}
           {deleteError && <p role="alert" className="studio-error">{deleteError}</p>}
           <div className="checkpoint-delete-actions"><button type="button" className="ui-btn" disabled={deleteBusy} onClick={() => setDeleting(null)}>{text('取消', 'Cancel')}</button>
-            <button type="button" className="ui-btn ui-btn-primary ui-btn-danger" disabled={deleteBusy} onClick={() => void removeCheckpoint()}>{text('确认删除', 'Delete')}</button></div>
+            <button type="button" className="ui-btn ui-btn-primary ui-btn-danger" disabled={deleteBusy} onClick={() => void removeCheckpoint()}>{deleteBusy ? text(`正在删除 ${deleteProgress.done}/${deleteProgress.total}`, `Deleting ${deleteProgress.done}/${deleteProgress.total}`) : text('确认删除', 'Delete')}</button></div>
         </div>
       </Dialog>}
 

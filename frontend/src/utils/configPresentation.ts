@@ -74,7 +74,7 @@ const labels: Record<string, string> = {
   'sampling.every_epochs': '每隔几轮预览', 'sampling.at_start': '开始前生成预览', 'sampling.prompts': '预览提示词',
   'sampling.prompts_file': '提示词文件', 'sampling.steps': '采样步数', 'sampling.cfg': 'CFG 引导强度',
   'sampling.shift': '采样时间步偏移', 'sampling.width': '预览宽度', 'sampling.height': '预览高度',
-  'sampling.seed': '预览种子', 'sampling.noise': '出图方式', 'sampling.sampler': '采样器', 'validation.enabled': '启用验证集',
+  'sampling.seed': '预览种子', 'sampling.noise': '噪声生成方式', 'sampling.sampler': '采样器', 'validation.enabled': '启用验证集',
   'validation.split_ratio': '验证集划分比例', 'validation.sources': '独立验证数据源', 'validation.every_steps': '每隔几步验证',
   'validation.every_epochs': '每隔几轮验证', 'validation.timesteps': '验证时间步', 'validation.max_images': '验证图片上限',
   'validation.seed': '验证种子', 'logging.tensorboard': 'TensorBoard 日志', 'logging.wandb': 'Weights & Biases',
@@ -88,7 +88,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path === 'dataset.crop_anchor') return 'Crop anchor';
   if (english && path === 'adapter.resume_weights') return 'Weights to continue training';
   if (english && path === 'adapter.dora_axis') return 'DoRA axis';
-  if (english && path === 'sampling.noise') return 'Noise source';
+  if (english && path === 'sampling.noise') return 'Noise generation';
   if (english && path === 'adapter.layer_types') return 'Layer types';
   if (english && path === 'adapter.conv_rank') return 'Convolution rank';
   if (english && path === 'adapter.conv_alpha') return 'Convolution alpha';

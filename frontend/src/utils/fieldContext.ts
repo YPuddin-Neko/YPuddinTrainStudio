@@ -291,15 +291,15 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       return text(`按图像 token 数插值偏移量的两个参考点，${name} 默认 256 和 ${family.name === 'krea2' ? 6400 : 4096}。它们不是图像尺寸上限，范围外会外推；与下方 mu 成对使用。`, `The two image token counts the shift is interpolated between; ${name} uses 256 and ${family.name === 'krea2' ? 6400 : 4096}. They are not size limits (values outside extrapolate) and pair with the mu values below.`);
     case 'sampling.noise':
       return join([
-        text('同一种子在 ComfyUI 和 A1111 WebUI 中生成的噪声不同，出图构图也不同：', 'The same seed gives different noise, and so a different composition, in ComfyUI and A1111 WebUI:'),
+        text('选择初始噪声和采样过程中的随机数规则。采样由训练器执行。', 'Selects the random-number rules for initial noise and during sampling. Sampling runs in the trainer.'),
         ...optionLines({
-          comfyui: ['初始噪声在 CPU 上按种子生成，与显卡型号无关。', 'starting noise is drawn from the seed on the CPU, whatever the GPU.'],
+          comfyui: ['初始噪声在 CPU 上按种子生成。', 'initial noise is drawn from the seed on the CPU.'],
           a1111: onGpu(runtime)
-            ? ['按其默认设置，在显卡上为每张图按种子生成噪声。', "as its default settings do, each image's noise is drawn from its seed on the GPU."]
-            : ['按其默认设置生成；这台机器没有 NVIDIA 或海光显卡，A1111 在 CPU 上生成，初始噪声与 ComfyUI 相同。', "as its default settings do; without an NVIDIA or Hygon GPU A1111 draws on the CPU, so the starting noise equals ComfyUI's."],
+            ? ['在显卡上逐张按种子生成噪声。', 'noise is drawn from each image’s seed on the GPU.']
+            : ['这台机器使用 CPU 逐张按种子生成噪声。', 'noise is drawn from each image’s seed on the CPU on this machine.'],
         }),
-        ddpm && text(`${name} 的初始噪声也按所选软件的方式缩放。`, `${name} also scales the starting noise the way the chosen app does.`),
-        text('Euler a、ER-SDE 每步加入的噪声也按所选方式生成。其他采样设置相同时，同一种子在对应软件中出图构图相同。只影响预览图，不影响训练。', 'Euler a and ER-SDE draw their per-step noise the chosen way too. With the other sampling settings equal, a seed composes the same in that app. Affects previews only, not training.'),
+        ddpm && text(`${name} 的初始噪声缩放也随选项切换。`, `${name}'s initial-noise scaling also follows this selection.`),
+        text('Euler a、ER-SDE 在采样过程中追加的噪声也使用所选规则。仅影响采样，不影响训练。', 'Euler a and ER-SDE use the selected rules for noise added during sampling. Affects sampling, not training.'),
       ]);
     case 'sampling.sampler': {
       const describe: Record<string, [string, string]> = {

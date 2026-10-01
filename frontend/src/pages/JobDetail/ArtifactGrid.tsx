@@ -10,6 +10,8 @@ import { formatBytes, formatTime } from '../../utils/format';
 import { sampleSource } from '../../utils/sampleMedia';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import EpochSearch from './EpochSearch';
+import { CheckpointPagination, CheckpointSelection } from './CheckpointBrowserControls';
+import { useCheckpointBrowser } from './useCheckpointBrowser';
 import './job-samples.css';
 
 function fileName(path: string): string {
@@ -24,15 +26,17 @@ function SkeletonGrid() {
 }
 
 /** Saved weights and training states as cards, newest first, each with the preview of its step. */
-export default function ArtifactGrid({ checkpoints, stepsPerEpoch, loaded, onOpenSample, onDelete }: {
+export default function ArtifactGrid({ checkpoints, stepsPerEpoch, loaded, onOpenSample, onDelete, onDeleteMany, deleting = false }: {
   checkpoints: JobCheckpoint[]; stepsPerEpoch?: number | null; loaded: boolean;
-  onOpenSample: (url: string) => void; onDelete: (checkpoint: JobCheckpoint) => void;
+  onOpenSample: (url: string) => void; onDelete: (checkpoint: JobCheckpoint) => void; onDeleteMany: (checkpoints: JobCheckpoint[]) => void; deleting?: boolean;
 }) {
   const { t } = useTranslation();
   const text = useWorkspaceText();
   const [query, setQuery] = React.useState('');
   const ranges = React.useMemo(() => parseEpochQuery(query), [query]);
   const shown = React.useMemo(() => [...checkpoints].reverse().filter(item => inEpochs(epochAt(item, stepsPerEpoch), ranges)), [checkpoints, stepsPerEpoch, ranges]);
+  const browser = useCheckpointBrowser(shown, 'studio.job.outputs.pageSize');
+  const changeQuery = (value: string) => { setQuery(value); browser.resetFilter(); };
   const kindLabel = (kind: string) => kind === 'model' ? text('全量模型组件', 'Full-model components') : kind === 'weights' ? text('权重', 'Weights') : kind;
 
   if (!loaded) return <section className="artifact-browser" aria-label={text('产物', 'Outputs')}><SkeletonGrid/></section>;
@@ -40,15 +44,17 @@ export default function ArtifactGrid({ checkpoints, stepsPerEpoch, loaded, onOpe
 
   return <section className="artifact-browser" aria-label={text('产物', 'Outputs')}>
     <div className="sample-toolbar">
-      <EpochSearch value={query} onChange={setQuery} label={text('按轮次搜索产物', 'Search outputs by epoch')}/>
-      <span className="sample-toolbar-count">{ranges && ranges !== 'invalid' ? text(`找到 ${shown.length} 个，共 ${checkpoints.length} 个`, `${shown.length} of ${checkpoints.length}`) : text(`共 ${checkpoints.length} 个`, `${checkpoints.length} outputs`)}</span>
+      <EpochSearch value={query} onChange={changeQuery} label={text('按轮次搜索产物', 'Search outputs by epoch')}/>
+      <div className="checkpoint-toolbar-controls"><span className="sample-toolbar-count">{ranges && ranges !== 'invalid' ? text(`找到 ${shown.length} 个，共 ${checkpoints.length} 个`, `${shown.length} of ${checkpoints.length}`) : text(`共 ${checkpoints.length} 个`, `${checkpoints.length} outputs`)}</span><CheckpointPagination browser={browser} kind="outputs" disabled={deleting}/></div>
     </div>
-    {!shown.length ? <div className="sample-empty"><Package size={26} aria-hidden="true"/><p>{text('没有符合轮次的产物', 'No outputs in these epochs')}</p><button type="button" className="ui-link" onClick={() => setQuery('')}>{text('清除搜索', 'Clear search')}</button></div>
-      : <div className="artifact-grid">{shown.map(item => {
+    <CheckpointSelection browser={browser} disabled={deleting} onDelete={onDeleteMany}/>
+    {!shown.length ? <div className="sample-empty"><Package size={26} aria-hidden="true"/><p>{text('没有符合轮次的产物', 'No outputs in these epochs')}</p><button type="button" className="ui-link" onClick={() => changeQuery('')}>{text('清除搜索', 'Clear search')}</button></div>
+      : <div className="artifact-grid">{browser.visible.map(item => {
         const name = fileName(item.path);
         const epoch = epochAt(item, stepsPerEpoch);
         const loss = typeof item.loss === 'number' && Number.isFinite(item.loss) ? String(Number(item.loss.toPrecision(5))) : '—';
         return <article key={`${item.path}-${item.step}`} className="artifact-card" aria-label={name}>
+          {browser.managing && <label className="artifact-select"><input type="checkbox" aria-label={text(`选择 ${name}`, `Select ${name}`)} checked={browser.isSelected(item)} disabled={deleting} onChange={() => browser.toggle(item)}/></label>}
           <button type="button" className="artifact-preview" disabled={!item.sample_url} onClick={() => item.sample_url && onOpenSample(item.sample_url)}
             aria-label={item.sample_url ? text(`查看第 ${item.step} 步的采样图`, `Open the step ${item.step} preview`) : text('此步没有采样图', 'No preview at this step')}>
             {item.sample_url ? <LazyImage src={sampleSource(item.sample_url)} alt="" loading="lazy"/>
@@ -68,7 +74,7 @@ export default function ArtifactGrid({ checkpoints, stepsPerEpoch, loaded, onOpe
               {item.artifact_id ? <a className="ui-btn ui-btn-sm" href={apiUrl(`/artifacts/${item.artifact_id}/download`)}><Download size={14}/>{t('job.download')}</a>
                 : <span>{t('job.downloadUnavailable')}</span>}
               <CopyButton value={item.path} label={text('复制本机路径', 'Copy local path')}/>
-              <button type="button" className="ui-btn ui-btn-icon ui-btn-sm ui-btn-quiet ui-btn-danger" onClick={() => onDelete(item)} aria-label={text(`删除 ${name}`, `Delete ${name}`)} title={text('删除', 'Delete')}><Trash2 size={14}/></button>
+              <button type="button" className="ui-btn ui-btn-icon ui-btn-sm ui-btn-quiet ui-btn-danger" disabled={deleting} onClick={() => onDelete(item)} aria-label={text(`删除 ${name}`, `Delete ${name}`)} title={text('删除', 'Delete')}><Trash2 size={14}/></button>
             </div>
           </div>
         </article>;

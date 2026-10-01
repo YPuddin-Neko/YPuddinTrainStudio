@@ -1,4 +1,4 @@
-"""A seed's noise drawn the way ComfyUI or A1111 WebUI draws it, so a preview seed starts the same image there."""
+"""Initial and sampling-step noise rules based on ComfyUI and A1111 WebUI."""
 
 from __future__ import annotations
 

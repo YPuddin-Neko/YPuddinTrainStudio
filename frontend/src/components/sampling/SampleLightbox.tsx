@@ -11,7 +11,7 @@ const TAP_SLOP = 4;
 const FITTED = { scale: 1, x: 0, y: 0 };
 const CENTER = { x: 0, y: 0 };
 
-export type LightboxSample = { url: string; step: number; prompt: string; prompt_index: number; seed: number; width: number; height: number; loss?: number | null };
+export type LightboxSample = { url: string; step?: number; prompt: string; prompt_index?: number; seed: number; width: number; height: number; loss?: number | null };
 type View = { scale: number; x: number; y: number };
 type Point = { x: number; y: number };
 type ZoomControls = { zoomIn: () => void; zoomOut: () => void; fit: () => void; actual: () => void };
@@ -144,8 +144,8 @@ const ZoomStage = React.forwardRef<ZoomControls, { src: string; alt: string; onS
  * below the image and never over it. Esc or the close button returns to the page; the arrow keys page, + and -
  * zoom, 0 fits and 1 shows the image pixels. `details` adds context such as the epoch or the training run.
  */
-export default function SampleLightbox({ sample, position, total, details = [], onPrevious, onNext, onClose }: {
-  sample: LightboxSample; position: number; total: number; details?: string[]; onPrevious?: () => void; onNext?: () => void; onClose: () => void;
+export default function SampleLightbox({ sample, title, position, total, details = [], onPrevious, onNext, onClose }: {
+  sample: LightboxSample; title?: string; position: number; total: number; details?: string[]; onPrevious?: () => void; onNext?: () => void; onClose: () => void;
 }) {
   const text = useWorkspaceText();
   const zoom = React.useRef<ZoomControls>(null);
@@ -153,7 +153,7 @@ export default function SampleLightbox({ sample, position, total, details = [], 
   const [state, setState] = React.useState<ZoomState>({ percent: 100, zoomed: false, ready: false, atMost: false, atActual: true });
   const onState = React.useCallback((next: ZoomState) => setState(next), []);
   const src = sampleSource(sample.url);
-  const loss = sample.step > 0 && typeof sample.loss === 'number' && Number.isFinite(sample.loss) ? `Loss ${Number(sample.loss.toPrecision(5))}` : sample.step === 0 ? text('初始采样 · 未训练', 'Initial sample · untrained') : '';
+  const loss = sample.step != null && sample.step > 0 && typeof sample.loss === 'number' && Number.isFinite(sample.loss) ? `Loss ${Number(sample.loss.toPrecision(5))}` : sample.step === 0 ? text('初始采样 · 未训练', 'Initial sample · untrained') : '';
   React.useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     dialog.current?.focus();
@@ -176,11 +176,11 @@ export default function SampleLightbox({ sample, position, total, details = [], 
     const action = actions[event.key];
     if (action) { event.preventDefault(); event.stopPropagation(); action(); }
   };
-  return createPortal(<div ref={dialog} className="sample-lightbox" role="dialog" aria-modal="true" aria-label={text('查看采样图', 'Preview')} tabIndex={-1} onKeyDown={onKeyDown}>
+  return createPortal(<div ref={dialog} className="sample-lightbox" role="dialog" aria-modal="true" aria-label={title || text('查看采样图', 'Preview')} tabIndex={-1} onKeyDown={onKeyDown}>
     <header className="sample-lightbox-head">
       <div className="sample-lightbox-title">
-        <p><strong>{text(`第 ${sample.step} 步`, `Step ${sample.step}`)}</strong>{details.map(detail => <span key={detail}>{detail}</span>)}
-          <span>{text(`提示词 ${sample.prompt_index + 1}`, `Prompt ${sample.prompt_index + 1}`)}</span><span>Seed {sample.seed}</span><span>{sample.width} × {sample.height}</span>{loss && <span>{loss}</span>}</p>
+        <p><strong>{title || (sample.step != null ? text(`第 ${sample.step} 步`, `Step ${sample.step}`) : text('预览图', 'Preview'))}</strong>{details.map(detail => <span key={detail}>{detail}</span>)}
+          {sample.prompt_index != null && <span>{text(`提示词 ${sample.prompt_index + 1}`, `Prompt ${sample.prompt_index + 1}`)}</span>}<span>Seed {sample.seed}</span><span>{sample.width} × {sample.height}</span>{loss && <span>{loss}</span>}</p>
         {sample.prompt && <p className="sample-lightbox-prompt" title={sample.prompt}>{sample.prompt}</p>}
       </div>
       <button type="button" className="ui-btn ui-btn-icon sample-lightbox-close" onClick={onClose} aria-label={text('关闭', 'Close')} title={text('关闭（Esc）', 'Close (Esc)')}><X size={18}/></button>
