@@ -21,14 +21,27 @@ function bytes(value: number): string {
 
 export default function DatasetImportProgress({ operation }: { operation: DatasetImportOperation }) {
   const text = useWorkspaceText();
-  const { snapshot, state, unavailable } = operation;
+  const { snapshot, state, unavailable, upload } = operation;
+  if (state === 'active' && upload && !upload.complete) {
+    const remaining = upload.bytesPerSecond != null && upload.bytesPerSecond > 0
+      ? (upload.bytesTotal - upload.bytesDone) / upload.bytesPerSecond : null;
+    return <DatasetOperationProgress label={text('导入进度', 'Import progress')}
+      phaseText={upload.bytesDone >= upload.bytesTotal ? text('等待训练服务确认上传', 'Waiting for upload confirmation') : text('上传文件', 'Uploading files')}
+      state={state} done={upload.bytesDone} total={upload.bytesTotal}
+      detail={`${bytes(upload.bytesDone)} / ${bytes(upload.bytesTotal)} · ${text(`${upload.filesDone} / ${upload.filesTotal} 个文件`, `${upload.filesDone} / ${upload.filesTotal} files`)}`}
+      speed={upload.bytesPerSecond != null ? `${(upload.bytesPerSecond / 1024 ** 2).toFixed(2)} MiB/s` : null}
+      elapsed={operation.elapsed} remaining={remaining}/>;
+  }
+  const waitingForProcessing = upload?.complete && (!snapshot || snapshot.phase === 'receiving' || unavailable);
   const terminalSnapshot = snapshot?.phase === 'completed' || snapshot?.phase === 'failed';
   const phaseText = state === 'completed' ? text('导入与登记已完成', 'Import and registration completed')
+    : state === 'failed' && operation.unconfirmed ? text('暂未确认导入结果，来源文件已保留', 'Import result not confirmed; source files are retained')
     : state === 'failed' ? text('导入未完成，来源文件已保留', 'Import did not complete; source files are retained')
+      : waitingForProcessing ? text('文件已上传，正在等待导入结果', 'Files uploaded; waiting for the import result')
       : unavailable ? text('暂时无法读取进度，正在等待导入结果', 'Progress is unavailable; waiting for the import result')
         : snapshot ? text(...phaseLabels[snapshot.phase])
           : operation.mode === 'upload' ? text('等待训练服务接收文件', 'Waiting for the training service to receive files') : text('读取来源目录', 'Reading the source folder');
-  const measured = snapshot && !terminalSnapshot && !unavailable;
+  const measured = snapshot && !terminalSnapshot && !unavailable && !waitingForProcessing;
   const hasBytes = measured && (snapshot.phase === 'receiving' || snapshot.bytes_done > 0 || (snapshot.bytes_total ?? 0) > 0);
   const done = measured ? hasBytes ? snapshot.bytes_done : snapshot.files_done : null;
   const total = measured ? hasBytes ? snapshot.bytes_total : snapshot.files_total : null;

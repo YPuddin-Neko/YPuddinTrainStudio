@@ -85,6 +85,13 @@ def create_app(
         await asyncio.to_thread(migrate_dora_axis, context)
         await supervisor.start()
         stats_task = asyncio.create_task(routes_core.stats_publisher(context))
+
+        async def expire_uploads() -> None:
+            while True:
+                await asyncio.sleep(60)
+                await asyncio.to_thread(context.upload_sessions.prune)
+
+        uploads_task = asyncio.create_task(expire_uploads())
         try:
             yield
         finally:
@@ -92,6 +99,10 @@ def create_app(
             stats_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await stats_task
+            uploads_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await uploads_task
+            await asyncio.to_thread(context.upload_sessions.close)
             await supervisor.stop()
             await asyncio.to_thread(site_downloads.close)
             await asyncio.to_thread(regularization.close)

@@ -723,6 +723,15 @@ class DatasetUploadInfo(DatasetInfo):
     datasets: list[DatasetInfo]
 
 
+class DatasetUploadSession(_Out):
+    id: str
+    chunk_bytes: int
+
+
+class DatasetUploadChunk(_Out):
+    received: int
+
+
 class DatasetImportProgress(_Out):
     id: str
     phase: Literal["receiving", "extracting", "validating", "copying", "registering", "completed", "failed"]

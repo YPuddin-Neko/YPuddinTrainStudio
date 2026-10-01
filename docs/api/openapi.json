@@ -3028,6 +3028,229 @@
         }
       }
     },
+    "/api/projects/{pid}/datasets/upload-sessions": {
+      "post": {
+        "summary": "Create Upload Session",
+        "operationId": "create_upload_session_api_projects__pid__datasets_upload_sessions_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadSessionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetUploadSession"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/datasets/upload-sessions/{sid}/files/{index}": {
+      "put": {
+        "summary": "Put Upload Chunk",
+        "operationId": "put_upload_chunk_api_projects__pid__datasets_upload_sessions__sid__files__index__put",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Index"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetUploadChunk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/datasets/upload-sessions/{sid}/complete": {
+      "post": {
+        "summary": "Complete Upload Session",
+        "operationId": "complete_upload_session_api_projects__pid__datasets_upload_sessions__sid__complete_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetUploadInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/datasets/upload-sessions/{sid}": {
+      "delete": {
+        "summary": "Delete Upload Session",
+        "operationId": "delete_upload_session_api_projects__pid__datasets_upload_sessions__sid__delete",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/datasets/{did}/upload": {
       "post": {
         "summary": "Append Dataset Images",
@@ -11182,6 +11405,20 @@
         "type": "object",
         "title": "DatasetStats"
       },
+      "DatasetUploadChunk": {
+        "properties": {
+          "received": {
+            "type": "integer",
+            "title": "Received"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "received"
+        ],
+        "title": "DatasetUploadChunk"
+      },
       "DatasetUploadInfo": {
         "properties": {
           "masked_loss": {
@@ -11241,6 +11478,25 @@
           "datasets"
         ],
         "title": "DatasetUploadInfo"
+      },
+      "DatasetUploadSession": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "chunk_bytes": {
+            "type": "integer",
+            "title": "Chunk Bytes"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "chunk_bytes"
+        ],
+        "title": "DatasetUploadSession"
       },
       "DiskStats": {
         "properties": {
@@ -23114,6 +23370,122 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TrainingConfig"
+      },
+      "UploadManifestFile": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Size"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "size"
+        ],
+        "title": "UploadManifestFile"
+      },
+      "UploadSessionBody": {
+        "properties": {
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "target_dataset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Dataset Id"
+          },
+          "progress_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Id"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/UploadManifestFile"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Files"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Name",
+            "default": ""
+          },
+          "repeats": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Repeats",
+            "default": 1
+          },
+          "is_reg": {
+            "type": "boolean",
+            "title": "Is Reg",
+            "default": false
+          },
+          "prior_weight": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Prior Weight",
+            "default": 1
+          },
+          "class_prompt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Prompt"
+          },
+          "caption_ext": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Caption Ext",
+            "default": "auto"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "UploadSessionBody"
       },
       "ValidateResult": {
         "properties": {

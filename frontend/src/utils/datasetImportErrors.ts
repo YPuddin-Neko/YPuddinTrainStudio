@@ -7,6 +7,15 @@ export function formatDatasetImportError(error: unknown): string {
   const details = formatApiError(error);
   if (!(error instanceof ApiError)) return details;
   const english = i18n.language?.startsWith('en');
+  if (error.code === 'upload.result_unconfirmed') return english
+    ? 'The import result could not be confirmed. Your selection is retained. Check the dataset list before retrying.'
+    : '未能确认导入结果，所选文件已保留。请检查数据集列表后重试。';
+  if (error.code === 'upload.update_required') return english
+    ? 'This training service does not support chunked uploads. Update it, then retry.'
+    : '当前训练服务不支持分片上传，请更新训练器后重试。';
+  if (error.status === 413 && error.code === 'http_413') return english
+    ? "The upload exceeds the connection's request size limit. Increase the proxy upload limit, or upload to the server and use Import from server computer."
+    : '上传请求超过连接入口的大小限制。请提高代理上传限制，或先把文件上传到服务器，再从服务端电脑导入。';
   const summary = error.code === 'upload.conflict'
     ? english
       ? 'The import conflicts with files already in this version. Check the path below, rename the conflicting file or folder, then retry.'

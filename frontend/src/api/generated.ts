@@ -864,6 +864,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{pid}/datasets/upload-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Upload Session */
+        post: operations["create_upload_session_api_projects__pid__datasets_upload_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/datasets/upload-sessions/{sid}/files/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Upload Chunk */
+        put: operations["put_upload_chunk_api_projects__pid__datasets_upload_sessions__sid__files__index__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/datasets/upload-sessions/{sid}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Upload Session */
+        post: operations["complete_upload_session_api_projects__pid__datasets_upload_sessions__sid__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/datasets/upload-sessions/{sid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Upload Session */
+        delete: operations["delete_upload_session_api_projects__pid__datasets_upload_sessions__sid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/datasets/{did}/upload": {
         parameters: {
             query?: never;
@@ -3587,6 +3655,13 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** DatasetUploadChunk */
+        DatasetUploadChunk: {
+            /** Received */
+            received: number;
+        } & {
+            [key: string]: unknown;
+        };
         /** DatasetUploadInfo */
         DatasetUploadInfo: {
             /** Masked Loss */
@@ -3601,6 +3676,15 @@ export interface components {
             };
             /** Datasets */
             datasets: components["schemas"]["DatasetInfo"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /** DatasetUploadSession */
+        DatasetUploadSession: {
+            /** Id */
+            id: string;
+            /** Chunk Bytes */
+            chunk_bytes: number;
         } & {
             [key: string]: unknown;
         };
@@ -8039,6 +8123,51 @@ export interface components {
              */
             resume_weights?: string | null;
         };
+        /** UploadManifestFile */
+        UploadManifestFile: {
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+        };
+        /** UploadSessionBody */
+        UploadSessionBody: {
+            /** Version Id */
+            version_id?: string | null;
+            /** Target Dataset Id */
+            target_dataset_id?: string | null;
+            /** Progress Id */
+            progress_id?: string | null;
+            /** Files */
+            files: components["schemas"]["UploadManifestFile"][];
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Repeats
+             * @default 1
+             */
+            repeats: number;
+            /**
+             * Is Reg
+             * @default false
+             */
+            is_reg: boolean;
+            /**
+             * Prior Weight
+             * @default 1
+             */
+            prior_weight: number;
+            /** Class Prompt */
+            class_prompt?: string | null;
+            /**
+             * Caption Ext
+             * @default auto
+             */
+            caption_ext: string;
+        };
         /** ValidateResult */
         ValidateResult: {
             /** Ok */
@@ -10867,6 +10996,144 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatasetUploadInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_upload_session_api_projects__pid__datasets_upload_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadSessionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetUploadSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_upload_chunk_api_projects__pid__datasets_upload_sessions__sid__files__index__put: {
+        parameters: {
+            query: {
+                offset: number;
+            };
+            header?: never;
+            path: {
+                pid: string;
+                sid: string;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetUploadChunk"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_upload_session_api_projects__pid__datasets_upload_sessions__sid__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetUploadInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_upload_session_api_projects__pid__datasets_upload_sessions__sid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
                 };
             };
             /** @description Validation Error */

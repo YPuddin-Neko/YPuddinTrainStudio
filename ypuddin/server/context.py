@@ -62,6 +62,7 @@ class ServiceContext:
     _settings_lock: Any = field(default_factory=threading.RLock, init=False, repr=False)
     versions: Any = field(default=None, init=False, repr=False)
     import_progress: ImportProgressStore = field(default_factory=ImportProgressStore, init=False, repr=False)
+    upload_sessions: Any = field(default=None, init=False, repr=False)
     _active_imports: int = field(default=0, init=False, repr=False)
 
     @contextmanager
@@ -87,10 +88,12 @@ class ServiceContext:
 
     def __post_init__(self) -> None:
         from .thumbnail_cache import ThumbnailCache
+        from .upload_sessions import UploadSessionStore
         from .versions import VersionManager
 
         self.thumbnails = ThumbnailCache(self)
         self.versions = VersionManager(self)
+        self.upload_sessions = UploadSessionStore(self.data_root / ".upload-sessions", self.import_progress)
 
     @property
     def settings_path(self) -> Path:

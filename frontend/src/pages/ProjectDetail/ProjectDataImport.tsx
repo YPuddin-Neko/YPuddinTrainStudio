@@ -2,7 +2,7 @@ import DatasetLink from '../../components/datasets/DatasetLink';
 import React from 'react';
 import { Upload, FolderOpen, X, Loader2, CheckCircle2, Plus, ChevronUp } from 'lucide-react';
 import { apiClient } from '../../api/client';
-import type { DatasetInfo } from '../../api/types';
+import { ApiError, type DatasetInfo } from '../../api/types';
 import { PathInput } from '../../components/PathBrowser';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
@@ -12,13 +12,20 @@ import { formatBytes, formatEta } from '../../utils/format';
 import { filesFromDrop, filesFromSelection, type DatasetUploadFile } from '../../utils/datasetFiles';
 import { formatDatasetImportError } from '../../utils/datasetImportErrors';
 import { useDatasetImportProgress } from '../../utils/useDatasetImportProgress';
+import { uploadDataset } from '../../utils/uploadDataset';
 import DatasetImportProgress from '../../components/datasets/DatasetImportProgress';
 import SiteDownloadImport from '../../components/datasets/SiteDownloadImport';
 import './project-data-import.css';
 import { SlidingIndicator } from '../../components/motion';
 import OverflowStrip from '../../components/OverflowStrip';
 
-export default function ProjectDataImport({ projectId, versionId, onImported, defaultIsReg = false, captionFormats, targetDataset, onBusyChange }: { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean; captionFormats?: readonly string[]; targetDataset?: DatasetInfo; onBusyChange?: (busy:boolean)=>void }) {
+type ProjectDataImportProps = { projectId: string; versionId?: string; onImported: () => void; defaultIsReg?: boolean; captionFormats?: readonly string[]; targetDataset?: DatasetInfo; onBusyChange?: (busy:boolean)=>void };
+
+export default function ProjectDataImport(props: ProjectDataImportProps) {
+  return <ProjectDataImportForm key={`${props.projectId}/${props.versionId || ''}/${props.targetDataset?.source.id || ''}`} {...props}/>;
+}
+
+function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg = false, captionFormats, targetDataset, onBusyChange }: ProjectDataImportProps) {
   const text = useWorkspaceText();
   const repeatsId = React.useId();
   // Site downloads run on, so coming back to this form within the session shows them again.
@@ -47,9 +54,10 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
   const [showForm, setShowForm] = React.useState(true);
   const selectionGeneration = React.useRef(0);
   const importGeneration = React.useRef(0);
+  const uploadRequest = React.useRef<AbortController | null>(null);
   const healthRequest = React.useRef<AbortController | null>(null);
-  const { operation, start: startProgress, finish: finishProgress, reset: resetProgress } = useDatasetImportProgress(projectId);
-  React.useEffect(() => () => { selectionGeneration.current += 1; importGeneration.current += 1; healthRequest.current?.abort(); }, [projectId, versionId]);
+  const { operation, start: startProgress, finish: finishProgress, reset: resetProgress, updateUpload } = useDatasetImportProgress(projectId);
+  React.useEffect(() => () => { selectionGeneration.current += 1; importGeneration.current += 1; healthRequest.current?.abort(); uploadRequest.current?.abort(); }, [projectId, versionId, targetDataset?.source.id]);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const folderInput = React.useRef<HTMLInputElement>(null);
   const inputClass = 'project-import-input';
@@ -90,15 +98,13 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
       const progressId = startProgress(mode);
       let result: DatasetInfo & { datasets?: DatasetInfo[] };
       if (mode === 'upload') {
-        const form = new FormData();
-        files.forEach(({file, relativePath}) => form.append('files', file, relativePath));
-        if (!targetDataset) {
-          form.append('name', autoName); form.append('repeats', String(repeats));
-          form.append('is_reg', String(isReg)); form.append('prior_weight', String(priorWeight));
-          form.append('class_prompt', classPrompt.trim());
-        }
-        form.append('caption_ext', captionExt);
-        result = await apiClient.post<DatasetInfo>(targetDataset ? `/datasets/${targetDataset.source.id}/upload` : `/projects/${projectId}/datasets/upload`, form, { params: { version_id: versionId, progress_id: progressId }, silent: true });
+        const controller = new AbortController();
+        uploadRequest.current = controller;
+        result = await uploadDataset(projectId, files, {
+          version_id: versionId, progress_id: progressId, target_dataset_id: targetDataset?.source.id,
+          ...(!targetDataset ? { name: autoName, repeats, is_reg: isReg, prior_weight: priorWeight, class_prompt: classPrompt.trim() } : {}),
+          caption_ext: captionExt,
+        }, controller.signal, progress => { if (current()) updateUpload(progress); });
         if (!current()) return;
         setFiles([]);
         if (fileInput.current) fileInput.current.value = '';
@@ -114,21 +120,22 @@ export default function ProjectDataImport({ projectId, versionId, onImported, de
       setCreated(result.datasets || [result]); setShowForm(false); onImported();
     } catch (failure) {
       if (!current()) return;
-      finishProgress('failed');
+      const unconfirmed = failure instanceof ApiError && failure.code === 'upload.result_unconfirmed';
+      finishProgress('failed', unconfirmed);
       const isNetworkFailure = failure instanceof Error && /^(Failed to fetch|Load failed|NetworkError when attempting to fetch resource\.?)$/i.test(failure.message);
-      if (mode === 'upload' && isNetworkFailure) {
+      if (mode === 'upload' && (isNetworkFailure || unconfirmed)) {
         const controller = new AbortController();
         healthRequest.current = controller;
         const timeout = window.setTimeout(() => controller.abort(), 3000);
         try {
           await apiClient.get('/health', { silent: true, signal: controller.signal });
           if (!current()) return;
-          setError(text('训练服务仍可连接，但文件未能发送。请确认文件没有被移动或删除，重新选择文件夹后重试。', 'The training service is reachable, but the files could not be sent. Check that they have not moved or been deleted, then select the folder again.'));
+          setError(text('训练服务仍可连接，但未能确认导入结果。所选文件已保留，请检查数据集列表后重试。', 'The training service is reachable, but the import result could not be confirmed. Your selection is retained. Check the dataset list before retrying.'));
         } catch { if (current()) setError(text('上传连接已中断，所选文件已保留。请检查训练服务与网络连接后重试。', 'The upload connection was interrupted. Your selection is retained. Check the training service and network, then retry.')); }
         finally { window.clearTimeout(timeout); if (healthRequest.current === controller) healthRequest.current = null; }
       } else setError(formatDatasetImportError(failure));
     }
-    finally { if (current()) setBusy(false); }
+    finally { if (current()) { uploadRequest.current = null; setBusy(false); } }
   };
 
   const modes: [typeof mode, string][] = [

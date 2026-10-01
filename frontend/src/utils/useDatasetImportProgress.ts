@@ -2,6 +2,7 @@ import React from 'react';
 import { apiClient } from '../api/client';
 import { ApiError } from '../api/types';
 import type { components } from '../api/generated';
+import type { DatasetUploadProgress } from './uploadDataset';
 
 export type DatasetImportProgressSnapshot = components['schemas']['DatasetImportProgress'];
 export type DatasetImportPhase = DatasetImportProgressSnapshot['phase'];
@@ -12,6 +13,8 @@ export interface DatasetImportOperation {
   snapshot: DatasetImportProgressSnapshot | null;
   elapsed: number;
   unavailable: boolean;
+  upload?: DatasetUploadProgress;
+  unconfirmed?: boolean;
 }
 interface ProgressRun {
   id: string;
@@ -69,6 +72,7 @@ export function useDatasetImportProgress(projectId: string) {
     }, 1000);
     let notFound = 0;
     let failures = 0;
+    let pollDelay = 500;
     const poll = async () => {
       if (!current()) return;
       const controller = new AbortController();
@@ -79,31 +83,39 @@ export function useDatasetImportProgress(projectId: string) {
         const snapshot = await apiClient.get<DatasetImportProgressSnapshot>(`/projects/${projectId}/datasets/import-progress/${run.id}`, { silent: true, signal: controller.signal });
         if (!current()) return;
         if (snapshot.id !== run.id) throw new Error('Unexpected import progress id');
-        notFound = 0; failures = 0;
+        notFound = 0; failures = 0; pollDelay = 500;
         setOperation(previous => previous?.id === run.id ? { ...previous, snapshot, unavailable: false, elapsed: Math.max(elapsed(), Number.isFinite(snapshot.elapsed_seconds) ? snapshot.elapsed_seconds : 0) } : previous);
         again = snapshot.phase !== 'completed' && snapshot.phase !== 'failed';
       } catch (failure) {
         if (!current()) return;
-        // A poll can beat POST creation. An older server without this optional
-        // endpoint must not be polled forever or make a successful import fail.
-        if (failure instanceof ApiError && failure.status === 404) again = ++notFound < 8;
-        else again = ++failures < 3;
-        if (!again) setOperation(previous => previous?.id === run.id ? { ...previous, unavailable: true } : previous);
+        // Proxies can buffer uploads before the server creates their progress record.
+        const exhausted = failure instanceof ApiError && failure.status === 404 ? ++notFound >= 8 : ++failures >= 3;
+        again = mode === 'upload' || !exhausted;
+        if (exhausted) {
+          pollDelay = Math.min(5000, pollDelay * 2);
+          setOperation(previous => previous?.id === run.id ? { ...previous, unavailable: true } : previous);
+        }
       } finally {
         window.clearTimeout(run.pollTimeout);
         run.controller = null;
-        if (again && current()) run.nextPoll = window.setTimeout(() => { void poll(); }, 500);
+        if (again && current()) run.nextPoll = window.setTimeout(() => { void poll(); }, pollDelay);
       }
     };
     if (progressId) void poll();
     return progressId;
   }, [projectId]);
 
-  const finish = React.useCallback((state: 'completed' | 'failed') => {
+  const updateUpload = React.useCallback((upload: DatasetUploadProgress) => {
+    const run = active.current;
+    if (!run || run.stopped) return;
+    setOperation(previous => previous?.id === run.id ? { ...previous, upload } : previous);
+  }, []);
+
+  const finish = React.useCallback((state: 'completed' | 'failed', unconfirmed = false) => {
     const run = active.current;
     if (!run || run.stopped) return;
     stopRun(run);
-    setOperation(previous => previous?.id === run.id ? { ...previous, state, elapsed: Math.max(previous.elapsed, (performance.now() - run.started) / 1000) } : previous);
+    setOperation(previous => previous?.id === run.id ? { ...previous, state, unconfirmed, elapsed: Math.max(previous.elapsed, (performance.now() - run.started) / 1000) } : previous);
   }, []);
 
   const reset = React.useCallback(() => {
@@ -111,5 +123,5 @@ export function useDatasetImportProgress(projectId: string) {
     setOperation(null);
   }, []);
 
-  return { operation, start, finish, reset };
+  return { operation, start, finish, reset, updateUpload };
 }

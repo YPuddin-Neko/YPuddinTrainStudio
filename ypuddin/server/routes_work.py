@@ -40,6 +40,7 @@ from .job_logs import failure_record_bytes, missing_failure_record, read_log
 from .job_paths import event_file, log_file, owned_job_directories
 from .project_covers import cover_path, cover_url, read_cover_upload, remove_cover, replace_cover, thumbnail
 from .sample_events import read_events, samples_with_loss
+from .upload_sessions import CHUNK_BYTES, UploadSession, UploadSessionBody
 from .versions import ACTIVE_JOBS, assert_version_writable, version_row
 
 router = APIRouter()
@@ -1244,6 +1245,93 @@ def _get_dataset(c: ServiceContext, did: str) -> dict[str, Any]:
     if not r:
         raise NotFound(f"dataset {did} not found", code="dataset.not_found")
     return r
+
+
+def _assert_upload_session_target(c: ServiceContext, session: UploadSession) -> None:
+    assert_version_writable(c, session.pid, session.vid, data=True)
+    if session.body.target_dataset_id:
+        row = _get_dataset(c, session.body.target_dataset_id)
+        if row["project_id"] != session.pid or row["version_id"] != session.vid:
+            raise NotFound("上传目标不存在。", code="dataset.not_found")
+
+
+@router.post("/projects/{pid}/datasets/upload-sessions", response_model=m.DatasetUploadSession)
+def create_upload_session(pid: str, body: UploadSessionBody, c: ServiceContext = Depends(ctx)) -> dict:
+    with c.import_admission():
+        vid = body.version_id
+        if body.target_dataset_id:
+            row = _get_dataset(c, body.target_dataset_id)
+            if row["project_id"] != pid or (vid and vid != row["version_id"]):
+                raise NotFound("上传目标不存在。", code="dataset.not_found")
+            vid = row["version_id"]
+            body = body.model_copy(update={"caption_ext": row["caption_ext"]})
+        version = assert_version_writable(c, pid, vid, data=True)
+        session = c.upload_sessions.create(pid, version["id"], body)
+    return {"id": session.id, "chunk_bytes": CHUNK_BYTES}
+
+
+@router.put(
+    "/projects/{pid}/datasets/upload-sessions/{sid}/files/{index}",
+    response_model=m.DatasetUploadChunk,
+    openapi_extra={"requestBody": {"required": True, "content": {
+        "application/octet-stream": {"schema": {"type": "string", "format": "binary"}},
+    }}},
+)
+async def put_upload_chunk(
+    pid: str, sid: str, index: int, request: Request, offset: int = Query(ge=0),
+    c: ServiceContext = Depends(ctx),
+) -> dict:
+    with c.import_admission(), c.upload_sessions.use(pid, sid) as session:
+        await run_in_threadpool(_assert_upload_session_target, c, session)
+        if not 0 <= index < len(session.manifest):
+            raise ApiError("上传文件编号无效。", code="upload.file_index", status=404)
+        if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/octet-stream":
+            raise ApiError("上传分片需要使用 application/octet-stream。", code="upload.content_type", status=415)
+        length = request.headers.get("content-length")
+        if length is not None:
+            try:
+                declared = int(length)
+            except ValueError as exc:
+                raise ApiError("上传分片长度无效。", code="upload.invalid") from exc
+            if declared < 0 or declared > CHUNK_BYTES:
+                raise ApiError("上传分片超过大小限制。", code="upload.chunk_size", status=413)
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > CHUNK_BYTES:
+                raise ApiError("上传分片超过大小限制。", code="upload.chunk_size", status=413)
+            data.extend(chunk)
+        received = await run_in_threadpool(session.put, index, offset, bytes(data))
+        return {"received": received}
+
+
+@router.post(
+    "/projects/{pid}/datasets/upload-sessions/{sid}/complete",
+    response_model=m.DatasetUploadInfo, response_model_exclude_unset=True,
+)
+def complete_upload_session(
+    pid: str, sid: str, background_tasks: BackgroundTasks, c: ServiceContext = Depends(ctx),
+) -> dict:
+    with c.import_admission(), c.upload_sessions.use(pid, sid) as session:
+        def publish(batch: UploadBatch, progress: ImportProgress) -> dict:
+            _assert_upload_session_target(c, session)
+            if session.body.target_dataset_id:
+                result = _append_upload(c, session.body.target_dataset_id, batch, progress)
+                return {**result, "datasets": [result]}
+            ids = _register_upload(c, pid, batch, session.vid, progress)
+            datasets = [_dataset_row(c, _get_dataset(c, did), include_cache=False) for did in ids]
+            for did in ids:
+                background_tasks.add_task(_index_dataset, c, did)
+            return {**datasets[0], "datasets": datasets}
+
+        return session.finish(publish)
+
+
+@router.delete("/projects/{pid}/datasets/upload-sessions/{sid}", response_model=m.Ok)
+def delete_upload_session(pid: str, sid: str, c: ServiceContext = Depends(ctx)) -> dict:
+    with c.import_admission():
+        # Only this session's staging files/receipt are removed, even if training has since started.
+        c.upload_sessions.delete(pid, sid)
+    return {"ok": True}
 
 
 def _append_upload(c: ServiceContext, did: str, batch: UploadBatch, progress: ImportProgress | None) -> dict:
