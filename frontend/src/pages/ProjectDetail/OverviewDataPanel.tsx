@@ -30,13 +30,13 @@ const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).pop()?.re
 const TAG_LIMIT = 30;
 
 /** Mirrors the loaded preview so the page keeps its shape while images and statistics arrive. */
-function PreviewSkeleton({ label, gridRef }: { label: string; gridRef?: React.Ref<HTMLDivElement> }) {
+function PreviewSkeleton({ label, count, gridRef }: { label: string; count: number; gridRef?: React.Ref<HTMLDivElement> }) {
   const bars = (count: number) => <div className="overview-skeleton-bars">{Array.from({ length: count }, (_, index) => <span key={index} className="overview-skeleton-bar"><span className="ui-skeleton"/><span className="ui-skeleton"/></span>)}</div>;
   return <div className="overview-data-skeleton" role="status" aria-label={label}>
     <div className="overview-data-grid" aria-hidden="true">
       <div className="overview-panel overview-gallery">
         <span className="ui-skeleton overview-skeleton-title"/><span className="ui-skeleton overview-skeleton-line"/>
-        <div ref={gridRef} className="overview-thumbnails">{Array.from({ length: 12 }, (_, index) => <span key={index} className="overview-skeleton-tile"><span className="ui-skeleton"/><span className="ui-skeleton"/><span className="ui-skeleton"/></span>)}</div>
+        <div ref={gridRef} className="overview-thumbnails">{Array.from({ length: count }, (_, index) => <span key={index} className="overview-skeleton-tile"><span className="ui-skeleton"/><span className="ui-skeleton"/><span className="ui-skeleton"/></span>)}</div>
       </div>
       <div className="overview-panel overview-tags"><span className="ui-skeleton overview-skeleton-title"/><span className="ui-skeleton overview-skeleton-line"/>{bars(8)}</div>
     </div>
@@ -62,6 +62,11 @@ export default function OverviewDataPanel({ datasets, workspaceUrl, projectId, v
   const selection = roleRows.some(row => row.source.id === source) ? source : 'all';
   const rows = selection === 'all' ? roleRows : roleRows.filter(row => row.source.id === selection);
   const indexedRows = rows.filter(ready);
+  const availableImages = indexedRows.reduce((sum, row) => {
+    const count = row.stats?.images;
+    return sum + (typeof count === 'number' && Number.isFinite(count) && count >= 0 ? count : gridPage.pageSize);
+  }, 0);
+  const skeletonCount = Math.min(gridPage.pageSize, availableImages);
   const incomplete = indexedRows.length !== rows.length;
   const ids = indexedRows.map(row => row.source.id);
   const scope = ['overview-data', projectId, versionId, role, ids, folder, indexedRows.map(row => row.stats), sort];
@@ -140,7 +145,7 @@ export default function OverviewDataPanel({ datasets, workspaceUrl, projectId, v
     {folderOptions.length > 0 && <label className="overview-folder-filter">{text('子目录', 'Subfolder')}<StudioSelect aria-label={text('概览子目录', 'Overview subfolder')} value={folder} onValueChange={value => { setFolder(value); clearSearch(); }} options={[{ value: '', label: text('全部子目录', 'All subfolders') }, ...folderOptions.map(item => ({ value: item.path, label: `${item.path} · ${item.count}` }))]}/></label>}
     {rows.length === 0 ? <div className="overview-panel overview-empty-data"><Images size={30} aria-hidden="true"/><span>{role === 'reg' ? text('当前版本没有正则集。', 'No regularization set in this version.') : text('当前版本还没有训练图片。', 'No training images in this version.')}</span><Link className="ui-btn" to={`${workspaceUrl}&data_step=${role === 'reg' ? 'reg' : 'datasets'}`}><FolderPlus size={15}/>{text('添加数据', 'Add data')}</Link></div> : <>
       {incomplete && <p role="status" className="overview-index-note">{text(`${rows.length - indexedRows.length} 个数据集索引尚未就绪；分布仅显示已就绪的数据。`, `${rows.length - indexedRows.length} datasets are not indexed yet; distributions show only ready datasets.`)}<Link className="ui-link" to={`${workspaceUrl}&data_step=datasets#version-datasets`}>{text('查看数据集状态', 'View dataset status')}</Link></p>}
-      {indexedRows.length > 0 && (overview.error ? <div className="overview-panel overview-inline-error" role="alert"><span>{formatApiError(overview.error)}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void overview.refetch()}>{text('重新读取数据分布', 'Reload data distributions')}</button></div> : overview.isPending ? <PreviewSkeleton gridRef={gridPage.gridRef} label={text('正在读取图片与分布…', 'Loading images and distributions…')}/> : <>
+      {indexedRows.length > 0 && (overview.error ? <div className="overview-panel overview-inline-error" role="alert"><span>{formatApiError(overview.error)}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void overview.refetch()}>{text('重新读取数据分布', 'Reload data distributions')}</button></div> : overview.isPending ? <PreviewSkeleton count={skeletonCount} gridRef={gridPage.gridRef} label={text('正在读取图片与分布…', 'Loading images and distributions…')}/> : <>
         <div className="overview-data-grid">
           <section className="overview-panel overview-gallery"><div className="overview-panel-heading"><h3>{role === 'reg' ? text('正则图预览', 'Regularization preview') : text('训练集预览', 'Training set preview')}</h3><DatasetLink className="ui-link" to={viewAllUrl}>{text('查看全部', 'View all')}<ArrowRight size={13}/></DatasetLink></div>
             <div className="overview-preview-controls"><p className="overview-section-detail">{searching ? <LoadingNote label={text('正在筛选图片…', 'Filtering images…')}/> : query ? text(`匹配 ${matching} 张 · 预览 ${pictures.length} 张`, `${matching} matches · ${pictures.length} previewed`) : text(`共 ${total} 张 · 预览 ${pictures.length} 张`, `${total} images · ${pictures.length} previewed`)}</p><ImageSortSelect value={sort} onChange={setSort}/></div>

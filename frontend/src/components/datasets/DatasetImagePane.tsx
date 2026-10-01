@@ -14,7 +14,7 @@ interface Props {
   training: boolean;
   all?: boolean;
   previewOnly?: boolean;
-  count: number;
+  count?: number | null;
   canEdit: boolean;
   busy: boolean;
   minWidth: number;
@@ -38,7 +38,11 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
   const endRow = Math.min(rows, Math.ceil((viewport.top + viewport.height) / rowHeight) + 2);
   const setColumns = images.setColumns;
   React.useEffect(() => { setColumns?.(cols); }, [cols, setColumns]);
-  const firstLoad = images.loading && images.items.length === 0 && !images.error;
+  const knownCount = typeof count === 'number' && Number.isFinite(count) && count >= 0 ? count : null;
+  const firstLoad = images.loading && images.items.length === 0 && !images.error && knownCount !== 0;
+  const loadingRows = Math.max(1, Math.ceil((viewport.height - GAP) / rowHeight));
+  const placeholderCount = Math.min(knownCount ?? Infinity, cols * loadingRows);
+  const empty = !images.error && images.items.length === 0 && (!images.loading || knownCount === 0);
 
   React.useLayoutEffect(() => {
     const element = grid.current;
@@ -76,7 +80,7 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
 
   return <section className={`dataset-image-pane${all ? '' : training ? ' is-training' : ' is-held-out'}`} aria-label={title}>
     <header className="dataset-pane-heading">
-      <h2>{title} <AnimatedCount className="dataset-pane-count" value={images.q ? `${images.total} / ${count}` : count}/></h2>
+      <h2>{title} <AnimatedCount className="dataset-pane-count" value={images.q ? `${images.total} / ${knownCount ?? '—'}` : knownCount ?? '—'}/></h2>
       <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" onClick={images.selected.size ? images.clearSelection : images.selectAll} disabled={!canEdit || busy || images.loading || !images.items.length}>
         {images.selected.size ? text(`取消选择 (${images.selected.size})`, `Clear (${images.selected.size})`) : images.hasMore ? text('全选已加载', 'Select loaded') : text('全选', 'Select all')}
       </button>
@@ -84,13 +88,13 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
         ? <button type="button" className="ui-btn ui-btn-sm dataset-pane-move" onClick={onMove} disabled={moveDisabled}><ArrowLeft size={14}/>{text('暂时移出训练', 'Remove from training')}</button>
         : <button type="button" className="ui-btn ui-btn-primary ui-btn-sm dataset-pane-move" onClick={onMove} disabled={moveDisabled}>{text('加入训练', 'Add to training')}<ArrowRight size={14}/></button>)}
     </header>
-    <div ref={grid} className="dataset-pane-grid" data-testid={all || training ? 'image-grid' : 'held-out-image-grid'} aria-busy={images.loading} onScroll={event => {
+    <div ref={grid} className="dataset-pane-grid" data-testid={all || training ? 'image-grid' : 'held-out-image-grid'} aria-busy={images.loading && !empty} onScroll={event => {
       const element = event.currentTarget;
       setViewport(previous => ({ ...previous, top: element.scrollTop }));
       if (element.scrollTop + element.clientHeight >= element.scrollHeight - rowHeight * 2) images.loadMore();
     }}>
       {firstLoad && <div className="dataset-pane-skeleton" role="status" aria-label={text('正在加载图片…', 'Loading images…')} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: GAP }}>
-        {Array.from({ length: cols * 2 }, (_, index) => <div key={index} className="dataset-pane-skeleton-card" style={{ height: rowHeight - GAP }}><div className="ui-skeleton"/><div className="ui-skeleton"/></div>)}
+        {Array.from({ length: placeholderCount }, (_, index) => <div key={index} className="dataset-pane-skeleton-card" style={{ height: rowHeight - GAP }}><div className="ui-skeleton"/><div className="ui-skeleton"/></div>)}
       </div>}
       {images.items.length > 0 && <div style={{ height: rows * rowHeight + GAP, position: 'relative' }}>
         <div className="dataset-pane-cells" style={{ top: startRow * rowHeight, gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: GAP }}>
@@ -110,12 +114,12 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
         </div>
       </div>}
       {images.error && <div role="alert" className="dataset-pane-empty"><p>{images.error}</p><button type="button" className="ui-btn ui-btn-sm" onClick={images.refresh}>{text('重试', 'Retry')}</button></div>}
-      {!images.error && !images.loading && images.items.length === 0 && <div className="dataset-pane-empty" data-testid={images.q ? 'dataset-filter-empty' : 'dataset-empty'}>
+      {empty && <div className="dataset-pane-empty" data-testid={images.q ? 'dataset-filter-empty' : 'dataset-empty'}>
         {images.q ? <SearchX size={28}/> : <ImageIcon size={28}/>}
         <strong>{images.q ? text('没有匹配的图片', 'No matching images') : all ? text('这个目录还没有图片', 'This folder has no images yet') : training ? text('还没有参与训练的图片', 'No images in training') : text('没有暂不训练的图片', 'No held-out images')}</strong>
         {!images.q && !all && <p>{training ? text('从左侧选择图片，再加入训练。', 'Select images on the left and add them to training.') : text('移出训练的图片会保留在这里。', 'Images removed from training stay here.')}</p>}
       </div>}
-      {images.loading && !firstLoad && <LoadingNote className="dataset-pane-loading" label={text('正在加载图片…', 'Loading images…')}/>}
+      {images.loading && images.items.length > 0 && <LoadingNote className="dataset-pane-loading" label={text('正在加载图片…', 'Loading images…')}/>}
     </div>
     {images.hasMore && <footer className="dataset-pane-footer"><span>{text(`已加载 ${images.items.length} / ${images.total}`, `${images.items.length} / ${images.total} loaded`)}</span><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" disabled={images.loading} onClick={images.loadMore}>{text('加载更多', 'Load more')}</button></footer>}
   </section>;

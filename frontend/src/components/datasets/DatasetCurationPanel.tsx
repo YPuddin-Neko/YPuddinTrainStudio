@@ -82,8 +82,8 @@ function CurationWorkspace({ datasetId, selector, readOnly, onChanged }: { datas
     </div>
     {(error || info.error) && <div role="alert" className="workspace-message error">{error || formatApiError(info.error)}<button type="button" className="ui-btn ui-btn-sm" onClick={() => { setError(''); refresh(); }}>{text('重试', 'Retry')}</button></div>}
     <div className="dataset-curation-panes">
-      <DatasetImagePane datasetId={datasetId} previewOnly images={held} training={false} count={stats?.held_out_images ?? 0} canEdit={canEdit} busy={moving} minWidth={thumbnailWidth} arriving={arrivals && !arrivals.training ? arrivals.paths : undefined} onMove={() => void move(true)} onOpen={(hash, path) => setPreview({ hash, path })}/>
-      <DatasetImagePane datasetId={datasetId} previewOnly images={training} training count={stats?.training_images ?? stats?.images ?? 0} canEdit={canEdit} busy={moving} minWidth={thumbnailWidth} arriving={arrivals?.training ? arrivals.paths : undefined} onMove={() => void move(false)} onOpen={(hash, path) => setPreview({ hash, path })}/>
+      <DatasetImagePane datasetId={datasetId} previewOnly images={held} training={false} count={stats?.held_out_images} canEdit={canEdit} busy={moving} minWidth={thumbnailWidth} arriving={arrivals && !arrivals.training ? arrivals.paths : undefined} onMove={() => void move(true)} onOpen={(hash, path) => setPreview({ hash, path })}/>
+      <DatasetImagePane datasetId={datasetId} previewOnly images={training} training count={stats?.training_images ?? stats?.images} canEdit={canEdit} busy={moving} minWidth={thumbnailWidth} arriving={arrivals?.training ? arrivals.paths : undefined} onMove={() => void move(false)} onOpen={(hash, path) => setPreview({ hash, path })}/>
     </div>
     {preview && <Dialog title={text('图片预览', 'Image preview')} wide onClose={() => setPreview(null)}>
       <div className="dataset-preview" data-testid="curation-preview">

@@ -342,7 +342,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
         <button type="button" onClick={applyBatchTags} disabled={!batchAdd.trim() && !batchRemove.trim()} className="ui-btn ui-btn-primary" data-testid="batch-apply-btn">{busyAction === 'batch' ? t('dataset.applying') : t('dataset.applyToSelection')}</button>
       </fieldset>}
       <div className="dataset-library-pane">
-        <DatasetImagePane datasetId={id} images={images} training all count={stats?.images ?? 0} canEdit={canEdit} busy={!!busyAction} minWidth={thumbnailWidth} onMove={() => {}} onOpen={openEditor}/>
+        <DatasetImagePane datasetId={id} images={images} training all count={stats?.images} canEdit={canEdit} busy={!!busyAction} minWidth={thumbnailWidth} onMove={() => {}} onOpen={openEditor}/>
       </div>
 
       {canEdit && maskImage && id && <MaskEditor datasetId={id} imageId={maskImage.hash} relPath={maskImage.relPath} onClose={() => setMaskImage(null)} onSaved={() => { fetchInfo(); images.refresh(); }} onEnableTraining={enableMaskedTraining} />}
