@@ -2128,7 +2128,8 @@ def job_storage(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 @router.delete("/jobs/{jid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    from .job_paths import job_directories
+    from .job_paths import removal_problem
+    from .xyz import dependent_tests, preserve_source
 
     with c.db.lock:
         r = _get_job(c, jid)
@@ -2138,18 +2139,14 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
             raise ApiError(
                 "archive the job before permanently deleting it", code="job.archive_required", status=409
             )
-        from .xyz import preserve_source
-
-        preserve_source(c, r)
+        tests = dependent_tests(c, r)
         if delete_files:
             folders = owned_job_directories(r)
-            for directory in folders:
-                if any(part.is_symlink() for part in (directory, *directory.parents)) or not c.is_allowed(directory.resolve()):
-                    raise ApiError("任务目录不在允许访问的范围内。", code="job.path", status=403)
-                for other in c.db.fetchall("SELECT * FROM jobs WHERE id!=?", (jid,)):
-                    for other_dir in job_directories(other):
-                        if other_dir.resolve() == directory.resolve() or other_dir.resolve().is_relative_to(directory.resolve()):
-                            raise ApiError("目录中包含其他任务的文件，无法删除。", code="job.files_in_use", status=409)
+            problem = removal_problem(c, jid, folders)
+            if problem == "outside":
+                raise ApiError("任务目录不在允许访问的范围内。", code="job.path", status=403)
+            if problem == "shared":
+                raise ApiError("目录中包含其他任务的文件，无法删除。", code="job.files_in_use", status=409)
             if users := _jobs_using(c, jid, folders):
                 raise ApiError(
                     f"任务“{users[0]['name']}”还要用到这个任务的文件，请等它结束或取消后再删除。",
@@ -2169,6 +2166,8 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
                 ) from exc
             # Its products are gone with its folders.
             c.db.execute("DELETE FROM artifacts WHERE job_id=?", (jid,))
+        # Written only once nothing can refuse the deletion.
+        preserve_source(c, r, tests)
         c.db.delete("jobs", jid)
         c.bus.publish("queue.changed", {})
         return {"ok": True}

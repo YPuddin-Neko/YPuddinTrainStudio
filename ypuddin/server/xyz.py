@@ -281,14 +281,19 @@ def _source(context, source_id):
     return row
 
 
-def preserve_source(context, source):
-    """A completed comparison owns its images and the source's description, independently."""
+def dependent_tests(context, source):
+    """The comparisons made from this training job; one still generating keeps it from being deleted."""
     rows = context.db.fetchall(
         "SELECT * FROM jobs WHERE type='xyz' AND json_extract(config_json,'$.xyz.source_job_id')=?",
         (source["id"],),
     )
     if any(row["status"] not in {"completed", "failed", "cancelled"} or context.supervisor.is_running(row["id"]) for row in rows):
         raise ApiError("模型测试还在使用此训练任务，请先取消或等待生成完成。", code="job.xyz_dependencies", status=409)
+    return rows
+
+
+def preserve_source(context, source, rows):
+    """A completed comparison owns its images and the source's description, independently."""
     snapshot = {key: source.get(key) for key in ("id", "name", "project_id", "version_id", "created_at", "config_json")}
     for row in rows:
         payload = json.loads(row["config_json"])

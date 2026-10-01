@@ -57,7 +57,7 @@ def task(jid: str, context=Depends(ctx)):
 
 @router.delete("/xyz/{jid}")
 def delete(jid: str, context=Depends(ctx)):
-    from .job_paths import job_directories, owned_job_directories
+    from .job_paths import owned_job_directories, removal_problem
 
     with context.db.lock:
         row = xyz._row(context, jid)
@@ -67,14 +67,11 @@ def delete(jid: str, context=Depends(ctx)):
         result = xyz.result_root(context, row)
         if not roots or not any(result == root.resolve() or result.is_relative_to(root.resolve()) for root in roots):
             raise ApiError("模型测试文件不在该任务的独立目录内。", code="xyz.path", status=403)
-        for root in roots:
-            if any(part.is_symlink() for part in (root, *root.parents)) or not context.is_allowed(root.resolve()):
-                raise ApiError("模型测试目录不在允许访问的范围内。", code="xyz.path", status=403)
-            # Never remove another task's folder, even if an old or edited path nests it here.
-            for other in context.db.fetchall("SELECT * FROM jobs WHERE id!=?", (jid,)):
-                for path in job_directories(other):
-                    if path.resolve() == root.resolve() or path.resolve().is_relative_to(root.resolve()):
-                        raise ApiError("目录中包含其他任务的文件，无法删除。", code="xyz.path", status=409)
+        problem = removal_problem(context, jid, roots)
+        if problem == "outside":
+            raise ApiError("模型测试目录不在允许访问的范围内。", code="xyz.path", status=403)
+        if problem == "shared":
+            raise ApiError("目录中包含其他任务的文件，无法删除。", code="xyz.path", status=409)
         try:
             for root in roots:
                 if root.is_dir():

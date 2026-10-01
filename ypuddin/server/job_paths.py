@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, Literal
 
 
 def job_config(job: dict) -> dict:
@@ -49,3 +50,21 @@ def owned_job_directories(job: dict) -> list[Path]:
     return list(
         dict.fromkeys(path for path in job_directories(job) if path.name == job["id"] and not path.is_symlink())
     )
+
+
+def removal_problem(context: Any, job_id: str, folders: list[Path]) -> Literal["outside", "shared"] | None:
+    """Why the job's folders cannot be removed: reached through a link or outside the allowed
+    roots, or holding a folder another job records (an old or edited path may nest one there)."""
+    targets = []
+    for folder in folders:
+        if any(part.is_symlink() for part in (folder, *folder.parents)) or not context.is_allowed(folder.resolve()):
+            return "outside"
+        targets.append(folder.resolve())
+    if not targets:
+        return None
+    others = {
+        path.resolve()
+        for row in context.db.fetchall("SELECT run_dir, samples_dir, config_json FROM jobs WHERE id!=?", (job_id,))
+        for path in job_directories(row)
+    }
+    return "shared" if any(path.is_relative_to(target) for path in others for target in targets) else None
