@@ -156,8 +156,27 @@ const optimizerEnglishHelp: Record<string, string> = {
   clip_threshold: 'Clips normalized updates inside Automagic. Default: 1. This is separate from external gradient clipping.',
 };
 
+export function schedulerTypeHelp(english = false, options?: string[]) {
+  const descriptions: Record<string, [string, string]> = {
+    constant: ['始终保持设定的学习率。', 'keeps the set learning rate.'],
+    linear: ['从设定值匀速降到最低学习率比例。', 'falls at a steady rate to the minimum ratio.'],
+    cosine: ['沿余弦曲线降低，开头和结尾变化慢；默认。', 'falls along a cosine curve, slowly at the start and the end; the default.'],
+    cosine_restarts: ['按周期数重复余弦下降，每个周期开始时回到设定值。', 'repeats the cosine fall for the set number of cycles, returning to the set rate at each start.'],
+    polynomial: ['按多项式的幂降低，幂为 1 时与线性相同。', 'falls along a polynomial curve; a power of 1 equals linear.'],
+    warmup_stable_decay: ['预热后保持设定值，最后一段再降低。', 'holds the set rate after warm-up and falls only in the final stretch.'],
+    rex: ['预热后按反射指数曲线降低，前期较慢、后期加快，最终降到最低学习率比例。', 'Reflected Exponential decay after warm-up: slower at first and faster near the end, reaching the minimum learning-rate ratio.'],
+  };
+  return [
+    english ? 'How the learning rate changes over the run:' : '学习率随训练步数变化的曲线：',
+    ...Object.entries(descriptions).filter(([option]) => !options || options.includes(option))
+      .map(([option, description]) => `${configOptionLabel('scheduler.type', option, english)}${english ? ': ' : '：'}${description[english ? 1 : 0]}`),
+    english ? 'Schedule-free optimizers always use Constant.' : '免调度优化器固定使用恒定。',
+  ].join('\n');
+}
+
 /** Explain what a choice changes before introducing the implementation term. */
 export function configFieldHelp(path: string, fallback: string | undefined, english = false, optimizerType?: string, scheduleFree = false) {
+  if (path === 'scheduler.type') return schedulerTypeHelp(english);
   if (path === 'optimizer.eps' && optimizerType === 'prodigy_plus_sf') return english
     ? 'Prevents division by very small estimates. Select Adam-atan2 to use that mode instead; StableAdamW and FOCUS must be disabled.'
     : '防止梯度大小估计过小时除法不稳定。选择 Adam-atan2 才会切换算法，此时需关闭 StableAdamW 和 FOCUS。';
@@ -258,7 +277,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'adapter.algo': { lora: ['LoRA', 'LoRA'], lokr: ['LoKr', 'LoKr'], loha: ['LoHa', 'LoHa'], ortho: ['OrthoLoRA', 'OrthoLoRA'], tlora: ['T-LoRA', 'T-LoRA'], full: ['LyCORIS Full', 'LyCORIS Full'] },
     'adapter.param_dtype': { fp32: ['FP32', 'FP32'], bf16: ['BF16', 'BF16'] },
     'checkpoint.save_dtype': { bf16: ['BF16', 'BF16'], fp16: ['FP16', 'FP16'], fp32: ['FP32', 'FP32'] },
-    'scheduler.type': { constant: ['恒定', 'Constant'], linear: ['线性衰减', 'Linear'], cosine: ['余弦衰减', 'Cosine'], cosine_restarts: ['余弦重启', 'Cosine restarts'], polynomial: ['多项式衰减', 'Polynomial'], warmup_stable_decay: ['预热-稳定-衰减', 'WSD'], rex: ['REX', 'REX'] },
+    'scheduler.type': { constant: ['恒定', 'Constant'], linear: ['线性衰减', 'Linear'], cosine: ['余弦衰减', 'Cosine'], cosine_restarts: ['余弦重启', 'Cosine restarts'], polynomial: ['多项式衰减', 'Polynomial'], warmup_stable_decay: ['预热-稳定-衰减', 'WSD'], rex: ['反射指数衰减', 'REX'] },
     'logging.level': { debug: ['记录调试信息', 'Debug'], info: ['常规进度', 'Info'], warning: ['仅警告和错误', 'Warning'] },
     'loop.mixed_precision': {bf16:['自动混合精度','BF16'],fp16:['自动混合精度','FP16'],no:['关闭自动混合精度','Off']},
     'loop.distributed_strategy': {ddp:['数据并行','DDP'],fsdp:['显存分片','FSDP']},

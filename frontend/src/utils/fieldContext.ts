@@ -1,5 +1,5 @@
 import type { FamilyInfo, FamilyPreset } from '../api/types';
-import { configFieldHelp, configFieldLabel, configOptionLabel } from './configPresentation';
+import { configFieldHelp, configFieldLabel, configOptionLabel, schedulerTypeHelp } from './configPresentation';
 
 /**
  * Settings that depend on the selected model and on the machine the service runs on. A setting neither uses is
@@ -110,6 +110,7 @@ const join = (lines: Lines) => lines.filter(Boolean).join('\n');
 
 /** Help written for the selected model and this machine; undefined leaves the general text. */
 export function contextHelp(path: string, context: FieldContext, options?: string[]): string | undefined {
+  if (path === 'scheduler.type') return schedulerTypeHelp(context.english, options);
   const { family, english } = context;
   if (!family) return undefined;
   const runtime = runtimeOf(family);
@@ -208,20 +209,6 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         }),
       ]);
     }
-    case 'scheduler.type':
-      return join([
-        text('学习率随训练步数变化的曲线：', 'How the learning rate changes over the run:'),
-        ...optionLines({
-          constant: ['始终保持设定的学习率。', 'keeps the set learning rate.'],
-          linear: ['从设定值匀速降到最低学习率比例。', 'falls at a steady rate to the minimum ratio.'],
-          cosine: ['沿余弦曲线降低，开头和结尾变化慢；默认。', 'falls along a cosine curve, slowly at the start and the end; the default.'],
-          cosine_restarts: ['按周期数重复余弦下降，每个周期开始时回到设定值。', 'repeats the cosine fall for the set number of cycles, returning to the set rate at each start.'],
-          polynomial: ['按多项式的幂降低，幂为 1 时与线性相同。', 'falls along a polynomial curve; a power of 1 equals linear.'],
-          warmup_stable_decay: ['预热后保持设定值，最后一段再降低。', 'holds the set rate after warm-up and falls only in the final stretch.'],
-          rex: ['前期降得慢，临近结束时降得快。', 'falls slowly at first and quickly near the end.'],
-        }),
-        text('免调度优化器固定使用恒定。', 'Schedule-free optimizers always use Constant.'),
-      ]);
     case 'sampling.scheduler':
       return join([
         text(`预览时各步噪声强度的取法，只影响预览图；都会按「${configFieldLabel('sampling.shift', '')}」调整：`, 'How the noise levels of the preview steps are chosen; previews only, and every choice applies the sampling shift:'),

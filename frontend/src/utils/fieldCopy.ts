@@ -91,7 +91,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'optimizer.lr_bump': ['每次调整学习率的幅度。', 'Size of each learning-rate adjustment.'],
   'optimizer.clip_threshold': ['限制单次更新的幅度，默认 1。', 'Caps the size of each update; default 1.'],
 
-  'scheduler.type': ['学习率随训练变化的方式，cosine 逐渐降低。', 'How the rate changes; cosine lowers it gradually.'],
+  'scheduler.type': ['学习率随训练步数变化的方式。', 'How the learning rate changes over training steps.'],
   'scheduler.warmup_steps': ['开头逐步升高学习率，小于 1 表示比例。', 'Ramp up at the start; below 1 is a fraction.'],
   'scheduler.min_lr_ratio': ['学习率最终降到基础值的比例。', 'Final rate as a fraction of the base rate.'],
   'scheduler.num_cycles': ['学习率先降后升的周期数。', 'Number of fall-and-restart cycles.'],
