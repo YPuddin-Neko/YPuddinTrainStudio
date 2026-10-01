@@ -329,16 +329,40 @@ def source_details(context, source_id):
 
 
 def sources(context, *, project_id=None, version_id=None, q="", page=1, page_size=50):
-    ids = {row["id"] for row in context.db.fetchall("SELECT id FROM jobs WHERE type='train' AND archived_at IS NULL")}
-    ids.update(row["id"] for row in context.db.fetchall(
-        "SELECT DISTINCT json_extract(config_json,'$.xyz.source_job_id') AS id FROM jobs WHERE type='xyz'"
-    ))
-    rows = []
-    for source_id in ids:
-        try:
-            row = source_details(context, source_id)
-        except NotFound:
+    names = "p.name AS project_name, v.name AS version_name, v.number AS version_number"
+    # Unarchived training runs, and archived ones that comparisons were made from.
+    candidates = [
+        {**row, "deleted": False}
+        for row in context.db.fetchall(
+            "SELECT j.id, j.name, j.project_id, j.version_id, j.created_at, " + names + " FROM jobs j"
+            " LEFT JOIN projects p ON p.id=j.project_id LEFT JOIN project_versions v ON v.id=j.version_id"
+            " WHERE j.type='train' AND (j.archived_at IS NULL OR j.id IN"
+            " (SELECT json_extract(config_json,'$.xyz.source_job_id') FROM jobs WHERE type='xyz'))"
+        )
+    ]
+    # A deleted source is described by the newest comparison that kept its snapshot.
+    seen = set()
+    for row in context.db.fetchall(
+        "SELECT json_extract(x.config_json,'$.xyz.source_job_id') AS source_id, x.config_json, " + names
+        + " FROM jobs x"
+        " LEFT JOIN projects p ON p.id=json_extract(x.config_json,'$.xyz.source_snapshot.project_id')"
+        " LEFT JOIN project_versions v ON v.id=json_extract(x.config_json,'$.xyz.source_snapshot.version_id')"
+        " WHERE x.type='xyz' AND json_extract(x.config_json,'$.xyz.source_snapshot') IS NOT NULL"
+        " AND NOT EXISTS (SELECT 1 FROM jobs t WHERE t.type='train'"
+        " AND t.id=json_extract(x.config_json,'$.xyz.source_job_id'))"
+        " ORDER BY x.created_at DESC"
+    ):
+        if row["source_id"] is None or row["source_id"] in seen:
             continue
+        seen.add(row["source_id"])
+        source = json.loads(row["config_json"])["xyz"]["source_snapshot"]
+        candidates.append({
+            **{key: source.get(key) for key in ("id", "name", "project_id", "version_id", "created_at")},
+            **{key: row[key] for key in ("project_name", "version_name", "version_number")},
+            "deleted": True,
+        })
+    rows = []
+    for row in candidates:
         if project_id and row["project_id"] != project_id or version_id and row["version_id"] != version_id:
             continue
         if q.strip() and q.strip().casefold() not in " ".join(str(row.get(key) or "") for key in ("name", "project_name", "version_name", "id")).casefold():

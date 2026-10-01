@@ -71,10 +71,9 @@ export default function Sampling() {
   }, [projectId, projectsRevision]);
   React.useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError('');
-    void apiClient.get<SourcePage | SourceJob[]>('/xyz/sources', { params: { project_id: projectId || undefined, version_id: versionId || undefined, q: query || undefined, page, page_size: PAGE_SIZE }, signal: controller.signal, silent: true }).then(data => {
+    void apiClient.get<SourcePage>('/xyz/sources', { params: { project_id: projectId || undefined, version_id: versionId || undefined, q: query || undefined, page, page_size: PAGE_SIZE }, signal: controller.signal, silent: true }).then(data => {
       if (controller.signal.aborted) return;
-      const rows = Array.isArray(data) ? data : data.items;
-      setJobs(rows); setTotal(Array.isArray(data) ? rows.length : data.total);
+      setJobs(data.items); setTotal(data.total);
     }).catch(failure => { if (!controller.signal.aborted) setError(formatApiError(failure)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [projectId, versionId, query, page, revision]);
