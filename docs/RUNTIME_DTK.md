@@ -16,9 +16,9 @@
 
 ## DTK 安装指南
 
-“设置 → 运行环境 → DTK 安装指南”显示当前系统、DTK、Python、PyTorch 和驱动版本。Ubuntu 22.04 x86_64、Python 3.11、DTK 26.04 环境会按已安装的 PyTorch 2.5.1 或 2.7.1 提供同组下载链接；没有匹配组合时保留官方目录入口，不将另一版本当作当前环境的配套包。页面只提供下载，DTK 和驱动需在服务器上安装。
+“设置 → 运行环境 → DTK 安装指南”显示当前系统、DTK、Python、PyTorch 和驱动版本。Ubuntu 22.04 x86_64、Python 3.11、DTK 26.04 环境按已安装的 PyTorch 2.5.1 或 2.7.1 提供同组下载链接；没有匹配的组合时，从官方目录选择。页面只提供下载，DTK 和驱动需在服务器上安装。
 
-[官方驱动配套表](https://download.sourcefind.cn:65024/file/1/DTK%E4%B8%8E%E9%A9%B1%E5%8A%A8%E7%89%88%E6%9C%AC%E9%85%8D%E5%A5%97%E5%85%B3%E7%B3%BB%E8%A1%A8.md)对 DTK 26.04 的驱动要求是 `>=6.3.30-V1.4.1a`，并非只能使用该版本。已有可用的更高版本驱动无需为匹配页面上的最低版本而降级；其他 DTK 版本按表中各自的要求选择。
+DTK 26.04 需要驱动 6.3.30-V1.4.1a 或更高版本；其他 DTK 版本的驱动要求见[官方驱动配套表](https://download.sourcefind.cn:65024/file/1/DTK%E4%B8%8E%E9%A9%B1%E5%8A%A8%E7%89%88%E6%9C%AC%E9%85%8D%E5%A5%97%E5%85%B3%E7%B3%BB%E8%A1%A8.md)。
 
 ## 厂商包组合
 
@@ -54,11 +54,11 @@ DTK_ROOT=/opt/dtk YPUDDIN_DTK_PYTHON=/path/to/python3.11 ./studio-linux-dtk.sh -
 DTK_ROOT=/opt/dtk ./studio-linux-dtk.sh --dtk-wheelhouse=/data/dtk-wheels --no-browser
 ```
 
-使用已装的 PyTorch 时，厂商 Torch、TorchVision、Triton 的完整安装包版本保持不变，训练器依赖只装进自己的环境，不修改原环境。运行时的 `torch.__version__` 可能显示 `2.5.1`，安装包版本则是 `2.5.1+das.opt1.dtk2604`；启动器按安装包版本校验和锁定，并检查 HIP 构建。原环境里的 PyTorch 之后被替换，启动时会提示；被删除则停止启动。
+使用已装的 PyTorch 时，厂商 Torch、TorchVision、Triton 的版本保持不变，训练器依赖只装进自己的环境，不修改原环境。原环境里的 PyTorch 被替换后，启动器在下次更新依赖时提示，并按新版本继续；被删除则停止启动。
 
 训练器要求 NumPy `>=1.26`。共享环境中的 NumPy 1.x 低于 1.26 时，启动器只在项目虚拟环境中安装 `numpy>=1.26,<2`，保留宿主的 NumPy，不跨到 NumPy 2。项目内的包优先于宿主包加载；满足要求的现有版本继续锁定。安装后检查 NumPy 与 PyTorch 的双向数据转换，通过后才继续启动。
 
-DTK 启动入口还会补齐运行环境中的 `setuptools>=69`，满足镜像内 `lmslim` 等厂商工具的要求。`pyproject.toml` 的构建依赖只作用于临时构建环境，不能替代这项运行依赖；首次安装和已有环境重试都会检查并补齐，宿主包保持不变。
+DTK 启动入口还会在项目环境中补齐 `setuptools>=69`，满足镜像内 `lmslim` 等厂商工具的要求。新建和已有环境都会检查，宿主包保持不变。
 
 `--dtk-wheelhouse` 必须包含匹配的 Torch、TorchVision wheel 及其依赖。基础厂商包从本地目录安装，不从普通网络索引寻找替代包；配套 Triton 可在同一步安装。
 
@@ -68,11 +68,11 @@ DTK 启动入口还会补齐运行环境中的 `setuptools>=69`，满足镜像�
 
 ### 旧启动脚本的依赖报错
 
-| 日志 | 原因与处理 |
+| 日志 | 处理 |
 | --- | --- |
-| `新环境里没有读到 … PyTorch 2.5.1（读到 2.5.1+das.opt1.dtk2604）` | 旧脚本混用了运行时版本与安装包版本。更新项目源码，再执行原部署命令，无需替换厂商 PyTorch。 |
-| `numpy>=1.26` 与 `numpy==1.25.0` 冲突 | 旧脚本锁住了低于训练器要求的宿主 NumPy。更新项目源码后，原命令会在项目虚拟环境中补齐 NumPy；不需要卸载宿主包或加 `--reinstall`。更换镜像源不能解决版本约束冲突。 |
-| `lmslim … requires setuptools>=69.0.0, but you have setuptools 65.5.0` | 项目环境中的 setuptools 低于厂商工具要求。即使末尾显示 `Successfully installed`，这项依赖仍未满足；更新源码后重跑原部署命令即可补齐。 |
+| `新环境里没有读到 … PyTorch 2.5.1（读到 2.5.1+das.opt1.dtk2604）` | 更新项目源码后重新运行原部署命令；无需替换厂商 PyTorch。 |
+| `numpy>=1.26` 与 `numpy==1.25.0` 冲突 | 更新项目源码后重新运行原部署命令，启动器在项目环境中补齐 NumPy；无需卸载宿主包、加 `--reinstall` 或更换镜像源。 |
+| `lmslim … requires setuptools>=69.0.0, but you have setuptools 65.5.0` | 即使末尾显示 `Successfully installed`，也需更新项目源码后重新运行原部署命令。 |
 
 通过 Git 安装的项目可在源码目录运行 `git pull --ff-only`；通过源码压缩包安装的，更新项目源码文件并保留原来的 `environment/`、`studio_data/` 和自定义数据目录。重试时继续使用原来的 `DTK_ROOT`、`--env-root`、`--data-root` 等参数。
 

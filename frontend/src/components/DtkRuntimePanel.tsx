@@ -39,7 +39,7 @@ export default function DtkRuntimePanel() {
     {guidance?.current_stack_reason === 'torch24_transformers5_diffusers040_conflict' && <p className="settings-note">{text('当前 PyTorch 2.4 不满足新版 Diffusers 和 Transformers 的要求，升级时需使用配套组合。', 'PyTorch 2.4 does not meet the requirements of newer Diffusers and Transformers. Upgrade these packages as a matching set.')}</p>}
     <div className="settings-field"><span className="settings-field-label">{text('当前驱动', 'Current driver')}</span><div className="settings-field-control">
       <p className="break-words text-sm">{guidance?.driver_version || text('未检测到版本', 'Version not detected')}</p>
-      {recommendation && <p className="settings-note">{text(`DTK ${recommendation.dtk} 的最低驱动版本为 ${recommendation.minimum_driver}，可使用更高版本。`, `DTK ${recommendation.dtk} requires driver ${recommendation.minimum_driver} or later.`)}</p>}
+      {recommendation && <p className="settings-note">{text(`DTK ${recommendation.dtk} 需要驱动 ${recommendation.minimum_driver} 或更高版本。`, `DTK ${recommendation.dtk} requires driver ${recommendation.minimum_driver} or later.`)}</p>}
     </div></div>
     {recommendation ? <div data-testid="dtk-runtime-recommendation">
       <div className="settings-field"><span className="settings-field-label">{text('DTK 安装包', 'DTK package')}</span><div className="settings-field-control dtk-runtime-links">
