@@ -26,14 +26,12 @@ def _worker_format() -> str:
     return f"[rank{rank}]: {FORMAT}" if world_size > 1 and 0 <= rank < world_size else FORMAT
 
 
-def configure(level: str = "debug") -> None:
+def configure() -> None:
     """Record all trainer messages and other libraries from INFO or above.
 
     Third-party DEBUG output (image decoders, HTTP clients, compilers) would bury the
     trainer's own records, so only ``ypuddin.*`` uses the DEBUG threshold.
     """
-    # Older saved configurations still pass a level; they must not hide new worker output.
-    threshold = logging.DEBUG
     root = logging.getLogger()
     format_ = _worker_format()
     if not root.handlers:
@@ -42,16 +40,26 @@ def configure(level: str = "debug") -> None:
         # The CLI installs its standard stream handler before it knows this is a worker.
         if type(handler) is logging.StreamHandler:
             handler.setFormatter(logging.Formatter(format_))
-    root.setLevel(max(threshold, logging.INFO))
-    logging.getLogger("ypuddin").setLevel(threshold)
+    root.setLevel(logging.INFO)
+    logging.getLogger("ypuddin").setLevel(logging.DEBUG)
     logging.captureWarnings(True)
     sys.excepthook = _log_uncaught
     threading.excepthook = _log_thread_exception
 
 
+def mark_logged(error: BaseException) -> None:
+    """The worker has written this exception's traceback; the exit hook must not repeat it."""
+    try:
+        error._ypuddin_logged = True
+    except AttributeError:
+        pass
+
+
 def _log_uncaught(kind: type[BaseException], value: BaseException, tb: Any) -> None:
     if issubclass(kind, KeyboardInterrupt):
         sys.__excepthook__(kind, value, tb)
+        return
+    if getattr(value, "_ypuddin_logged", False):
         return
     log.error("worker stopped by an unhandled exception", exc_info=(kind, value, tb))
 

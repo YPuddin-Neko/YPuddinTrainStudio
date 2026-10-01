@@ -622,7 +622,7 @@ def run_request(request_path: Path, models: LoadedModels | None = None) -> int:
     from ypuddin.train.events import Emitter
 
     payload = json.loads(request_path.read_text(encoding="utf-8"))
-    worker_log.configure(payload.get("logging", {}).get("level", "debug"))
+    worker_log.configure()
     run_dir = request_path.parent
     emitter = Emitter(path=Path(payload.get("logging", {}).get("events_path") or run_dir / "events.jsonl"))
 

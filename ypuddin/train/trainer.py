@@ -24,6 +24,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 
+from ypuddin import worker_log
 from ypuddin.adapters import AdapterSet, build_metadata, inject, save_adapter_file
 from ypuddin.adapters.components import ComponentAdapterSet, inject_text_adapters
 from ypuddin.config import TrainConfig, config_hash, write_config
@@ -88,14 +89,6 @@ from .training_modes import FullTrainingSet, save_model_artifact
 log = logging.getLogger(__name__)
 
 DTYPES = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32, "no": torch.float32}
-
-
-def _log_exception(message: str, *args: Any) -> None:
-    try:
-        log.exception(message, *args)
-    except Exception:
-        # A failing log destination must not replace the exception being reported.
-        pass
 
 
 class StopRequested(Exception):
@@ -1548,11 +1541,12 @@ class Trainer:
             return self._run()
 
     def _report_failure(self, error: Exception, message: str, **data: Any) -> None:
-        _log_exception(message)
+        log.exception(message)
+        worker_log.mark_logged(error)
         try:
             self.emit("run.failed", error=f"{type(error).__name__}: {error}", **data)
         except Exception:
-            _log_exception("could not record run.failed event")
+            log.exception("could not record run.failed event")
 
     def _run(self) -> str:
         outcome = "finished"
@@ -1691,7 +1685,7 @@ class Trainer:
             except Exception:
                 if not failed:
                     raise
-                _log_exception("could not close %s after failure", name)
+                log.exception("could not close %s after failure", name)
 
     def _record_dir(self) -> Path:
         """The run's log folder, which keeps its records; the output folder holds only products."""
