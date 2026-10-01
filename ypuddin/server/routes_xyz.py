@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 
+from . import models as m
 from . import xyz
 from .errors import ApiError, NotFound
 from .routes_core import ctx
@@ -55,7 +56,7 @@ def task(jid: str, context=Depends(ctx)):
     return xyz.task(context, jid)
 
 
-@router.delete("/xyz/{jid}")
+@router.delete("/xyz/{jid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete(jid: str, context=Depends(ctx)):
     from .job_paths import owned_job_directories, removal_problem
 
