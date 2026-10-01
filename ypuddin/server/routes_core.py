@@ -323,6 +323,15 @@ def get_settings(c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return result
 
 
+@router.post("/settings/downloads/probe", response_model=m.DownloadSourcesProbe)
+def probe_download_sources(c: ServiceContext = Depends(ctx)):
+    from ypuddin.package_sources import probe_sources
+
+    from .download_sources import probe_options
+
+    return probe_sources(force=True, **probe_options(c))
+
+
 @router.put("/settings", response_model=m.Settings, response_model_exclude_unset=True)
 def put_settings(patch: dict[str, Any], c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     try:

@@ -137,6 +137,7 @@ class MetricChartSetting(BaseModel):
 class SettingsUi(_Out):
     language: Literal["zh-CN", "en"]
     theme: Literal["light", "dark", "system"]
+    onboarding_completed: bool = False
     # Seconds between hardware readings in the top bar and the queue.
     telemetry_interval: float = Field(2.5, ge=1, le=60)
     # Job page charts in order; unset uses the built-in layout.
@@ -153,9 +154,23 @@ class SettingsNetwork(BaseModel):
 
 class SettingsDownloads(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    pypi: Literal["ustc", "tuna", "aliyun", "official"] = "ustc"
-    pytorch: Literal["mirror", "aliyun", "sjtu", "official"] = "mirror"
+    pypi: Literal["auto", "ustc", "tuna", "aliyun", "official"] = "auto"
+    pytorch: Literal["auto", "mirror", "aliyun", "sjtu", "official"] = "auto"
     fallback: bool = True
+
+
+class DownloadSourceProbe(_Out):
+    id: str
+    name: str
+    url: str
+    latency_ms: float | None
+    available: bool
+
+
+class DownloadSourcesProbe(_Out):
+    checked_at: float
+    pypi: list[DownloadSourceProbe]
+    pytorch: list[DownloadSourceProbe]
 
 
 class SettingsVlm(BaseModel):

@@ -20,7 +20,7 @@ from .supervisor import JobSupervisor
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "cache": {"thumbnail_max_gb": 1.0},
-    "downloads": {"pypi": "ustc", "pytorch": "mirror", "fallback": True},
+    "downloads": {"pypi": "auto", "pytorch": "auto", "fallback": True},
     "tagging": SettingsTagging().model_dump(),
     "paths": {
         "bootstrap_env_dir": "",
@@ -33,7 +33,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "logs_dir": "",
     },
     "server": {"host": "127.0.0.1", "port": 8123, "open_browser": True},
-    "ui": {"language": "zh-CN", "theme": "system", "telemetry_interval": 2.5},
+    "ui": {"language": "zh-CN", "theme": "system", "telemetry_interval": 2.5, "onboarding_completed": False},
     "network": {
         "proxy_mode": "system",
         "proxy_url": "",
@@ -119,6 +119,7 @@ class ServiceContext:
         base["paths"]["cache_dir"] = str(self.data_root / "cache")
         base["paths"]["models_dir"] = str(self.data_root / "models")
         base["paths"]["output_dir"] = str(self.data_root / "runs")
+        saved = {}
         if self.settings_path.exists():
             saved = json.loads(self.settings_path.read_text(encoding="utf-8"))
             for k, v in saved.items():
@@ -128,6 +129,11 @@ class ServiceContext:
                     base[k].update(v)
                 else:
                     base[k] = v
+        if "onboarding_completed" not in saved.get("ui", {}):
+            existing = self.db.fetchone(
+                "SELECT EXISTS(SELECT 1 FROM projects) OR EXISTS(SELECT 1 FROM jobs) AS established"
+            )
+            base["ui"]["onboarding_completed"] = bool(saved.get("ui")) or bool(existing["established"])
         if "output_mode" not in base["paths"]:
             base["paths"]["output_mode"] = (
                 "project"
@@ -204,6 +210,8 @@ class ServiceContext:
                 == (self.data_root / "runs").resolve()
                 else "custom"
             )
+        if "data_root" not in paths_patch and (pending := self.pending_data_root()):
+            cur["paths"]["data_root"] = pending
         requested_data_root = Path(cur["paths"]["data_root"]).expanduser().resolve()
         pending_data_root = None if requested_data_root == self.data_root.resolve() else str(requested_data_root)
         # Keep the running context bound to its current root. The launcher reads

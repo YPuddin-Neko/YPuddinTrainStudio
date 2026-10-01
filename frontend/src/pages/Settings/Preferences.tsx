@@ -1,4 +1,5 @@
 import DownloadPreferences from './DownloadPreferences';
+import { DOWNLOAD_SOURCE_DEFAULTS } from '../../utils/downloadSources';
 import NetworkPreferences, { type NetworkSettings } from './NetworkPreferences';
 type SettingsType = ApiSettings;
 
@@ -134,7 +135,7 @@ export default function Preferences() {
   return <div data-testid="settings-page"><SettingsSections sections={downloads ? [{ id: 'preferences-downloads', label: text('软件下载源', 'Package sources') }] : system ? [{ id: 'preferences-general', label: text('常规', 'General') }, { id: 'preferences-thumbnails', label: text('缩略图缓存', 'Thumbnail cache') }, { id: 'preferences-service', label: t('settings.server') }, { id: 'preferences-network', label: text('网络代理', 'Network proxy') }] : [{ id: 'preferences-storage', label: t('settings.paths') }, { id: 'preferences-storage-usage', label: text('空间占用', 'Disk usage') }]}>
     {error && <div role="alert" className="settings-alert">{error}</div>}
     <fieldset disabled={saving} aria-busy={saving} className="contents">
-    {downloads ? <DownloadPreferences value={settings.downloads ?? { pypi: 'ustc', pytorch: 'mirror', fallback: true }} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !system ? <><section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
+    {downloads ? <DownloadPreferences disabled={saving} value={settings.downloads ?? DOWNLOAD_SOURCE_DEFAULTS} onChange={value => update(s => ({ ...s, downloads: value }))} /> : !system ? <><section id="preferences-storage" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><div><h2>{t('settings.paths')}</h2><p className="settings-note">{text('更改路径不会移动已有文件。', 'Changing paths does not move existing files.')}</p></div></div>
       {storageError && <div role="alert" className="settings-alert">{storageError}<button type="button" className="ui-btn" onClick={()=>setStorageReload(value=>value+1)}>{t('common.retry')}</button></div>}
       {([['data_root', t('settings.dataRoot')], ['cache_dir', t('settings.cacheDir')], ['models_dir', t('settings.modelsDir')]] as const).map(([key, label]) => <div className="settings-field" key={key}>

@@ -107,6 +107,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/downloads/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Probe Download Sources */
+        post: operations["probe_download_sources_api_settings_downloads_probe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cache/thumbnails": {
         parameters: {
             query?: never;
@@ -3696,6 +3713,32 @@ export interface components {
             used_gb: number;
             /** Total Gb */
             total_gb: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** DownloadSourceProbe */
+        DownloadSourceProbe: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Url */
+            url: string;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Available */
+            available: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        /** DownloadSourcesProbe */
+        DownloadSourcesProbe: {
+            /** Checked At */
+            checked_at: number;
+            /** Pypi */
+            pypi: components["schemas"]["DownloadSourceProbe"][];
+            /** Pytorch */
+            pytorch: components["schemas"]["DownloadSourceProbe"][];
         } & {
             [key: string]: unknown;
         };
@@ -7489,16 +7532,16 @@ export interface components {
         SettingsDownloads: {
             /**
              * Pypi
-             * @default ustc
+             * @default auto
              * @enum {string}
              */
-            pypi: "ustc" | "tuna" | "aliyun" | "official";
+            pypi: "auto" | "ustc" | "tuna" | "aliyun" | "official";
             /**
              * Pytorch
-             * @default mirror
+             * @default auto
              * @enum {string}
              */
-            pytorch: "mirror" | "aliyun" | "sjtu" | "official";
+            pytorch: "auto" | "mirror" | "aliyun" | "sjtu" | "official";
             /**
              * Fallback
              * @default true
@@ -7604,6 +7647,11 @@ export interface components {
              * @enum {string}
              */
             theme: "light" | "dark" | "system";
+            /**
+             * Onboarding Completed
+             * @default false
+             */
+            onboarding_completed: boolean;
             /**
              * Telemetry Interval
              * @default 2.5
@@ -9128,6 +9176,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    probe_download_sources_api_settings_downloads_probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadSourcesProbe"];
                 };
             };
         };

@@ -24,6 +24,7 @@ from ypuddin.package_sources import pypi_sources, run_sources, torch_sources
 from ypuddin.runtime_profiles import current_profile, selected_key
 
 from .db import new_id, now
+from .download_sources import probe_options
 from .environment import EnvironmentError, Installer, protected
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
@@ -404,11 +405,12 @@ class TorchEnvironments:
             self._update(id_, phase="installing_pytorch")
             sources = self.context.settings().get("downloads", {})
             fallback = sources.get("fallback", True)
-            indexes = pypi_sources(sources.get("pypi", "ustc"), fallback)
+            options = probe_options(self.context)
+            indexes = pypi_sources(sources.get("pypi", "auto"), fallback, **options)
             torch_indexes = (
                 [("index-url", url) for url in indexes]
                 if build.index_url == "https://pypi.org/simple"
-                else torch_sources(build.backend, sources.get("pytorch", "mirror"), fallback)
+                else torch_sources(build.backend, sources.get("pytorch", "auto"), fallback, **options)
             )
             run_sources(
                 self.installer,

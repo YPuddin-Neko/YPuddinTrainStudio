@@ -17,8 +17,8 @@
 全局参数
   --profile=<auto|legacy|windows-cuda|linux-cuda|linux-dtk|macos-mps|cpu>  独立平台环境；auto 保留已有 legacy venv
   --torch=<cu128|cu126|cu124|cu118|cpu|auto>  首次安装/重建的 PyTorch 类型（默认 auto）
-  --index=<auto|cn|official>  包源；未指定时使用界面保存的下载源设置，没有保存时为 auto。
-                  auto / cn：中科大 -> 清华 -> 阿里 -> 官方，失败后依次换源；official：普通依赖官方优先、镜像兜底，PyTorch 仅用官方源
+  --index=<auto|cn|official|ustc|tuna|aliyun>  包源；未指定时使用已保存设置，首次交互启动可选择，默认 auto。
+                  auto：检测可用站点；cn：国内镜像优先；其他值指定优先站点，失败后换源。
   --mirror        等价于 --index=cn
   --env-root=<目录>  基础环境根目录，按平台隔离；默认源码目录下的 environment
   --reinstall     只重建选中平台的环境（其他环境及 studio_data/ 不受影响）
@@ -307,31 +307,96 @@ def url_ok(url: str, timeout: float = 4.0) -> bool:
         return False
 
 
-def index_chains(mode: str, torch_tag: str) -> tuple[list[str], list[tuple[str, str]]]:
-    """(PyPI index urls in order, torch sources as (kind, url) with kind in {find-links, index-url}).
+INDEX_CHOICES = {
+    "auto": ("auto", "auto"),
+    "cn": ("ustc", "mirror"),
+    "official": ("official", "official"),
+    "ustc": ("ustc", "auto"),
+    "tuna": ("tuna", "auto"),
+    "aliyun": ("aliyun", "aliyun"),
+}
 
-    auto/cn: mirrors first (USTC -> Tsinghua -> Aliyun), official PyPI as the last resort.
-    official: official first, mirrors as the fallback.
-    """
-    if DOWNLOAD_SETTINGS is not None:
-        sources = DOWNLOAD_SETTINGS
-        return (
-            pypi_sources(sources.get("pypi", "ustc"), sources.get("fallback", True)),
-            []
-            if torch_tag == "dtk"
-            else configured_torch_sources(
-                torch_tag, sources.get("pytorch", "mirror"), sources.get("fallback", True)
-            ),
-        )
-    if mode == "official":
-        pypi = [PYPI_OFFICIAL, *PYPI_MIRRORS_CN]  # mirrors still serve as a fallback
-        torch_src = [("index-url", TORCH_OFFICIAL.format(tag=torch_tag))]
-    else:
-        pypi = pypi_sources()
-        torch_src = [(kind, url.format(tag=torch_tag)) for kind, url in TORCH_MIRRORS_CN] + [
-            ("index-url", TORCH_OFFICIAL.format(tag=torch_tag))
-        ]
-    return pypi, [] if torch_tag == "dtk" else torch_src
+
+def index_chains(mode: str, torch_tag: str) -> tuple[list[str], list[tuple[str, str]]]:
+    """Package indexes in priority order; PyTorch uses its own wheel repositories."""
+    pypi, pytorch = INDEX_CHOICES[mode]
+    sources = DOWNLOAD_SETTINGS if DOWNLOAD_SETTINGS is not None else {"pypi": pypi, "pytorch": pytorch}
+    fallback = sources.get("fallback", True)
+    return (
+        pypi_sources(sources.get("pypi", "auto"), fallback),
+        []
+        if torch_tag == "dtk"
+        else configured_torch_sources(torch_tag, sources.get("pytorch", "auto"), fallback),
+    )
+
+
+def read_bootstrap_settings(path: Path) -> dict:
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        if not isinstance(settings, dict):
+            raise ValueError("配置内容必须是对象")
+        return settings
+    except (OSError, ValueError) as error:
+        die(f"无法读取设置文件 {path}：{error}")
+
+
+def choose_download_sources(settings_file: Path, saved: dict, *, command: str, explicit: bool) -> dict:
+    """Offer source selection once on interactive startup, without prompting unattended launches."""
+    downloads = saved.get("downloads")
+    if (
+        explicit
+        or command not in {"run", "dev"}
+        or (isinstance(downloads, dict) and any(key in downloads for key in ("pypi", "pytorch")))
+        or not sys.stdin.isatty()
+        or not sys.stdout.isatty()
+    ):
+        return saved
+    choices = ("auto", "official", "ustc", "tuna", "aliyun")
+    log("选择软件下载源（回车默认自动，失败后会切换来源）：")
+    log("0 自动检测可用站点")
+    log("1 官方：pypi.org / download.pytorch.org")
+    log("2 中科大：mirrors.ustc.edu.cn（PyPI；PyTorch 自动）")
+    log("3 清华：pypi.tuna.tsinghua.edu.cn（PyPI；PyTorch 自动）")
+    log("4 阿里：mirrors.aliyun.com（PyPI / PyTorch）")
+    while True:
+        try:
+            answer = input("[studio] 选择 [0–4，默认 0]：").strip().lower()
+        except EOFError:
+            return saved
+        except KeyboardInterrupt:
+            die("已取消启动。", code=130)
+        if not answer:
+            answer = "0"
+        selected = choices[int(answer)] if answer in {"0", "1", "2", "3", "4"} else answer
+        if selected in choices:
+            break
+        log("请输入 0–4。")
+    pypi, pytorch = INDEX_CHOICES[selected]
+    current = read_bootstrap_settings(settings_file)
+    current_downloads = current.get("downloads")
+    current["downloads"] = {
+        **(current_downloads if isinstance(current_downloads, dict) else {}),
+        "pypi": pypi,
+        "pytorch": pytorch,
+        "fallback": current_downloads.get("fallback", True) if isinstance(current_downloads, dict) else True,
+    }
+    temporary = None
+    try:
+        settings_file.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=settings_file.parent, delete=False
+        ) as stream:
+            temporary = Path(stream.name)
+            json.dump(current, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+        temporary.replace(settings_file)
+    except OSError as error:
+        die(f"无法保存软件下载源设置 {settings_file}：{error}")
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    log("软件下载源已保存，可在“设置 → 软件下载源”中修改。")
+    return current
 
 
 def python_ok(exe: str) -> bool:
@@ -1517,9 +1582,8 @@ def ensure_frontend_dependencies(node: str, npm: str, runtime: list[str]) -> Non
 
 def frontend_error(reason: str, *, install: bool = False) -> NoReturn:
     if install:
-        indent = " " * 9 + "\u3000" * 3
         die(
-            f"{reason}\n{indent}下载地址：https://nodejs.org/en/download"
+            f"{reason}\n[studio] 下载地址：https://nodejs.org/en/download"
             "\n[studio] 前端环境检查失败，启动脚本已退出。"
         )
     headline, *details = reason.splitlines()
@@ -1833,15 +1897,19 @@ def main(argv: list[str]) -> int:
     passthrough = rest[1:] if rest and not rest[0].startswith("-") else rest
     if opts["torch"] not in ("auto", "cpu", "dtk", *[t for t, _ in CUDA_TAGS]):
         die(f"--torch 取值无效：{opts['torch']!r}（可选 auto/cpu/dtk/cu128/cu126/cu124/cu118）")
-    if opts["index"] not in ("auto", "cn", "official"):
-        die(f"--index 取值无效：{opts['index']!r}（可选 auto/cn/official）")
+    if opts["index"] not in INDEX_CHOICES:
+        die(f"--index 取值无效：{opts['index']!r}（可选 {'/'.join(INDEX_CHOICES)}）")
 
     if any(a == "--env-root" for a in argv) and not (opts["env_root"] or "").strip():
         die("--env-root 不能为空")
-    settings_file = Path(opts["data_root"]).expanduser() / "settings.json"
-    saved_settings = json.loads(settings_file.read_text(encoding="utf-8")) if settings_file.exists() else {}
+    settings_root = Path(opts["data_root"]).expanduser()
+    settings_file = (settings_root if settings_root.is_absolute() else ROOT / settings_root) / "settings.json"
+    explicit_index = any(a == "--mirror" or a.startswith("--index=") for a in argv)
+    saved_settings = choose_download_sources(
+        settings_file, read_bootstrap_settings(settings_file), command=command, explicit=explicit_index
+    )
     opts["browser"] = opts["browser"] and saved_settings.get("server", {}).get("open_browser", True)
-    if not any(a == "--mirror" or a.startswith("--index=") for a in argv):
+    if not explicit_index:
         DOWNLOAD_SETTINGS = saved_settings.get("downloads")
     configured_cache = saved_settings.get("paths", {}).get("cache_dir")
     default_cache = Path(opts["data_root"]).expanduser().absolute() / "cache"

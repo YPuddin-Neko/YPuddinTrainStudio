@@ -2,9 +2,12 @@ import { Routes, Route, Navigate, useLocation, useNavigate, type Location } from
 import React from 'react';
 import Layout from './components/Layout';
 import SettingsDrawer from './components/SettingsDrawer';
+import OnboardingGate from './pages/Setup/OnboardingGate';
+import './pages/Setup/setup.css';
 import SettingsRedirect from './pages/Settings/SettingsRedirect';
 import { projectUrl } from './utils/projectVersions';
 
+const Setup = React.lazy(() => import('./pages/Setup/Setup'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard/Dashboard'));
 const Projects = React.lazy(() => import('./pages/Projects/Projects'));
 const Presets = React.lazy(() => import('./pages/Presets/Presets'));
@@ -40,7 +43,8 @@ export default function AppRoutes() {
   const closeSettings = () => { if(background)navigate(`${background.pathname}${background.search}${background.hash}`,{replace:true,state:background.state}); };
   return <>
     <div className="route-surface" aria-hidden={background ? true : undefined} {...(background ? {inert:''} : {})}><Routes location={background || location}>
-      <Route path="/" element={<Layout navigationKey={location.key}/>}>
+      <Route path="/setup" element={<React.Suspense fallback={<div className="setup-loading"/>}><Setup/></React.Suspense>}/>
+      <Route path="/" element={<OnboardingGate><Layout navigationKey={location.key}/></OnboardingGate>}>
         <Route index element={<Dashboard/>}/><Route path="projects" element={<Projects/>}/>
         <Route path="presets" element={<Presets/>}/>
         <Route path="projects/:id" element={<ProjectDetail/>}/><Route path="projects/:id/train" element={<TrainConfig/>}/>

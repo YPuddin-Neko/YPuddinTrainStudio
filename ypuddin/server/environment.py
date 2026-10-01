@@ -39,6 +39,7 @@ from ypuddin.runtime_profiles import current_profile, profile_root
 
 from . import dtk_catalog, metal_attention_catalog, windows_attention_catalog
 from .db import Database, new_id, now
+from .download_sources import probe_options
 from .errors import ApiError
 
 CATALOG = {
@@ -986,7 +987,7 @@ class EnvironmentManager:
         runtime, versions = self.runtime(), self.versions()
         downloads = self.context.settings().get("downloads", {})
         fallback = downloads.get("fallback", True)
-        pypi = [("index-url", url) for url in pypi_sources(downloads.get("pypi", "ustc"), fallback)]
+        options = {"opener_factory": policy.opener, "cache_key": policy}
         cache_key = (policy, self.profile, runtime, json.dumps(downloads, sort_keys=True))
         with self._latest_lock:
             if (
@@ -996,6 +997,8 @@ class EnvironmentManager:
                 and time.monotonic() - self._latest[0] < 3600
             ):
                 return self._latest[2]
+
+        pypi = [("index-url", url) for url in pypi_sources(downloads.get("pypi", "auto"), fallback, **options)]
 
         def newest(values, source, error=None):
             parsed = []
@@ -1035,7 +1038,8 @@ class EnvironmentManager:
             )
             # xFormers installs from the PyTorch source for this CUDA runtime, bitsandbytes from pip's.
             torch_index = torch_sources(
-                "cu" + str(runtime["cuda_runtime"]).replace(".", ""), downloads.get("pytorch", "mirror"), fallback
+                "cu" + str(runtime["cuda_runtime"]).replace(".", ""), downloads.get("pytorch", "auto"), fallback,
+                **options,
             )
             packages["xformers"] = online("xformers", "pytorch", torch_index)
             packages["bitsandbytes"] = online("bitsandbytes", "pypi", pypi)
@@ -1277,7 +1281,8 @@ class EnvironmentManager:
             # The official CUDA-specific xFormers wheel index binds its compiled kernels to
             # the actual Torch runtime, not the driver's advertised maximum CUDA version.
             sources = self.context.settings().get("downloads", {})
-            indexes = pypi_sources(sources.get("pypi", "ustc"), sources.get("fallback", True))
+            options = probe_options(self.context)
+            indexes = pypi_sources(sources.get("pypi", "auto"), sources.get("fallback", True), **options)
             plan_sources = [("index-url", url) for url in indexes]
             if self.profile == "linux-dtk" and local_wheel:
                 # Native/declared dependencies must exist. Only the reviewed implicit
@@ -1289,8 +1294,9 @@ class EnvironmentManager:
                 cuda = self.runtime().get("cuda_runtime")
                 plan_sources = torch_sources(
                     "cu" + str(cuda).replace(".", ""),
-                    sources.get("pytorch", "mirror"),
+                    sources.get("pytorch", "auto"),
                     sources.get("fallback", True),
+                    **options,
                 )
             if request.action == "repair":
                 # Only the requested package is force-reinstalled. Dependencies are checked

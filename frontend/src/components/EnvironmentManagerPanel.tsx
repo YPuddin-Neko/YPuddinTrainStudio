@@ -82,7 +82,8 @@ function DownloadProgress({ operation, copy }: {operation: Operation; copy: (zh:
   </div>;
 }
 
-export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: string } = {}) {
+export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?: string; mode?: 'onboarding-attention' } = {}) {
+  const onboardingAttention = mode === 'onboarding-attention';
   const { i18n } = useTranslation();
   const en = i18n.resolvedLanguage?.startsWith('en');
   const copy = (zh: string, english: string) => en ? english : zh;
@@ -109,7 +110,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     } catch (err) { if (!controller.signal.aborted) { setLatest(null); setLatestError(formatApiError(err)); } }
     finally { if (!controller.signal.aborted) setLatestLoading(false); }
   }, []);
-  React.useEffect(() => { void refreshLatest(); return () => latestController.current?.abort(); }, [refreshLatest]);
+  React.useEffect(() => { if (!onboardingAttention) void refreshLatest(); return () => latestController.current?.abort(); }, [onboardingAttention, refreshLatest]);
   const [lora, setLora] = React.useState<LoraEnvironment | null>(null);
   const [loraLoading, setLoraLoading] = React.useState(true);
   const [loraError, setLoraError] = React.useState('');
@@ -125,7 +126,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
     } catch (err) { if (!controller.signal.aborted) { setLora(null); setLoraError(formatApiError(err)); } }
     finally { if (!controller.signal.aborted) setLoraLoading(false); }
   }, []);
-  React.useEffect(() => { void refreshLora(); return () => loraController.current?.abort(); }, [refreshLora]);
+  React.useEffect(() => { if (!onboardingAttention) void refreshLora(); return () => loraController.current?.abort(); }, [onboardingAttention, refreshLora]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
   const errorRef = React.useRef<HTMLDivElement>(null);
@@ -160,7 +161,7 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   const cpuProfile = target === 'cpu';
   const hipBackend = target === 'hip';
   const showAttentionExtensions = target === 'cuda' || hipBackend;
-  const visiblePackages = status?.packages.filter(pkg => target === 'mps' ? pkg.name === 'mtlattn' : showAttentionExtensions && cudaAttentionPackages.has(pkg.name)) || [];
+  const visiblePackages = status?.packages.filter(pkg => onboardingAttention ? cudaAttentionPackages.has(pkg.name) : target === 'mps' ? pkg.name === 'mtlattn' : showAttentionExtensions && cudaAttentionPackages.has(pkg.name)) || [];
   // The 8-bit optimizers run only on CUDA / DTK GPUs; training refuses them elsewhere.
   const optimizerPackages = status?.packages.filter(pkg => showAttentionExtensions && pkg.name === 'bitsandbytes') || [];
   // Tagging and head masks: the GPU build on NVIDIA; elsewhere the CPU build. A CPU build left on an
@@ -230,8 +231,8 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   const statusLabel = (name: string) => ({ planning: copy('检查兼容性', 'Checking compatibility'), ready: copy('等待确认', 'Review required'), installing: copy('下载并安装', 'Downloading and applying'), verifying: copy('验证环境', 'Verifying environment'), completed: copy('已完成', 'Completed'), failed: copy('失败', 'Failed'), cancelled: copy('已取消', 'Cancelled') }[name] || name);
   const packageLabel = (name: string) => ({ xformers: 'xFormers', 'flash-attn': 'FlashAttention 2', mtlattn: 'Metal FlashAttention', onnxruntime: 'ONNX Runtime', 'onnxruntime-gpu': 'ONNX Runtime GPU' }[name] || name);
   const purpose = (name: string) => ({
-    xformers: copy('训练与采样加速', 'Training and sampling acceleration'),
-    'flash-attn': copy('FP16 / BF16 训练与采样加速', 'FP16 / BF16 training and sampling acceleration'),
+    xformers: copy('降低注意力计算的显存占用', 'Reduce attention memory usage'),
+    'flash-attn': copy('加速 FP16 / BF16 注意力计算', 'Accelerate FP16 / BF16 attention'),
     mtlattn: copy('Apple GPU 训练与采样加速（可选）', 'Optional Apple GPU training and sampling acceleration'),
     bitsandbytes: copy('8-bit 优化器：AdamW 8-bit、Lion 8-bit', '8-bit optimizers: AdamW 8-bit, Lion 8-bit'),
     onnxruntime: copy('自动打标与自动遮罩', 'Automatic tagging and masks'),
@@ -284,10 +285,10 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
   const packageItem = (pkg: PackageStatus) => <div key={pkg.name} className="settings-dependency">
     <div id={`environment-package-${pkg.name}`} className="settings-dependency-row" data-testid={`environment-package-${pkg.name}`}>
       <div className="settings-dependency-info"><button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{packageLabel(pkg.name)}</button><p className="settings-dependency-purpose">{purpose(pkg.name)}</p></div>
-      <dl className="settings-dependency-version text-xs">
-        <div><dt>{copy('本地服务端版本：', 'Local server version:')}</dt><dd>{pkg.version || copy('未安装', 'Not installed')}</dd></div>
-        <div title={latestError || latest?.packages[pkg.name]?.error || (latest?.packages[pkg.name]?.index ? copy(`来自 ${sourceHost(latest.packages[pkg.name].index!)}`, `From ${sourceHost(latest.packages[pkg.name].index!)}`) : copy('当前环境可用的发布版本', 'Release available for this runtime'))}><dt>{pkg.name === 'mtlattn' ? copy('兼容版本：', 'Compatible version:') : copy('云端版本：', 'Online version:')}</dt><dd>{onlineVersion(pkg)}</dd></div>
-      </dl>
+      {(!onboardingAttention || pkg.version) && <dl className="settings-dependency-version text-xs">
+        <div><dt>{onboardingAttention ? copy('版本：', 'Version:') : copy('本地服务端版本：', 'Local server version:')}</dt><dd>{pkg.version || copy('未安装', 'Not installed')}</dd></div>
+        {!onboardingAttention && <div title={latestError || latest?.packages[pkg.name]?.error || (latest?.packages[pkg.name]?.index ? copy(`来自 ${sourceHost(latest.packages[pkg.name].index!)}`, `From ${sourceHost(latest.packages[pkg.name].index!)}`) : copy('当前环境可用的发布版本', 'Release available for this runtime'))}><dt>{pkg.name === 'mtlattn' ? copy('兼容版本：', 'Compatible version:') : copy('云端版本：', 'Online version:')}</dt><dd>{onlineVersion(pkg)}</dd></div>}
+      </dl>}
       <span title={pkg.version && pkg.supported && !status?.probed_at && !pkg.available && !pkg.error ? checkHint(pkg.name) : undefined} className={`settings-dependency-state text-xs ${pkg.available ? 'text-emerald-700 dark:text-emerald-400' : pkg.error && pkg.supported ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{reason(pkg)}</span>
       <div className="settings-dependency-actions flex flex-wrap gap-1.5 justify-end"><button className={button} disabled={locked || !pkg.supported && !hipBackend} onClick={() => { setSelected(pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{copy('管理', 'Manage')}</button><a className={`${button} ui-btn-icon`} href={pkg.docs_url} target="_blank" rel="noreferrer" aria-label={`${pkg.name} ${copy('文档', 'documentation')}`}><ExternalLink size={12} /></a></div>
     </div>
@@ -336,6 +337,35 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
       status.runtime.multi_gpu_backend === 'gloo' ? copy('Gloo · 启动任务时检测', 'Gloo · checked at job start') : status.runtime.platform === 'Linux' && status.runtime.nccl_available ? 'NCCL' : copy('不可用', 'Unavailable')]] : []),
   ];
   const detectedDevices = status && status.runtime.gpus.length > 0 && <ul className="space-y-1" aria-label={copy('已检测设备', 'Detected devices')}>{status.runtime.gpus.map((gpu, index) => <li key={`${gpu.device || index}:${gpu.name}`}><strong>{gpu.name}</strong><span className="settings-note"> · {gpu.device || `GPU ${index + 1}`}{gpu.mem_total_mb != null ? ` · ${formatGpuMemory(gpu.mem_total_mb)} ${gpu.memory_scope === 'unified_system' ? copy('统一内存', 'unified memory') : copy('设备内存', 'device memory')}` : ''}{gpu.cuda_available === false ? textUnavailable() : ''}</span></li>)}</ul>;
+
+  const installation = <section id="environment-installation" data-settings-section tabIndex={-1} hidden={!visibleOperations.length && !torchOperationsVisible} className="settings-section space-y-3" data-testid={visibleOperations.length || torchOperationsVisible ? 'environment-operations' : undefined}>
+      {(visibleOperations.length > 0 || torchOperationsVisible) && <div className="settings-section-heading"><h2>{copy('安装日志', 'Installation log')}</h2></div>}
+      <div ref={setTorchOperationsTarget} className="space-y-3"/>
+      {visibleOperations.map(op => <InstallationOperation key={op.id} title={packageLabel(op.package)}
+        action={op.action === 'uninstall' ? copy('卸载', 'Uninstall') : op.action === 'repair' ? copy('重装', 'Reinstall') : copy('安装', 'Install')}
+        status={op.status === 'installing' ? op.action === 'uninstall' ? copy('正在卸载', 'Uninstalling') : op.action === 'repair' ? copy('正在重装', 'Reinstalling') : copy('正在安装', 'Installing') : statusLabel(op.status)}
+        busy={busyStatus(op)} failed={op.status === 'failed'} expanded={expanded === op.id} onToggle={() => setExpanded(expanded === op.id ? null : op.id)}>
+        <DownloadProgress operation={op} copy={copy}/>
+        {op.plan.length > 0 && <div className="space-y-1 text-xs">{op.plan.map(item => <p key={item.name} className="break-words"><span className="font-mono">{item.name}</span> · {item.from_version || copy('未安装', 'not installed')} → <strong>{item.version || copy('移除', 'remove')}</strong></p>)}</div>}
+        {op.error && <p role="alert" className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-300">{op.error}</p>}
+        {op.status === 'ready' && <div className="flex flex-wrap items-center gap-2"><button className={`${button} ui-btn-primary`} disabled={locked} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/apply`, {}, { silent: true }))}>{op.action === 'uninstall' ? copy('确认卸载', 'Confirm uninstall') : op.action === 'repair' ? copy('确认重装', 'Confirm reinstall') : copy('确认安装', 'Confirm install')}</button><span className="text-xs text-slate-500 dark:text-slate-400">{copy('执行后需要重启 Studio。', 'Restart Studio after applying.')}</span></div>}
+        {['planning', 'ready'].includes(op.status) && <button className={button} disabled={busy} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/cancel`, {}, { silent: true }))}>{op.action === 'uninstall' ? copy('取消卸载', 'Cancel uninstall') : op.phase === 'download' ? copy('取消下载', 'Cancel download') : copy('取消安装', 'Cancel installation')}</button>}
+        {['installing', 'verifying'].includes(op.status) && <p className="text-xs text-slate-500 dark:text-slate-400">{copy('安装中，请勿关闭服务。', 'Installation in progress. Keep the service running.')}</p>}
+        {op.logs.length > 0 && <InstallationLog label={copy('安装日志', 'Installation log')} logs={op.logs}/>}
+      </InstallationOperation>)}
+    </section>;
+
+  if (onboardingAttention) return <div className="environment-onboarding" data-testid="environment-manager">
+    <section id="environment-attention" className="settings-section">
+      <div className="settings-section-heading"><h2>{copy('注意力加速', 'Attention acceleration')}</h2><button type="button" className={button} disabled={loading || locked || !!status?.maintenance} onClick={() => void refresh(true)}><RefreshCw size={14} className={probing ? 'animate-spin' : ''}/>{probing ? copy('检查中…', 'Checking…') : copy('运行检查', 'Run checks')}</button></div>
+      <p className="settings-note" role={restartRequired ? 'status' : undefined}>{copy('安装后需重启训练器生效。', 'Restart the trainer after installation for changes to take effect.')}</p>
+      {error && <div ref={errorRef} role="alert" className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
+      {loading && !status && <p role="status" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 size={16} className="animate-spin" />{copy('检测当前环境与已安装扩展…', 'Checking runtime and installed extensions…')}</p>}
+      {status?.running_jobs && <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{copy('任务运行中，完成或停止后可修改环境。', 'Finish or stop running tasks before changing the environment.')}</p>}
+      <div className="settings-dependencies">{visiblePackages.map(packageItem)}</div>
+    </section>
+    {installation}
+  </div>;
 
   return <div data-testid="environment-manager"><SettingsSections sections={[
     { id: 'environment-runtime', label: copy('当前环境', 'Current runtime') },
@@ -391,21 +421,6 @@ export function EnvironmentManagerPanel({ focusPackage }: { focusPackage?: strin
       <div className="settings-section-heading"><h2>{copy('打标与遮罩', 'Tagging and masks')}</h2></div>
       {status ? <div className="settings-dependencies">{visionPackages.map(packageItem)}</div> : <LoadingNote label={copy('检测扩展包…', 'Checking packages…')}/>}
     </section>
-    <section id="environment-installation" data-settings-section tabIndex={-1} hidden={!visibleOperations.length && !torchOperationsVisible} className="settings-section space-y-3" data-testid={visibleOperations.length || torchOperationsVisible ? 'environment-operations' : undefined}>
-      {(visibleOperations.length > 0 || torchOperationsVisible) && <div className="settings-section-heading"><h2>{copy('安装日志', 'Installation log')}</h2></div>}
-      <div ref={setTorchOperationsTarget} className="space-y-3"/>
-      {visibleOperations.map(op => <InstallationOperation key={op.id} title={packageLabel(op.package)}
-        action={op.action === 'uninstall' ? copy('卸载', 'Uninstall') : op.action === 'repair' ? copy('重装', 'Reinstall') : copy('安装', 'Install')}
-        status={op.status === 'installing' ? op.action === 'uninstall' ? copy('正在卸载', 'Uninstalling') : op.action === 'repair' ? copy('正在重装', 'Reinstalling') : copy('正在安装', 'Installing') : statusLabel(op.status)}
-        busy={busyStatus(op)} failed={op.status === 'failed'} expanded={expanded === op.id} onToggle={() => setExpanded(expanded === op.id ? null : op.id)}>
-        <DownloadProgress operation={op} copy={copy}/>
-        {op.plan.length > 0 && <div className="space-y-1 text-xs">{op.plan.map(item => <p key={item.name} className="break-words"><span className="font-mono">{item.name}</span> · {item.from_version || copy('未安装', 'not installed')} → <strong>{item.version || copy('移除', 'remove')}</strong></p>)}</div>}
-        {op.error && <p role="alert" className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-300">{op.error}</p>}
-        {op.status === 'ready' && <div className="flex flex-wrap items-center gap-2"><button className={`${button} ui-btn-primary`} disabled={locked} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/apply`, {}, { silent: true }))}>{op.action === 'uninstall' ? copy('确认卸载', 'Confirm uninstall') : op.action === 'repair' ? copy('确认重装', 'Confirm reinstall') : copy('确认安装', 'Confirm install')}</button><span className="text-xs text-slate-500 dark:text-slate-400">{copy('执行后需要重启 Studio。', 'Restart Studio after applying.')}</span></div>}
-        {['planning', 'ready'].includes(op.status) && <button className={button} disabled={busy} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/cancel`, {}, { silent: true }))}>{op.action === 'uninstall' ? copy('取消卸载', 'Cancel uninstall') : op.phase === 'download' ? copy('取消下载', 'Cancel download') : copy('取消安装', 'Cancel installation')}</button>}
-        {['installing', 'verifying'].includes(op.status) && <p className="text-xs text-slate-500 dark:text-slate-400">{copy('安装中，请勿关闭服务。', 'Installation in progress. Keep the service running.')}</p>}
-        {op.logs.length > 0 && <InstallationLog label={copy('安装日志', 'Installation log')} logs={op.logs}/>}
-      </InstallationOperation>)}
-    </section>
+    {installation}
   </SettingsSections></div>;
 }

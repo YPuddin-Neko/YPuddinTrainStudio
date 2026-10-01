@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Save } from 'lucide-react';
 import { apiClient } from '../../api/client';
@@ -90,6 +91,7 @@ export default function PageSettings({ focus }: { focus?: 'charts' }) {
           <StudioSelect id="page-theme" aria-label={t('settings.theme')} value={draft.theme} onValueChange={value => change({ theme: value as Draft['theme'] })}
             options={[{ value: 'system', label: t('settings.themeSystem') }, { value: 'light', label: t('settings.themeLight') }, { value: 'dark', label: t('settings.themeDark') }]} data-testid="settings-theme"/>
         </div></div>
+        <div className="settings-field"><span>{text('首次设置', 'First-time setup')}</span><div className="settings-field-control"><Link to="/setup" className="ui-btn">{text('重新打开引导', 'Open setup guide')}</Link></div></div>
       </section>
       <MetricChartEditor id="page-charts" onSortingChange={setSorting} charts={draft.charts} onChange={charts => change({ charts })}/>
     </fieldset>

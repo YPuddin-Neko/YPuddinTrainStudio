@@ -176,6 +176,24 @@
         }
       }
     },
+    "/api/settings/downloads/probe": {
+      "post": {
+        "summary": "Probe Download Sources",
+        "operationId": "probe_download_sources_api_settings_downloads_probe_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadSourcesProbe"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/cache/thumbnails": {
       "get": {
         "summary": "Thumbnail Cache",
@@ -11546,6 +11564,77 @@
         ],
         "title": "DiskStats"
       },
+      "DownloadSourceProbe": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "url",
+          "latency_ms",
+          "available"
+        ],
+        "title": "DownloadSourceProbe"
+      },
+      "DownloadSourcesProbe": {
+        "properties": {
+          "checked_at": {
+            "type": "number",
+            "title": "Checked At"
+          },
+          "pypi": {
+            "items": {
+              "$ref": "#/components/schemas/DownloadSourceProbe"
+            },
+            "type": "array",
+            "title": "Pypi"
+          },
+          "pytorch": {
+            "items": {
+              "$ref": "#/components/schemas/DownloadSourceProbe"
+            },
+            "type": "array",
+            "title": "Pytorch"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "checked_at",
+          "pypi",
+          "pytorch"
+        ],
+        "title": "DownloadSourcesProbe"
+      },
       "DtkCatalog": {
         "properties": {
           "source_url": {
@@ -21948,24 +22037,26 @@
           "pypi": {
             "type": "string",
             "enum": [
+              "auto",
               "ustc",
               "tuna",
               "aliyun",
               "official"
             ],
             "title": "Pypi",
-            "default": "ustc"
+            "default": "auto"
           },
           "pytorch": {
             "type": "string",
             "enum": [
+              "auto",
               "mirror",
               "aliyun",
               "sjtu",
               "official"
             ],
             "title": "Pytorch",
-            "default": "mirror"
+            "default": "auto"
           },
           "fallback": {
             "type": "boolean",
@@ -22131,6 +22222,11 @@
               "system"
             ],
             "title": "Theme"
+          },
+          "onboarding_completed": {
+            "type": "boolean",
+            "title": "Onboarding Completed",
+            "default": false
           },
           "telemetry_interval": {
             "type": "number",
