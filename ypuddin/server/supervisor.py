@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import errno
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,7 +25,7 @@ from .db import Database, new_id, now
 from .environment import maintenance_blocked, maintenance_reason
 from .gpu_selection import selection_error
 from .hardware import gpu_info
-from .job_logs import append_failure_record, parse_log_lines
+from .job_logs import SUPERVISOR_SOURCE, append_failure_record, read_log
 from .job_paths import event_file, log_file, state_directory
 from .memory_fit import capacity_shortfall, device_label, fits_now, gb, shortfall_reason
 from .sample_events import sample_event_loss
@@ -40,33 +40,47 @@ EVENT_BATCH_BYTES = 256 * 1024
 RELEASE_WAIT_SECONDS = 30
 
 
-def _exit_diagnostics(log_path: Path) -> list[str]:
-    """Keep recorded errors separate from facts observed after the worker exited."""
+# Writes start failing well before a volume reports exactly zero free bytes.
+LOW_DISK_BYTES = 64 * 2**20
+EXIT_LABELS = {"train": "训练", "cache": "缓存", "xyz": "模型测试"}
+# torchrun's summary of a failed rank names the rank, not the cause.
+_LAUNCHER = re.compile(r"torch[/\\.]distributed[/\\.]elastic")
+
+
+def _launcher_line(line: dict[str, Any]) -> bool:
+    return "ChildFailedError" in line["msg"] or bool(_LAUNCHER.search(line["source"] or ""))
+
+
+def _exit_error(job: dict[str, Any], code: int | None, *, completed: bool = False) -> str:
+    label = EXIT_LABELS.get(job["type"], "任务")
+    exit_code = "" if code is None else f"（退出码 {code}）"
+    return f"{label}已完成，但进程异常退出{exit_code}" if completed else f"{label}进程异常退出{exit_code}"
+
+
+def _exit_diagnostics(log_path: Path, start: int = 0) -> list[str]:
+    """The last error this launch wrote from offset ``start``, then the space left on the log volume."""
     details = []
     try:
-        with log_path.open("rb") as stream:
-            size = stream.seek(0, os.SEEK_END)
-            start = max(0, size - 4000)
-            stream.seek(start)
-            lines = stream.read(4000).decode("utf-8", errors="replace").splitlines()
-        if start:
-            lines = lines[1:]
-        errors = [
-            line["msg"]
-            for line in parse_log_lines(lines)
-            if line["level"] == "error" and line["kind"] != "traceback" and line["msg"].strip()
-        ]
-        if errors:
-            details.append(errors[-1][:500])
-    except OSError as exc:
-        if exc.errno == errno.ENOSPC:
-            details.append(f"磁盘可用空间不足（ENOSPC）：{log_path}")
+        lines = read_log(log_path, tail=True, limit=1000)["lines"]
+    except OSError:
+        lines = []
+    errors = [
+        line["msg"]
+        for line in lines
+        if line["offset"] >= start
+        and line["level"] == "error"
+        and line["kind"] != "traceback"
+        and line["source"] != SUPERVISOR_SOURCE
+        and not _launcher_line(line)
+        and line["msg"].strip()
+    ]
+    if errors:
+        details.append(errors[-1][:500])
     try:
-        if shutil.disk_usage(log_path.parent).free == 0:
-            details.append(f"磁盘可用空间不足：{log_path.parent}")
-    except OSError as exc:
-        if exc.errno == errno.ENOSPC:
-            details.append(f"磁盘可用空间不足（ENOSPC）：{log_path.parent}")
+        if shutil.disk_usage(log_path.parent).free < LOW_DISK_BYTES:
+            details.append(f"磁盘空间不足（{log_path.parent}）")
+    except OSError:
+        pass
     return details
 
 
@@ -164,6 +178,8 @@ class JobSupervisor:
         self._procs: dict[str, subprocess.Popen] = {}
         self._devices: dict[str, str | tuple[str, ...]] = {}
         self._offsets: dict[str, int] = {}
+        # Where each running job's log stood when its current process started.
+        self._log_starts: dict[str, int] = {}
         # jobs whose current process already reported its outcome through the event stream; the
         # later process-exit notification must not touch their status (the user may have resumed)
         self._outcome_seen: set[str] = set()
@@ -675,6 +691,9 @@ class JobSupervisor:
         events_path = event_file(job)
         events_path.parent.mkdir(parents=True, exist_ok=True)
         self._offsets[job_id] = events_path.stat().st_size if events_path.exists() else 0
+        log_path = log_file(job)
+        # Resumed runs append to the same log; exit diagnostics read only this launch's output.
+        self._log_starts[job_id] = log_path.stat().st_size if log_path.exists() else 0
         kwargs: dict[str, Any] = {}
         if os.name == "nt":  # pragma: no cover
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -685,13 +704,13 @@ class JobSupervisor:
             handoff = reuse.control / "next.json"
             temporary = handoff.with_suffix(".tmp")
             temporary.write_text(
-                json.dumps({"request": str(cfg_path), "log": str(log_file(job))}), encoding="utf-8"
+                json.dumps({"request": str(cfg_path), "log": str(log_path)}), encoding="utf-8"
             )
             temporary.replace(handoff)
             proc = reuse.proc
             reuse.job_id = job_id
         else:
-            with open(log_file(job), "ab") as log_fp:
+            with open(log_path, "ab") as log_fp:
                 proc = subprocess.Popen(
                     cmd, stdout=log_fp, stderr=subprocess.STDOUT, cwd=str(run_dir), env=env, **kwargs
                 )
@@ -778,6 +797,7 @@ class JobSupervisor:
         with self.db.lock:
             proc = self._procs.pop(job_id)
             self._devices.pop(job_id, None)
+            self._log_starts.pop(job_id, None)
             self._outcome_seen.discard(job_id)
             self._staying.discard(job_id)
             # The code a worker ending with this comparison would have exited with.
@@ -1046,28 +1066,26 @@ class JobSupervisor:
         self._set_status(job_id, status, **fields)
 
     def _on_exit(self, job_id: str, code: int | None) -> None:
-        job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
-        if not job:
-            return
-        failed_after_completion = job["status"] == "completed" and code is not None and code != 0
-        if (job["status"] in TERMINAL or job_id in self._outcome_seen) and not failed_after_completion:
+        log_start = self._log_starts.pop(job_id, 0)
+        # A resume or cancel request must not land between reading the status and writing it back.
+        with self.db.lock:
+            job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
+            if not job:
+                return
+            failed_after_completion = job["status"] == "completed" and code is not None and code != 0
+            if (job["status"] in TERMINAL or job_id in self._outcome_seen) and not failed_after_completion:
+                self._outcome_seen.discard(job_id)
+                self._set_status(job_id, job["status"], exit_code=code)
+                return
             self._outcome_seen.discard(job_id)
-            self._set_status(job_id, job["status"], exit_code=code)
-            return
-        self._outcome_seen.discard(job_id)
-        error = (
-            f"worker process exited with code {code} after reporting completion"
-            if failed_after_completion
-            else f"process exited with code {code}"
-        )
-        status = "cancelled" if job["status"] == "cancelling" else "failed"
-        if status == "failed":
-            details = _exit_diagnostics(log_file(job))
-            if details:
-                error += ": " + "; ".join(details)
-        self._set_status(
-            job_id, status, finished_at=now(), exit_code=code, error=error if status == "failed" else None
-        )
+            status = "cancelled" if job["status"] == "cancelling" else "failed"
+            error = None
+            if status == "failed":
+                error = _exit_error(job, code, completed=failed_after_completion)
+                details = _exit_diagnostics(log_file(job), log_start)
+                if details:
+                    error += "：" + "；".join(details)
+            self._set_status(job_id, status, finished_at=now(), exit_code=code, error=error)
 
     def _set_status(self, job_id: str, status: str, **fields: Any) -> None:
         with self.db.lock:
