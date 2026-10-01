@@ -22,6 +22,7 @@ const Settings = React.lazy(() => import('./pages/Settings/Settings'));
 const EnvironmentSettings = React.lazy(() => import('./pages/Settings/EnvironmentSettings'));
 const Preferences = React.lazy(() => import('./pages/Settings/Preferences'));
 const PageSettings = React.lazy(() => import('./pages/Settings/PageSettings'));
+const TrainerUpdates = React.lazy(() => import('./pages/Settings/TrainerUpdates'));
 
 function LegacyOutputsRedirect() {
   const location = useLocation(); const params = new URLSearchParams(location.search);
@@ -34,7 +35,7 @@ function EnvironmentRoute() {
   return new URLSearchParams(location.search).get('tab') === 'artifacts' ? <LegacyOutputsRedirect/> : <EnvironmentSettings/>;
 }
 function settingsRoutes() {
-  return <Route path="settings" element={<Settings/>}><Route index element={<SettingsRedirect/>}/><Route path="environment" element={<EnvironmentRoute/>}/><Route path="preferences" element={<Preferences/>}/><Route path="page" element={<PageSettings/>}/><Route path="charts" element={<PageSettings focus="charts"/>}/></Route>;
+  return <Route path="settings" element={<Settings/>}><Route index element={<SettingsRedirect/>}/><Route path="environment" element={<EnvironmentRoute/>}/><Route path="preferences" element={<Preferences/>}/><Route path="page" element={<PageSettings/>}/><Route path="charts" element={<PageSettings focus="charts"/>}/><Route path="updates" element={<TrainerUpdates/>}/></Route>;
 }
 export default function AppRoutes() {
   const location = useLocation(); const navigate = useNavigate();

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Cpu, HardDrive, FolderCog, Palette, KeyRound, Download, Tags, Settings as SettingsIcon, CircleAlert } from 'lucide-react';
+import { Cpu, HardDrive, FolderCog, Palette, KeyRound, Download, Tags, Settings as SettingsIcon, CircleAlert, RefreshCw } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { RestartRequiredContext } from '../../components/restartRequiredContext';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -15,7 +15,7 @@ export default function Settings() {
   const location = useLocation();
   const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
-  const selected = location.pathname.endsWith('/page') || location.pathname.endsWith('/charts') ? 'page' : location.pathname.endsWith('/preferences') ? params.get('section') === 'downloads' ? 'downloads' : params.get('section') === 'interface' ? 'interface' : 'storage' : params.get('tab') === 'credentials' ? 'credentials' : params.get('tab') === 'models' ? 'models' : params.get('tab') === 'tagging' ? 'tagging' : 'runtime';
+  const selected = location.pathname.endsWith('/updates') ? 'updates' : location.pathname.endsWith('/page') || location.pathname.endsWith('/charts') ? 'page' : location.pathname.endsWith('/preferences') ? params.get('section') === 'downloads' ? 'downloads' : params.get('section') === 'interface' ? 'interface' : 'storage' : params.get('tab') === 'credentials' ? 'credentials' : params.get('tab') === 'models' ? 'models' : params.get('tab') === 'tagging' ? 'tagging' : 'runtime';
   const scroll = React.useRef<HTMLDivElement>(null);
   const panel = useEnterAnimation<HTMLDivElement>(selected, { skipFirst: true });
   React.useEffect(() => { if (scroll.current) scroll.current.scrollTop = 0; }, [selected]);
@@ -39,9 +39,10 @@ export default function Settings() {
     { id: 'storage', label: text('存储路径', 'Storage'), Icon: FolderCog },
     { id: 'page', label: text('页面设置', 'Pages'), Icon: Palette },
     { id: 'interface', label: text('系统设置', 'System'), Icon: SettingsIcon },
+    { id: 'updates', label: text('训练器更新', 'Trainer updates'), Icon: RefreshCw },
   ];
   const select = (id: string) => {
-    if (id === 'page') { navigate('/settings/page', { state: location.state, replace: true }); return; }
+    if (id === 'page' || id === 'updates') { navigate(`/settings/${id}`, { state: location.state, replace: true }); return; }
     const next = new URLSearchParams(location.search);
     const preferences = id === 'storage' || id === 'interface' || id === 'downloads';
     next.delete(preferences ? 'tab' : 'section');

@@ -6,13 +6,54 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
+import tempfile
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 PREFIX = "YPuddinTrainStudio"
+
+
+def build_identity(root: Path) -> dict:
+    """Describe the source included in this archive, including uncommitted changes."""
+    root = root.resolve()
+
+    def git(*args: str) -> str | None:
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        env["GIT_OPTIONAL_LOCKS"] = "0"
+        try:
+            with tempfile.TemporaryFile() as output:
+                result = subprocess.run(
+                    ["git", "--no-pager", "-c", "core.fsmonitor=false", "-C", str(root), *args],
+                    stdout=output, stderr=subprocess.DEVNULL, timeout=2, env=env, check=False,
+                )
+                output.seek(0)
+                raw = output.read(16_385)
+            if result.returncode or len(raw) > 16_384:
+                return None
+            return raw.decode("utf-8", errors="replace").strip()
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+    version_text = (root / "ypuddin/__init__.py").read_text(encoding="utf-8")
+    version = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', version_text)
+    build = {
+        "version": version.group(1) if version else "unknown",
+        "commit": None, "branch": None, "dirty": None,
+        "built_at": datetime.now(timezone.utc).isoformat(),
+    }
+    top = git("rev-parse", "--show-toplevel")
+    commit = git("rev-parse", "HEAD") if top and Path(top).resolve() == root else None
+    if commit and re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+        branch = git("rev-parse", "--abbrev-ref", "HEAD")
+        changes = git("status", "--porcelain=v1", "--untracked-files=normal")
+        build.update(commit=commit.lower(), branch=None if branch == "HEAD" else branch,
+                     dirty=None if changes is None else bool(changes))
+    return build
 
 
 def excluded_reason(name: str | Path, *, built_ui: bool = False) -> str | None:
@@ -322,6 +363,7 @@ def package(output: Path) -> dict:
         bat = (ROOT / name).read_bytes()
         assert bat.isascii() and bat.count(b"\n") == bat.count(b"\r\n"), f"{name} must be ASCII CRLF"
     manifest = {
+        "build": build_identity(ROOT),
         "files": {
             p.as_posix(): {
                 "sha256": hashlib.sha256((ROOT / p).read_bytes()).hexdigest(),

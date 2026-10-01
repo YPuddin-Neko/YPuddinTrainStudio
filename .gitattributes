@@ -5,3 +5,4 @@
 # Preserve upstream asset hashes and the original license bytes on Windows too.
 ypuddin/models/sdxl/assets/** -text
 ypuddin/models/sdxl/LICENSE-SDXL.txt -text -whitespace
+ypuddin/_archive_revision.txt export-subst

@@ -8627,6 +8627,42 @@
           }
         }
       }
+    },
+    "/api/updates": {
+      "get": {
+        "summary": "Status",
+        "operationId": "status_api_updates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainerUpdateStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/updates/check": {
+      "post": {
+        "summary": "Check",
+        "operationId": "check_api_updates_check_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainerUpdateStatus"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -23582,6 +23618,271 @@
         "additionalProperties": false,
         "type": "object",
         "title": "TrainConfig"
+      },
+      "TrainerCommit": {
+        "properties": {
+          "commit": {
+            "type": "string",
+            "title": "Commit"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "commit",
+          "subject",
+          "body",
+          "author",
+          "date",
+          "url"
+        ],
+        "title": "TrainerCommit"
+      },
+      "TrainerCurrentVersion": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "git",
+              "package",
+              "unknown"
+            ],
+            "title": "Source",
+            "default": "unknown"
+          },
+          "dirty": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dirty"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "TrainerCurrentVersion"
+      },
+      "TrainerLatestVersion": {
+        "properties": {
+          "commit": {
+            "type": "string",
+            "title": "Commit"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "download_url": {
+            "type": "string",
+            "title": "Download Url"
+          },
+          "branch": {
+            "type": "string",
+            "title": "Branch",
+            "default": "main"
+          }
+        },
+        "type": "object",
+        "required": [
+          "commit",
+          "subject",
+          "body",
+          "author",
+          "date",
+          "url",
+          "download_url"
+        ],
+        "title": "TrainerLatestVersion"
+      },
+      "TrainerUpdateStatus": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "unchecked",
+              "current",
+              "available",
+              "ahead",
+              "diverged",
+              "unknown",
+              "error"
+            ],
+            "title": "State",
+            "default": "unchecked"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "network",
+                  "rate_limit",
+                  "invalid_response",
+                  "unavailable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "current": {
+            "$ref": "#/components/schemas/TrainerCurrentVersion"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrainerLatestVersion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commits": {
+            "items": {
+              "$ref": "#/components/schemas/TrainerCommit"
+            },
+            "type": "array",
+            "title": "Commits"
+          },
+          "history_kind": {
+            "type": "string",
+            "enum": [
+              "updates",
+              "recent"
+            ],
+            "title": "History Kind",
+            "default": "recent"
+          },
+          "total_commits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Commits"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          },
+          "compare_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compare Url"
+          },
+          "repository_url": {
+            "type": "string",
+            "title": "Repository Url",
+            "default": "https://github.com/YPuddin-Neko/YPuddinTrainStudio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current"
+        ],
+        "title": "TrainerUpdateStatus"
       },
       "TrainingConfig": {
         "properties": {

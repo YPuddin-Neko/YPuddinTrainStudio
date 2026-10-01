@@ -1,0 +1,41 @@
+.trainer-updates { min-width:0; }
+.trainer-updates .settings-section-heading { align-items:center; }
+.trainer-update-state { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 16px; margin-bottom:14px; font-size:13px; }
+.trainer-update-state > span { font-weight:550; }
+.trainer-update-state > time { color:var(--settings-muted); font-size:12px; }
+.trainer-update-state[data-state=available] > span,.trainer-update-state[data-state=checking] > span { color:var(--studio-accent); }
+.trainer-update-state[data-state=error] > span,.trainer-update-error { color:var(--studio-danger); }
+.trainer-update-error { font-size:12px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; margin:0 0 12px; }
+.trainer-update-note { margin:0 0 12px; }
+.trainer-version-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.trainer-version-card { min-width:0; padding:14px 16px; border:1px solid var(--settings-line); border-radius:6px; background:var(--settings-subtle); }
+.trainer-version-card h3 { margin:0 0 9px; font-size:12px; font-weight:500; color:var(--settings-muted); }
+.trainer-version-number { display:block; font-size:16px; font-weight:600; line-height:1.4; overflow-wrap:anywhere; }
+.trainer-version-number code { font-size:14px; }
+.trainer-version-card dl { display:grid; gap:5px; margin:12px 0 0; font-size:12px; line-height:1.5; }
+.trainer-version-card dl > div { display:grid; grid-template-columns:56px minmax(0,1fr); gap:8px; }
+.trainer-version-card dt { color:var(--settings-muted); }
+.trainer-version-card dd { margin:0; overflow-wrap:anywhere; }
+.trainer-local-changes { margin:8px 0 0; color:var(--settings-muted); font-size:12px; }
+.trainer-latest-subject { margin:7px 0 0; font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.trainer-version-empty { margin:0; }
+.trainer-update-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.trainer-update-history { margin-top:22px; }
+.trainer-history-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:6px 12px; padding-bottom:10px; border-bottom:1px solid var(--settings-line); }
+.trainer-history-heading h3 { margin:0; font-size:14px; }
+.trainer-commit-list { list-style:none; padding:0; margin:0; }
+.trainer-commit { padding:12px 0; border-bottom:1px solid var(--settings-line); }
+.trainer-commit summary { display:flex; align-items:flex-start; gap:6px; font-size:13px; font-weight:500; line-height:1.6; cursor:pointer; list-style:none; }
+.trainer-commit summary::-webkit-details-marker { display:none; }
+.trainer-commit summary > svg { flex:none; margin-top:3px; color:var(--settings-muted); }
+.trainer-commit summary > span { min-width:0; overflow-wrap:anywhere; }
+.trainer-commit summary:focus-visible { outline:2px solid var(--studio-accent); outline-offset:3px; border-radius:2px; }
+.trainer-commit-subject { margin:0; font-size:13px; font-weight:500; line-height:1.6; overflow-wrap:anywhere; }
+.trainer-commit-body { margin:9px 0 2px 20px; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.7; }
+.trainer-commit-meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin-top:6px; color:var(--settings-muted); font-size:11px; }
+.trainer-commit-meta > span,.trainer-commit-meta > time { overflow-wrap:anywhere; min-width:0; }
+.trainer-commit-meta code { font-size:11px; }
+.trainer-history-empty { padding:12px 0; }
+.trainer-history-more { margin-top:12px; font-size:12px; }
+@container settings (max-width:560px) { .trainer-version-grid { grid-template-columns:1fr; } }
+@media(max-width:560px) { .trainer-version-grid { grid-template-columns:1fr; } }

@@ -27,6 +27,7 @@ from . import (
     routes_model_recommendations,
     routes_regularization,
     routes_site_downloads,
+    routes_updates,
     routes_vision,
     routes_vlm,
     routes_work,
@@ -45,6 +46,7 @@ from .regularization import RegularizationManager
 from .site_downloads import SiteDownloadManager
 from .supervisor import JobSupervisor
 from .torch_environments import TorchEnvironments
+from .trainer_updates import TrainerUpdates
 from .vision_downloads import VisionModels
 
 log = logging.getLogger(__name__)
@@ -62,6 +64,7 @@ def create_app(
     bus = EventBus()
     supervisor = JobSupervisor(db, bus, root, poll_interval=poll_interval)
     context = ServiceContext(data_root=root, db=db, bus=bus, supervisor=supervisor)
+    trainer_updates = TrainerUpdates(context)
     model_downloads = ModelDownloads(context)
     environment = EnvironmentManager(context)
     torch_environments = TorchEnvironments(context, environment)
@@ -130,6 +133,7 @@ def create_app(
     app.state.vision_models = vision_models
     app.state.regularization = regularization
     app.state.site_downloads = site_downloads
+    app.state.trainer_updates = trainer_updates
     errors.install(app)
     app.add_middleware(
         CORSMiddleware,
@@ -154,6 +158,7 @@ def create_app(
     app.include_router(routes_credentials.router, prefix="/api")
     app.include_router(routes_vision.router, prefix="/api")
     app.include_router(routes_vlm.router, prefix="/api")
+    app.include_router(routes_updates.router, prefix="/api")
 
     dist = Path(frontend_dist) if frontend_dist else Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if (dist / "index.html").exists():

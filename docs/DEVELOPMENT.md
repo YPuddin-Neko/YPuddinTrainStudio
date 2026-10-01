@@ -77,7 +77,7 @@ python scripts/package_source.py --check-git
 python scripts/package_source.py /path/to/YPuddinTrainStudio-source.zip
 ```
 
-打包脚本校验 Git 索引及前端构建指纹，包含程序、公开文档、许可证和编译后的前端；排除 Python 环境、模型、运行数据、凭据与本地产物。归档附带文件大小及 SHA-256 清单，已存在的目标文件不会被覆盖。
+打包脚本校验 Git 索引及前端构建指纹，包含程序、公开文档、许可证和编译后的前端；排除 Python 环境、模型、运行数据、凭据与本地产物。归档的 `SOURCE_MANIFEST.json` 包含文件大小、SHA-256 清单，以及版本、提交、分支、打包时间和源码修改状态，用于压缩包安装的版本识别。已存在的目标文件不会被覆盖。
 
 ## 第三方代码
 
