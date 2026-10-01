@@ -217,7 +217,7 @@ export default function JobDetail() {
   // 2. SSE 增量监听
   useEventStream(EVENT_TYPES.JOB_STATE, (data: any) => {
     if (data.job_id === id) {
-      setJob((prev) => prev ? { ...mergeJobEvent(prev, data), ...(data.exit_code !== undefined ? { exit_code: data.exit_code } : {}) } : null);
+      setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
       // A resumed run also brings its pause history.
       if (['completed', 'failed', 'cancelled', 'paused', 'running'].includes(data.status)) {
         void refreshSamples();

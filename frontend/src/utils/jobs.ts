@@ -33,7 +33,8 @@ export function mergeJobEvent(job: Job, event: Record<string, any>): Job {
     }
   }
   return { ...job, progress, latest, ...(event.status ? { status: event.status } : {}),
-    ...(event.error !== undefined ? { error: event.error } : {}) };
+    ...(event.error !== undefined ? { error: event.error } : {}),
+    ...(event.exit_code !== undefined ? { exit_code: event.exit_code } : {}) };
 }
 
 type Text = (zh: string, en: string) => string;
