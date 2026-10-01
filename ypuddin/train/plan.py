@@ -1088,16 +1088,20 @@ def plan(
                     "suggestions": [],
                 }
                 if gpu_total_mb and not cfg.training.train_text_encoder and peak > gpu_total_mb * 0.9:
+                    # Multi-GPU training rejects offloaded checkpoints and block swap.
+                    multi_gpu = cfg.loop.gpu_count > 1 or cfg.loop.distributed_strategy == "fsdp"
                     if cfg.memory.activation_checkpointing == "none":
                         memory["suggestions"].append("set memory.activation_checkpointing = 'block'")
                     elif (
                         cfg.memory.activation_checkpointing == "block"
+                        and not multi_gpu
                         and "unsloth" in family.spec.checkpointing_modes
                         and act_by_mode["unsloth"] < act_by_mode["block"]
                     ):
                         memory["suggestions"].append("set memory.activation_checkpointing = 'unsloth'")
                     if (
                         device_type != "mps"
+                        and not multi_gpu
                         and "block_swap" in family.spec.capabilities
                         and not cfg.memory.blocks_to_swap
                         and cfg.training.mode != "full"

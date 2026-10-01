@@ -84,15 +84,20 @@ export function hideUnusedSetting(path: string, value: unknown, { config }: Fiel
   return !value;
 }
 
+/** Whether the configuration trains on several GPUs; FSDP always does. */
+const multiGpu = (config: Record<string, any>) => Number(config.loop?.gpu_count ?? 1) > 1 || config.loop?.distributed_strategy === 'fsdp';
+
 /** Options this model and machine can run, keeping the current value visible; undefined keeps the list as it is. */
-export function contextOptions(path: string, { family }: FieldContext, options: string[] | undefined, current: unknown): string[] | undefined {
-  if (!family || !options) return undefined;
+export function contextOptions(path: string, { family, config }: FieldContext, options: string[] | undefined, current: unknown): string[] | undefined {
+  if (!options) return undefined;
   const runtime = runtimeOf(family);
   let usable: string[] | undefined;
-  if (path === 'memory.base_precision' && !(has(family, 'fp8_base') && onGpu(runtime))) usable = options.filter(option => !option.startsWith('fp8'));
+  if (family && path === 'memory.base_precision' && !(has(family, 'fp8_base') && onGpu(runtime))) usable = options.filter(option => !option.startsWith('fp8'));
   // bitsandbytes 8-bit optimizers run on NVIDIA / DTK GPUs only.
-  if (path === 'optimizer.type' && !onGpu(runtime)) usable = options.filter(option => !option.endsWith('8bit'));
-  if (path === 'loop.distributed_strategy' && family.runtime_platform === 'windows') usable = options.filter(option => option !== 'fsdp');
+  if (family && path === 'optimizer.type' && !onGpu(runtime)) usable = options.filter(option => !option.endsWith('8bit'));
+  if (family && path === 'loop.distributed_strategy' && family.runtime_platform === 'windows') usable = options.filter(option => option !== 'fsdp');
+  // DDP and FSDP recompute blocks or keep activations; offloading them to memory runs on one GPU only.
+  if (path === 'memory.activation_checkpointing' && multiGpu(config)) usable = options.filter(option => option !== 'unsloth');
   if (!usable) return undefined;
   return typeof current === 'string' && options.includes(current) && !usable.includes(current) ? [...usable, current] : usable;
 }
@@ -102,7 +107,7 @@ const join = (lines: Lines) => lines.filter(Boolean).join('\n');
 
 /** Help written for the selected model and this machine; undefined leaves the general text. */
 export function contextHelp(path: string, context: FieldContext, options?: string[]): string | undefined {
-  const { family, config, english } = context;
+  const { family, english } = context;
   if (!family) return undefined;
   const runtime = runtimeOf(family);
   const text = (zh: string, en: string) => english ? en : zh;
@@ -113,7 +118,6 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
     .filter(([option]) => listed(option)).map(([option, [zh, en]]) => `${label(option)}${english ? `: ${en}` : `：${zh}`}`);
   const name = modelName(family);
   const ddpm = family.objective === 'ddpm';
-  const multiGpu = Number(config.loop?.gpu_count ?? 1) > 1 || config.loop?.distributed_strategy === 'fsdp';
   switch (path) {
     case 'model.attention': {
       const sdpa: [string, string] = runtime === 'cuda'
@@ -159,9 +163,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
     case 'memory.activation_checkpointing':
       return join([
         text('开启后每个模块只保留输入，反向传播时逐块重新计算：显存大幅减少，训练会慢一些（多一次前向计算）。可与梯度累积同时使用。', 'On keeps only each block\'s input and recomputes blocks during backward: much less memory, somewhat slower (one extra forward pass). Works with gradient accumulation.'),
-        multiGpu
-          ? text('DDP 和 FSDP 可选关闭或开启（逐块），不支持开启并卸载到内存。', 'DDP and FSDP support Off or On (per block), but not On + offload.')
-          : listed('unsloth') && text('开启并卸载到内存：再把这些输入暂存到内存，显存再少一些，但占用内存并增加传输；开启后显存仍不够时再用。', 'On + offload also parks those inputs in system memory for a little more saving, at the cost of RAM and transfers; use it when On is not enough.'),
+        listed('unsloth') && text('开启并卸载到内存：再把这些输入暂存到内存，显存再少一些，但占用内存并增加传输；开启后显存仍不够时再用。', 'On + offload also parks those inputs in system memory for a little more saving, at the cost of RAM and transfers; use it when On is not enough.'),
       ]);
     case 'loop.mixed_precision':
       return runtime === 'cpu'

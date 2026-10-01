@@ -1066,7 +1066,7 @@ class MemoryConfig(_Strict):
     )
     activation_checkpointing: Literal["none", "block", "unsloth"] = F(
         "none",
-        help="减少反向前保存的中间激活，默认 none 全程保留；block 在反向时重算，unsloth 还把块输入卸载到 CPU。会增加重算或传输工作，显存不足时再按模型支持情况选择。DDP 和 FSDP 支持 none（关闭）与 block（逐块），不支持 unsloth（开启并卸载到内存）。",
+        help="减少反向前保存的中间激活，默认关闭，全程保留；开启后在反向时逐块重算，开启并卸载到内存还把块输入暂存到内存。会增加重算或传输工作，显存不足时再按模型支持情况选择。DDP 和 FSDP 可选关闭或开启，不支持开启并卸载到内存。",
         ui_=ui("memory", order=20, control="select"),
     )
     offload_text_encoder: bool = F(

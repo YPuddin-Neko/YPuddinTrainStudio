@@ -87,7 +87,7 @@ def training_errors(cfg) -> list[dict[str, str]]:
         if selection.mode == "adapter" and cfg.memory.blocks_to_swap:
             reject("memory.blocks_to_swap", "文本编码器适配器训练暂不支持主模型块换出")
         if selection.mode == "adapter" and cfg.memory.activation_checkpointing not in {"none", "block"}:
-            reject("memory.activation_checkpointing", "文本编码器适配器训练请选择逐块检查点或关闭")
+            reject("memory.activation_checkpointing", "文本编码器适配器训练的梯度检查点请选择“关闭”或“开启”")
     if cfg.loop.gpu_count > 1 or cfg.loop.distributed_strategy == "fsdp":
         errors.extend(distributed_training_errors(cfg))
     return errors
@@ -102,7 +102,7 @@ def distributed_training_errors(cfg) -> list[dict[str, str]]:
         (
             cfg.memory.activation_checkpointing not in {"none", "block"},
             "memory.activation_checkpointing",
-            "多卡训练请选择逐块梯度检查点或关闭",
+            "多卡训练的梯度检查点请选择“关闭”或“开启”",
         ),
     ]
     if sharded:
