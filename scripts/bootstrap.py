@@ -341,11 +341,13 @@ def read_bootstrap_settings(path: Path) -> dict:
 
 
 def choose_download_sources(settings_file: Path, saved: dict, *, command: str, explicit: bool) -> dict:
-    """Offer source selection once on interactive startup, without prompting unattended launches."""
+    """Offer source selection before the selected environment's first interactive installation."""
     downloads = saved.get("downloads")
     if (
         explicit
         or command not in {"run", "dev"}
+        or venv_python().exists()
+        or MARKER.exists()
         or (isinstance(downloads, dict) and any(key in downloads for key in ("pypi", "pytorch")))
         or not sys.stdin.isatty()
         or not sys.stdout.isatty()
@@ -1905,8 +1907,15 @@ def main(argv: list[str]) -> int:
     settings_root = Path(opts["data_root"]).expanduser()
     settings_file = (settings_root if settings_root.is_absolute() else ROOT / settings_root) / "settings.json"
     explicit_index = any(a == "--mirror" or a.startswith("--index=") for a in argv)
+    saved_settings = read_bootstrap_settings(settings_file)
+    env_root = opts["env_root"] or saved_settings.get("paths", {}).get("bootstrap_env_dir")
+    torch_tag = platform_torch_tag(opts["profile"], opts["torch"])
+    if env_root:
+        select_environment(opts["profile"], torch_tag, env_root=env_root)
+    else:
+        select_environment(opts["profile"], torch_tag)
     saved_settings = choose_download_sources(
-        settings_file, read_bootstrap_settings(settings_file), command=command, explicit=explicit_index
+        settings_file, saved_settings, command=command, explicit=explicit_index
     )
     opts["browser"] = opts["browser"] and saved_settings.get("server", {}).get("open_browser", True)
     if not explicit_index:
@@ -1918,12 +1927,6 @@ def main(argv: list[str]) -> int:
         if configured_cache and Path(configured_cache).expanduser().absolute() != default_cache
         else None
     )
-    env_root = opts["env_root"] or saved_settings.get("paths", {}).get("bootstrap_env_dir")
-    torch_tag = platform_torch_tag(opts["profile"], opts["torch"])
-    if env_root:
-        select_environment(opts["profile"], torch_tag, env_root=env_root)
-    else:
-        select_environment(opts["profile"], torch_tag)
     if command == "doctor":
         return doctor()
     if command == "test" and not (ROOT / "Test").is_dir():
