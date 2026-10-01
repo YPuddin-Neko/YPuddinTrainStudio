@@ -125,4 +125,6 @@ Klein 显式选择 FlashAttention 时，通过专用处理器调用厂商 `flash
 
 单任务多卡支持 DDP 和 FSDP。卡数、精度、优化器和训练对象要求见 [多卡训练](MULTI_GPU.md)。
 
+任务队列启动多卡训练时，若未手动设置 `OMP_NUM_THREADS`，训练器按 Linux CPU 亲和性与 cgroup 配额中的较小值分配线程：可用 CPU 预算除以训练进程数，向下取整，每进程最少 1、最多 4；无法确认配额时使用 1。已有的 `OMP_NUM_THREADS`、`MKL_NUM_THREADS` 等手动设置保持不变。此默认值只传给训练子进程，影响 CPU 运算，不限制 GPU 计算线程，也不影响前端构建。
+
 Krea 2 使用 Prodigy（神童）时可选择 DDP，并开启逐块梯度检查点。每张卡保留完整模型；右侧显存估算按每卡容量比较。FSDP 目前支持 AdamW、Adafactor、SGD，不支持 Prodigy。

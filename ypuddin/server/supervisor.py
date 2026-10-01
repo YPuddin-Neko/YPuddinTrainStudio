@@ -21,6 +21,7 @@ from ypuddin.config.io import absolute_paths
 from ypuddin.runtime_profiles import current_profile
 
 from .bus import EventBus
+from .cpu_threads import training_worker_environment
 from .db import Database, new_id, now
 from .environment import maintenance_blocked, maintenance_reason
 from .gpu_selection import selection_error
@@ -654,6 +655,7 @@ class JobSupervisor:
             sub = {"train": "train", "cache": "cache"}[job["type"]]
             cmd = [self.python, "-m", "ypuddin.cli", sub, str(cfg_path)]
             if count > 1:
+                env = training_worker_environment(env, count)
                 if sys.platform == "win32":
                     env.setdefault("YPUDDIN_DISTRIBUTED_BACKEND", "gloo")
                     env.setdefault("USE_LIBUV", "0")
