@@ -16,18 +16,19 @@ export function LoadingNote({ label, block = false, className = '' }: { label: s
 type LazyImageProps = React.ImgHTMLAttributes<HTMLImageElement> & { src: string; fallback?: React.ReactNode };
 
 export function LazyImage(props: LazyImageProps) {
+  // Each source gets its own load state, so a new picture always starts from the placeholder.
   return <ImageLoadState key={props.src} {...props}/>;
 }
 
 function ImageLoadState({ src, alt, className = '', fallback, onLoad, onError, ...props }: LazyImageProps) {
-  const [loaded, setLoaded] = React.useState('');
-  const [failed, setFailed] = React.useState('');
+  const [loaded, setLoaded] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
   // A cached image can finish before its load listener runs.
-  const measure = React.useCallback((image: HTMLImageElement | null) => { if (image?.complete && image.naturalWidth > 0) setLoaded(image.getAttribute('src') || ''); }, []);
-  if (failed === src) return <span className="ui-image-fallback">{fallback ?? <ImageOff size={22} aria-hidden="true"/>}</span>;
+  const measure = React.useCallback((image: HTMLImageElement | null) => { if (image?.complete && image.naturalWidth > 0) setLoaded(true); }, []);
+  if (failed) return <span className="ui-image-fallback">{fallback ?? <ImageOff size={22} aria-hidden="true"/>}</span>;
   return <>
-    {loaded !== src && <span className="ui-skeleton ui-image-placeholder" aria-hidden="true"/>}
-    <img {...props} ref={measure} src={src} alt={alt} className={`ui-image${loaded === src ? '' : ' is-pending'}${className ? ` ${className}` : ''}`}
-      onLoad={event => { setLoaded(src); onLoad?.(event); }} onError={event => { setFailed(src); onError?.(event); }}/>
+    {!loaded && <span className="ui-skeleton ui-image-placeholder" aria-hidden="true"/>}
+    <img {...props} ref={measure} src={src} alt={alt} className={`ui-image${loaded ? '' : ' is-pending'}${className ? ` ${className}` : ''}`}
+      onLoad={event => { setLoaded(true); onLoad?.(event); }} onError={event => { setFailed(true); onError?.(event); }}/>
   </>;
 }

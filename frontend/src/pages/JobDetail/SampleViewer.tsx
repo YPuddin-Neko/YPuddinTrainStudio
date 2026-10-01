@@ -129,7 +129,7 @@ export default function SampleViewer({ samples, stepsPerEpoch, loaded, selected,
         <div className="sample-main">
           <div className="sample-stage-wrap">
             <button type="button" className="sample-stage" onClick={event => { event.currentTarget.focus(); openViewer(); }} aria-label={text(`放大查看第 ${current.step} 步的采样图`, `Enlarge the step ${current.step} preview`)} title={text('点击放大查看', 'Click to enlarge')}>
-              <LazyImage key={src} src={src} alt={current.prompt} draggable={false} className="sample-stage-image"
+              <LazyImage src={src} alt={current.prompt} draggable={false} className="sample-stage-image"
                 fallback={<span className="sample-stage-failed"><ImageOff size={26} aria-hidden="true"/>{text('采样图读取失败', 'The preview could not be loaded')}</span>}/>
             </button>
             {shown.length > 1 && <>

@@ -33,8 +33,9 @@ const ZoomStage = React.forwardRef<ZoomControls, { src: string; alt: string; onS
   const viewRef = React.useRef(view);
   viewRef.current = view;
   const [fit, setFit] = React.useState(1);
-  const [loaded, setLoaded] = React.useState('');
-  const [failed, setFailed] = React.useState('');
+  // SampleLightbox keys the stage by image, so these describe the one image it shows.
+  const [ready, setReady] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
 
   const clamp = React.useCallback((next: View): View => {
     const box = stage.current, img = image.current;
@@ -71,11 +72,10 @@ const ZoomStage = React.forwardRef<ZoomControls, { src: string; alt: string; onS
   }, [clamp]);
 
   React.useLayoutEffect(() => {
-    setView(FITTED);
     // A cached image can finish loading before React attaches the load listener.
     const img = image.current;
-    if (img?.complete && img.naturalWidth) { setLoaded(src); measure(); }
-  }, [src, measure]);
+    if (img?.complete && img.naturalWidth) { setReady(true); measure(); }
+  }, [measure]);
   React.useEffect(() => {
     const box = stage.current;
     if (!box) return;
@@ -91,7 +91,6 @@ const ZoomStage = React.forwardRef<ZoomControls, { src: string; alt: string; onS
     return () => { observer.disconnect(); box.removeEventListener('wheel', onWheel); };
   }, [measure, zoom]);
 
-  const ready = loaded === src;
   const percent = Math.round(view.scale * fit * 100);
   const atActual = Math.abs(view.scale - actual) < 0.001;
   React.useEffect(() => { onState({ percent, zoomed: view.scale > 1, ready, atMost: view.scale >= MAX_SCALE, atActual }); }, [percent, view.scale, ready, atActual, onState]);
@@ -131,11 +130,11 @@ const ZoomStage = React.forwardRef<ZoomControls, { src: string; alt: string; onS
       else onBackdrop();
     }}
     onPointerCancel={event => { if (pointers.current.has(event.pointerId)) release(event.pointerId); }}>
-    {failed === src ? <span className="sample-lightbox-failed"><ImageOff size={28} aria-hidden="true"/>{text('采样图读取失败', 'The preview could not be loaded')}</span> : <>
+    {failed ? <span className="sample-lightbox-failed"><ImageOff size={28} aria-hidden="true"/>{text('采样图读取失败', 'The preview could not be loaded')}</span> : <>
       {!ready && <span className="ui-skeleton sample-lightbox-skeleton" aria-hidden="true"/>}
-      <img key={src} ref={image} src={src} alt={alt} draggable={false} className={`sample-zoom-image${ready ? '' : ' is-pending'}`}
+      <img ref={image} src={src} alt={alt} draggable={false} className={`sample-zoom-image${ready ? '' : ' is-pending'}`}
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
-        onLoad={() => { setLoaded(src); measure(); }} onError={() => setFailed(src)}/>
+        onLoad={() => { setReady(true); measure(); }} onError={() => setFailed(true)}/>
     </>}
   </div>;
 });

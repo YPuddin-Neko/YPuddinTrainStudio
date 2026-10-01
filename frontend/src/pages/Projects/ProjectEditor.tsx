@@ -16,10 +16,10 @@ import './projects.css';
 
 export function ProjectCover({ source, name, crop }: { source?: string | null; name: string; crop?: CoverCrop }) {
   const text = useWorkspaceText();
-  const [failed, setFailed] = React.useState(false);
-  React.useEffect(() => setFailed(false), [source]);
-  return source && !failed ? <LazyImage src={source} alt={text(`${name} 的封面`, `Cover for ${name}`)} style={crop ? cropImageStyle(crop) : undefined} loading="lazy" onError={() => setFailed(true)}/>
-    : <div className="project-cover-placeholder"><FolderOpen size={27} aria-hidden="true"/><span>{source ? text('封面暂不可用', 'Cover unavailable') : text('未设置封面', 'No cover')}</span></div>;
+  const placeholder = (label: string) => <span className="project-cover-placeholder"><FolderOpen size={27} aria-hidden="true"/><span>{label}</span></span>;
+  return source ? <LazyImage src={source} alt={text(`${name} 的封面`, `Cover for ${name}`)} style={crop ? cropImageStyle(crop) : undefined} loading="lazy"
+    fallback={placeholder(text('封面暂不可用', 'Cover unavailable'))}/>
+    : placeholder(text('未设置封面', 'No cover'));
 }
 
 export default function ProjectEditor({ project, categories, onClose, onSaved, onPartial }: {
