@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import os
@@ -29,6 +30,7 @@ from .hardware import gpu_info
 from .job_logs import SUPERVISOR_SOURCE, append_failure_record, read_log
 from .job_paths import event_file, log_file, state_directory
 from .memory_fit import capacity_shortfall, device_label, fits_now, gb, shortfall_reason
+from .process_output import ProcessOutput
 from .sample_events import sample_event_loss
 from .xyz import RESIDENT_IDLE_SECONDS, resident_key, resident_label
 
@@ -156,8 +158,8 @@ class _Resident:
 class JobSupervisor:
     """One scheduler loop; jobs run as ``ypuddin train`` subprocesses writing ``events.jsonl``.
 
-    The supervisor never parses stdout: it tails the structured event file, mirrors events onto the
-    bus, and derives job status from the terminal ``run.*`` event (or the exit code if none arrived).
+    Console output is collected into the job log. Structured events drive progress and terminal
+    status; the process exit code supplies the outcome if no terminal ``run.*`` event arrived.
     """
 
     def __init__(
@@ -177,6 +179,7 @@ class JobSupervisor:
         self.max_concurrent = max_concurrent
         self.python = python or sys.executable
         self._procs: dict[str, subprocess.Popen] = {}
+        self._output_captures: dict[int, ProcessOutput] = {}
         self._devices: dict[str, str | tuple[str, ...]] = {}
         self._offsets: dict[str, int] = {}
         # Where each running job's log stood when its current process started.
@@ -705,17 +708,20 @@ class JobSupervisor:
             # The worker already holds this base model: hand it the comparison.
             handoff = reuse.control / "next.json"
             temporary = handoff.with_suffix(".tmp")
-            temporary.write_text(
-                json.dumps({"request": str(cfg_path), "log": str(log_path)}), encoding="utf-8"
-            )
+            handoff_data = {"request": str(cfg_path), "log": str(log_path)}
+            capture = self._output_captures.get(id(reuse.proc))
+            if capture is not None:
+                handoff_data["log_capture"] = capture.switch_marker(log_path)
+            temporary.write_text(json.dumps(handoff_data), encoding="utf-8")
             temporary.replace(handoff)
             proc = reuse.proc
             reuse.job_id = job_id
         else:
-            with open(log_path, "ab") as log_fp:
-                proc = subprocess.Popen(
-                    cmd, stdout=log_fp, stderr=subprocess.STDOUT, cwd=str(run_dir), env=env, **kwargs
-                )
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(run_dir), env=env, **kwargs
+            )
+            if isinstance(proc.stdout, io.IOBase):
+                self._output_captures[id(proc)] = ProcessOutput(proc.stdout, log_path)
             if resident_control is not None:
                 self._residents[devices] = _Resident(
                     proc, devices, key, resident_control, resident_label(job), job_id
@@ -819,6 +825,8 @@ class JobSupervisor:
         self._publish_models()
 
     def _forget_resident(self, proc: subprocess.Popen) -> None:
+        if proc.poll() is not None:
+            self._finish_output(proc)
         for resident in list(self._residents.values()):
             if resident.proc is proc:
                 self._residents.pop(resident.devices, None)
@@ -827,6 +835,9 @@ class JobSupervisor:
 
     def _reap_residents(self) -> None:
         with self.db.lock:
+            for proc, _since in self._releasing:
+                if proc.poll() is not None:
+                    self._finish_output(proc)
             # A worker that outlives its kill for long must not hold the queue forever.
             self._releasing = [
                 (proc, since)
@@ -1068,6 +1079,8 @@ class JobSupervisor:
         self._set_status(job_id, status, **fields)
 
     def _on_exit(self, job_id: str, code: int | None) -> None:
+        if proc := self._procs.get(job_id):
+            self._finish_output(proc)
         log_start = self._log_starts.pop(job_id, 0)
         # A resume or cancel request must not land between reading the status and writing it back.
         with self.db.lock:
@@ -1088,6 +1101,11 @@ class JobSupervisor:
                 if details:
                     error += "：" + "；".join(details)
             self._set_status(job_id, status, finished_at=now(), exit_code=code, error=error)
+
+    def _finish_output(self, proc: subprocess.Popen) -> None:
+        capture = self._output_captures.pop(id(proc), None)
+        if capture is not None:
+            capture.join()
 
     def _set_status(self, job_id: str, status: str, **fields: Any) -> None:
         with self.db.lock:

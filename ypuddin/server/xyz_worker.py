@@ -663,10 +663,15 @@ def next_request(control: Path, idle_seconds: float) -> Path | None:
             # Each job keeps its own log, as a newly started worker's would.
             sys.stdout.flush()
             sys.stderr.flush()
-            descriptor = os.open(data["log"], os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-            os.dup2(descriptor, 1)
-            os.dup2(descriptor, 2)
-            os.close(descriptor)
+            if marker := data.get("log_capture"):
+                # The supervisor changes destinations at this exact output
+                # boundary; native stdout/stderr keep passing through its pipe.
+                os.write(1, ("\n" + marker + "\n").encode("ascii"))
+            else:
+                descriptor = os.open(data["log"], os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+                os.dup2(descriptor, 1)
+                os.dup2(descriptor, 2)
+                os.close(descriptor)
             return Path(data["request"])
         time.sleep(0.1)
     return None

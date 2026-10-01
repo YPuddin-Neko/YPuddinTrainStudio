@@ -36,9 +36,20 @@ _TRACEBACK = re.compile(_RANK + r"\s*Traceback \(most recent call last\):")
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _LEVELS = {"warning": "warn", "critical": "error", "fatal": "error"}
 _GLOG_LEVELS = {"I": "info", "W": "warn", "E": "error", "F": "error"}
+_CAPTURED = re.compile(r"^\[captured (?P<time>[^\]]+)\] (?P<message>.*)$")
 
 MAX_READ = 512 * 1024
 SUPERVISOR_SOURCE = "ypuddin.server.supervisor"
+OUTPUT_SOURCE = "process.output"
+
+
+def captured_output(raw: bytes, observed: datetime) -> bytes:
+    """Keep existing record times; otherwise persist when the output was collected."""
+    parsed = parse_log_lines([raw.decode("utf-8", errors="replace").rstrip("\n")], now=observed)[0]
+    if parsed["ts"] is not None:
+        return raw
+    stamp = (observed if observed.tzinfo is not None else observed.astimezone()).isoformat(timespec="milliseconds")
+    return f"[captured {stamp}] ".encode("ascii") + raw
 
 
 def failure_record_bytes(record: Mapping[str, Any]) -> bytes:
@@ -107,7 +118,7 @@ def _glog_time(match: re.Match[str], now: datetime) -> float | None:
     year = now.year - 1 if (month, day) > (now.month, now.day) else now.year
     try:
         return datetime.fromisoformat(f"{year:04d}-{month:02d}-{day:02d} {match['time']}").timestamp()
-    except ValueError:
+    except (ValueError, OverflowError, OSError):
         return None
 
 
@@ -115,12 +126,37 @@ def parse_log_lines(lines: list[str], *, now: datetime | None = None) -> list[di
     now = now or datetime.now()
     out = []
     for raw in lines:
+        # Unwrap before terminal redraw handling, and retain the original line kind:
+        # traceback frames and multi-line messages must still join their header.
+        if captured := _CAPTURED.match(raw):
+            try:
+                observed = datetime.fromisoformat(captured["time"])
+                timestamp = observed.timestamp()
+            except (ValueError, OverflowError, OSError):
+                pass
+            else:
+                # Nested or malformed capture-like text can come from a worker.
+                # Only this outer envelope is metadata; never recursively unwrap.
+                [line] = _parse_plain_lines([captured["message"]], now=observed)
+                if line["ts"] is None:
+                    line["ts"] = timestamp
+                if line["source"] is None:
+                    line["source"] = OUTPUT_SOURCE
+                out.append(line)
+                continue
+        out.extend(_parse_plain_lines([raw], now=now))
+    return out
+
+
+def _parse_plain_lines(lines: list[str], *, now: datetime) -> list[dict[str, Any]]:
+    out = []
+    for raw in lines:
         line = _clean(raw)
         if match := _RECORD.match(line):
             level = match["level"].lower()
             try:
                 ts = datetime.fromisoformat(match["time"].replace(",", ".").replace("Z", "+00:00")).timestamp()
-            except ValueError:
+            except (ValueError, OverflowError, OSError):
                 ts = None
             out.append(
                 {
