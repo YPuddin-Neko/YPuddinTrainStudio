@@ -35,6 +35,7 @@ ALGOS: dict[str, type[AdapterModule]] = {
     "tlora": TLoRA,
 }
 PARAM_DTYPES = {"fp32": torch.float32, "bf16": torch.bfloat16}
+_FLOAT_DTYPES = {**PARAM_DTYPES, "fp16": torch.float16}
 
 
 def build_adapter(
@@ -303,17 +304,21 @@ def inject(
     base_precision: str = "keep",
     extra_exclude: tuple[str, ...] = (),
     keep_originals: bool = False,
+    dora_save_dtype: torch.dtype | str | None = None,
+    compute_dtype: torch.dtype | None = None,
 ) -> AdapterSet:
     """Replace every selected ``nn.Linear`` with ``AdaptedLinear`` and convolution with ``AdaptedConv``.
 
     ``base_precision`` controls the storage of frozen linear base weights (``keep``/``bf16``/``fp8_e4m3``...);
-    a convolution keeps its own module and dtype.
+    a convolution keeps its own module and dtype. ``dora_save_dtype`` is the actual
+    checkpoint output dtype. ``compute_dtype`` resolves automatic DoRA fusion for FP8 bases.
     """
     modules = adaptable_modules(model)
     targets = resolve_targets(modules, cfg, preset, extra_exclude=extra_exclude)
     if not targets:
         raise ValueError(f"no modules matched preset {preset.name!r} and rules")
     dtype = PARAM_DTYPES[cfg.param_dtype]
+    save_dtype = _FLOAT_DTYPES[dora_save_dtype] if isinstance(dora_save_dtype, str) else dora_save_dtype
     layers: dict[str, AdaptedLinear | AdaptedConv] = {}
     originals: dict[str, nn.Module] = {}
     for t in targets:
@@ -340,12 +345,23 @@ def inject(
             frozen = isinstance(module, FrozenLinear)
             base = module if frozen else FrozenLinear.from_linear(module, precision=base_precision)
             wrapper = AdaptedLinear
+        compute_mode = getattr(cfg, "dora_compute_mode", "standard")
+        merge_precision = getattr(cfg, "dora_merge_dtype", "auto")
+        if merge_precision == "auto":
+            merge_dtype = base.weight.dtype
+            if isinstance(base, FrozenLinear) and base.is_fp8:
+                merge_dtype = compute_dtype or torch.float32
+        else:
+            merge_dtype = _FLOAT_DTYPES[merge_precision]
         layer = wrapper(
             base,
             adapter,
             mode=cfg.mode,
             dora=cfg.dora and (t.algo in DORA_ALGOS or t.algo == cfg.algo),
             dora_axis=cfg.dora_axis,
+            dora_compute_mode=compute_mode,
+            dora_merge_dtype=merge_dtype,
+            dora_save_dtype=save_dtype,
             module_dropout=cfg.module_dropout,
             name=t.name,
         )

@@ -2730,7 +2730,7 @@ export interface components {
             rs_lora: boolean;
             /**
              * Dora
-             * @description DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。外部工具低精度融合 LoKr/DoRA 时可能偏色，可使用 FP32 融合，不要求使用 FP32 推理。
+             * @description DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。计算模式与融合精度需匹配目标加载方式。
              * @default false
              */
             dora: boolean;
@@ -2741,6 +2741,20 @@ export interface components {
              * @enum {string}
              */
             dora_axis: "input" | "output";
+            /**
+             * Dora Compute Mode
+             * @description 标准模式使用 FP32 计算 DoRA；兼容模式按导出权重的精度和融合精度计算，减少训练与低精度加载出图的差异。
+             * @default standard
+             * @enum {string}
+             */
+            dora_compute_mode: "standard" | "comfyui";
+            /**
+             * Dora Merge Dtype
+             * @description 兼容模式下，模拟底模与 DoRA 权重合并时的计算精度。自动根据当前底模和加载设置确定；手动选择时，应与实际出图软件的融合精度一致。它不改变可训练参数精度或权重保存精度，FP32 参数仍可保存为 BF16。
+             * @default auto
+             * @enum {string}
+             */
+            dora_merge_dtype: "auto" | "bf16" | "fp16" | "fp32";
             /**
              * Init
              * @description 初始化：default（一侧置零）/ scalar（全随机 + 可训练标量从 0 起）
@@ -3179,7 +3193,7 @@ export interface components {
             save_dtype: "bf16" | "fp16" | "fp32";
             /**
              * Save Training Metadata
-             * @description 默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。
+             * @description 默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。
              * @default false
              */
             save_training_metadata: boolean;
@@ -4799,6 +4813,11 @@ export interface components {
             priority: number;
             /** Scheduled At */
             scheduled_at?: number | null;
+            /**
+             * Dora Precision Confirmed
+             * @default false
+             */
+            dora_precision_confirmed: boolean;
         };
         /** JobCheckpoint */
         JobCheckpoint: {
@@ -6326,6 +6345,7 @@ export interface components {
             compute_policy?: {
                 [key: string]: unknown;
             } | null;
+            dora?: components["schemas"]["PlanDora"] | null;
             /** Source Balance */
             source_balance?: components["schemas"]["PlanSourceBalance"][] | null;
             /**
@@ -6460,6 +6480,32 @@ export interface components {
             dropped_samples: number;
             /** Tail Policy */
             tail_policy: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** PlanDora */
+        PlanDora: {
+            /** Active */
+            active: boolean;
+            /**
+             * Compute Mode
+             * @enum {string}
+             */
+            compute_mode: "standard" | "comfyui";
+            /** Base Dtypes */
+            base_dtypes: string[];
+            /** Auto Merge Dtypes */
+            auto_merge_dtypes: string[];
+            /** Merge Dtypes */
+            merge_dtypes: string[];
+            /** Save Dtype */
+            save_dtype: string;
+            /** Confirmation Required */
+            confirmation_required: boolean;
+            /** Confirmation Reasons */
+            confirmation_reasons: string[];
+            /** Confirmation Message */
+            confirmation_message?: string | null;
         } & {
             [key: string]: unknown;
         };

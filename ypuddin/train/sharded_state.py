@@ -393,6 +393,7 @@ def load_sharded_checkpoint(
     expected_scheduler_config: dict[str, Any] | None = None,
     expected_total_steps: int | None = None,
     legacy_scheduler_contract: dict[str, Any] | None = None,
+    expected_dora_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate before mutation, then restore native tensors and optimizer shards.
 
@@ -403,7 +404,10 @@ def load_sharded_checkpoint(
     path = Path(path)
 
     def validate():
+        from ypuddin.adapters.dora_contract import STATE_KEY, validate_resume_contract
+
         meta = read_sharded_checkpoint_metadata(path)
+        validate_resume_contract(expected_dora_contract, meta["progress"].get("extra", {}).get(STATE_KEY))
         checks = {
             "training_kind": expected_training_kind,
             "adapter_contract": expected_adapter_contract,

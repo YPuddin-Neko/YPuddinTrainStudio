@@ -59,6 +59,9 @@ class AdaptedLayer(nn.Module):
         mode: str = "auto",
         dora: bool = False,
         dora_axis: str = "input",
+        dora_compute_mode: str = "standard",
+        dora_merge_dtype: torch.dtype | None = None,
+        dora_save_dtype: torch.dtype | None = None,
         module_dropout: float = 0.0,
         name: str = "",
         grouped: bool = False,
@@ -73,7 +76,16 @@ class AdaptedLayer(nn.Module):
         # Full keeps W₀ and b₀; OrthoLoRA takes its principal subspace; T-LoRA draws its start on the layer's device.
         bind = getattr(adapter, "bind_base", None)
         weight = self.frozen_weight(torch.float32) if dora or bind is not None else None
-        self.dora = DoRA(weight, dtype=adapter.param_dtype, axis=dora_axis) if dora else None
+        merge_dtype = dora_merge_dtype
+        if dora and merge_dtype is None:
+            merge_dtype = torch.float32 if isinstance(base, FrozenLinear) and base.is_fp8 else base.weight.dtype
+        dora_weight = self.frozen_weight(merge_dtype) if dora and dora_compute_mode == "comfyui" else weight
+        self.dora = DoRA(
+            dora_weight, dtype=adapter.param_dtype, axis=dora_axis,
+            compute_mode=dora_compute_mode,
+            merge_dtype=merge_dtype,
+            save_dtype=dora_save_dtype,
+        ) if dora else None
         if bind is not None:
             bind(weight, bias=base.bias)
 
@@ -99,6 +111,10 @@ class AdaptedLayer(nn.Module):
 
     # ----------------------------------------------------------------- forward
     def merged_weight(self, dtype: torch.dtype | None = None) -> Tensor:
+        if self.dora is not None and self.dora.compute_mode == "comfyui":
+            delta, alpha = self.adapter(export_dtype=self.dora.save_dtype, compute_dtype=self.dora.merge_dtype)
+            w = self.dora(delta, base_weight=self.frozen_weight(self.dora.merge_dtype), alpha=alpha, strength=self.multiplier)
+            return w if dtype is None else w.to(dtype)
         delta = self.adapter().float()
         if self.dora is None and self.multiplier != 1.0:
             delta = delta * self.multiplier

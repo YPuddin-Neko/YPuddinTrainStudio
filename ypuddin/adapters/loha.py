@@ -95,12 +95,16 @@ class LoHa(AdapterModule):
 
     @torch.no_grad()
     def export_tensors(self) -> dict[str, Tensor]:
-        scalar = float(self.effective_scalar) if isinstance(self.effective_scalar, Tensor) else 1.0
+        return {key: value.detach().clone() for key, value in self.differentiable_export_tensors().items()}
+
+    def differentiable_export_tensors(self, *, rank_dropout: bool = False) -> dict[str, Tensor]:
+        mask = self._rank_mask(self.rank, self.w1_a.device, self.w1_a.dtype) if rank_dropout else None
+        first = self.w1_a if mask is None else self.w1_a * mask
         return {
-            "hada_w1_a": (self.w1_a * scalar).detach().clone(),
-            "hada_w1_b": self.w1_b.detach().clone(),
-            "hada_w2_a": self.w2_a.detach().clone(),
-            "hada_w2_b": self.w2_b.detach().clone(),
+            "hada_w1_a": first * self.effective_scalar,
+            "hada_w1_b": self.w1_b,
+            "hada_w2_a": self.w2_a,
+            "hada_w2_b": self.w2_b,
             "alpha": torch.tensor(self.scale * self.rank, dtype=torch.float32),
         }
 

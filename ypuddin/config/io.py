@@ -40,6 +40,14 @@ def read_config_file(path: str | Path) -> dict[str, Any]:
     raise ValueError(f"unsupported config format: {p.suffix} (use .toml or .json)")
 
 
+def preserve_legacy_dora(config: Mapping[str, Any]) -> dict[str, Any]:
+    """A saved recipe without a computation mode retains its original DoRA math."""
+    adapter = config.get("adapter")
+    if isinstance(adapter, Mapping) and "dora" in adapter and "dora_compute_mode" not in adapter:
+        return {**config, "adapter": {**adapter, "dora_compute_mode": "standard"}}
+    return dict(config)
+
+
 def _coerce_scalar(text: str) -> Any:
     low = text.lower()
     if low in ("true", "false"):
@@ -88,9 +96,9 @@ def load_config(
     data: dict[str, Any] = dict(base or {})
     for preset in presets:
         patch = preset if isinstance(preset, Mapping) else read_config_file(preset)
-        data = deep_merge(data, patch)
+        data = deep_merge(data, preserve_legacy_dora(patch))
     if path is not None:
-        data = deep_merge(data, read_config_file(path))
+        data = deep_merge(data, preserve_legacy_dora(read_config_file(path)))
         # Full-model exports carry native components next to this config. Rebind
         # only those generated component paths after copying/unpacking an artifact;
         # frozen VAE/tokenizer references retain their explicit original locations.
@@ -126,7 +134,8 @@ _LEGACY_VALUES: dict[str, dict[str, Any]] = {
         "debiased_estimation_loss": False,
     },
     # Linear layers only, with no separate convolution rank.
-    "adapter": {"layer_types": "linear", "conv_rank": None, "conv_alpha": None},
+    "adapter": {"layer_types": "linear", "conv_rank": None, "conv_alpha": None,
+                "dora_compute_mode": "standard", "dora_merge_dtype": "auto"},
     "memory": {"no_half_vae": False, "vae_tiling": False, "cache_encode_tiled": False},
     # Default sampling settings added after earlier checkpoints.
     "sampling": {"noise": "comfyui", "adapter_merge_dtype": "auto"},
@@ -143,6 +152,13 @@ def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
             }
     # Checkpoints from before the DoRA axis option trained the output axis; without DoRA it does nothing.
     adapter = data.get("adapter")
+    if isinstance(adapter, Mapping) and (
+        not adapter.get("dora") or adapter.get("dora_compute_mode", "standard") == "standard"
+    ):
+        data["adapter"] = adapter = {
+            key: value for key, value in adapter.items()
+            if key not in {"dora_compute_mode", "dora_merge_dtype"}
+        }
     if isinstance(adapter, Mapping) and (adapter.get("dora_axis") == "output" or not adapter.get("dora")):
         data["adapter"] = {key: value for key, value in adapter.items() if key != "dora_axis"}
     blob = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()

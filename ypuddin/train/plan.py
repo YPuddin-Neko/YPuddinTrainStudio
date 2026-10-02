@@ -580,6 +580,7 @@ def plan(
         "warnings": [],
         "compute_policy": None,
         "source_balance": None,
+        "dora": None,
     }
     draft = False
     memory_issue = None
@@ -816,6 +817,8 @@ def plan(
 
                     components = {}
                     backbone.requires_grad_(False)
+                    # An invalid checkpoint draft can still count parameters; its precision report stays unresolved.
+                    plan_save_dtype = cfg.checkpoint.save_dtype if cfg.checkpoint is not None else "fp32"
                     if cfg.training.train_backbone:
                         components["backbone"] = inject(
                             backbone,
@@ -825,6 +828,8 @@ def plan(
                             base_precision=cfg.memory.base_precision
                             if cfg.memory.base_precision != "auto"
                             else "keep",
+                            dora_save_dtype=plan_save_dtype,
+                            compute_dtype=compute_dtype,
                         )
                     if cfg.training.train_text_encoder:
                         from ypuddin.models.training_parameters import text_modules_for_plan
@@ -832,10 +837,23 @@ def plan(
                         text_modules = text_modules_for_plan(family, cfg.model)
                         for module in text_modules.values():
                             module.to(dtype=compute_dtype).requires_grad_(False)
-                        components.update(inject_text_adapters(text_modules, cfg.adapter))
+                        components.update(inject_text_adapters(text_modules, cfg.adapter,
+                                                              dora_save_dtype=plan_save_dtype,
+                                                              compute_dtype=compute_dtype))
                         aset = ComponentAdapterSet(components)
                     else:
                         aset = components["backbone"]
+                    from .dora_precision import precision_report, resume_errors
+
+                    if cfg.checkpoint is not None:
+                        out["dora"] = precision_report(aset, cfg, compute_dtype)
+                        if device_type is not None:
+                            out["errors"].extend(resume_errors(aset, cfg))
+                        if out["dora"]["confirmation_required"]:
+                            out["warnings"].append({
+                                "code": "dora.precision_confirmation",
+                                "msg": out["dora"]["confirmation_message"],
+                            })
                 params = {
                     "base": base_params,
                     "trainable": aset.num_params(),

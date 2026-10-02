@@ -49,6 +49,8 @@ def _snapshot(tensors: Mapping[str, Tensor], save_dtype: str | None) -> dict[str
 def _merge_dtype(layer: AdaptedLayer, x: Tensor, selected: str) -> torch.dtype:
     if selected != "auto":
         return SAVE_DTYPES[selected]
+    if layer.dora is not None and layer.dora.compute_mode == "comfyui":
+        return layer.dora.merge_dtype
     if layer.weight.dtype in SAVE_DTYPES.values():
         return layer.weight.dtype
     # FP8 storage is dequantized to the forward's floating-point compute dtype.

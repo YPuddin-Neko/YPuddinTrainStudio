@@ -202,7 +202,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
           output: ['每个输出通道一个幅度；LyCORIS 的默认方向。', 'one magnitude per output channel; the LyCORIS default.'],
         }),
         text('继续训练时须与原权重方向一致。方向本身不保证外部出图与训练预览一致，融合算法和精度也会影响结果。', 'Keep the original axis when resuming. The axis alone does not guarantee images match training previews; merging algorithms and precision also affect the result.'),
-        text('外部工具低精度融合 LoKr/DoRA 时可能偏色，可使用 FP32 融合；这不要求使用 FP32 推理。', 'Low-precision LoKr/DoRA merging in external tools can cause color shifts; use FP32 merging in that case. This does not require FP32 inference.'),
+        context.config.adapter?.dora_compute_mode !== 'comfyui' && text('外部工具低精度融合 LoKr/DoRA 时可能偏色，可使用 FP32 融合；这不要求使用 FP32 推理。', 'Low-precision LoKr/DoRA merging in external tools can cause color shifts; use FP32 merging in that case. This does not require FP32 inference.'),
       ]);
     }
     case 'sampling.scheduler':

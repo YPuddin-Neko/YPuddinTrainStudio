@@ -32,6 +32,7 @@ export type TrainerCommit = S['TrainerCommit'];
 export type TrainerInstallStatus = S['TrainerInstallStatus'];
 export type TrainerInstallOperation = S['TrainerInstallOperation'];
 export type Plan = S['Plan'];
+export type PlanDora = S['PlanDora'];
 export type Preset = S['Preset'];
 export type DatasetSource = S['DatasetSource'];
 export type DatasetStats = S['DatasetStats'];

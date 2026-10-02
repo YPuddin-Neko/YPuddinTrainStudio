@@ -2,17 +2,21 @@
 
 ``input`` (the default) keeps one magnitude per input column, stored ``(1, in)``.
 ``output`` keeps one per output row, stored ``(out, 1)``. Convolutions store
-``(1, in, 1…)`` or ``(out, 1, 1…)``. Both axes use the merged weight's norm in FP32
-here. The stored axis must match when resuming; it does not control external
-loaders' normalization formulas or merging precision.
+``(1, in, 1…)`` or ``(out, 1, 1…)``. Standard mode uses the merged norm in FP32.
+ComfyUI mode follows its 0.38.1 floating-point loader: input uses the merged
+norm, output uses the base norm, with epsilon in the selected merge dtype.
 """
 
 from __future__ import annotations
+
+from contextlib import nullcontext
 
 import torch
 from torch import Tensor, nn
 
 AXES = ("input", "output")
+COMPUTE_MODES = ("standard", "comfyui")
+MERGE_DTYPES = (torch.float16, torch.bfloat16, torch.float32)
 _AXIS_NAMES = {"output": "输出通道", "input": "输入通道"}
 
 
@@ -36,16 +40,63 @@ def decompose(weight: Tensor, scale: Tensor) -> Tensor:
     return (w32 * (scale.to(w32.device, torch.float32).reshape(norm.shape) / norm)).to(weight.dtype)
 
 
+def loader_weight_norm(weight: Tensor, axis: str) -> Tensor:
+    """Preserve the loader's reshape/reduction order, including convolution kernels."""
+    matrix = weight if axis == "output" else weight.transpose(0, 1)
+    norm = matrix.reshape(matrix.shape[0], -1).norm(dim=1, keepdim=True)
+    norm = norm.reshape(matrix.shape[0], *[1] * (weight.ndim - 1))
+    return norm if axis == "output" else norm.transpose(0, 1)
+
+
 class DoRA(nn.Module):
-    def __init__(self, base_weight: Tensor, dtype: torch.dtype = torch.float32, axis: str = "input"):
+    def __init__(
+        self, base_weight: Tensor, dtype: torch.dtype = torch.float32, axis: str = "input", *,
+        compute_mode: str = "standard", merge_dtype: torch.dtype | None = None,
+        save_dtype: torch.dtype | None = None,
+    ):
         super().__init__()
         if axis not in AXES:
             raise ValueError(f"unknown DoRA axis {axis!r}")
+        if compute_mode not in COMPUTE_MODES:
+            raise ValueError(f"unknown DoRA compute mode {compute_mode!r}")
         self.axis = axis
-        self.dora_scale = nn.Parameter(weight_norm(base_weight.detach().to(torch.float32), axis).to(dtype))
+        self.compute_mode = compute_mode
+        self.merge_dtype = base_weight.dtype if merge_dtype is None else merge_dtype
+        self.save_dtype = dtype if save_dtype is None else save_dtype
+        if compute_mode == "comfyui":
+            if self.merge_dtype not in MERGE_DTYPES or self.save_dtype not in MERGE_DTYPES:
+                raise ValueError("ComfyUI DoRA requires FP16, BF16 or FP32 merge and save dtypes")
+            with nullcontext() if base_weight.device.type == "meta" else torch.autocast(device_type=base_weight.device.type, enabled=False):
+                norm = loader_weight_norm(base_weight.detach().to(self.merge_dtype), axis)
+                magnitude = norm + torch.finfo(self.merge_dtype).eps
+        else:
+            magnitude = weight_norm(base_weight.detach().to(torch.float32), axis)
+        self.dora_scale = nn.Parameter(magnitude.to(dtype))
 
-    def forward(self, weight: Tensor) -> Tensor:
+    def forward(
+        self, weight: Tensor, *, base_weight: Tensor | None = None, alpha: float = 1.0,
+        strength: float = 1.0,
+    ) -> Tensor:
+        if self.compute_mode == "comfyui":
+            if base_weight is None:
+                raise ValueError("ComfyUI DoRA requires the base weight and unscaled exported delta")
+            return self.rescale_exported(base_weight, weight, alpha=alpha, strength=strength)
         return self.rescale(weight)
+
+    def rescale_exported(
+        self, base_weight: Tensor, delta: Tensor, *, alpha: float = 1.0, strength: float = 1.0,
+    ) -> Tensor:
+        """Differentiable saved-precision fusion; FP32 optimizer leaves stay attached."""
+        with torch.autocast(device_type=base_weight.device.type, enabled=False):
+            base = base_weight.to(self.merge_dtype)
+            merged = base + (delta * alpha).to(base.dtype)
+            magnitude = self.dora_scale.to(self.save_dtype).to(base.dtype)
+            # The shape check is the external loader's axis convention.
+            axis = "output" if magnitude.shape[0] == base.shape[0] else "input"
+            norm = loader_weight_norm(base if axis == "output" else merged, axis)
+            norm = norm + torch.finfo(base.dtype).eps
+            effective = merged * (magnitude / norm).to(base.dtype)
+            return effective if strength == 1.0 else base + strength * (effective - base)
 
     def rescale(self, weight: Tensor) -> Tensor:
         return decompose(weight, self.dora_scale)

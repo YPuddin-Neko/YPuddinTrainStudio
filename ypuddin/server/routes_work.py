@@ -1850,6 +1850,7 @@ class JobBody(GpuSelection):
     config: dict[str, Any] | None = None
     priority: int = 0
     scheduled_at: float | None = None
+    dora_precision_confirmed: bool = False
 
 
 class JobPatch(GpuSelection):
@@ -2122,6 +2123,14 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     if not preflight["ok"]:
         raise ApiError(
             "training preflight failed", code="config.invalid", details={"errors": preflight["errors"]}
+        )
+    dora = preflight.get("dora")
+    if body.type == "train" and dora and dora["confirmation_required"] and not body.dora_precision_confirmed:
+        raise ApiError(
+            dora["confirmation_message"],
+            code="dora.confirmation_required",
+            status=409,
+            details={"dora": dora},
         )
     if cfg.checkpoint.resume:
         state = Path(cfg.checkpoint.resume).expanduser()

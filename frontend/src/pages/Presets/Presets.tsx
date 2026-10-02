@@ -12,7 +12,7 @@ import { OPAQUE_CONFIG_ISSUE, presentConfigIssues, type ConfigTab, type ConfigIs
 import { mergeConfig } from '../../utils/config';
 import { formatApiError } from '../../utils/errors';
 import { presetEditorSchema, presetPayload, presetFamily } from '../../utils/presetEditor';
-import { PRESET_MODEL_FIELDS, reusableTrainingPreset } from '../../utils/trainingPresets';
+import { PRESET_MODEL_FIELDS, preservePresetDoraMode, reusableTrainingPreset } from '../../utils/trainingPresets';
 import { inactiveTrainingReason, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { useWorkspaceHeight } from '../../components/projects/useWorkspaceHeight';
@@ -83,7 +83,7 @@ export default function Presets() {
         for (let i = 2; list.data?.some(item => item.name.toLocaleLowerCase() === name.toLocaleLowerCase()); i += 1) name = `${base}-${i}`;
       }
       const existing = preset && !copy && !newDraft;
-      const merged = mergeConfig(defaults, preset?.config || {});
+      const merged = mergeConfig(defaults, preservePresetDoraMode(preset?.config || {}));
       // Model files come only from the preset itself, never from family defaults.
       const presetModel = (preset?.config?.model || {}) as Record<string, unknown>;
       merged.model = { ...merged.model, ...Object.fromEntries(PRESET_MODEL_FIELDS.map(field => [field, presetModel[field] || null])) };

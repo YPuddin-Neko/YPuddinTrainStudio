@@ -10,6 +10,7 @@ import { apiClient } from '../../api/client';
 import { FamilyInfo, ModelAsset } from '../../api/types';
 import { configFieldHelp, configFieldHint, configFieldLabel, configOptionLabel, configPresetLabel, PERCENTAGE_FIELDS } from '../../utils/configPresentation';
 import { modelPathHint } from '../../utils/fieldCopy';
+import { doraAutoLabel, type DoraPrecisionReport } from '../../utils/doraPrecision';
 import { parameterGroupLabel } from '../../utils/parameterWorkflow';
 import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
 import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
@@ -119,6 +120,8 @@ interface SchemaFormProps {
   /** Effective policy returned for this exact draft by the server plan. */
   computePolicy?: unknown;
   nativeAreaEstimate?: NativeAreaEstimate;
+  /** Precision resolved by the server for this exact draft; absent while stale or unchecked. */
+  doraPrecision?: DoraPrecisionReport | null;
   /** Preset drafts: model files are optional and keep the training configuration's files when empty. */
   preset?: boolean;
   projectId?: string;
@@ -802,6 +805,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   versionSources = false,
   computePolicy,
   nativeAreaEstimate,
+  doraPrecision,
   preset = false,
   projectId, versionId,
 }) => {
@@ -1128,6 +1132,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={['auto', 'bf16', 'fp16', 'fp32'].map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
+    } else if (fullPathKey === 'adapter.dora_merge_dtype') {
+      control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'}
+        onValueChange={next => onChange(setNestedValue(value, path, next))}
+        options={['auto', 'bf16', 'fp16', 'fp32'].map(option => ({value: option, label: option === 'auto' ? doraAutoLabel(doraPrecision, english) : configOptionLabel(fullPathKey, option, english)}))}/>;
     } else if (fullPathKey === 'model.attention') {
       const attentionOptions = offeredOptions?.length ? offeredOptions : ['sdpa'];
       control = <StudioSelect aria-label={fieldLabel} value={!fieldValue || fieldValue === 'auto' ? 'sdpa' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english)}
@@ -1286,6 +1294,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : fullPathKey === 'adapter.dora_axis' ? fieldValue === 'input'
         ? (english ? 'One magnitude per input channel; the default. Keep the original axis when resuming.' : '每个输入通道一个幅度，默认方向；继续训练时须与原权重一致。')
         : (english ? 'One magnitude per output channel; the LyCORIS default. Keep the original axis when resuming.' : '每个输出通道一个幅度，LyCORIS 默认方向；继续训练时须与原权重一致。')
+      : fullPathKey === 'adapter.dora_compute_mode' ? fieldValue === 'comfyui'
+        ? (english ? 'Reduces computation differences before and after weight export.' : '减少权重导出前后的计算差异。')
+        : (english ? 'Computes DoRA in FP32.' : '使用 FP32 计算 DoRA。')
       : fullPathKey === 'dataset.native_max_pixels' ? value.dataset?.native_max_pixels_mode === 'auto'
         ? nativeAreaEstimate?.state === 'error' ? (english ? 'Could not calculate the area limit. Recalculate the training plan.' : '面积上限计算失败，请重新计算训练计划。')
           : nativeAreaEstimate?.state === 'unavailable' ? (english ? 'No area limit is available. Check the training images.' : '暂时无法计算面积上限，请检查训练图片。')

@@ -79,9 +79,14 @@ class LoRA(AdapterModule):
 
     @torch.no_grad()
     def export_tensors(self) -> dict[str, Tensor]:
-        scalar = float(self.effective_scalar) if isinstance(self.effective_scalar, Tensor) else 1.0
-        up = (self.up * scalar).detach().clone()
-        return self._lora_export(self.down.detach().clone(), up, self.scale * self.rank)
+        return {key: value.detach().clone() for key, value in self.differentiable_export_tensors().items()}
+
+    def differentiable_export_tensors(self, *, rank_dropout: bool = False) -> dict[str, Tensor]:
+        up = self.up
+        mask = self._rank_mask(self.rank, up.device, up.dtype) if rank_dropout else None
+        if mask is not None:
+            up = up * mask
+        return self._lora_export(self.down, up * self.effective_scalar, self.scale * self.rank)
 
     def extra_metadata(self) -> dict[str, Any]:
         return {

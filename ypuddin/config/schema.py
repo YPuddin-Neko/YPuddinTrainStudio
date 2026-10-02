@@ -372,7 +372,7 @@ class AdapterConfig(_Strict):
     )
     dora: bool = F(
         False,
-        help="DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。外部工具低精度融合 LoKr/DoRA 时可能偏色，可使用 FP32 融合，不要求使用 FP32 推理。",
+        help="DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。计算模式与融合精度需匹配目标加载方式。",
         ui_=ui("adapter", order=60, control="switch"),
     )
     dora_axis: Literal["input", "output"] = F(
@@ -383,6 +383,17 @@ class AdapterConfig(_Strict):
             "方向本身不保证外部出图与训练预览一致，融合算法和精度也会影响结果。"
         ),
         ui_=ui("adapter", advanced=True, order=61, control="select", show_when="adapter.dora == true"),
+    )
+    dora_compute_mode: Literal["standard", "comfyui"] = F(
+        "standard",
+        help="标准模式：使用 FP32 计算 DoRA。兼容模式：训练时考虑权重保存和融合过程中的精度变化，减少导出前后的计算差异。",
+        ui_=ui("adapter", advanced=True, order=62, control="select", show_when="adapter.dora == true"),
+    )
+    dora_merge_dtype: Literal["auto", "bf16", "fp16", "fp32"] = F(
+        "auto",
+        help="底模与 DoRA 权重合并时的计算精度。自动根据当前底模和加载设置确定。它不改变可训练参数精度或权重保存精度。",
+        ui_=ui("adapter", advanced=True, order=63, control="select",
+               show_when="adapter.dora == true && adapter.dora_compute_mode == 'comfyui'"),
     )
     init: Literal["default", "scalar"] = F(
         "default",
@@ -1253,7 +1264,7 @@ class CheckpointConfig(_Strict):
     )
     save_training_metadata: bool = F(
         False,
-        help="默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
+        help="默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
         ui_=ui("checkpoint", advanced=True, order=65, control="switch", show_when="training.mode == 'adapter'"),
     )
     save_on_finish: bool = F(

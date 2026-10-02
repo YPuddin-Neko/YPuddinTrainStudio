@@ -58,11 +58,16 @@ def sharding_groups(backbone, blocks):
     """Wrap native repeated blocks bottom-up, including text-fusion refiners."""
     from ypuddin.adapters.base import AdapterModule
     from ypuddin.adapters.dora import DoRA
+    from ypuddin.adapters.linear import AdaptedLayer
 
     selected = {id(block) for block in blocks}
     # Separate FP32 adapters from frozen BF16 groups, including on older FSDP2
     # versions that require a uniform storage dtype per communication group.
     selected.update(id(module) for module in backbone.modules() if isinstance(module, (AdapterModule, DoRA)))
+    selected.update(
+        id(module) for module in backbone.modules()
+        if isinstance(module, AdaptedLayer) and module.dora is not None and module.dora.compute_mode == "comfyui"
+    )
     for module in backbone.modules():
         if isinstance(module, nn.ModuleList):
             selected.update(id(child) for child in module if next(child.parameters(), None) is not None)
@@ -71,6 +76,18 @@ def sharding_groups(backbone, blocks):
         for name, module in reversed(list(backbone.named_modules()))
         if name and id(module) in selected
     ]
+
+
+def exported_precision_modules(backbone):
+    """Keep unquantized factors resident until their differentiable export casts."""
+    from ypuddin.adapters.linear import AdaptedLayer
+
+    return {
+        id(module)
+        for layer in backbone.modules()
+        if isinstance(layer, AdaptedLayer) and layer.dora is not None and layer.dora.compute_mode == "comfyui"
+        for module in (layer, layer.adapter, layer.dora)
+    }
 
 
 class ShardedTrainer(DistributedTrainer):
@@ -155,13 +172,17 @@ class ShardedTrainer(DistributedTrainer):
             reduce_dtype=torch.float32,
             cast_forward_inputs=False,
         )
+        export_modules = exported_precision_modules(model)
+        export_policy = MixedPrecisionPolicy(
+            param_dtype=None, reduce_dtype=torch.float32, cast_forward_inputs=False,
+        )
         for _, module in [*groups, ("", model)]:
             fully_shard(
                 module,
                 mesh=mesh,
                 reshard_after_forward=True,
                 shard_placement_fn=lambda parameter: parameter_shard(parameter, world),
-                mp_policy=policy,
+                mp_policy=export_policy if id(module) in export_modules else policy,
                 ignored_params=ignored,
             )
             if hasattr(self.adapters, "rebind_parameters"):
@@ -253,7 +274,9 @@ class ShardedTrainer(DistributedTrainer):
     def _adapter_contract(self):
         if self.cfg.training.mode != "adapter":
             return None
-        return self.cfg.adapter.model_dump(mode="json", exclude={"resume_weights"})
+        from ypuddin.adapters.dora_contract import canonical_adapter_contract
+
+        return canonical_adapter_contract(self.cfg.adapter.model_dump(mode="json", exclude={"resume_weights"}))
 
     def _checkpoint_modules(self):
         if self.cfg.training.mode == "adapter":
@@ -263,6 +286,8 @@ class ShardedTrainer(DistributedTrainer):
         return self.adapters.modules
 
     def _resume(self, path):
+        from ypuddin.adapters.dora_contract import compute_contract
+
         self._validate_training_compute_policy()
         expected = optimizer_hyperparameter_snapshot(self.cfg.optimizer, self.optimizer)
         saved = load_sharded_checkpoint(
@@ -282,6 +307,7 @@ class ShardedTrainer(DistributedTrainer):
             expected_scheduler_config=self.cfg.scheduler.model_dump(mode="json"),
             expected_total_steps=self.progress.total_steps,
             legacy_scheduler_contract=getattr(self, "_resume_scheduler_contract", None),
+            expected_dora_contract=compute_contract(self.adapters),
         )
         validate_optimizer_runtime(self.cfg.optimizer, self.optimizer, expected_groups=expected)
         if self.scheduler is not None and saved["scheduler"]:
@@ -298,7 +324,10 @@ class ShardedTrainer(DistributedTrainer):
         )
 
     def save_state(self, tag=None):
+        from ypuddin.adapters.dora_contract import STATE_KEY, compute_contract
+
         def validate_save_contract():
+            self._validate_dora_contract()
             self._validate_training_compute_policy()
             validate_scheduler_recipe(self._scheduler_contract, self.cfg, self.progress.total_steps)
             validate_scheduler_instance(self._scheduler_contract, self.scheduler)
@@ -308,6 +337,7 @@ class ShardedTrainer(DistributedTrainer):
         # All ranks must reject before any tensor-gather or checkpoint write.
         scheduler_config = _collective_check(validate_save_contract)
         self.progress.extra["loss_ema"] = self._loss_ema
+        self.progress.extra[STATE_KEY] = compute_contract(self.adapters)
         path = save_sharded_checkpoint(
             (Path(self.cfg.checkpoint.state_dir) if self.cfg.checkpoint.state_dir else self.run_dir)
             # Every rank writes to the name rank zero picks.
@@ -336,6 +366,7 @@ class ShardedTrainer(DistributedTrainer):
         return path
 
     def save_weights(self, tag):
+        _collective_check(self._validate_dora_contract)
         if self.cfg.training.mode == "adapter":
             from ypuddin.adapters import save_adapter_file
 

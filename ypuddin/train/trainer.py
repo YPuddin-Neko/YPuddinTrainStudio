@@ -27,6 +27,16 @@ from torch.utils.data import DataLoader
 from ypuddin import worker_log
 from ypuddin.adapters import AdapterSet, build_metadata, inject, save_adapter_file
 from ypuddin.adapters.components import ComponentAdapterSet, inject_text_adapters
+from ypuddin.adapters.dora_contract import (
+    STATE_KEY as DORA_STATE_KEY,
+)
+from ypuddin.adapters.dora_contract import (
+    compute_contract,
+    export_contract_metadata,
+    validate_active_config,
+    validate_resume_contract,
+    validate_warm_start,
+)
 from ypuddin.config import TrainConfig, config_hash, write_config
 from ypuddin.config.compute_policy import (
     BF16_LINEAR_FP32_COMPUTE_IMPLEMENTATION_ID,
@@ -573,11 +583,15 @@ class Trainer:
                     presets[cfg.adapter.preset],
                     prefix=self.family.spec.adapter_prefix,
                     base_precision=base_precision,
+                    dora_save_dtype=cfg.checkpoint.save_dtype,
+                    compute_dtype=self.loaded.dtype,
                 )
             if cfg.training.train_text_encoder:
                 self.loaded.text.to(self.device)
                 components.update(
-                    inject_text_adapters(self.loaded.text.enable_adapter_training(), cfg.adapter)
+                    inject_text_adapters(self.loaded.text.enable_adapter_training(), cfg.adapter,
+                                         dora_save_dtype=cfg.checkpoint.save_dtype,
+                                         compute_dtype=self.loaded.dtype)
                 )
                 self.adapters = ComponentAdapterSet(components)
             else:
@@ -585,7 +599,8 @@ class Trainer:
             if cfg.adapter.resume_weights:
                 from ypuddin.adapters import load_adapter_file
 
-                tensors, _ = load_adapter_file(cfg.adapter.resume_weights)
+                tensors, metadata = load_adapter_file(cfg.adapter.resume_weights)
+                validate_warm_start(self.adapters, metadata)
                 missing = self.adapters.load_state(tensors, strict=False)
                 matched = len(self.adapters.layers) - len(missing)
                 if matched == 0:
@@ -1032,6 +1047,7 @@ class Trainer:
         validate_scheduler_recipe(captured_scheduler.contract, self.cfg, self.progress.total_steps)
         validate_scheduler_instance(captured_scheduler.contract, self.scheduler)
         ck = load_checkpoint(path)
+        validate_resume_contract(compute_contract(self.adapters), ck["progress"].extra.get(DORA_STATE_KEY))
         from .metal_compute import validate_metal_attention_resume
 
         validate_metal_attention_resume(
@@ -1113,6 +1129,9 @@ class Trainer:
         neutral.checkpoint.resume = None
         return {self.config_hash, config_hash(neutral)}
 
+    def _validate_dora_contract(self) -> None:
+        validate_active_config(self.adapters, self.cfg, compute_dtype=getattr(getattr(self, "loaded", None), "dtype", None))
+
     def _adapter_metadata(self) -> dict[str, str]:
         if self.cfg.training.mode == "full":
             return {
@@ -1150,6 +1169,7 @@ class Trainer:
             epoch=self.progress.epoch,
             include_training_metadata=self.cfg.checkpoint.save_training_metadata,
         )
+        metadata.update(export_contract_metadata(self.adapters))
         if self.cfg.checkpoint.save_training_metadata:
             from ypuddin.adapters.recipe import training_recipe_metadata
 
@@ -1177,6 +1197,7 @@ class Trainer:
         return path
 
     def _save_weights(self, tag: str) -> Path:
+        self._validate_dora_contract()
         if isinstance(self.adapters, FullTrainingSet):
             path = save_model_artifact(
                 self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.model", self.adapters, self.cfg, self.loaded
@@ -1245,10 +1266,12 @@ class Trainer:
         return path
 
     def _save_state(self, tag: str | None = None) -> Path:
+        self._validate_dora_contract()
         self._validate_training_compute_policy()
         validate_scheduler_recipe(self._scheduler_contract, self.cfg, self.progress.total_steps)
         validate_scheduler_instance(self._scheduler_contract, self.scheduler)
         self.progress.extra["scheduler_contract"] = deepcopy(self._scheduler_contract)
+        self.progress.extra[DORA_STATE_KEY] = compute_contract(self.adapters)
         if self.cfg.training.mode == "full":
             # A full-state checkpoint needs the raw optimizer-point weights only.
             # Do not duplicate a complete model in host RAM or switch SF into eval.

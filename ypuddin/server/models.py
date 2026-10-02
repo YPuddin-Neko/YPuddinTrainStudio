@@ -468,11 +468,24 @@ class PlanMasks(_Out):
     alpha: int  # images without a sidecar whose alpha channel is the mask
 
 
+class PlanDora(_Out):
+    active: bool
+    compute_mode: Literal["standard", "comfyui"]
+    base_dtypes: list[str]
+    auto_merge_dtypes: list[str]
+    merge_dtypes: list[str]
+    save_dtype: str
+    confirmation_required: bool
+    confirmation_reasons: list[str]
+    confirmation_message: str | None = None
+
+
 class Plan(_Out):
     ok: bool
     errors: list[ConfigError]
     warnings: list[ConfigWarning]
     compute_policy: dict[str, Any] | None = None
+    dora: PlanDora | None = None
     source_balance: list[PlanSourceBalance] | None = None
     images: int = 0
     items: int = 0

@@ -115,8 +115,15 @@ class AdapterModule(nn.Module, ABC):
         else:
             self.scalar = None
 
-    def forward(self, x: Tensor | None = None) -> Tensor:
+    def forward(
+        self, x: Tensor | None = None, *, export_dtype: torch.dtype | None = None,
+        compute_dtype: torch.dtype | None = None,
+    ) -> Tensor | tuple[Tensor, float]:
         """Keep computations inside Module hooks for distributed parameter residency."""
+        if export_dtype is not None:
+            if x is not None or compute_dtype is None:
+                raise ValueError("export reconstruction requires a compute dtype and no input")
+            return self.exported_delta(export_dtype, compute_dtype)
         return self.delta_weight() if x is None else self.delta_apply(x)
 
     # ----------------------------------------------------------------- shape
@@ -210,6 +217,48 @@ class AdapterModule(nn.Module, ABC):
     @abstractmethod
     def export_tensors(self) -> dict[str, Tensor]:
         """Kohya/LyCORIS key suffix -> tensor, with ``scalar`` folded in and ``alpha`` encoded."""
+
+    def differentiable_export_tensors(self, *, rank_dropout: bool = False) -> dict[str, Tensor]:
+        """The saved factor layout while retaining gradients through every learned value."""
+        raise NotImplementedError(f"{self.kind} does not support differentiable exported factors")
+
+    def exported_delta(self, save_dtype: torch.dtype, compute_dtype: torch.dtype) -> tuple[Tensor, float]:
+        """Reconstruct saved factors in ComfyUI's order, without detaching trainable tensors."""
+        with torch.autocast(device_type=next(self.parameters()).device.type, enabled=False):
+            values = self.differentiable_export_tensors(rank_dropout=True)
+
+            def cast(name: str) -> Tensor:
+                return values[name].to(save_dtype).to(compute_dtype)
+
+            alpha = float(values["alpha"].item())
+            if "lora_up.weight" in values:
+                up, down = cast("lora_up.weight"), cast("lora_down.weight")
+                delta = torch.mm(up.flatten(start_dim=1), down.flatten(start_dim=1))
+                alpha /= down.shape[0]
+            elif "hada_w1_a" in values:
+                first = torch.mm(cast("hada_w1_a"), cast("hada_w1_b"))
+                second = torch.mm(cast("hada_w2_a"), cast("hada_w2_b"))
+                delta = first * second
+                alpha /= values["hada_w1_b"].shape[0]
+            elif "lokr_w1" in values or "lokr_w1_a" in values:
+                rank = None
+                if "lokr_w1" in values:
+                    first = cast("lokr_w1")
+                else:
+                    rank = values["lokr_w1_b"].shape[0]
+                    first = torch.mm(cast("lokr_w1_a"), cast("lokr_w1_b"))
+                if "lokr_w2" in values:
+                    second = cast("lokr_w2")
+                else:
+                    rank = values["lokr_w2_b"].shape[0]
+                    second = torch.mm(cast("lokr_w2_a"), cast("lokr_w2_b"))
+                if second.ndim == 4:
+                    first = first.unsqueeze(2).unsqueeze(2)
+                delta = torch.kron(first, second)
+                alpha = alpha / rank if rank is not None else 1.0
+            else:
+                raise ValueError(f"unsupported differentiable exported layout: {self.kind}")
+            return delta.reshape(self.weight_shape), alpha
 
     def _lora_export(self, down: Tensor, up: Tensor, alpha: float) -> dict[str, Tensor]:
         """Plain LoRA tensors; a convolution's ``down`` keeps its kernel and ``up`` is 1×1 (LoCon)."""

@@ -173,19 +173,23 @@ class LoKr(AdapterModule):
         from ``lokr_w2_b`` (or ``lokr_w1_b``) and use scale 1 when both factors are full, so:
         low-rank -> ``alpha_file = scale * rank`` and scalar folded into w1; full -> scale and
         scalar folded into w1 and ``alpha_file = 1``."""
-        scalar = float(self.effective_scalar) if isinstance(self.effective_scalar, Tensor) else 1.0
+        return {key: value.detach().clone() for key, value in self.differentiable_export_tensors().items()}
+
+    def differentiable_export_tensors(self, *, rank_dropout: bool = False) -> dict[str, Tensor]:
+        scalar = self.effective_scalar
         out: dict[str, Tensor] = {}
         fold = scalar if self.rank is not None else scalar * self.scale
         if self.w1_lowrank:
-            out["lokr_w1_a"] = (self.w1_a * fold).detach().clone()
-            out["lokr_w1_b"] = self.w1_b.detach().clone()
+            out["lokr_w1_a"] = self.w1_a * fold
+            out["lokr_w1_b"] = self.w1_b
         else:
-            out["lokr_w1"] = (self.w1 * fold).detach().clone()
+            out["lokr_w1"] = self.w1 * fold
         if self.w2_lowrank:
-            out["lokr_w2_a"] = self.w2_a.detach().clone()
-            out["lokr_w2_b"] = self.w2_b.detach().clone()
+            mask = self._rank_mask(self.rank, self.w2_a.device, self.w2_a.dtype) if rank_dropout else None
+            out["lokr_w2_a"] = self.w2_a if mask is None else self.w2_a * mask
+            out["lokr_w2_b"] = self.w2_b
         else:
-            out["lokr_w2"] = self.w2.detach().clone()
+            out["lokr_w2"] = self.w2
         alpha_file = self.scale * self.rank if self.rank is not None else 1.0
         out["alpha"] = torch.tensor(float(alpha_file), dtype=torch.float32)
         return out

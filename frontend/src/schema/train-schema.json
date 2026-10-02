@@ -91,7 +91,7 @@
         },
         "dora": {
           "default": false,
-          "description": "DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。外部工具低精度融合 LoKr/DoRA 时可能偏色，可使用 FP32 融合，不要求使用 FP32 推理。",
+          "description": "DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。计算模式与融合精度需匹配目标加载方式。",
           "title": "Dora",
           "type": "boolean",
           "x-ui": {
@@ -115,6 +115,42 @@
             "group": "adapter",
             "order": 61,
             "show_when": "adapter.dora == true"
+          }
+        },
+        "dora_compute_mode": {
+          "default": "standard",
+          "description": "标准模式：使用 FP32 计算 DoRA。兼容模式：训练时考虑权重保存和融合过程中的精度变化，减少导出前后的计算差异。",
+          "enum": [
+            "standard",
+            "comfyui"
+          ],
+          "title": "Dora Compute Mode",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "adapter",
+            "order": 62,
+            "show_when": "adapter.dora == true"
+          }
+        },
+        "dora_merge_dtype": {
+          "default": "auto",
+          "description": "底模与 DoRA 权重合并时的计算精度。自动根据当前底模和加载设置确定。它不改变可训练参数精度或权重保存精度。",
+          "enum": [
+            "auto",
+            "bf16",
+            "fp16",
+            "fp32"
+          ],
+          "title": "Dora Merge Dtype",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "adapter",
+            "order": 63,
+            "show_when": "adapter.dora == true && adapter.dora_compute_mode == 'comfyui'"
           }
         },
         "init": {
@@ -778,7 +814,7 @@
         },
         "save_training_metadata": {
           "default": false,
-          "description": "默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
+          "description": "默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
           "title": "Save Training Metadata",
           "type": "boolean",
           "x-ui": {

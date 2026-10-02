@@ -8844,7 +8844,7 @@
           "dora": {
             "type": "boolean",
             "title": "Dora",
-            "description": "DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。外部工具低精度融合 LoKr/DoRA 时可能偏色，可使用 FP32 融合，不要求使用 FP32 推理。",
+            "description": "DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。计算模式与融合精度需匹配目标加载方式。",
             "default": false,
             "x-ui": {
               "control": "switch",
@@ -8867,6 +8867,42 @@
               "group": "adapter",
               "order": 61,
               "show_when": "adapter.dora == true"
+            }
+          },
+          "dora_compute_mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "comfyui"
+            ],
+            "title": "Dora Compute Mode",
+            "description": "标准模式：使用 FP32 计算 DoRA。兼容模式：训练时考虑权重保存和融合过程中的精度变化，减少导出前后的计算差异。",
+            "default": "standard",
+            "x-ui": {
+              "advanced": true,
+              "control": "select",
+              "group": "adapter",
+              "order": 62,
+              "show_when": "adapter.dora == true"
+            }
+          },
+          "dora_merge_dtype": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "bf16",
+              "fp16",
+              "fp32"
+            ],
+            "title": "Dora Merge Dtype",
+            "description": "底模与 DoRA 权重合并时的计算精度。自动根据当前底模和加载设置确定。它不改变可训练参数精度或权重保存精度。",
+            "default": "auto",
+            "x-ui": {
+              "advanced": true,
+              "control": "select",
+              "group": "adapter",
+              "order": 63,
+              "show_when": "adapter.dora == true && adapter.dora_compute_mode == 'comfyui'"
             }
           },
           "init": {
@@ -10077,7 +10113,7 @@
           "save_training_metadata": {
             "type": "boolean",
             "title": "Save Training Metadata",
-            "description": "默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
+            "description": "默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
             "default": false,
             "x-ui": {
               "advanced": true,
@@ -14549,6 +14585,11 @@
               }
             ],
             "title": "Scheduled At"
+          },
+          "dora_precision_confirmed": {
+            "type": "boolean",
+            "title": "Dora Precision Confirmed",
+            "default": false
           }
         },
         "type": "object",
@@ -18836,6 +18877,16 @@
             ],
             "title": "Compute Policy"
           },
+          "dora": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanDora"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source_balance": {
             "anyOf": [
               {
@@ -19147,6 +19198,82 @@
           "tail_policy"
         ],
         "title": "PlanDistributed"
+      },
+      "PlanDora": {
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "compute_mode": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "comfyui"
+            ],
+            "title": "Compute Mode"
+          },
+          "base_dtypes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Base Dtypes"
+          },
+          "auto_merge_dtypes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Auto Merge Dtypes"
+          },
+          "merge_dtypes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Merge Dtypes"
+          },
+          "save_dtype": {
+            "type": "string",
+            "title": "Save Dtype"
+          },
+          "confirmation_required": {
+            "type": "boolean",
+            "title": "Confirmation Required"
+          },
+          "confirmation_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Confirmation Reasons"
+          },
+          "confirmation_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Message"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "active",
+          "compute_mode",
+          "base_dtypes",
+          "auto_merge_dtypes",
+          "merge_dtypes",
+          "save_dtype",
+          "confirmation_required",
+          "confirmation_reasons"
+        ],
+        "title": "PlanDora"
       },
       "PlanMasks": {
         "properties": {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
+import torch
 from torch import nn
 
 from .inject import AdapterSet, inject
@@ -118,16 +119,21 @@ def text_export_root(module: nn.Module) -> str:
     return f"{root}." if root and isinstance(getattr(module, root, None), nn.Module) else ""
 
 
-def inject_text_adapters(modules: dict[str, nn.Module], cfg):
+def inject_text_adapters(
+    modules: dict[str, nn.Module], cfg, *, dora_save_dtype: torch.dtype | str | None = None,
+    compute_dtype: torch.dtype | None = None,
+):
     if not modules or not modules.keys() <= TEXT_ADAPTER_PREFIXES.keys():
         raise ValueError("text pipeline returned unsupported component names")
     if len(modules) == 1:
         ((name, module),) = modules.items()
-        adapters = inject(module, cfg, TEXT_ADAPTER_PRESET, prefix=SINGLE_TEXT_ADAPTER_PREFIX)
+        adapters = inject(module, cfg, TEXT_ADAPTER_PRESET, prefix=SINGLE_TEXT_ADAPTER_PREFIX,
+                          dora_save_dtype=dora_save_dtype, compute_dtype=compute_dtype)
         adapters.export_root = text_export_root(module)
         adapters.legacy_prefix = TEXT_ADAPTER_PREFIXES[name]
         return {name: adapters}
     return {
-        name: inject(module, cfg, TEXT_ADAPTER_PRESET, prefix=TEXT_ADAPTER_PREFIXES[name])
+        name: inject(module, cfg, TEXT_ADAPTER_PRESET, prefix=TEXT_ADAPTER_PREFIXES[name],
+                     dora_save_dtype=dora_save_dtype, compute_dtype=compute_dtype)
         for name, module in modules.items()
     }

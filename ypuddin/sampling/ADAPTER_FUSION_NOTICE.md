@@ -25,5 +25,13 @@ matching the `LowVramPatch` arithmetic. Static patching with a different
 intermediate dtype, stochastic rounding, Tucker factors, shape-changing patches,
 model-strength patches, offsets and custom patch functions are not implemented.
 DoRA output-axis fusion uses the base-weight norm, as this upstream version does;
-input-axis fusion uses the merged-weight norm. These inference rules do not
-replace the trainer's DoRA computation or change saved training parameters.
+input-axis fusion uses the merged-weight norm.
+
+The trainer's `standard` DoRA compute mode retains its existing normalization.
+The opt-in `comfyui` training compute mode reuses the adapted arithmetic for its
+differentiable forward pass, reconstructing exported factors at the selected save
+precision and merging at the target dtype. Rounding is represented with
+straight-through gradients; this gradient treatment is a trainer adaptation,
+not an upstream ComfyUI training implementation. Trainable parameters retain their
+configured storage precision. The target remains the specified upstream dynamic
+loading path, not every loader or precision configuration.

@@ -203,6 +203,7 @@ class VersionManager:
                 from .environment import environment_attention_default
 
                 config = TrainConfig().to_dict()
+                config["adapter"]["dora_compute_mode"] = "comfyui"
                 config["model"]["attention"] = environment_attention_default(c)
                 if data_mode != "empty":
                     raise ApiError("copy_config=false requires data_mode=empty", code="version.invalid")

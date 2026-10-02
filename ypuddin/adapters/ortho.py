@@ -130,10 +130,18 @@ class OrthoLoRA(AdapterModule):
     @torch.no_grad()
     def export_tensors(self) -> dict[str, Tensor]:
         """The exact rank-``r`` plain LoRA; ``√s`` goes to both factors to keep them in range."""
+        return {key: value.detach().clone() for key, value in self.differentiable_export_tensors().items()}
+
+    def differentiable_export_tensors(self, *, rank_dropout: bool = False) -> dict[str, Tensor]:
         self._ensure_ready()
-        root = self.singular.float().abs().sqrt()
-        up = (self.basis_out.float() @ self._core()) * root[None, :] * self.scale
-        down = root[:, None] * self.basis_in.float()
+        with torch.autocast(device_type=self.rotation.device.type, enabled=False):
+            root = self.singular.float().abs().sqrt()
+            left = self.basis_out.float()
+            mask = self._rank_mask(self.rank, left.device, left.dtype) if rank_dropout else None
+            if mask is not None:
+                left = left * mask
+            up = (left @ self._core()) * root[None, :] * self.scale
+            down = root[:, None] * self.basis_in.float()
         return self._lora_export(down, up, self.rank)
 
     def extra_metadata(self) -> dict[str, Any]:

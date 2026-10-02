@@ -75,6 +75,7 @@ def initial_family_config(c: Any, family: str) -> dict[str, Any]:
     model_family = get_family(family)
     spec = model_family.spec
     config = TrainConfig().to_dict()
+    config["adapter"]["dora_compute_mode"] = "comfyui"
     config["dataset"]["image_fit"] = "pad"
     config["model"].update(family=family, attention=environment_attention_default(c))
     if config["model"]["attention"] not in spec.attention_backends:

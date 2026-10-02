@@ -27,6 +27,7 @@ const labels: Record<string, string> = {
   'adapter.algo': '训练算法', 'adapter.rank': 'Rank / 秩', 'adapter.alpha': 'Alpha / 缩放', 'adapter.factor': 'LoKr 分解因子',
   'adapter.tlora_min_rank': '最小秩', 'adapter.tlora_power': '秩变化曲线', 'adapter.tlora_ortho': '正交初始化',
   'adapter.decompose_both': '双矩阵低秩分解', 'adapter.rs_lora': 'Rank 稳定缩放', 'adapter.dora': '启用 DoRA', 'adapter.dora_axis': 'DoRA 计算方向',
+  'adapter.dora_compute_mode': 'DoRA 计算模式', 'adapter.dora_merge_dtype': 'DoRA 融合精度',
   'adapter.init': '初始化方式', 'adapter.dropout': '输出丢弃率', 'adapter.rank_dropout': '秩丢弃率',
   'adapter.module_dropout': '模块丢弃率', 'adapter.preset': '训练层范围', 'adapter.rules': '逐层覆盖规则',
   'adapter.layer_types': '训练层类型', 'adapter.conv_rank': '卷积层 Rank', 'adapter.conv_alpha': '卷积层 Alpha',
@@ -88,6 +89,8 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path === 'dataset.crop_anchor') return 'Crop anchor';
   if (english && path === 'adapter.resume_weights') return 'Weights to continue training';
   if (english && path === 'adapter.dora_axis') return 'DoRA axis';
+  if (english && path === 'adapter.dora_compute_mode') return 'DoRA compute mode';
+  if (english && path === 'adapter.dora_merge_dtype') return 'DoRA merge precision';
   if (english && path === 'sampling.noise') return 'Sampling compatibility';
   if (english && path === 'memory.vae_tiling') return 'VAE tiling';
   if (english && path === 'memory.cache_encode_tiled') return 'Tiled cache encoding';
@@ -199,7 +202,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     'checkpoint.save_state_every_steps': ['选择 Step 按参数更新次数保存，选择 Epoch 按完整训练轮数保存。例如 100 Step 为每 100 步保存，2 Epoch 为每完成 2 轮保存。默认每 100 Step 保存；关闭开关可停用定期保存。轮中达到最大步数不算完成一轮。暂停时仍会保存当前恢复点；意外退出只能从最近一次成功保存的位置继续。', 'Choose Step for optimizer updates or Epoch for completed dataset passes. For example, 100 Step saves every 100 updates; 2 Epoch saves after every two complete epochs. Defaults to 100 Step; turn off the switch to disable periodic saving. Reaching the step limit partway through an epoch does not complete it. Pausing still saves a recovery point; crashes can only recover the last successful save.'],
     'dataset.crop_anchor': ['选择裁切后要保留的位置。上中贴住顶部，多余部分从下方裁掉，可避免居中裁切削去头部；左右位置同理。仅裁掉超出训练尺寸的部分，图片与遮罩保持对齐。分桶和原生尺寸模式均适用，保留完整画面时不使用此设置。', 'Choose the part of the image to retain. Top center keeps the top edge and removes excess from the bottom, helping retain heads; left and right work similarly. Only the area outside the training dimensions is removed, and masks stay aligned. Applies to bucket and native cropping; unused when preserving the whole image.'],
     'dataset.resolution_mode': ['Bucket 将图片按长宽比分组，使用下方训练分辨率设定目标面积。Native 按原图尺寸训练，并对齐模型要求的尺寸倍数；超出面积或单边上限时，按所选方式等比缩小或报错。', 'Bucket groups images by aspect ratio at the target areas set below. Native uses original dimensions aligned to the model’s required multiples; images exceeding the area or side limit are scaled down or rejected according to the overflow setting.'],
-    'checkpoint.save_training_metadata': ['默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构。开启后额外保存步数、轮数、学习率、优化器、训练尺寸等元数据，适用于 LoRA、LoKr 及其 EMA 权重。不写入本机目录、图片标签、提示词或访问密钥。完整断点恢复仍需恢复点。', 'Off by default; keeps only the model type, network structure and any per-layer structure required for loading. When enabled, also saves steps, epoch, learning rate, optimizer, training dimensions and other metadata in LoRA and LoKr exports, including EMA weights. Local directories, image captions, prompts and access tokens are excluded. Resuming the full training state still requires a recovery point.'],
+    'checkpoint.save_training_metadata': ['默认关闭，只保留加载所需的模型类型、网络结构及继续训练所需的 DoRA 计算设置。开启后额外保存步数、轮数、学习率、优化器、训练尺寸等元数据，适用于 LoRA、LoKr 及其 EMA 权重。不写入本机目录、图片标签、提示词或访问密钥。完整断点恢复仍需恢复点。', 'Off by default; keeps only the model type and network structure required for loading, plus DoRA compute settings needed to continue training. When enabled, also saves steps, epoch, learning rate, optimizer, training dimensions and other metadata in LoRA and LoKr exports, including EMA weights. Local directories, image captions, prompts and access tokens are excluded. Resuming the full training state still requires a recovery point.'],
     'dataset.resolutions': ['单个分辨率填 1024；多个用逗号或空格分隔，如 1024, 1536。填写正整数边长，不写 1024×1024。1024 表示每桶约 1024×1024 像素；每张图会在每个基准分辨率各训练一次，增加总样本和步数。', 'Enter one size as 1024, or separate multiple sizes with commas or spaces, e.g. 1024, 1536. Use positive integer side lengths, not 1024×1024. A base of 1024 gives roughly 1024×1024 pixels per bucket. Each image trains at every base resolution, increasing samples and steps.'],
     'adapter.resume_weights': ['训练结束后仍想继续优化时，可加载上次导出的 LoRA / LoKr 权重，再设置本次新增的训练轮数或步数，也可调整学习率和数据。底模、算法和权重结构需匹配。优化器和步数重新开始；中断后原样继续请使用完整恢复点。', 'To keep improving a finished run, load its exported LoRA / LoKr weights and set the additional epochs or steps for this new run. Learning rate and data may be changed. The base model, algorithm and weight structure must match. Optimizer state and counters restart; use a full recovery point for an interrupted run.'],
     'loop.deterministic': ['默认关闭。在相同配置、设备和软件环境下提高重复训练的一致性。开启后可能固定部分计算精度和注意力设置，增加显存与耗时；具体值会显示在对应字段。完整续训需保持原设置和环境。', 'Off by default. Improves repeatability with the same configuration, device and software environment. May manage precision and attention settings and increase memory use and runtime; effective values appear in the fields. Keep the same settings and environment when resuming.'],
@@ -290,6 +293,8 @@ export function configOptionLabel(path: string, option: string, english = false)
     'model.attention': {auto:['默认','PyTorch SDPA'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],metal_flash:['Metal FlashAttention · Apple','Metal FlashAttention · Apple'],sage:['仅采样','SageAttention']},
     'adapter.init': {default:['默认初始化','Default'],scalar:['随机权重，零值缩放','Scalar']},
     'adapter.dora_axis': {output:['按输出通道','Output'],input:['按输入通道','Input']},
+    'adapter.dora_compute_mode': {standard:['标准模式','Standard mode'],comfyui:['兼容模式','Compatibility mode']},
+    'adapter.dora_merge_dtype': {auto:['跟随底模','Auto'],bf16:['BF16','BF16'],fp16:['FP16','FP16'],fp32:['FP32','FP32']},
     'adapter.layer_types': {linear:['只训练线性层','Linear only'],linear_conv:['线性层和卷积层','Linear + convolution']},
     'adapter.mode': {auto:['自动','Automatic'],bypass:['分开计算','Bypass'],merged:['合并权重后计算','Merged']},
     'memory.activation_checkpointing': {none:['关闭','Off'],block:['开启','On'],unsloth:['开启并卸载到内存','On + offload']},
@@ -312,6 +317,7 @@ export function configOptionLabel(path: string, option: string, english = false)
   };
   const label = options[path]?.[option];
   if (!label) return option;
+  if (path === 'adapter.dora_compute_mode') return label[english ? 1 : 0];
   if (english || label[0] === label[1]) return label[1];
   return `${label[1]} (${label[0]})`;
 }

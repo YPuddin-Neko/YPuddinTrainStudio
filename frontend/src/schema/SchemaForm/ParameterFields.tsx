@@ -33,7 +33,7 @@ const layouts: Record<string, Section[]> = {
     section('monitoring', ['nan_skip_limit', 'log_every'], ['异常处理与记录', 'Failures and logging']),
   ],
   adapter: [
-    section('setup', ['algo', 'preset', 'layer_types', 'parameter_mode', 'factor', 'rank', 'alpha', 'conv_rank', 'conv_alpha', 'tlora_min_rank', 'tlora_power', 'tlora_ortho', 'dora', 'dora_axis', 'decompose_both', 'rs_lora', 'rules'], undefined, { afterToggles: ['dora_axis'] }),
+    section('setup', ['algo', 'preset', 'layer_types', 'parameter_mode', 'factor', 'rank', 'alpha', 'conv_rank', 'conv_alpha', 'tlora_min_rank', 'tlora_power', 'tlora_ortho', 'dora', 'dora_axis', 'dora_compute_mode', 'dora_merge_dtype', 'decompose_both', 'rs_lora', 'rules'], undefined, { afterToggles: ['dora_axis', 'dora_compute_mode', 'dora_merge_dtype'] }),
     section('initialization', ['init', 'resume_weights'], ['初始化与继续训练', 'Initialization and weight loading']),
     section('regularization', ['dropout', 'rank_dropout', 'module_dropout'], ['训练正则', 'Training regularization']),
     section('execution', ['mode', 'param_dtype', 'lr_scale'], ['计算与学习率', 'Computation and learning rate']),

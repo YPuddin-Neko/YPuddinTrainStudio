@@ -491,6 +491,7 @@ def config_defaults(
 
         return initial_family_config(c, family)
     defaults = TrainConfig().to_dict()
+    defaults["adapter"]["dora_compute_mode"] = "comfyui"
     defaults["model"]["attention"] = environment_attention_default(c)
     return defaults
 
@@ -711,6 +712,8 @@ def _preset_path(name: str, c: ServiceContext) -> Path:
 
 
 def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: bool) -> dict[str, Any]:
+    from ypuddin.config.io import preserve_legacy_dora
+
     path = _preset_path(name, c)
     # Validate partial presets against the appropriate family without persisting
     # expanded defaults or requiring any project data/model files to exist.
@@ -727,10 +730,11 @@ def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: boo
             code="config.invalid",
             details={"errors": [{"loc": "model.family", "msg": "family must be a string"}]},
         )
-    validated = _validated_or_error(deep_merge(initial_family_config(c, family), body.config))
+    fragment = preserve_legacy_dora(body.config)
+    validated = _validated_or_error(deep_merge(initial_family_config(c, family), fragment))
     from ypuddin.config.optimizer_rules import canonical_optimizer_fragment
 
-    config = canonical_optimizer_fragment(body.config, validated.to_dict())
+    config = canonical_optimizer_fragment(fragment, validated.to_dict())
     with _preset_lock:
         collision = next(
             (f for f in path.parent.glob("*.json") if f.stem.casefold() == name.casefold()), None

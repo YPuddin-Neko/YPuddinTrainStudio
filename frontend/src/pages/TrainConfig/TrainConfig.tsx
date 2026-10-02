@@ -13,6 +13,7 @@ import { formatApiError } from '../../utils/errors';
 import { fillDefaultModels, changeModelFamily, matchingTrainingDatasets } from '../../utils/workspaceConfig';
 import { inactiveTrainingReason } from '../../utils/trainingFamilies';
 import { currentTrainingComputePolicy } from '../../utils/trainingComputePolicy';
+import { doraConfirmationMessages, readDoraPrecisionReport, type DoraPrecisionReport } from '../../utils/doraPrecision';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
 import { useProjectVersions } from '../../components/projects/useProjectVersions';
@@ -162,6 +163,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
   const [validating, setValidating] = React.useState(true);
   const [isEnqueuing, setIsEnqueuing] = React.useState(false);
+  const [doraConfirmation, setDoraConfirmation] = React.useState<{config: string; report: DoraPrecisionReport} | null>(null);
   const [enqueueSuccess, setEnqueueSuccess] = React.useState(false);
   const [savedAt, setSavedAt] = React.useState<string | null>(null);
   const [draftSaveState, setDraftSaveState] = React.useState<'idle' | 'saving' | 'failed'>('idle');
@@ -597,14 +599,19 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     } catch (err: unknown) { setError(formatApiError(err)); }
   };
 
-  const handleEnqueue = async () => {
-    if (archived || !gpuValid) return;
+  const handleEnqueue = async (confirmedConfig?: string) => {
+    if (archived || !gpuValid || !ready || isEnqueuing) return;
     const inactiveReason = inactiveTrainingReason(config, english);
     if (inactiveReason) { setError(inactiveReason); return; }
     if (!Number.isInteger(priority) || (scheduledAt && !Number.isFinite(new Date(scheduledAt).getTime()))) {
       setError(text('请检查排期：优先级必须是整数，开始时间必须有效。', 'Check the schedule: priority must be an integer and the start time must be valid.'));
       return;
     }
+    if (doraPrecision?.active && doraPrecision.confirmation_required && confirmedConfig !== JSON.stringify(config)) {
+      setDoraConfirmation({config: JSON.stringify(config), report: doraPrecision});
+      return;
+    }
+    setDoraConfirmation(null);
     setIsEnqueuing(true);
     setError('');
     try {
@@ -617,10 +624,16 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       const job = await apiClient.post<Job>('/jobs', {
         type: 'train', name: jobName.trim() || project?.name || `${config.model?.family || 'model'} training`, project_id: projectId || null, version_id: versionId || project?.active_version_id || null,
         config, priority, gpu_devices: gpuDevices, scheduled_at: scheduledAt ? new Date(scheduledAt).getTime() / 1000 : null,
+        dora_precision_confirmed: confirmedConfig === JSON.stringify(config),
       }, { silent: true });
       setEnqueueSuccess(true);
       if (job.id) navigate(`/jobs/${job.id}`);
     } catch (err: any) {
+      const report = err.code === 'dora.confirmation_required' ? readDoraPrecisionReport(err.details?.dora) : null;
+      if (report?.active && report.confirmation_required) {
+        setDoraConfirmation({config: JSON.stringify(config), report});
+        return;
+      }
       setError(formatApiError(err));
       if (Array.isArray(err.details?.errors)) setValidationErrors(presentConfigIssues(err.details.errors, english).filter(issue => Object.values(CONFIG_TAB_GROUPS).flat().includes(issue.path.split('.')[0])).map(issue => ({ loc: issue.path, msg: issue.detail, type: issue.type, ctx: issue.ctx })));
     } finally { setIsEnqueuing(false); }
@@ -630,12 +643,16 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const inactiveReason = inactiveTrainingReason(config, english);
   const checked = loaded && !validating && !datasetRefreshing && !datasetRefreshError && validatedConfig === JSON.stringify(config) && plan !== null;
   const computePolicy = currentTrainingComputePolicy(plan?.compute_policy, config, validatedConfig, validating || datasetRefreshing || !!datasetRefreshError);
+  const doraPrecision = checked ? readDoraPrecisionReport(plan?.dora) : null;
   const nativeAreaEstimate: NativeAreaEstimate = planError ? {state: 'error'}
     : !checked ? {state: 'loading'}
     : plan?.native?.auto_max_pixels != null && plan.native.auto_max_pixels > 0
       ? {state: 'ready', maxPixels: plan.native.auto_max_pixels} : {state: 'unavailable'};
   const planChecked = checked && (plan?.ok === true || plan?.params != null);
   const ready = !inactiveReason && (!versions.enabled || versions.current?.status === 'ready') && checked && plan?.ok === true && issues.length === 0;
+  React.useEffect(() => {
+    if (!ready || doraConfirmation?.config !== JSON.stringify(config)) setDoraConfirmation(null);
+  }, [ready, config, doraConfirmation]);
   const goToIssue = (issue: ConfigIssue) => {
     // The memory estimate has no field of its own; its explanation and fixes are in the plan panel.
     if (issue.path === 'memory') {
@@ -687,7 +704,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         disabled={!loaded || !!inactiveReason || isEnqueuing || savingNavigation} onChange={devices => {setGpuDevices(devices);setGpuSelectionNotice('');}}/>
       <input className="launch-name" aria-label={t('train.jobName')} placeholder={text('任务名称（可选）', 'Job name (optional)')} value={jobName} onChange={event => setJobName(event.target.value)}/>
       <details className="launch-schedule" data-popover><summary className="ui-btn">{scheduledAt ? text('已排期', 'Scheduled') : text('排期', 'Schedule')}</summary><div><label>{t('queue.priority')}<input aria-label={t('queue.priority')} type="number" step="1" aria-invalid={!Number.isInteger(priority)} value={priority} onChange={event => setPriority(Number(event.target.value))}/></label>{!Number.isInteger(priority) && <p className="text-xs text-amber-600">{text('优先级必须是整数', 'Priority must be an integer')}</p>}<label>{t('train.scheduledAt')}<input aria-label={t('train.scheduledAt')} type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)}/></label></div></details>
-      <button type="button" className="ui-btn ui-btn-primary start-training" onClick={handleEnqueue} disabled={!ready || !gpuValid || isEnqueuing || savingNavigation || !Number.isInteger(priority)}><Play size={14}/>{enqueueSuccess ? t('train.enqueued') : isEnqueuing ? t('train.enqueuing') : text('开始训练', 'Start training')}</button>
+      <button type="button" className="ui-btn ui-btn-primary start-training" onClick={() => void handleEnqueue()} disabled={!ready || !gpuValid || isEnqueuing || savingNavigation || !Number.isInteger(priority)}><Play size={14}/>{enqueueSuccess ? t('train.enqueued') : isEnqueuing ? t('train.enqueuing') : text('开始训练', 'Start training')}</button>
     </div>
     </div>
     {inactiveReason && <div role="alert" className="studio-error" data-testid="retired-training-config">{inactiveReason}</div>}
@@ -716,6 +733,16 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       {presetError && <p role="alert" className="config-field-error">{presetError}</p>}
       <footer><button type="button" className="ui-btn" disabled={savingPreset} onClick={()=>setPresetDialog(false)}>{text('取消','Cancel')}</button><button type="submit" className="ui-btn ui-btn-primary" disabled={savingPreset || !presetName.trim()}>{savingPreset?text('保存中…','Saving…'):text('保存新预设','Save new preset')}</button></footer>
     </form></Dialog>}
+    {doraConfirmation && ready && <Dialog title={text('确认 DoRA 设置', 'Confirm DoRA settings')} onClose={() => setDoraConfirmation(null)}>
+      <div className="config-inspection">
+        {doraConfirmationMessages(doraConfirmation.report, english).map(message => <p key={message}>{message}</p>)}
+        <footer><button type="button" className="ui-btn" onClick={() => {
+          setDoraConfirmation(null);
+          const path = doraConfirmation.report.confirmation_reasons?.includes('manual_merge_dtype_mismatch') ? 'adapter.dora_merge_dtype' : 'adapter.dora_compute_mode';
+          goToIssue({path, label: '', message: '', detail: '', tab: configTabForPath(path)});
+        }}>{text('返回调整', 'Review settings')}</button><button type="button" className="ui-btn ui-btn-primary" onClick={() => void handleEnqueue(doraConfirmation.config)}>{text('确认并开始训练', 'Confirm and start training')}</button></footer>
+      </div>
+    </Dialog>}
     {inspectionOpen && <ConfigInspection config={config} validation={{pending:validating,ok:checked && plan?.ok === true,errors:validationErrors,error:planError}} onApply={next=>{setConfig(next);setInspectionOpen(false);}} onChange={setConfig} onClose={()=>setInspectionOpen(false)}/>}
     {pendingPreset && <PresetPreview preset={pendingPreset} current={config} onClose={()=>setPendingPreset(null)} onApply={()=>handleApplyPreset(pendingPreset)}/>}
     {importOpen && <Dialog title={t('train.importToml')} closeDisabled={importing} onClose={() => setImportOpen(false)}><section className="config-import">{importError && <p role="alert" className="studio-error">{importError}</p>}<input disabled={importing} type="file" accept=".toml,text/plain" aria-label={t('train.importFile')} onChange={event => { const file = event.target.files?.[0]; if (file) file.text().then(setImportText).catch(err => setImportError(formatApiError(err))); }}/><textarea disabled={importing} aria-label={t('train.importContent')} value={importText} onChange={event => setImportText(event.target.value)} /><button type="button" className="ui-btn ui-btn-primary" disabled={importing || !importText.trim()} onClick={handleImport}>{t('train.applyImport')}</button></section></Dialog>}
@@ -730,7 +757,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong></div><div className="context-actions"><Link to={`${dataUrl}&data_step=datasets`} className="ui-btn ui-btn-sm">{text('添加数据', 'Add dataset')}</Link><Link to={`${dataUrl}&data_step=captions${sourceQuery}`} className="ui-btn ui-btn-sm">{text('标签编辑', 'Caption editor')}</Link><Link to={`${dataUrl}&data_step=preprocess${sourceQuery}`} className="ui-btn ui-btn-sm"><Brush size={13}/>{text('数据集预处理', 'Preprocessing')}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
 
 
-          {!loaded ? <LoadingNote block label={text('正在读取训练参数…', 'Loading training parameters…')}/> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} nativeAreaEstimate={nativeAreaEstimate} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} notices={(plan?.warnings || []).flatMap(warning => { const advice = presentValueAdvice(warning, english); return advice ? [{ loc: advice.loc, msg: advice.inline, fix: advice.fix }] : []; })} family={familyByName(families, config?.model?.family)} families={families} />}
+          {!loaded ? <LoadingNote block label={text('正在读取训练参数…', 'Loading training parameters…')}/> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} nativeAreaEstimate={nativeAreaEstimate} doraPrecision={doraPrecision} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} notices={(plan?.warnings || []).flatMap(warning => { const advice = presentValueAdvice(warning, english); return advice ? [{ loc: advice.loc, msg: advice.inline, fix: advice.fix }] : []; })} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
       <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="ui-btn ui-btn-quiet inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector plan={plan} loading={validating || datasetRefreshing} dataset={config.dataset} onField={path => { setInspectorOpen(false); goToIssue({ path, label: '', message: '', detail: '', tab: configTabForPath(path) }); }} error={planError} onRetry={()=>datasetRefreshError ? refreshDatasetConfiguration() : setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
