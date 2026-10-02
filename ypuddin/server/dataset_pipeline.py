@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import threading
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -101,6 +102,8 @@ class DatasetPipeline:
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="dataset-pipeline")
         self.stopping = threading.Event()
         self.cancel_events: dict[str, threading.Event] = {}
+        self._inspection_digests: OrderedDict[str, tuple[list[int], str]] = OrderedDict()
+        self._inspection_digest_lock = threading.Lock()
         self.vision = None  # VisionModels, attached by the app
         self.credentials = None  # ModelCredentials, attached by the app
         self.c.db.execute("""CREATE TABLE IF NOT EXISTS dataset_pipeline_operations (
@@ -191,31 +194,98 @@ class DatasetPipeline:
                 sources[path] = {**row, "dataset_id": row["id"], "roles": ["registered"]}
         return list(sources.values())
 
-    def signature(self, pid: str, vid: str, *, recipe: bool = False) -> str:
+    def _inspection_digest(self, path: Path) -> str | None:
+        """Re-read changed files; touching or replacing identical bytes keeps the report valid."""
+        key = str(path)
+        for _ in range(2):
+            before = _stat(path)
+            if before is None:
+                return None
+            with self._inspection_digest_lock:
+                cached = self._inspection_digests.get(key)
+                if cached and cached[0] == before:
+                    self._inspection_digests.move_to_end(key)
+                    return cached[1]
+            digest = _digest(path)
+            if _stat(path) == before:
+                with self._inspection_digest_lock:
+                    self._inspection_digests[key] = (before, digest)
+                    self._inspection_digests.move_to_end(key)
+                    while len(self._inspection_digests) > 100_000:
+                        self._inspection_digests.popitem(last=False)
+                return digest
+        raise ApiError(
+            "dataset changed while checking its files; retry with stable source files",
+            code="pipeline.source_changed", status=409,
+        )
+
+    def signature(
+        self, pid: str, vid: str, *, recipe: bool = False, components: dict | None = None,
+    ) -> str:
+        from ypuddin.data.caption_formats import effective_caption_extension, family_caption_formats
+        from ypuddin.data.index import caption_target
+
         from .routes_work import get_project_config
 
         config = get_project_config(pid, self.c, vid)
-        # Inspection advice depends on the model and the effective caption
-        # transforms, even when image/caption bytes have not changed.
-        payload: list[Any] = [{
+        family = config.get("model", {}).get("family", "anima")
+        formats = family_caption_formats(family)
+        settings: list[Any] = [{
+            "content_signature_version": 1,
             "caption_inspection_version": 3,
             "transparency_inspection_version": 4,
-            "model_family": config.get("model", {}).get("family"),
-            "caption": config.get("dataset", {}).get("caption"),
+            "model_family": family,
         }]
-        for source in self._sources(pid, vid):
+        inputs: dict[str, dict] = {"images": {}, "captions": {}, "masks": {}}
+        caption_directories = {}
+
+        def add_file(kind: str, path: Path) -> None:
+            try:
+                digest = self._inspection_digest(path)
+            except OSError as exc:
+                digest = {"unreadable": exc.errno}
+            inputs[kind][str(path)] = digest
+
+        for source in sorted(self._sources(pid, vid), key=lambda item: item["path"]):
             root = Path(source["path"])
-            payload.append(
-                {key: source.get(key) for key in (
-                    "path", "caption_ext", "class_prompt", "roles", "repeats", "caption", "is_reg"
-                )}
-            )
+            cap_cfg = source.get("caption")
+            if cap_cfg is None:
+                cap_cfg = {} if source.get("is_reg") else config.get("dataset", {}).get("caption", {})
+            advice: dict[str, Any] = {}
+            if family == "anima":
+                advice = {"trigger_word": cap_cfg.get("trigger_word") or ""}
+                if cap_cfg.get("shuffle") or cap_cfg.get("tag_dropout", 0) > 0:
+                    advice.update({
+                        "fragment_transforms": True,
+                        "separator": cap_cfg.get("separator", ","),
+                        "keep_tokens": cap_cfg.get("keep_tokens", 0),
+                    })
+            settings.append({
+                "path": str(root), "dataset_id": source["dataset_id"],
+                "roles": sorted(source["roles"]), "class_prompt": bool(source.get("class_prompt")),
+                "caption_ext": effective_caption_extension(source.get("caption_ext", "auto"), formats).lower(),
+                "available": root.is_dir(), "caption_advice": advice,
+            })
             if not root.is_dir():
-                payload.append([str(root), None])
                 continue
-            for path in sorted(root.rglob("*")):
-                if path.is_file():
-                    payload.append([str(path), _stat(path)])
+            for path in iter_images(root):
+                caption = caption_target(
+                    path, effective_caption_extension(source.get("caption_ext", "auto"), formats),
+                    directory_cache=caption_directories,
+                )
+                mask = mask_for(path)
+                add_file("images", path)
+                if caption.is_file():
+                    add_file("captions", caption)
+                if mask:
+                    add_file("masks", Path(mask))
+        fingerprints = {
+            key: hashlib.sha256(_dump(value).encode()).hexdigest()
+            for key, value in {**inputs, "settings": settings}.items()
+        }
+        if components is not None:
+            components.update(fingerprints)
+        payload: list[Any] = [fingerprints]
         if recipe:
             payload.append({key: config.get(key) for key in ("model", "dataset", "validation")})
             for key in ("dit_path", "vae_path", "text_encoder_path", "text_encoder_2_path", "tokenizer_path"):
@@ -309,17 +379,24 @@ class DatasetPipeline:
                 (vid,),
             )
         ]
-        signature = self.signature(pid, vid) if version["status"] == "ready" else ""
-        recipe = self.signature(pid, vid, recipe=True) if version["status"] == "ready" else ""
-        inspection = next(
-            (
-                op["result"]["inspection"]
-                for op in operations
-                if op["result"].get("inspection", {}).get("signature") == signature
-            ),
-            None,
+        report_row = self.c.db.fetchone(
+            "SELECT result_json,finished_at,created_at FROM dataset_pipeline_operations "
+            "WHERE version_id=? AND json_type(result_json,'$.inspection')='object' "
+            "ORDER BY created_at DESC LIMIT 1", (vid,),
         )
+        inspection = json.loads(report_row["result_json"])["inspection"] if report_row else None
+        components: dict[str, str] = {}
+        signature = self.signature(pid, vid, components=components) if inspection and version["status"] == "ready" else ""
+        has_plan = any(op["result"].get("recipe_signature") for op in operations)
+        recipe = self.signature(pid, vid, recipe=True) if has_plan and version["status"] == "ready" else ""
+        stale = bool(inspection and inspection.get("signature") != signature)
         if inspection:
+            inspection.setdefault("checked_at", report_row["finished_at"] or report_row["created_at"])
+            previous = inspection.get("input_fingerprints", {})
+            inspection["change_kinds"] = [
+                kind for kind, digest in components.items()
+                if kind in previous and previous[kind] != digest
+            ]
             self._apply_membership(pid, vid, inspection)
         plan = next(
             (
@@ -373,14 +450,14 @@ class DatasetPipeline:
             "busy": bool(version["busy"]),
             "archived": bool(version["archived"]),
             "ready_to_train": bool(
-                prepared and inspection and not inspection["training_errors"] and plan and plan["ok"]
+                prepared and inspection and not stale and not inspection["training_errors"] and plan and plan["ok"]
             ),
             "prepared_job_id": prepared["job_id"] if prepared else None,
             "datasets": [
                 {"id": row["id"], "index_status": row["index_status"], "stats": json.loads(row["stats_json"])}
                 for row in datasets
             ],
-            "stale": bool(not inspection and any(op["result"].get("inspection") for op in operations)),
+            "stale": stale,
         }
 
     def _progress(self, oid: str, phase: str, done: int, total: int, message: str | None = None) -> None:
@@ -604,7 +681,8 @@ class DatasetPipeline:
 
         from .routes_work import get_project_config
 
-        signature = self.signature(pid, vid)
+        components: dict[str, str] = {}
+        signature = self.signature(pid, vid, components=components)
         config = get_project_config(pid, self.c, vid)
         family_name = config.get("model", {}).get("family", "anima")
         caption_formats = family_caption_formats(family_name)
@@ -658,7 +736,7 @@ class DatasetPipeline:
                 ),
             }
             try:
-                digest = _digest(path)
+                digest = self._inspection_digest(path)
                 with Image.open(path) as image:
                     image.load()
                     record["width"], record["height"] = ImageOps.exif_transpose(image).size
@@ -791,6 +869,8 @@ class DatasetPipeline:
             )
         return {
             "signature": signature,
+            "checked_at": now(),
+            "input_fingerprints": components,
             "caption_profile": caption_profile,
             "images": records,
             "duplicate_groups": duplicates,
