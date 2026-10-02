@@ -1,7 +1,7 @@
 import React from 'react';
 import { useBlocker, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, Plus, Save, Search, Trash2, X, ChevronRight, ChevronDown } from 'lucide-react';
+import { Copy, Plus, Save, Search, Trash2, X, ChevronRight, ChevronDown, Upload, Download } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { Preset } from '../../api/types';
 import { useFamilies } from '../../api/hooks/useFamilies';
@@ -23,6 +23,7 @@ import ParameterSections from '../../components/ParameterSections';
 import { workflowSchema } from '../../utils/parameterWorkflow';
 import { LoadingNote } from '../../components/Loading';
 import PageLocation from '../../components/PageLocation';
+import PresetImportDialog, { type ImportedPreset } from './PresetImportDialog';
 
 interface Draft { name: string; description: string; config: Record<string, any>; originalName: string | null; builtin: boolean; }
 const KEY = ['standalone-presets'];
@@ -55,6 +56,7 @@ export default function Presets() {
   const [tab, setTab] = React.useState<ConfigTab>('train');
   const [pending, setPending] = React.useState<(() => void) | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+  const [importing, setImporting] = React.useState(false);
   const startingConfig = React.useRef('');
   const userPresets = React.useMemo(() => (list.data || []).filter(item => !item.builtin).sort((a,b) => (b.updated_at || 0) - (a.updated_at || 0) || a.name.localeCompare(b.name)), [list.data]);
   const dirty = !!draft && !draft.builtin && JSON.stringify(presetPayload(draft)) !== saved;
@@ -73,7 +75,7 @@ export default function Presets() {
     setBusy(true); setError(''); setNotice('');
     try {
       const retired = inactiveTrainingReason(preset?.config, english);
-      if (retired && (copy || newDraft)) { setError(retired); return; }
+      if (retired && (copy || newDraft)) { setError(retired); return false; }
       const defaults = retired ? {} : await apiClient.get<Record<string, any>>('/config/defaults', { params: { family }, silent: true });
       let name = preset?.name || '';
       if (copy) {
@@ -90,8 +92,29 @@ export default function Presets() {
       startingConfig.current = JSON.stringify(next.config);
       setDraft(next); setSaved(existing ? JSON.stringify(presetPayload(next)) : JSON.stringify(presetPayload({...next,name:'',description:''})));
       setErrors([]); setSearch(''); setTab('train'); setDescriptionOpen(false);
-    } catch (failure) { setError(formatApiError(failure)); }
+      return true;
+    } catch (failure) { setError(formatApiError(failure)); return false; }
     finally { setBusy(false); }
+  };
+  const importPreset = async (preset: ImportedPreset) => {
+    const retired = inactiveTrainingReason(preset.config, english);
+    if (retired) throw new Error(retired);
+    const base = preset.name.trim().replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 116) || 'imported-preset';
+    let name = /[\p{L}\p{N}]/u.test(base) ? base : 'imported-preset';
+    const stem = name;
+    for (let i = 2; list.data?.some(item => item.name.toLocaleLowerCase() === name.toLocaleLowerCase()); i += 1) name = `${stem}-${i}`;
+    const opened = await begin({ ...preset, name, builtin: false, updated_at: null }, false, presetFamily(preset.config) || 'anima', true);
+    if (!opened) throw new Error(text('无法载入预设，请重试。', 'Could not load the preset. Please try again.'));
+    return true;
+  };
+  const exportPreset = () => {
+    if (!draft) return;
+    const body = presetPayload(draft);
+    const filename = body.name.replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 128) || 'preset';
+    const url = URL.createObjectURL(new Blob([JSON.stringify(body, null, 2) + '\n'], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = `${filename}.json`;
+    document.body.append(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const requestAction = (action: () => void) => { if (busy) return; if (dirty) setPending(() => action); else action(); };
   const initial = React.useRef(false);
@@ -175,6 +198,8 @@ export default function Presets() {
       <div className="presets-actions">
         <span role="status" className={`presets-status${draft && dirty ? ' presets-dirty' : ''}`}>{!draft ? notice : dirty ? text('有未保存修改', 'Unsaved changes') : notice || (draft.originalName ? text('已保存', 'Saved') : text('尚未创建', 'Not created yet'))}</span>
         <button type="button" className="ui-btn" disabled={busy || !schema.data || !families.data || list.isPending || list.isError} onClick={() => requestAction(() => void begin())}><Plus size={15}/>{text('新建预设', 'New preset')}</button>
+        <button type="button" className="ui-btn" disabled={busy || !schema.data || !families.data || list.isPending || list.isError} onClick={() => requestAction(() => setImporting(true))}><Upload size={15}/>{text('导入', 'Import')}</button>
+        <button type="button" className="ui-btn" disabled={busy || !draft} onClick={exportPreset}><Download size={15}/>{text('导出', 'Export')}</button>
         {draft?.originalName && <><button type="button" className="ui-btn" aria-label={text('复制为新预设', 'Duplicate')} disabled={busy || !!inactiveReason} onClick={() => requestAction(() => void begin({name:draft.name,description:draft.description,config:draft.config,builtin:false,updated_at:null},true))}><Copy size={15}/>{text('复制', 'Duplicate')}</button><button type="button" className="ui-btn ui-btn-danger presets-delete" aria-label={text('删除预设', 'Delete preset')} disabled={busy} onClick={()=>setDeleting(true)}><Trash2 size={15}/>{text('删除', 'Delete')}</button></>}
         <button type="button" className="ui-btn ui-btn-primary" disabled={busy || !!inactiveReason || !dirty || !editorSchema} onClick={()=>void save()}><Save size={15}/>{busy ? text('保存中…', 'Saving…') : text('保存预设', 'Save preset')}</button>
       </div>
@@ -214,5 +239,6 @@ export default function Presets() {
     </div>}
     {(pending || blocker.state === 'blocked') && <Dialog title={text('保存预设修改？', 'Save preset changes?')} onClose={cancelLeave} closeDisabled={busy}><p>{text('当前预设尚未保存。可以先保存，或放弃这些修改。', 'This preset has unsaved changes. Save them or discard the draft.')}</p>{error && <p role="alert" className="studio-error">{error}</p>}<div className="presets-confirm-actions"><button type="button" className="ui-btn" disabled={busy} onClick={cancelLeave}>{text('继续编辑', 'Keep editing')}</button><button type="button" className="ui-btn ui-btn-danger" disabled={busy} onClick={proceed}>{text('放弃修改', 'Discard changes')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={busy} onClick={()=>{void save().then(ok=>{if(ok)proceed();});}}>{text('保存并继续', 'Save and continue')}</button></div></Dialog>}
     {deleting && <Dialog title={text('删除预设', 'Delete preset')} onClose={()=>setDeleting(false)} closeDisabled={busy}><p>{text('删除后不会改变任何已有项目配置。确定删除', 'Existing project configurations will remain unchanged. Delete')} “{draft?.name}”?</p>{error&&<p role="alert" className="studio-error">{error}</p>}<div className="presets-confirm-actions"><button type="button" className="ui-btn" disabled={busy} onClick={()=>setDeleting(false)}>{text('取消', 'Cancel')}</button><button type="button" className="ui-btn ui-btn-primary ui-btn-danger" disabled={busy} onClick={()=>void remove()}>{text('确认删除', 'Confirm deletion')}</button></div></Dialog>}
+    {importing && <PresetImportDialog onClose={() => setImporting(false)} onImport={importPreset}/>}
   </section>;
 }

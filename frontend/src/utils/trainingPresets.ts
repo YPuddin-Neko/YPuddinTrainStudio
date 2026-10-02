@@ -7,6 +7,7 @@ const VERSION_FIELDS = [
   ['checkpoint', 'output_dir'],
   ['checkpoint', 'resume'],
   ['adapter', 'resume_weights'],
+  ['training', 'resume_weights'],
   ['sampling', 'output_dir'],
   ['sampling', 'prompts_file'],
   ['logging', 'events_path'],
