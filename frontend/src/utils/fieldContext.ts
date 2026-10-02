@@ -195,18 +195,14 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         text('LoKr 参数形式里的 Full（完整因子矩阵）只对 LoKr 生效：保留完整的 Kronecker 因子，仍然是 LoKr，与 LyCORIS Full 不同。', 'Full in the LoKr parameter mode applies to LoKr only: it keeps the whole Kronecker factors and is still a LoKr adapter, unlike LyCORIS Full.'),
       ]);
     case 'adapter.dora_axis': {
-      // Forge and A1111 are named for SDXL files only.
-      const sdxl = family.name === 'sdxl';
       return join([
-        sdxl ? text('两种方式在 ComfyUI 等出图工具中的效果不同：', 'The two differ in ComfyUI and other image tools:') : text('两种方式在 ComfyUI 中的效果不同：', 'The two differ in ComfyUI:'),
+        text('幅度归一化使用的通道：', 'Channels used for magnitude normalization:'),
         ...optionLines({
-          input: sdxl
-            ? ['ComfyUI、Forge 和 A1111 WebUI 的算法与训练时相同，出图与训练预览一致。LyCORIS 自带的工具无法读取。', 'ComfyUI, Forge and A1111 WebUI compute it as in training, so images match the previews. LyCORIS’s own tools cannot read it.']
-            : ['ComfyUI 的算法与训练时相同，出图与训练预览一致。LyCORIS 自带的工具无法读取。', 'ComfyUI computes it as in training, so images match the previews. LyCORIS’s own tools cannot read it.'],
-          output: sdxl
-            ? ['ComfyUI 和 Forge 的算法与训练时不同，出图会偏离训练预览，训练改动越大偏差越明显；A1111 WebUI 中结果不正确。LyCORIS 自带的工具可以读取。', 'ComfyUI and Forge compute it differently from training, so images drift from the training previews, more as training changes the weights more; A1111 WebUI applies it incorrectly. LyCORIS’s own tools read it.']
-            : ['ComfyUI 的算法与训练时不同，出图会偏离训练预览，训练改动越大偏差越明显。LyCORIS 自带的工具可以读取。', 'ComfyUI computes it differently from training, so images drift from the training previews, more as training changes the weights more. LyCORIS’s own tools read it.']
+          input: ['每个输入通道一个幅度；默认方向。LyCORIS 自带的工具不支持。', 'one magnitude per input channel; the default. LyCORIS’s own tools do not support it.'],
+          output: ['每个输出通道一个幅度；LyCORIS 的默认方向。', 'one magnitude per output channel; the LyCORIS default.'],
         }),
+        text('继续训练时须与原权重方向一致。方向本身不保证外部出图与训练预览一致，融合算法和精度也会影响结果。', 'Keep the original axis when resuming. The axis alone does not guarantee images match training previews; merging algorithms and precision also affect the result.'),
+        text('外部工具低精度融合 LoKr/DoRA 时可能偏色，可使用 FP32 融合；这不要求使用 FP32 推理。', 'Low-precision LoKr/DoRA merging in external tools can cause color shifts; use FP32 merging in that case. This does not require FP32 inference.'),
       ]);
     }
     case 'sampling.scheduler':

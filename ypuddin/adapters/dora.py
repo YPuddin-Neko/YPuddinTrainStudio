@@ -1,10 +1,10 @@
 """DoRA weight decomposition: ``W' = m · (W₀ + ΔW) / ||W₀ + ΔW||`` with trainable magnitude ``m``.
 
-``input`` (the default) keeps one magnitude per input column, stored ``(1, in)``: ComfyUI, Forge and
-A1111 compute it as trained. ``output`` keeps one per output row, stored ``(out, 1)``: LyCORIS's
-default, which its loaders read, where for output rows ComfyUI and Forge divide by ``||W₀||`` and
-A1111 by the column norm. The stored shape names the axis. A convolution's magnitude spans its kernel too,
-``(out, 1, 1…)`` or ``(1, in, 1…)``, as LyCORIS and ComfyUI store it.
+``input`` (the default) keeps one magnitude per input column, stored ``(1, in)``.
+``output`` keeps one per output row, stored ``(out, 1)``. Convolutions store
+``(1, in, 1…)`` or ``(out, 1, 1…)``. Both axes use the merged weight's norm in FP32
+here. The stored axis must match when resuming; it does not control external
+loaders' normalization formulas or merging precision.
 """
 
 from __future__ import annotations

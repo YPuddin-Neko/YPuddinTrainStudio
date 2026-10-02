@@ -1255,8 +1255,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         : (english ? 'Trains LoRA weights while keeping the base model frozen.' : '只训练 LoRA 权重，底模保持不变。')
       : fullPathKey === 'model.dtype' ? modelPrecisionHint
       : fullPathKey === 'adapter.dora_axis' ? fieldValue === 'input'
-        ? (family?.name === 'sdxl' ? (english ? 'For ComfyUI, Forge and A1111, keep this default.' : '使用 ComfyUI、Forge 或 A1111 时保持此默认值。') : (english ? 'For ComfyUI, keep this default.' : '使用 ComfyUI 等出图工具时保持此默认值。'))
-        : (english ? 'For LyCORIS tools. ComfyUI may render differently from training previews.' : '用于 LyCORIS 工具；ComfyUI 出图会与训练预览有差异。')
+        ? (english ? 'One magnitude per input channel; the default. Keep the original axis when resuming.' : '每个输入通道一个幅度，默认方向；继续训练时须与原权重一致。')
+        : (english ? 'One magnitude per output channel; the LyCORIS default. Keep the original axis when resuming.' : '每个输出通道一个幅度，LyCORIS 默认方向；继续训练时须与原权重一致。')
       : fullPathKey === 'dataset.native_max_pixels' ? nativePixelsHint(fieldValue, english) || configFieldHint(fullPathKey, english)
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')
       : parentPath[0] === 'model' && key in MODEL_PATH_FIELDS ? modelPathHint(family?.name, key, english, preset)

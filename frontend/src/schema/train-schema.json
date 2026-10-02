@@ -91,7 +91,7 @@
         },
         "dora": {
           "default": false,
-          "description": "DoRA 权重分解（幅度/方向），作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层；按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。",
+          "description": "DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。外部工具低精度融合 LoKr/DoRA 时可能偏色，可使用 FP32 融合，不要求使用 FP32 推理。",
           "title": "Dora",
           "type": "boolean",
           "x-ui": {
@@ -102,7 +102,7 @@
         },
         "dora_axis": {
           "default": "input",
-          "description": "DoRA 幅度按哪一侧的通道计算：input 每个输入通道一个幅度，ComfyUI、Forge 和 A1111 按训练时的方式计算，LyCORIS 自带的加载和合并工具无法读取；output 每个输出通道一个幅度，是 LyCORIS 的默认方式，ComfyUI、Forge 和 A1111 出图会偏离训练。更改后需要重新训练。",
+          "description": "input 每个输入通道一个幅度，是默认方向；LyCORIS 自带的工具不支持。output 每个输出通道一个幅度，是 LyCORIS 的默认方向。继续训练时须与原权重方向一致。方向本身不保证外部出图与训练预览一致，融合算法和精度也会影响结果。",
           "enum": [
             "input",
             "output"
@@ -320,7 +320,7 @@
         },
         "param_dtype": {
           "default": "fp32",
-          "description": "适配器参数精度（主权重）",
+          "description": "适配器可训练参数的存储精度，默认 FP32；不决定导出文件或外部工具融合权重的精度。",
           "enum": [
             "fp32",
             "bf16"
@@ -761,7 +761,7 @@
         },
         "save_dtype": {
           "default": "bf16",
-          "description": "导出权重文件的精度，包含 DoRA 幅度，默认 bf16；缩放用的 alpha 标量保留 fp32。不会改变当前训练参数或完整恢复状态的精度。选择 fp32 会增大文件，减少导出舍入。",
+          "description": "导出权重文件的精度，包含 DoRA 幅度，默认 bf16；缩放用的 alpha 标量保留 fp32。不会改变训练参数、完整恢复状态或外部工具的融合精度。选择 fp32 会增大文件，减少导出舍入。",
           "enum": [
             "bf16",
             "fp16",

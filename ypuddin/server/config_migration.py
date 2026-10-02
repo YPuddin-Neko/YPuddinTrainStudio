@@ -1,4 +1,4 @@
-"""One-time rewrites of saved project configs and presets after a default they stored changes."""
+"""Preserve historical calculation settings when schema defaults change."""
 
 from __future__ import annotations
 
@@ -19,32 +19,32 @@ def _rewrite(path: Path, data: dict[str, Any]) -> None:
 
 
 def migrate_dora_axis(c: Any) -> None:
-    """Saved configs that name DoRA's output axis switch to the input axis, now the default, once.
+    """Keep legacy DoRA configs on output; never overwrite an explicit axis.
 
-    They name it because it was the default, and DoRA files trained on it render off in ComfyUI,
-    Forge and A1111. Jobs keep their own config snapshots, so queued runs and resume points are
-    unaffected.
+    Version 1 rewrote explicit output settings and missed presets' config wrapper.
+    Version 2 only fills absent axes. Existing input settings and job snapshots stay intact.
     """
-    if c.db.get_kv(DORA_INPUT, 0) >= 1:
+    if c.db.get_kv(DORA_INPUT, 0) >= 2:
         return
-    paths: list[Path] = []
+    paths: list[tuple[Path, bool]] = []
     for version in c.db.fetchall("SELECT id, project_id FROM project_versions"):
         try:
-            paths.append(c.config_path(version["project_id"], version["id"]))
+            paths.append((c.config_path(version["project_id"], version["id"]), False))
         except Exception:  # noqa: BLE001 - a version without a usable folder has no config to change
             continue
-    paths += sorted((c.data_root / "presets").glob("*.json"))
+    paths += [(path, True) for path in sorted((c.data_root / "presets").glob("*.json"))]
     changed = 0
-    for path in paths:
+    for path, preset in paths:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        adapter = data.get("adapter") if isinstance(data, dict) else None
-        if isinstance(adapter, dict) and adapter.get("dora_axis") == "output":
-            adapter["dora_axis"] = "input"
+        config = data.get("config") if preset and isinstance(data, dict) else data
+        adapter = config.get("adapter") if isinstance(config, dict) else None
+        if isinstance(adapter, dict) and adapter.get("dora") is True and "dora_axis" not in adapter:
+            adapter["dora_axis"] = "output"
             _rewrite(path, data)
             changed += 1
     if changed:
-        log.info("set the DoRA axis of %d saved configs to input", changed)
-    c.db.set_kv(DORA_INPUT, 1)
+        log.info("preserved the output DoRA axis of %d legacy configs", changed)
+    c.db.set_kv(DORA_INPUT, 2)

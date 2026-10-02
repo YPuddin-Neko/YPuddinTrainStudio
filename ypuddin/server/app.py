@@ -88,7 +88,7 @@ def create_app(
         bus.attach_loop(asyncio.get_running_loop())
         # Move files of jobs saved before the jobs/ folder existed, before any of them can run.
         await asyncio.to_thread(migrate_job_files, context)
-        # Saved configs follow the input DoRA axis once it became the default.
+        # Historical DoRA configs keep their calculation axis before schema defaults apply.
         await asyncio.to_thread(migrate_dora_axis, context)
         await supervisor.start()
         stats_task = asyncio.create_task(routes_core.stats_publisher(context))
