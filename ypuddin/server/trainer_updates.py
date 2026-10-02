@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import math
 import os
 import re
 import subprocess
@@ -12,6 +13,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Literal
 
@@ -20,6 +22,7 @@ from pydantic import BaseModel, Field
 import ypuddin
 
 from .network import ProxyPolicy
+from .trainer_update_git import GitCheckUnavailable, inspect_history
 
 REPOSITORY = "YPuddin-Neko/YPuddinTrainStudio"
 REPOSITORY_URL = f"https://github.com/{REPOSITORY}"
@@ -27,7 +30,8 @@ API_URL = f"https://api.github.com/repos/{REPOSITORY}"
 BRANCH = "main"
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 MAX_RESPONSE = 2 * 1024 * 1024
-CACHE_SECONDS = 60.0
+CACHE_SECONDS = 300.0
+ERROR_CACHE_SECONDS = 60.0
 SHA = re.compile(r"[0-9a-fA-F]{40}\Z")
 
 
@@ -56,6 +60,8 @@ class TrainerLatestVersion(TrainerCommit):
 class TrainerUpdateStatus(BaseModel):
     state: Literal["unchecked", "current", "available", "ahead", "diverged", "unknown", "error"] = "unchecked"
     checked_at: float | None = None
+    last_success_at: float | None = None
+    retry_at: float | None = None
     error: str | None = None
     error_code: Literal["network", "rate_limit", "invalid_response", "unavailable"] | None = None
     current: TrainerCurrentVersion
@@ -133,14 +139,36 @@ def local_version(root: Path = SOURCE_ROOT) -> TrainerCurrentVersion:
 
 
 class _CheckError(Exception):
-    def __init__(self, code: str, status: int | None = None):
+    def __init__(self, code: str, status: int | None = None, retry_at: float | None = None):
         self.code = code
         self.status = status
+        self.retry_at = retry_at
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise _CheckError("invalid_response")
+
+
+def _retry_at(headers) -> float:
+    now = time.time()
+    deadlines = [now + ERROR_CACHE_SECONDS]
+    for name in ("Retry-After", "X-RateLimit-Reset"):
+        value = headers.get(name)
+        if value is None:
+            continue
+        try:
+            number = float(value)
+            deadline = now + number if name == "Retry-After" else number
+            if math.isfinite(deadline) and deadline < 253_402_300_800:
+                deadlines.append(deadline)
+        except (ValueError, TypeError):
+            if name == "Retry-After":
+                try:
+                    deadlines.append(parsedate_to_datetime(value).timestamp())
+                except (ValueError, TypeError, OverflowError):
+                    pass
+    return max(deadlines)
 
 
 def _read(policy: ProxyPolicy, path: str) -> object:
@@ -159,10 +187,14 @@ def _read(policy: ProxyPolicy, path: str) -> object:
         return json.loads(raw)
     except urllib.error.HTTPError as exc:
         headers = exc.headers or {}
+        try:
+            message = exc.read(4096).lower() if exc.code == 403 else b""
+        except (OSError, http.client.HTTPException):
+            message = b""
         limited = exc.code == 429 or (
-            exc.code == 403 and (headers.get("X-RateLimit-Remaining") == "0" or headers.get("Retry-After"))
+            exc.code == 403 and (headers.get("X-RateLimit-Remaining") == "0" or headers.get("Retry-After") or b"rate limit" in message)
         )
-        raise _CheckError("rate_limit" if limited else "unavailable", exc.code) from None
+        raise _CheckError("rate_limit" if limited else "unavailable", exc.code, _retry_at(headers) if limited else None) from None
     except (OSError, urllib.error.URLError, http.client.HTTPException):
         raise _CheckError("network") from None
     except (ValueError, RecursionError):
@@ -189,55 +221,17 @@ def _commit(document: object) -> TrainerCommit:
     )
 
 
-def _recent(policy: ProxyPolicy, target: str) -> tuple[list[TrainerCommit], bool]:
-    document = _read(policy, f"/commits?sha={target}&per_page=21")
-    if not isinstance(document, list) or not 1 <= len(document) <= 21:
+def _comparison(policy: ProxyPolicy, base: str, latest: TrainerCommit) -> tuple[str, int]:
+    # Page 2 omits file patches. The settings page needs no commit-history pages.
+    document = _read(policy, f"/compare/{base}...{latest.commit}?per_page=1&page=2")
+    if not isinstance(document, dict):
         raise _CheckError("invalid_response")
-    commits = [_commit(item) for item in document]
-    if commits[0].commit != target or len({item.commit for item in commits}) != len(commits):
+    remote_state = document.get("status")
+    state = {"identical": "current", "ahead": "available", "behind": "ahead", "diverged": "diverged"}.get(remote_state) if isinstance(remote_state, str) else None
+    total = document.get("total_commits")
+    if state is None or type(total) is not int or not 0 <= total <= 10_000_000 or (state == "available" and total == 0):
         raise _CheckError("invalid_response")
-    return commits[:20], len(commits) > 20
-
-
-def _comparison(policy: ProxyPolicy, base: str, latest: TrainerCommit) -> tuple[str, list[TrainerCommit], int]:
-    target = latest.commit
-    comparison = f"/compare/{base}...{target}"
-    # GitHub includes file patches only on page 1; classification needs no diff.
-    first = _read(policy, comparison + "?per_page=1&page=2")
-    if not isinstance(first, dict):
-        raise _CheckError("invalid_response")
-    remote_state = first.get("status")
-    if not isinstance(remote_state, str):
-        raise _CheckError("invalid_response")
-    state = {"identical": "current", "ahead": "available", "behind": "ahead", "diverged": "diverged"}.get(remote_state)
-    total = first.get("total_commits")
-    if state is None or type(total) is not int or not 0 <= total <= 10_000_000:
-        raise _CheckError("invalid_response")
-    if state != "available":
-        return state, [], total
-    if total == 0:
-        raise _CheckError("invalid_response")
-    if total == 1:
-        return state, [latest], total
-    last_page = (total + 19) // 20
-
-    def page(number: int) -> list[TrainerCommit]:
-        document = _read(policy, comparison + f"?per_page=20&page={number}")
-        if not isinstance(document, dict) or document.get("status") != "ahead" or document.get("total_commits") != total:
-            raise _CheckError("invalid_response")
-        items = document.get("commits")
-        expected = min(20, total - (number - 1) * 20)
-        if not isinstance(items, list) or len(items) != expected:
-            raise _CheckError("invalid_response")
-        return [_commit(item) for item in items]
-
-    commits = page(last_page)
-    if len(commits) < 20 and last_page > 1:
-        commits = page(last_page - 1) + commits
-    commits = list(reversed(commits[-20:]))
-    if commits[0].commit != target or len({item.commit for item in commits}) != len(commits):
-        raise _CheckError("invalid_response")
-    return state, commits, total
+    return state, total
 
 
 class TrainerUpdates:
@@ -255,47 +249,62 @@ class TrainerUpdates:
             entry = self._cache.get(policy)
             return (entry[1] if entry else TrainerUpdateStatus(current=self.current)).model_copy(deep=True)
 
+    def _check_git(self, policy: ProxyPolicy) -> TrainerUpdateStatus:
+        state, fields, total = inspect_history(
+            self.context.data_root / "service" / "update-check.git", policy, REPOSITORY_URL, BRANCH, self.current.commit,
+        )
+        commit, subject, body, author, date = fields
+        latest = _commit({"sha": commit, "commit": {"message": subject + "\n\n" + body, "author": {"name": author, "date": date}}})
+        return TrainerUpdateStatus(
+            state=state, current=self.current,
+            latest=TrainerLatestVersion(**latest.model_dump(), download_url=f"{REPOSITORY_URL}/archive/{commit}.zip"),
+            total_commits=total,
+            compare_url=f"{REPOSITORY_URL}/compare/{self.current.commit}...{commit}" if self.current.commit else None,
+        )
+
+    def _check_api(self, policy: ProxyPolicy) -> TrainerUpdateStatus:
+        document = _read(policy, f"/commits?sha={BRANCH}&per_page=1")
+        if not isinstance(document, list) or len(document) != 1:
+            raise _CheckError("invalid_response")
+        latest = _commit(document[0])
+        target = latest.commit
+        result = TrainerUpdateStatus(
+            state="unknown", current=self.current,
+            latest=TrainerLatestVersion(**latest.model_dump(), download_url=f"{REPOSITORY_URL}/archive/{target}.zip"),
+        )
+        if self.current.commit:
+            result.compare_url = f"{REPOSITORY_URL}/compare/{self.current.commit}...{target}"
+            if self.current.commit == target:
+                result.state = "current"
+            else:
+                try:
+                    result.state, result.total_commits = _comparison(policy, self.current.commit, latest)
+                except _CheckError as exc:
+                    if exc.status != 404:
+                        raise
+        return result
+
     def check(self) -> TrainerUpdateStatus:
         policy = ProxyPolicy.from_context(self.context)
         with self._checking:
             with self._lock:
                 previous = self._cache.get(policy)
-                if previous and time.monotonic() - previous[0] < CACHE_SECONDS:
-                    return previous[1].model_copy(deep=True)
+                if previous:
+                    status = previous[1]
+                    ttl = ERROR_CACHE_SECONDS if status.state == "error" else CACHE_SECONDS
+                    if time.monotonic() - previous[0] < ttl or (status.retry_at or 0) > time.time():
+                        return status.model_copy(deep=True)
             try:
-                latest_document = _read(policy, f"/commits?sha={BRANCH}&per_page=1")
-                if not isinstance(latest_document, list) or len(latest_document) != 1:
-                    raise _CheckError("invalid_response")
-                latest_commit = _commit(latest_document[0])
-                target = latest_commit.commit
-                result = TrainerUpdateStatus(
-                    state="unknown", current=self.current,
-                    latest=TrainerLatestVersion(
-                        **latest_commit.model_dump(), download_url=f"{REPOSITORY_URL}/archive/{target}.zip",
-                    ),
-                )
-                if self.current.commit:
-                    result.compare_url = f"{REPOSITORY_URL}/compare/{self.current.commit}...{target}"
-                    if self.current.commit == target:
-                        result.state = "current"
-                    else:
-                        try:
-                            state, commits, total = _comparison(policy, self.current.commit, latest_commit)
-                            result.state = state
-                            if state == "available":
-                                result.commits = commits
-                                result.history_kind = "updates"
-                                result.total_commits = total
-                                result.has_more = total > 20
-                        except _CheckError as exc:
-                            if exc.status != 404:
-                                raise
-                if result.history_kind == "recent":
-                    result.commits, result.has_more = _recent(policy, target)
+                try:
+                    result = self._check_git(policy)
+                except GitCheckUnavailable:
+                    result = self._check_api(policy)
+                result.last_success_at = time.time()
             except _CheckError as exc:
                 result = previous[1].model_copy(deep=True) if previous else TrainerUpdateStatus(current=self.current)
                 result.state = "error"
                 result.error_code = exc.code
+                result.retry_at = exc.retry_at
                 result.error = {
                     "network": "Could not connect to GitHub.",
                     "rate_limit": "GitHub request limit reached. Try again later.",

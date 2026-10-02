@@ -8374,6 +8374,10 @@ export interface components {
             state: "unchecked" | "current" | "available" | "ahead" | "diverged" | "unknown" | "error";
             /** Checked At */
             checked_at?: number | null;
+            /** Last Success At */
+            last_success_at?: number | null;
+            /** Retry At */
+            retry_at?: number | null;
             /** Error */
             error?: string | null;
             /** Error Code */

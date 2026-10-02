@@ -182,6 +182,7 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
   const [data, setData] = React.useState<TrainerUpdateStatus | null>(null);
   const [loading, setLoading] = React.useState<'read' | 'check' | null>('read');
   const [error, setError] = React.useState('');
+  const [now, setNow] = React.useState(Date.now);
   const request = React.useRef<AbortController | null>(null);
   const load = React.useCallback(async (check: boolean) => {
     request.current?.abort();
@@ -194,7 +195,7 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
       const result = check
         ? await apiClient.post<TrainerUpdateStatus>('/updates/check', undefined, options)
         : await apiClient.get<TrainerUpdateStatus>('/updates', options);
-      if (!controller.signal.aborted) { setData(result); if (check) refreshInstall(); }
+      if (!controller.signal.aborted) { setData(result); setNow(Date.now()); if (check) refreshInstall(); }
     } catch (failure) {
       if (!controller.signal.aborted) setError(formatApiError(failure));
     } finally {
@@ -203,6 +204,14 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
     }
   }, [refreshInstall]);
   React.useEffect(() => { void load(false); return () => request.current?.abort(); }, [load]);
+
+  const retryAt = data?.retry_at;
+  const coolingDown = !!retryAt && retryAt * 1000 > now;
+  React.useEffect(() => {
+    if (!retryAt || retryAt * 1000 <= now) return;
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.min(2_147_483_647, Math.max(0, retryAt * 1000 - Date.now() + 50)));
+    return () => window.clearTimeout(timer);
+  }, [retryAt, now]);
 
   const state = loading === 'check' ? 'checking' : error ? 'error' : data?.state ?? 'unchecked';
   const stateLabel = {
@@ -219,7 +228,7 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
   const repositoryUrl = externalUrl(data?.repository_url);
   const checkErrors: Record<string, string> = {
     network: text('无法连接 GitHub，请检查网络或代理后重试。', 'Cannot connect to GitHub. Check your network or proxy, then retry.'),
-    rate_limit: text('GitHub 请求次数已达上限，请稍后重试。', 'GitHub request limit reached. Try again later.'),
+    rate_limit: coolingDown ? text(`GitHub 请求次数已达上限，可在 ${formatTime(retryAt!)} 后重试。`, `GitHub request limit reached. Retry after ${formatTime(retryAt!)}.`) : text('GitHub 请求次数已达上限，请稍后重试。', 'GitHub request limit reached. Try again later.'),
     invalid_response: text('GitHub 返回的版本信息无效，请稍后重试。', 'GitHub returned invalid version information. Try again later.'),
     unavailable: text('暂时无法取得远端版本，请稍后重试。', 'Remote version information is unavailable. Try again later.'),
   };
@@ -251,7 +260,7 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
   };
   const reason = install.status?.reason;
   const updateComplete = install.verified && op?.target_commit === latest?.commit;
-  const mayUpdate = data?.state === 'available' && !!latest && !!install.status?.can_apply && !install.busy && !updateComplete && !install.loading && !install.watching && !install.error && !loading;
+  const mayUpdate = data?.state === 'available' && !!latest && !!install.status?.can_apply && !install.busy && !updateComplete && !install.loading && !install.watching && !install.error && !loading && !error;
   const showOperation = !!op || install.busy;
   const restartExpected = !!op && ['applying', 'installing', 'restarting'].includes(op.state);
   const operationLabel = install.unconfirmed ? install.reconnecting && restartExpected ? text('仍在等待训练器重启…', 'Still waiting for the trainer to restart…') : text('暂未确认更新结果', 'Update result not yet confirmed')
@@ -273,7 +282,7 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
   return <section className="settings-section trainer-updates" aria-labelledby="trainer-updates-title">
     <div className="settings-section-heading">
       <div><h2 id="trainer-updates-title">{text('训练器更新', 'Trainer updates')}</h2></div>
-      <button type="button" className="ui-btn" disabled={loading !== null || install.busy} onClick={() => void load(data !== null)}>
+      <button type="button" className="ui-btn" disabled={loading !== null || install.busy || coolingDown} onClick={() => void load(data !== null)}>
         <RefreshCw size={14} className={loading ? 'animate-spin' : undefined} aria-hidden="true"/>
         {loading === 'check' ? text('正在检查…', 'Checking…') : !data && error ? text('重试', 'Retry') : text('检查更新', 'Check for updates')}
       </button>
@@ -295,8 +304,8 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
             {data.current.dirty === true && <p className="trainer-local-changes">{text('有本地改动', 'Has local changes')}</p>}
           </section>
           <section className="trainer-version-card" aria-labelledby="trainer-latest-version">
-            <h3 id="trainer-latest-version">{text('最新源码版本', 'Latest source version')}</h3>
-            {latest ? <><strong className="trainer-version-number"><code title={latest.commit}>{latest.commit.slice(0, 8)}</code></strong><p className="trainer-latest-subject">{latest.subject}</p><dl><div><dt>{text('分支', 'Branch')}</dt><dd>{latest.branch}</dd></div><div><dt>{text('提交时间', 'Committed')}</dt><dd><time dateTime={latest.date}>{formatTime(latest.date)}</time></dd></div></dl></>
+            <h3 id="trainer-latest-version">{state === 'error' && latest ? text('上次获取的源码版本', 'Last known source version') : text('最新源码版本', 'Latest source version')}</h3>
+            {latest ? <><strong className="trainer-version-number"><code title={latest.commit}>{latest.commit.slice(0, 8)}</code></strong><p className="trainer-latest-subject">{latest.subject}</p><dl><div><dt>{text('分支', 'Branch')}</dt><dd>{latest.branch}</dd></div><div><dt>{text('提交时间', 'Committed')}</dt><dd><time dateTime={latest.date}>{formatTime(latest.date)}</time></dd></div>{state === 'error' && data.last_success_at != null && <div><dt>{text('获取时间', 'Retrieved')}</dt><dd><time dateTime={new Date(data.last_success_at * 1000).toISOString()}>{formatTime(data.last_success_at)}</time></dd></div>}</dl></>
               : <p className="settings-note trainer-version-empty">{data.state === 'unchecked' ? text('检查后显示。', 'Shown after checking.') : text('暂未取得远端版本。', 'No remote version is available yet.')}</p>}
           </section>
         </div>
