@@ -172,6 +172,20 @@ function externalUrl(value: string | null | undefined): string | undefined {
   } catch { return undefined; }
 }
 
+function TrainerInstallLog({ content }: { content: string }) {
+  const text = useWorkspaceText();
+  const details = React.useRef<HTMLDetailsElement>(null);
+  const viewport = React.useRef<HTMLPreElement>(null);
+  const scrollToLatest = React.useCallback(() => {
+    if (details.current?.open && viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
+  }, []);
+  React.useLayoutEffect(scrollToLatest, [content, scrollToLatest]);
+  return <details ref={details} className="trainer-install-log" open onToggle={scrollToLatest}>
+    <summary><ChevronRight size={14} className="disclosure-chevron"/>{text('更新日志', 'Update log')}</summary>
+    <pre ref={viewport}>{content}</pre>
+  </details>;
+}
+
 export default function TrainerUpdates({ onReload = () => window.location.reload() }: { onReload?: () => void } = {}) {
   const text = useWorkspaceText();
   const install = useTrainerInstall(onReload);
@@ -271,7 +285,7 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
           <div className="trainer-install-heading"><span role="status">{operationLabel}</span>{op && <code title={op.target_commit}>{op.target_commit.slice(0, 8)}</code>}</div>
           {op?.state === 'failed' && <p role="alert" className="trainer-update-error">{op.error?.trim() || op.message?.trim() || text('请查看更新日志或启动窗口中的错误信息。', 'Check the update log or launcher window for error details.')}{op.rolled_back && <span>{text(' 已恢复原版源码。', ' The previous source files were restored.')}</span>}</p>}
           {install.unconfirmed && <p className="settings-note">{text('请查看启动窗口，页面会继续尝试连接。', 'Check the launcher window. This page will keep trying to connect.')}</p>}
-          <details className="trainer-install-log"><summary><ChevronRight size={14} className="disclosure-chevron"/>{text('更新日志', 'Update log')}</summary><pre>{op?.log?.length ? op.log.join('\n') : `[studio] ${operationLabel}`}</pre></details>
+          <TrainerInstallLog key={op?.id ?? 'pending'} content={op?.log?.length ? op.log.join('\n') : `[studio] ${operationLabel}`}/>
           {(install.unconfirmed || op?.state === 'failed') && <button type="button" className="ui-btn ui-btn-sm" onClick={install.refresh}>{text('刷新状态', 'Refresh status')}</button>}
           {install.verified && <button type="button" className="ui-btn ui-btn-sm" onClick={onReload}>{text('刷新页面', 'Reload page')}</button>}
         </div>}
