@@ -1695,8 +1695,8 @@ def wait_for(url: str, timeout: float = 60) -> bool:
 def serve(host: str | None, port: int | None, data_root: str, open_browser: bool) -> int:
     data_root = configured_data_root(data_root)
     host, port = server_address(host, port, data_root)
-    ypuddin = venv_bin("ypuddin")
-    cmd = [str(ypuddin), "serve", "--host", host, "--port", str(port), "--data-root", data_root]
+    # Keep Windows' console-script executable free for package replacement during updates.
+    cmd = [str(venv_python()), "-m", "ypuddin.cli", "serve", "--host", host, "--port", str(port), "--data-root", data_root]
     log(f"启动服务（数据目录 {data_root}）")
     proc = subprocess.Popen(cmd, cwd=ROOT, env=_env())
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}/"
@@ -1722,7 +1722,7 @@ def dev(host: str | None, port: int | None, data_root: str, fe_port: int, open_b
     host, port = server_address(host, port, data_root)
     npm = prepare_frontend()
     backend = subprocess.Popen(
-        [str(venv_bin("ypuddin")), "serve", "--host", host, "--port", str(port), "--data-root", data_root],
+        [str(venv_python()), "-m", "ypuddin.cli", "serve", "--host", host, "--port", str(port), "--data-root", data_root],
         cwd=ROOT,
         env=_env(),
     )

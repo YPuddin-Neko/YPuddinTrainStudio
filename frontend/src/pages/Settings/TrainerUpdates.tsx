@@ -94,12 +94,10 @@ function useTrainerInstall(onReload: () => void) {
             expected.current = { id: op.id, target_commit: op.target_commit, before_instance_id: op.before_instance_id };
             rememberPendingUpdate(expected.current);
           }
-          if (op && op.state !== 'succeeded' && !expected.current) {
+          if (op && !['failed', 'succeeded'].includes(op.state) && !expected.current) {
             observed.current = { id: op.id, target_commit: op.target_commit, before_instance_id: op.before_instance_id };
-            if (op.state !== 'failed') {
-              expected.current = observed.current;
-              rememberPendingUpdate(expected.current);
-            }
+            expected.current = observed.current;
+            rememberPendingUpdate(expected.current);
           }
           const matches = !expected.current || op?.id === expected.current.id && op.target_commit === expected.current.target_commit;
           if (matches && op?.state === 'failed') { expected.current = null; rememberPendingUpdate(null); setUnconfirmed(false); setWatching(false); return; }
