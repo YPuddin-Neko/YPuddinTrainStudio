@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, ExternalLink, RefreshCw } from 'lucide-react';
+import { Check, ChevronRight, ExternalLink, RefreshCw } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { ApiError, type TrainerUpdateStatus, type TrainerInstallStatus, type TrainerCommit as UpdateCommit } from '../../api/types';
 import Dialog from '../../components/Dialog';
@@ -126,7 +126,7 @@ function useTrainerInstall(onReload: () => void) {
       try { sessionStorage.setItem(RELOADED_UPDATE_KEY, op.id); } catch { /* Storage may be disabled. */ }
       rememberPendingUpdate(null);
       reload.current();
-    }, 1000);
+    }, 1500);
     return () => { window.clearTimeout(timer); reloadScheduled.current = null; };
   }, [verified, status]);
   const start = async (commit: string) => {
@@ -258,7 +258,8 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
     update_check_required: text('请先检查更新。', 'Check for updates first.'),
   };
   const reason = install.status?.reason;
-  const mayUpdate = data?.state === 'available' && !!latest && !!install.status?.can_apply && !install.busy && !install.loading && !install.watching && !install.error && !loading;
+  const updateComplete = install.verified && op?.target_commit === latest?.commit;
+  const mayUpdate = data?.state === 'available' && !!latest && !!install.status?.can_apply && !install.busy && !updateComplete && !install.loading && !install.watching && !install.error && !loading;
   const showOperation = !!op || install.busy;
   const operationLabel = install.unconfirmed ? install.reconnecting ? text('仍在等待训练器重启…', 'Still waiting for the trainer to restart…') : text('暂未确认更新结果', 'Update result not yet confirmed')
     : install.reconnecting ? text('正在重新连接服务…', 'Reconnecting to the service…')
@@ -307,7 +308,10 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
           </section>
         </div>
         {latest && <div className="trainer-update-actions">
-          <button type="button" className="ui-btn ui-btn-primary" disabled={!mayUpdate} onClick={() => setConfirmCommit(latest.commit)}><RefreshCw size={14}/>{text('更新并重启', 'Update and restart')}</button>
+          <button type="button" className="ui-btn ui-btn-primary trainer-update-apply" data-state={updateComplete ? 'succeeded' : install.busy ? 'busy' : undefined} aria-busy={install.busy} disabled={!mayUpdate} onClick={() => setConfirmCommit(latest.commit)}>
+            {updateComplete ? <Check size={14} aria-hidden="true"/> : <RefreshCw size={14} className={install.busy ? 'animate-spin' : undefined} aria-hidden="true"/>}
+            {updateComplete ? text('更新完成', 'Update complete') : install.busy ? text('正在更新…', 'Updating…') : text('更新并重启', 'Update and restart')}
+          </button>
           {repositoryUrl && <a className="ui-btn" href={repositoryUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>{text('打开 GitHub', 'Open GitHub')}</a>}
         </div>}
         {latest && reason && !install.busy && <p className="settings-note trainer-install-reason">{blockedReasons[reason] || text('当前无法更新，请稍后重试。', 'Updating is unavailable. Try again later.')}</p>}
