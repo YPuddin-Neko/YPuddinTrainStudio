@@ -10721,6 +10721,22 @@
               "show_when": "dataset.image_fit == 'crop'"
             }
           },
+          "native_max_pixels_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "custom"
+            ],
+            "title": "Native Max Pixels Mode",
+            "description": "自动按实际训练图片、最长边限制和模型对齐要求计算面积上限；自定义使用填写的像素上限。",
+            "default": "custom",
+            "x-ui": {
+              "control": "select",
+              "group": "dataset",
+              "order": 10,
+              "show_when": "dataset.resolution_mode == 'native'"
+            }
+          },
           "native_max_pixels": {
             "type": "integer",
             "maximum": 67108864.0,
@@ -17320,6 +17336,26 @@
           "max_pixels": {
             "type": "integer",
             "title": "Max Pixels"
+          },
+          "max_pixels_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "custom"
+            ],
+            "title": "Max Pixels Mode",
+            "default": "custom"
+          },
+          "auto_max_pixels": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Max Pixels"
           },
           "alignment": {
             "type": "integer",

@@ -909,6 +909,22 @@
             "show_when": "dataset.image_fit == 'crop'"
           }
         },
+        "native_max_pixels_mode": {
+          "default": "custom",
+          "description": "自动按实际训练图片、最长边限制和模型对齐要求计算面积上限；自定义使用填写的像素上限。",
+          "enum": [
+            "auto",
+            "custom"
+          ],
+          "title": "Native Max Pixels Mode",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "dataset",
+            "order": 10,
+            "show_when": "dataset.resolution_mode == 'native'"
+          }
+        },
         "native_max_pixels": {
           "default": 1048576,
           "description": "原生模式单图及一次计算的像素上限，1048576 = 1024²。不同尺寸分组计算后，按图片数累积梯度；显存占用还受模型和批量大小影响。",

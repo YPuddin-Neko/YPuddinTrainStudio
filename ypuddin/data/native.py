@@ -37,6 +37,7 @@ def native_size(
     max_side: int,
     overflow: str = "downscale",
     image_fit: str = "crop",
+    auto_area: bool = False,
 ) -> NativeSize:
     """Preserve source scale unless a budget is exceeded, then align as requested.
 
@@ -57,6 +58,13 @@ def native_size(
         raise ValueError(
             f"image {width}x{height} exceeds native budget {max_pixels} pixels / {max_side}px side"
         )
+    if auto_area:
+        # A side-limited, floor-aligned canvas may already fit the area budget;
+        # applying sqrt(area/original_area) again would unnecessarily shrink it.
+        side_scale = min(1.0, max_side / width, max_side / height)
+        side_w, side_h = int(width * side_scale) // align * align, int(height * side_scale) // align * align
+        if min(side_w, side_h) >= align and side_w * side_h <= max_pixels:
+            return NativeSize(side_w, side_h, side_scale)
     scale = min(1.0, math.sqrt(max_pixels / (width * height)), max_side / width, max_side / height)
     target_w, target_h = int(width * scale) // align * align, int(height * scale) // align * align
     if min(target_w, target_h) < align:
@@ -64,6 +72,23 @@ def native_size(
             f"image {width}x{height} cannot fit the native budget without enlarging its short side"
         )
     return NativeSize(target_w, target_h, scale)
+
+
+def automatic_max_pixels(
+    sizes: Sequence[tuple[int, int]], *, align: int, max_side: int,
+    overflow: str = "downscale", image_fit: str = "crop",
+) -> int:
+    """Smallest canvas budget covering every selected image after the side limit."""
+    if not sizes:
+        raise ValueError("no readable training images available to calculate the native pixel budget")
+    area = 0
+    for width, height in sizes:
+        size = native_size(
+            width, height, align=align, max_pixels=max_side * max_side,
+            max_side=max_side, overflow=overflow, image_fit=image_fit,
+        )
+        area = max(area, size.width * size.height)
+    return area
 
 
 def _native_pad_size(

@@ -93,6 +93,11 @@ export interface OutputBindingInfo {
   inherits_output_dir: boolean;
 }
 
+export interface NativeAreaEstimate {
+  state: 'loading' | 'ready' | 'unavailable' | 'error';
+  maxPixels?: number | null;
+}
+
 interface SchemaFormProps {
   schema: any;
   value: Record<string, any>;
@@ -113,6 +118,7 @@ interface SchemaFormProps {
   versionSources?: boolean;
   /** Effective policy returned for this exact draft by the server plan. */
   computePolicy?: unknown;
+  nativeAreaEstimate?: NativeAreaEstimate;
   /** Preset drafts: model files are optional and keep the training configuration's files when empty. */
   preset?: boolean;
   projectId?: string;
@@ -644,10 +650,29 @@ const PAIR_NAMES: Record<string, { names: [[string, string], [string, string]]; 
   'objective.res_shift_mu': { names: [['小图', 'Small'], ['大图', 'Large']], step: '0.01' },
 };
 
-function NativePixelLimit({value, label, onChange, describedBy}: {value: number | string; label: string; onChange: (next: number | string) => void; describedBy?: string}) {
+function NativePixelLimit({value, mode, estimate, english, label, onChange, onModeChange, invalid}: {
+  value: number | string; mode: 'auto' | 'custom'; estimate?: NativeAreaEstimate; english: boolean; label: string;
+  onChange: (next: number | string) => void; onModeChange: (next: string, custom: number) => void; invalid: boolean;
+}) {
+  const validCustom = typeof value === 'number' && Number.isInteger(value) && value >= 1024 && value <= 67108864;
+  const lastCustom = React.useRef(validCustom ? value : 1048576);
+  React.useEffect(() => { if (validCustom) lastCustom.current = value as number; }, [validCustom, value]);
   const side = typeof value === 'number' && value > 0 ? Number(Math.sqrt(value).toFixed(2)) : '';
-  return <input id="config-dataset.native_max_pixels" aria-label={label} aria-describedby={describedBy} type="number" min={32} max={8192} step="any" value={side}
-    onChange={event=>onChange(event.target.value === '' ? '' : Math.round(Number(event.target.value) ** 2))}/>;
+  const amount = estimate?.state === 'ready' && typeof estimate.maxPixels === 'number' && estimate.maxPixels > 0
+    ? String(Number(Math.sqrt(estimate.maxPixels).toFixed(2)))
+    : estimate?.state === 'loading' ? (english ? 'calculating…' : '计算中…')
+    : estimate?.state === 'error' ? (english ? 'calculation failed' : '计算失败')
+    : estimate?.state === 'unavailable' ? (english ? 'unavailable' : '暂不可用')
+    : english ? 'from training images' : '随训练图片计算';
+  return <div className="config-native-limit">
+    <StudioSelect id="config-dataset.native_max_pixels" aria-label={label} aria-invalid={invalid}
+      aria-describedby="config-dataset.native_max_pixels-hint" value={mode}
+      options={[{value: 'auto', label: english ? `Auto (${amount})` : `自动（${amount}）`}, {value: 'custom', label: english ? 'Custom' : '自定义'}]}
+      onValueChange={next => onModeChange(next, validCustom ? value as number : lastCustom.current)}/>
+    {mode === 'custom' && <input id="config-dataset.native_max_pixels-custom" aria-label={english ? 'Image area limit (equivalent side, px)' : '图像面积上限（等效边长 px）'}
+      aria-describedby="config-dataset.native_max_pixels-hint" aria-invalid={invalid} type="number" min={32} max={8192} step="any" value={side}
+      onChange={event=>onChange(event.target.value === '' ? '' : Math.round(Number(event.target.value) ** 2))}/>}
+  </div>;
 }
 
 const nativePixelsHint = (value: unknown, english: boolean) => {
@@ -776,6 +801,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   outputBinding,
   versionSources = false,
   computePolicy,
+  nativeAreaEstimate,
   preset = false,
   projectId, versionId,
 }) => {
@@ -842,7 +868,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
-    if (fullPathKey === 'checkpoint.save_state_every_epochs') return null;
+    if (['checkpoint.save_state_every_epochs', 'dataset.native_max_pixels_mode'].includes(fullPathKey)) return null;
     if (['checkpoint.output_dir', 'checkpoint.state_dir', 'sampling.output_dir', 'logging.output_dir', 'logging.events_path', 'dataset.cache_dir'].includes(fullPathKey)) return null;
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
     const weightMeta = parentPath[0] === 'model' ? weights.find(weight => weight.field === key) : undefined;
@@ -886,9 +912,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup) && !(compact && parentPath[0] === 'training' && groupFilter.includes('training'))) return null;
-    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs epoch 轮' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
+    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto custom 自动 自定义' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
-    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || fullPathKey === 'checkpoint.save_state_every_steps' && e.loc === 'checkpoint.save_state_every_epochs');
+    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || fullPathKey === 'checkpoint.save_state_every_steps' && e.loc === 'checkpoint.save_state_every_epochs' || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode');
     const revealOutputName = versionSources && fullPathKey === 'checkpoint.name' && (editOutput === 'name' || !!errorItem || !!search.trim());
     if (versionSources && fullPathKey === 'checkpoint.name' && !revealOutputName) return null;
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
@@ -958,7 +984,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         options={(prop.enum || []).map((option:string)=>({value:option,label:configOptionLabel(fullPathKey,option,english)}))}
         onValueChange={next=>onChange(setNestedValue(value,path,next))}/>;
     } else if (fullPathKey === 'dataset.native_max_pixels') {
-      control = <NativePixelLimit value={fieldValue} label={fieldLabel} describedBy={nativePixelsHint(fieldValue, english) ? `${fieldId}-hint` : undefined} onChange={next => onChange(setNestedValue(value, path, next))}/>;
+      control = <NativePixelLimit value={fieldValue} label={fieldLabel} english={english} invalid={!!errorItem}
+        mode={value.dataset?.native_max_pixels_mode === 'auto' ? 'auto' : 'custom'} estimate={nativeAreaEstimate}
+        onModeChange={(next, custom) => onChange(setNestedValue(value, ['dataset'], {...value.dataset, native_max_pixels_mode: next, native_max_pixels: custom}))}
+        onChange={next => onChange(setNestedValue(value, path, next))}/>;
     } else if (compact && fullPathKey === 'dataset.resolutions') {
       control = <ResolutionInput label={fieldLabel} value={fieldValue} onChange={next => onChange(setNestedValue(value, path, next))} />;
     } else if (prop.type === 'object' && prop.properties) {
@@ -1257,7 +1286,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : fullPathKey === 'adapter.dora_axis' ? fieldValue === 'input'
         ? (english ? 'One magnitude per input channel; the default. Keep the original axis when resuming.' : '每个输入通道一个幅度，默认方向；继续训练时须与原权重一致。')
         : (english ? 'One magnitude per output channel; the LyCORIS default. Keep the original axis when resuming.' : '每个输出通道一个幅度，LyCORIS 默认方向；继续训练时须与原权重一致。')
-      : fullPathKey === 'dataset.native_max_pixels' ? nativePixelsHint(fieldValue, english) || configFieldHint(fullPathKey, english)
+      : fullPathKey === 'dataset.native_max_pixels' ? value.dataset?.native_max_pixels_mode === 'auto'
+        ? nativeAreaEstimate?.state === 'error' ? (english ? 'Could not calculate the area limit. Recalculate the training plan.' : '面积上限计算失败，请重新计算训练计划。')
+          : nativeAreaEstimate?.state === 'unavailable' ? (english ? 'No area limit is available. Check the training images.' : '暂时无法计算面积上限，请检查训练图片。')
+          : nativeAreaEstimate?.state === 'ready' ? nativePixelsHint(nativeAreaEstimate.maxPixels, english)
+          : (english ? 'Calculated from training images, including longest-side limits and model alignment.' : '根据训练图片计算，已计入最长边限制与模型对齐。')
+        : nativePixelsHint(fieldValue, english) || configFieldHint(fullPathKey, english)
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')
       : parentPath[0] === 'model' && key in MODEL_PATH_FIELDS ? modelPathHint(family?.name, key, english, preset)
       : configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree, value.dataset);

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 _FIELDS = {
     "model": "family dtype attention prediction_type zero_terminal_snr sdxl_max_token_length flux2_variant krea2_variant",
     "training": "mode train_backbone train_text_encoder",
-    "dataset": "resolutions resolution_mode image_fit crop_anchor native_max_pixels native_max_side native_overflow aspect_ratio_limit area_tolerance bucket_step bucket_no_upscale batch_size flip masked_loss cache_latents text_encoding",
+    "dataset": "resolutions resolution_mode image_fit crop_anchor native_max_pixels native_max_pixels_mode native_max_side native_overflow aspect_ratio_limit area_tolerance bucket_step bucket_no_upscale batch_size flip masked_loss cache_latents text_encoding",
     "objective": "timestep_sampling logit_mean logit_std res_shift_tokens res_shift_mu shift mode_scale stratified t_min t_max loss huber_c weighting snr_gamma ip_noise_gamma scale_v_pred_loss_like_noise_pred v_pred_like_loss debiased_estimation_loss",
     "scheduler": "type warmup_steps min_lr_ratio num_cycles power decay_steps",
     "memory": "base_precision blocks_to_swap activation_checkpointing offload_text_encoder compile allow_tf32",
@@ -54,6 +54,8 @@ def training_recipe_metadata(
     recipe = {section: _select(getattr(cfg, section), names) for section, names in _FIELDS.items()}
     recipe["adapter"] = cfg.adapter.model_dump(mode="json", exclude={"resume_weights"})
     recipe["dataset"]["caption"] = _select(cfg.dataset.caption, _CAPTION_FIELDS)
+    if cfg.dataset.resolution_mode == "native":
+        recipe["dataset"]["resolved_native_max_pixels"] = bundle.plan.native_max_pixels
     counts = Counter(record.source_index for record in bundle.records)
     sources = []
     for index, source in enumerate(cfg.dataset.sources):

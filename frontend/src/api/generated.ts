@@ -3424,6 +3424,13 @@ export interface components {
              */
             crop_anchor: "top_left" | "top" | "top_right" | "left" | "center" | "right" | "bottom_left" | "bottom" | "bottom_right";
             /**
+             * Native Max Pixels Mode
+             * @description 自动按实际训练图片、最长边限制和模型对齐要求计算面积上限；自定义使用填写的像素上限。
+             * @default custom
+             * @enum {string}
+             */
+            native_max_pixels_mode: "auto" | "custom";
+            /**
              * Native Max Pixels
              * @description 原生模式单图及一次计算的像素上限，1048576 = 1024²。不同尺寸分组计算后，按图片数累积梯度；显存占用还受模型和批量大小影响。
              * @default 1048576
@@ -5712,6 +5719,14 @@ export interface components {
             logical_batches: number;
             /** Max Pixels */
             max_pixels: number;
+            /**
+             * Max Pixels Mode
+             * @default custom
+             * @enum {string}
+             */
+            max_pixels_mode: "auto" | "custom";
+            /** Auto Max Pixels */
+            auto_max_pixels?: number | null;
             /** Alignment */
             alignment: number;
             /** Batch Size */

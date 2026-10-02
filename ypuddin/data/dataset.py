@@ -46,7 +46,7 @@ from .index import (
     record_content_key,
     scan_sources,
 )
-from .native import native_size
+from .native import automatic_max_pixels, native_size
 
 log = logging.getLogger(__name__)
 
@@ -155,9 +155,12 @@ class DataPlan:
     fingerprint: str = ""
     captioned: int = 0
     validation_images: int = 0
+    native_max_pixels: int | None = None
+    native_auto_max_pixels: int | None = None
+    native_max_pixels_mode: str = "custom"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "images": self.images,
             "items": self.items,
             "captioned": self.captioned,
@@ -165,6 +168,13 @@ class DataPlan:
             "buckets": self.buckets,
             "fingerprint": self.fingerprint,
         }
+        if self.native_max_pixels is not None:
+            result["native"] = {
+                "max_pixels": self.native_max_pixels,
+                "auto_max_pixels": self.native_auto_max_pixels,
+                "max_pixels_mode": self.native_max_pixels_mode,
+            }
+        return result
 
 
 def training_layout_line(resolution_mode: str, buckets: list[dict[str, Any]]) -> str:
@@ -187,8 +197,15 @@ def _split_by_hash(records: list[ImageRecord], ratio: float) -> tuple[list[Image
 
 
 def expand_items(
-    records: list[ImageRecord], sources: list[DatasetSourceConfig], ds: DatasetConfig, bm: BucketManager
+    records: list[ImageRecord], sources: list[DatasetSourceConfig], ds: DatasetConfig, bm: BucketManager,
+    *, native_max_pixels: int | None = None,
 ) -> list[Item]:
+    if native_max_pixels is None:
+        native_max_pixels = (
+            _automatic_native_budget(records, ds, bm.align)
+            if ds.resolution_mode == "native" and ds.native_max_pixels_mode == "auto" and records
+            else ds.native_max_pixels
+        )
     items: list[Item] = []
     names = cache_names(records)
     for r in records:
@@ -214,10 +231,11 @@ def expand_items(
                         r.width,
                         r.height,
                         align=bm.align,
-                        max_pixels=ds.native_max_pixels,
+                        max_pixels=native_max_pixels,
                         max_side=ds.native_max_side,
                         overflow=ds.native_overflow,
                         image_fit=ds.image_fit,
+                        auto_area=ds.native_max_pixels_mode == "auto",
                     )
                     if ds.resolution_mode == "native"
                     else None
@@ -484,6 +502,18 @@ class DataLayout:
     validation_items: list[Item]
     sources: list[DatasetSourceConfig]
     bucket_manager: BucketManager
+    native_max_pixels: int | None = None
+    native_auto_max_pixels: int | None = None
+
+
+def _automatic_native_budget(records: list[ImageRecord], ds: DatasetConfig, align: int) -> int:
+    try:
+        return automatic_max_pixels(
+            [(r.width, r.height) for r in records], align=align, max_side=ds.native_max_side,
+            overflow=ds.native_overflow, image_fit=ds.image_fit,
+        )
+    except ValueError as error:
+        raise DataConfigError("dataset.native_max_pixels_mode", str(error)) from error
 
 
 def prepare_data_layout(
@@ -578,18 +608,27 @@ def prepare_data_layout(
         records = [record for record in records if record.content_hash not in validation_hashes]
     if not records:
         raise DataConfigError("dataset.sources", "no training images remain after validation exclusion/split")
-    items = expand_items(records, sources, ds, bm)
+    auto_pixels = None
+    resolved_pixels = None
+    if ds.resolution_mode == "native":
+        try:
+            auto_pixels = _automatic_native_budget(records, ds, bm.align)
+        except DataConfigError:
+            if ds.native_max_pixels_mode == "auto":
+                raise
+        resolved_pixels = auto_pixels if ds.native_max_pixels_mode == "auto" else ds.native_max_pixels
+    items = expand_items(records, sources, ds, bm, native_max_pixels=resolved_pixels)
     if not items:
         raise DataConfigError("dataset.sources", "training dataset has no items")
     validation_items: list[Item] = []
     seen: set[str] = set()
-    for item in expand_items(val_records, sources, ds, bm):
+    for item in expand_items(val_records, sources, ds, bm, native_max_pixels=resolved_pixels):
         if item.record.content_hash not in seen:
             seen.add(item.record.content_hash)
             validation_items.append(item)
     if cfg.validation.max_images:
         validation_items = validation_items[: cfg.validation.max_images]
-    return DataLayout(records, val_records, items, validation_items, sources, bm)
+    return DataLayout(records, val_records, items, validation_items, sources, bm, resolved_pixels, auto_pixels)
 
 
 def build_data(
@@ -640,23 +679,32 @@ def build_data(
         items=len(items),
         captioned=sum(1 for r in records if r.caption_path),
         validation_images=len(val.items) if val else 0,
+        native_max_pixels=layout.native_max_pixels,
+        native_auto_max_pixels=layout.native_auto_max_pixels,
+        native_max_pixels_mode=ds.native_max_pixels_mode,
         buckets=[{"base": b, "w": w, "h": h, "items": n} for (b, w, h), n in sorted(counts.items())],
         fingerprint=dataset_fingerprint(
             records + [item.record for item in layout.validation_items],
             layout.sources,
             settings={
                 **({"bucket_policy": BUCKET_POLICY} if ds.resolution_mode == "bucket" else {}),
-                "dataset": ds.model_dump(
-                    mode="json",
-                    exclude={"sources", "cache_dir", "num_workers"}
-                    | ({"image_fit"} if ds.image_fit == "crop" else set())
-                    | ({"crop_anchor"} if ds.crop_anchor == "center" or ds.image_fit == "pad" else set())
-                    | (
-                        {"resolution_mode", "native_max_pixels", "native_max_side", "native_overflow"}
-                        if ds.resolution_mode == "bucket"
-                        else set()
+                "dataset": {
+                    **ds.model_dump(
+                        mode="json",
+                        exclude={"sources", "cache_dir", "num_workers"}
+                        | ({"image_fit"} if ds.image_fit == "crop" else set())
+                        | ({"crop_anchor"} if ds.crop_anchor == "center" or ds.image_fit == "pad" else set())
+                        | ({"native_max_pixels_mode"} if ds.native_max_pixels_mode == "custom" else set())
+                        | (
+                            {"resolution_mode", "native_max_pixels", "native_max_pixels_mode",
+                             "native_max_side", "native_overflow"}
+                            if ds.resolution_mode == "bucket"
+                            else set()
+                        ),
                     ),
-                ),
+                    **({"native_max_pixels": layout.native_max_pixels}
+                       if ds.resolution_mode == "native" and ds.native_max_pixels_mode == "auto" else {}),
+                },
                 "validation": cfg.validation.model_dump(mode="json", exclude={"sources"}),
                 "validation_content": [item.record.content_hash for item in layout.validation_items],
             },

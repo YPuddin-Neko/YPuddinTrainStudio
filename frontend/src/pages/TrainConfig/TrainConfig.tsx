@@ -1,8 +1,10 @@
 import React from 'react';
 import { Link, useParams, useNavigate, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { SchemaForm, ValidationError, SourceRoleInfo, OutputBindingInfo } from '../../schema/SchemaForm/SchemaForm';
+import { SchemaForm, ValidationError, SourceRoleInfo, OutputBindingInfo, type NativeAreaEstimate } from '../../schema/SchemaForm/SchemaForm';
 import { apiClient } from '../../api/client';
+import { useEventStream } from '../../events/useEventStream';
+import { EVENT_TYPES } from '../../events/eventTypes';
 import { Job, Plan, Preset, ModelAsset, DatasetInfo } from '../../api/types';
 import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
 import { mergeConfig } from '../../utils/config';
@@ -49,6 +51,23 @@ function restoreDraftChanges(current: unknown, base: unknown, draft: unknown): u
     if (JSON.stringify(base[key]) === JSON.stringify(draft[key])) continue;
     if (!(key in draft)) delete next[key];
     else next[key] = restoreDraftChanges(next[key], base[key], draft[key]);
+  }
+  return next;
+}
+
+function restoreDatasetDraft(current: Record<string, any>, base: Record<string, any>, draft: Record<string, any>) {
+  const next = restoreDraftChanges(current, base, draft) as Record<string, any>;
+  for (const section of ['dataset', 'validation']) {
+    const remote = current[section]?.sources, saved = base[section]?.sources, local = draft[section]?.sources;
+    if (![remote, saved, local].every(items => Array.isArray(items) && items.every(item => typeof item?.path === 'string') && new Set(items.map(item => item.path)).size === items.length)) continue;
+    const savedByPath = new Map<string, any>(saved.map((item: any) => [item.path, item]));
+    const localByPath = new Map<string, any>(local.map((item: any) => [item.path, item]));
+    const remotePaths = new Set(remote.map((item: any) => item.path));
+    next[section] = {...next[section], sources: [
+      ...remote.filter((item: any) => !savedByPath.has(item.path) || localByPath.has(item.path)).map((item: any) => savedByPath.has(item.path)
+        ? restoreDraftChanges(item, savedByPath.get(item.path), localByPath.get(item.path)) : item),
+      ...local.filter((item: any) => !savedByPath.has(item.path) && !remotePaths.has(item.path)),
+    ]};
   }
   return next;
 }
@@ -125,6 +144,11 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [auxiliaryErrors,setAuxiliaryErrors] = React.useState<Record<string,string>>({});
   const [auxiliaryReload,setAuxiliaryReload] = React.useState(0);
   const [auxiliaryLoading,setAuxiliaryLoading] = React.useState(false);
+  const [datasetRefreshing, setDatasetRefreshing] = React.useState(false);
+  const [datasetRefreshError, setDatasetRefreshError] = React.useState('');
+  const datasetRefreshController = React.useRef<AbortController | null>(null);
+  const datasetRefreshPending = React.useRef<Promise<void> | null>(null);
+  const datasetRefreshBlocked = React.useRef(false);
   const [loaded, setLoaded] = React.useState(false);
   const [recoveredDraft, setRecoveredDraft] = React.useState(false);
   const [reload, setReload] = React.useState(0);
@@ -216,6 +240,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     const key = trainingDraftKey(draft.projectId, draft.versionId);
     const encoded = JSON.stringify(draft.config);
     rememberTrainingDraft(key, draft.config, submittedConfigRef.current || lastSavedRef.current);
+    if (datasetRefreshBlocked.current) return;
     saveQueueRef.current = saveQueueRef.current.catch(() => {}).then(async () => {
       if (encoded !== lastSavedRef.current) await apiClient.put(versionConfigUrl(draft.projectId!, draft.versionId), draft.config, { silent: true });
       clearSavedTrainingDraft(key, encoded);
@@ -224,6 +249,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   }, [projectId, versionId]);
 
   const flushDraft = async () => {
+    if (datasetRefreshPending.current) await datasetRefreshPending.current;
+    if (datasetRefreshBlocked.current) throw new Error(datasetRefreshError);
     while (true) {
       const draft = draftRef.current;
       if (!draft.projectId || !draft.loaded || draft.archived) break;
@@ -291,6 +318,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   React.useEffect(() => {
     if (versionId && (versionStatus !== 'ready' || archived)) return;
     let active = true;
+    datasetRefreshController.current?.abort();
+    datasetRefreshBlocked.current = false;
+    setDatasetRefreshing(false);
+    setDatasetRefreshError('');
     setLoaded(false);
     setOutputBinding(null);
     setError('');
@@ -311,7 +342,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       initialConfigRef.current = JSON.stringify(next);
       lastSavedRef.current = JSON.stringify(next);
       const saved = projectId ? readTrainingDraft(trainingDraftKey(projectId, versionId)) : null;
-      let restored: Record<string, any> = saved ? restoreDraftChanges(next, saved.base, saved.draft) as Record<string, any> : next;
+      let restored: Record<string, any> = saved ? restoreDatasetDraft(next, saved.base, saved.draft) : next;
       // Move drafts from the retired model page into the same version's training draft.
       // A newer model edit in the training draft takes precedence; unrelated fields survive.
       if (projectId) {
@@ -361,10 +392,58 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     return () => { active = false; };
   }, [projectId, versionId]);
 
+  const refreshDatasetConfiguration = () => {
+    if (!projectId || !loaded) return;
+    datasetRefreshController.current?.abort();
+    const controller = new AbortController();
+    datasetRefreshController.current = controller;
+    datasetRefreshBlocked.current = true;
+    setDatasetRefreshing(true);
+    setDatasetRefreshError('');
+    setValidatedConfig('');
+    setValidating(true);
+    const base = JSON.parse(lastSavedRef.current || '{}');
+    const savingAtStart = submittedConfigRef.current !== null;
+    const request = Promise.all([
+      apiClient.get<Record<string, any>>(versionConfigUrl(projectId, versionId), {signal:controller.signal, silent:true}),
+      apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`, {params:{version_id:versionId,include_cache:false}, signal:controller.signal, silent:true}),
+    ]);
+    const pending = (async () => {
+      try {
+        const [remote, nextDatasets] = await request;
+        await saveQueueRef.current.catch(() => {});
+        if (controller.signal.aborted || draftRef.current.projectId !== projectId || draftRef.current.versionId !== versionId) return;
+        const next = fillDefaultModels(mergeConfig(defaults, remote), registeredModelsRef.current);
+        // An in-flight save may have reached the server after this GET snapshot.
+        // Keep its acknowledged baseline so the merged dataset changes are saved again.
+        if (!savingAtStart) lastSavedRef.current = JSON.stringify(next);
+        setDatasets(nextDatasets);
+        setConfig(previous => restoreDatasetDraft(next, base, previous));
+        datasetRefreshBlocked.current = false;
+        setDatasetRefreshing(false);
+        setAuxiliaryReload(value => value + 1);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        const message = formatApiError(err);
+        setDatasetRefreshError(message);
+        setPlanError(message);
+        setDatasetRefreshing(false);
+        setValidating(false);
+      }
+    })();
+    datasetRefreshPending.current = pending;
+  };
+  React.useEffect(() => () => { datasetRefreshController.current?.abort(); }, []);
+  useEventStream<{project_id?: string; version_id?: string; dataset_id?: string}>(EVENT_TYPES.DATASET_CHANGED, event => {
+    const relevant = !!projectId && event.project_id === projectId && (!event.version_id || event.version_id === versionId)
+      || !!event.dataset_id && datasets.some(dataset => dataset.source.id === event.dataset_id);
+    if (relevant) refreshDatasetConfiguration();
+  });
+
   // Serialise writes so a slow older save cannot overwrite a newer draft.
   React.useEffect(() => {
     const encoded = JSON.stringify(config);
-    if (!projectId || !loaded || archived || savingNavigation || encoded === lastSavedRef.current) return;
+    if (!projectId || !loaded || archived || savingNavigation || datasetRefreshing || datasetRefreshError || encoded === lastSavedRef.current) return;
     let active = true;
     setSavedAt(null);
     const timer = setTimeout(() => {
@@ -372,6 +451,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         if (!active) return;
         let next = config;
         while (true) {
+          if (datasetRefreshBlocked.current) break;
           const submitted = JSON.stringify(next);
           if (submitted !== lastSavedRef.current) {
             submittedConfigRef.current = submitted;
@@ -390,7 +470,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       }).catch(() => { /* persistDraft reports only errors belonging to the current draft. */ });
     }, 1000);
     return () => { active = false; clearTimeout(timer); };
-  }, [config, projectId, versionId, loaded, savingNavigation, archived, persistDraft]);
+  }, [config, projectId, versionId, loaded, savingNavigation, archived, persistDraft, datasetRefreshing, datasetRefreshError]);
 
   // 族联动副作用：切换 model.family 后，adapter.preset 与 dataset.text_encoding 不合法时自动回退
   React.useEffect(() => {
@@ -420,7 +500,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   }, [families, config?.model?.family]);
 
   React.useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || datasetRefreshing || datasetRefreshError) return;
     const controller = new AbortController();
     setValidating(true);
     setPlanError('');
@@ -468,7 +548,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       });
     }, 500);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [config, loaded, projectId, versionId, auxiliaryReload]);
+  }, [config, loaded, projectId, versionId, auxiliaryReload, datasetRefreshing, datasetRefreshError]);
 
   const handleApplyPreset = (preset: Preset) => {
     if (inactiveTrainingReason(config) || inactiveTrainingReason(preset.config)) return;
@@ -548,10 +628,14 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
   const issues = presentConfigIssues(validationErrors, english);
   const inactiveReason = inactiveTrainingReason(config, english);
-  const checked = loaded && !validating && validatedConfig === JSON.stringify(config) && plan !== null;
-  const computePolicy = currentTrainingComputePolicy(plan?.compute_policy, config, validatedConfig, validating);
+  const checked = loaded && !validating && !datasetRefreshing && !datasetRefreshError && validatedConfig === JSON.stringify(config) && plan !== null;
+  const computePolicy = currentTrainingComputePolicy(plan?.compute_policy, config, validatedConfig, validating || datasetRefreshing || !!datasetRefreshError);
+  const nativeAreaEstimate: NativeAreaEstimate = planError ? {state: 'error'}
+    : !checked ? {state: 'loading'}
+    : plan?.native?.auto_max_pixels != null && plan.native.auto_max_pixels > 0
+      ? {state: 'ready', maxPixels: plan.native.auto_max_pixels} : {state: 'unavailable'};
   const planChecked = checked && (plan?.ok === true || plan?.params != null);
-  const ready = !inactiveReason && (!versions.enabled || versions.current?.status === 'ready') && loaded && !validating && validatedConfig === JSON.stringify(config) && plan?.ok === true && issues.length === 0;
+  const ready = !inactiveReason && (!versions.enabled || versions.current?.status === 'ready') && checked && plan?.ok === true && issues.length === 0;
   const goToIssue = (issue: ConfigIssue) => {
     // The memory estimate has no field of its own; its explanation and fixes are in the plan panel.
     if (issue.path === 'memory') {
@@ -565,7 +649,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     }
     setActiveTab(issue.tab); setSearch(''); setShowAdvanced(true); setIssuesOpen(false); setRevealVersion(value => value + 1);
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      let path = issue.path === 'checkpoint.save_state_every_epochs' ? 'checkpoint.save_state_every_steps' : issue.path;
+      let path = issue.path === 'checkpoint.save_state_every_epochs' ? 'checkpoint.save_state_every_steps' : issue.path === 'dataset.native_max_pixels_mode' ? 'dataset.native_max_pixels' : issue.path;
       let target = document.getElementById(`field-${path}`);
       while (!target && path.includes('.')) { path = path.slice(0, path.lastIndexOf('.')); target = document.getElementById(`field-${path}`); }
       target?.scrollIntoView?.({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
@@ -646,10 +730,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong></div><div className="context-actions"><Link to={`${dataUrl}&data_step=datasets`} className="ui-btn ui-btn-sm">{text('添加数据', 'Add dataset')}</Link><Link to={`${dataUrl}&data_step=captions${sourceQuery}`} className="ui-btn ui-btn-sm">{text('标签编辑', 'Caption editor')}</Link><Link to={`${dataUrl}&data_step=preprocess${sourceQuery}`} className="ui-btn ui-btn-sm"><Brush size={13}/>{text('数据集预处理', 'Preprocessing')}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
 
 
-          {!loaded ? <LoadingNote block label={text('正在读取训练参数…', 'Loading training parameters…')}/> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} notices={(plan?.warnings || []).flatMap(warning => { const advice = presentValueAdvice(warning, english); return advice ? [{ loc: advice.loc, msg: advice.inline, fix: advice.fix }] : []; })} family={familyByName(families, config?.model?.family)} families={families} />}
+          {!loaded ? <LoadingNote block label={text('正在读取训练参数…', 'Loading training parameters…')}/> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} nativeAreaEstimate={nativeAreaEstimate} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} notices={(plan?.warnings || []).flatMap(warning => { const advice = presentValueAdvice(warning, english); return advice ? [{ loc: advice.loc, msg: advice.inline, fix: advice.fix }] : []; })} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
-      <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="ui-btn ui-btn-quiet inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector plan={plan} loading={validating} dataset={config.dataset} onField={path => { setInspectorOpen(false); goToIssue({ path, label: '', message: '', detail: '', tab: configTabForPath(path) }); }} error={planError} onRetry={()=>setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
+      <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="ui-btn ui-btn-quiet inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector plan={plan} loading={validating || datasetRefreshing} dataset={config.dataset} onField={path => { setInspectorOpen(false); goToIssue({ path, label: '', message: '', detail: '', tab: configTabForPath(path) }); }} error={planError} onRetry={()=>datasetRefreshError ? refreshDatasetConfiguration() : setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
         {!!plan?.warnings?.length && <details className="plan-notes"><summary><AlertCircle size={13}/>{text('配置提示', 'Configuration notes')} · {plan.warnings.length}</summary><ul>{plan.warnings.map((warning,index) => <li key={index}>{presentPlanWarning(warning.code,warning.msg,english,warning)}</li>)}</ul></details>}
       </aside>
     </div>

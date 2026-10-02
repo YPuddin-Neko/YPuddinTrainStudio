@@ -94,6 +94,7 @@
 .compact-schema .config-field-boolean > .config-field-control > label { min-width: 0; font-size: 13px; line-height: 20px; color: var(--studio-text); font-weight: 500; cursor: pointer; }
 .compact-schema .config-field-boolean .config-readonly-control { display: flex; }
 .compact-schema .config-field-boolean .studio-switch { flex: none; }
+.config-native-limit { display: grid; gap: 8px; width: 100%; min-width: 0; }
 .config-toggle-control { display: flex; align-items: center; gap:8px; min-width: 0; font-size: 13px; }
 
 .compact-schema .config-field input:not([type="checkbox"]):not([type="range"]),

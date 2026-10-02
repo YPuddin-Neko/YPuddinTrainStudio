@@ -32,6 +32,7 @@ RECORD_NAMES = frozenset(
     {
         "job-config.toml",
         "config.toml",
+        "data-plan.json",
         "run.log",
         "events.jsonl",
         "control",

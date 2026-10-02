@@ -254,8 +254,11 @@ def _append_data_plan(
     finally:
         if index is not None:
             index.close()
-    if layout is None and isinstance(cfg, _LayoutInputs):
+    if layout is None and (isinstance(cfg, _LayoutInputs) or (
+        ds.resolution_mode == "native" and ds.native_max_pixels_mode == "auto"
+    )):
         return {}
+    max_pixels = layout.native_max_pixels if layout and layout.native_max_pixels is not None else ds.native_max_pixels
     if layout is not None:
         # Count the shared training items after validation exclusion, before the
         # sampler drops incomplete multi-rank tail groups. Never use registry totals.
@@ -418,7 +421,7 @@ def _append_data_plan(
             native_groups = []
             for batch in native_plan:
                 shapes = [shape_keys[index] for index in batch]
-                groups = microbatch_indices(shapes, ds.native_max_pixels)
+                groups = microbatch_indices(shapes, max_pixels)
                 native_groups.append([(shapes[group[0]], len(group)) for group in groups])
                 for group in groups:
                     key = shapes[group[0]]
@@ -442,10 +445,11 @@ def _append_data_plan(
                     record.width,
                     record.height,
                     align=latent.align,
-                    max_pixels=ds.native_max_pixels,
+                    max_pixels=max_pixels,
                     max_side=ds.native_max_side,
                     overflow=ds.native_overflow,
                     image_fit=ds.image_fit,
+                    auto_area=ds.native_max_pixels_mode == "auto",
                 ).downscaled
                 for record in records
             )
@@ -457,7 +461,9 @@ def _append_data_plan(
             "downscaled": resized,
             "sizes": len(counts),
             "logical_batches": batches,
-            "max_pixels": ds.native_max_pixels,
+            "max_pixels": max_pixels,
+            "max_pixels_mode": ds.native_max_pixels_mode,
+            "auto_max_pixels": layout.native_auto_max_pixels if layout else None,
             "alignment": latent.align,
             "batch_size": ds.batch_size,
             "forward_groups": sum(forward_counts.values()) if seed is not None else None,
@@ -755,6 +761,12 @@ def plan(
             index_db_path=index_db_path,
         )
 
+    if native and out.get("native") is not None:
+        # Memory/cache estimates share the resolved runtime budget, while the
+        # caller's saved custom value stays unchanged when auto is selected.
+        ds = ds.model_copy(update={"native_max_pixels": out["native"]["max_pixels"]})
+        cfg = cfg.model_copy(update={"dataset": ds})
+
     # ---- parameters (meta device, no weights)
     params: dict[str, Any] = {}
     memory: dict[str, Any] = {}
@@ -831,6 +843,9 @@ def plan(
                     "by_algo": aset.summary()["by_algo"],
                     "training_mode": cfg.training.mode,
                 }
+                if native and ds.native_max_pixels_mode == "auto" and out.get("native") is None:
+                    error_loc = "dataset.native_max_pixels_mode"
+                    raise ValueError("automatic native pixel budget is unavailable; check the training dataset")
                 if full_training:
                     params["components"] = {
                         "backbone": base_params if cfg.training.train_backbone else 0,

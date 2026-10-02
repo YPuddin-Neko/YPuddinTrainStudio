@@ -447,6 +447,11 @@ class Trainer:
             progress=lambda k, d, t: self.emit("cache.progress", kind=k, done=d, total=t),
         )
         self.emit("data.plan", **self.bundle.plan.to_dict())
+        if self.is_primary and not cfg.checkpoint.resume and cfg.dataset.resolution_mode == "native":
+            (self._record_dir() / "data-plan.json").write_text(
+                json.dumps(self.bundle.plan.to_dict(), ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
         data_plan = self.bundle.plan
         log.info(
             "dataset: %d images (%d captioned), %d training items%s",
@@ -621,7 +626,7 @@ class Trainer:
         self.loader = DataLoader(
             self.bundle.train,
             batch_sampler=self.sampler,
-            collate_fn=partial(collate_native, max_pixels=cfg.dataset.native_max_pixels)
+            collate_fn=partial(collate_native, max_pixels=self.bundle.plan.native_max_pixels)
             if native
             else collate,
             num_workers=cfg.dataset.num_workers,
@@ -678,10 +683,17 @@ class Trainer:
                 # A rejected same-directory legacy resume must preserve the
                 # original config that authenticates its scheduler closure.
                 write_config(cfg, self._record_dir() / "config.toml")
+                if cfg.dataset.resolution_mode == "native":
+                    (self._record_dir() / "data-plan.json").write_text(
+                        json.dumps(self.bundle.plan.to_dict(), ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
         if cfg.loop.distributed_strategy != "fsdp" or not hasattr(self, "distributed"):
             # DDP saves on rank zero but every rank must retain identical progress.
             self.progress.extra["scheduler_contract"] = deepcopy(self._scheduler_contract)
         self.progress.extra["deterministic"] = cfg.loop.deterministic
+        if cfg.dataset.resolution_mode == "native":
+            self.progress.extra["native_max_pixels"] = self.bundle.plan.native_max_pixels
         if self.compute_policy is not None:
             self.progress.extra["compute_policy"] = dict(self.compute_policy)
             self.progress.extra["compute_runtime"] = self.compute_runtime
@@ -1152,7 +1164,8 @@ class Trainer:
             )
         if self.cfg.checkpoint.save_training_metadata and self.cfg.dataset.resolution_mode == "native":
             metadata["ypuddin.resolution_mode"] = "native"
-            metadata["ypuddin.native_max_pixels"] = str(self.cfg.dataset.native_max_pixels)
+            metadata["ypuddin.native_max_pixels"] = str(self.bundle.plan.native_max_pixels)
+            metadata["ypuddin.native_max_pixels_mode"] = self.cfg.dataset.native_max_pixels_mode
             metadata["ypuddin.native_max_side"] = str(self.cfg.dataset.native_max_side)
         return metadata
 
@@ -2147,7 +2160,7 @@ class Trainer:
             effective_bs = bs
             if self.cfg.dataset.resolution_mode == "native":
                 effective_bs = min(
-                    bs, max(1, self.cfg.dataset.native_max_pixels // ds.items[indices[0]].bucket.area)
+                    bs, max(1, self.bundle.plan.native_max_pixels // ds.items[indices[0]].bucket.area)
                 )
             for s in range(0, len(indices), effective_bs):
                 batch = collate([ds[i] for i in indices[s : s + effective_bs]])
