@@ -279,7 +279,7 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
     kept = None if models is None or full else models
     if models is not None and full:
         models.release()
-    key = json.dumps([payload["model"], payload["memory"], payload["device"]], sort_keys=True)
+    model_cache_key = json.dumps([payload["model"], payload["memory"], payload["device"]], sort_keys=True)
     device = torch.device(payload["device"])
     dtype = (
         getattr(
@@ -293,10 +293,10 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
     )
     output.mkdir(parents=True, exist_ok=True)
     axes = {}
-    for key in ("x", "y", "z"):
-        axis = getattr(request, key)
+    for axis_name in ("x", "y", "z"):
+        axis = getattr(request, axis_name)
         if axis:
-            axes[key] = axis.model_dump() | {
+            axes[axis_name] = axis.model_dump() | {
                 "label": AXES[axis.key],
                 "labels": [
                     checkpoints[value]["name"]
@@ -348,7 +348,7 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
             if device.type == "cuda"
             else torch.float32
         )
-        loaded = kept.take(key) if kept is not None else None
+        loaded = kept.take(model_cache_key) if kept is not None else None
         reused = loaded is not None
         if not reused:
             emit("phase.changed", phase="loading")
@@ -586,7 +586,7 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
             loaded.text.unload()
             if kept is not None and clean and loaded.extra.get("materialized", True):
                 loaded.latent.to("cpu")
-                kept.keep(key, loaded)
+                kept.keep(model_cache_key, loaded)
             else:
                 loaded.latent.unload()
         bindings.clear()
