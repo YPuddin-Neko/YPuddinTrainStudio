@@ -94,7 +94,12 @@
 .compact-schema .config-field-boolean > .config-field-control > label { min-width: 0; font-size: 13px; line-height: 20px; color: var(--studio-text); font-weight: 500; cursor: pointer; }
 .compact-schema .config-field-boolean .config-readonly-control { display: flex; }
 .compact-schema .config-field-boolean .studio-switch { flex: none; }
-.config-native-limit { display: grid; gap: 8px; width: 100%; min-width: 0; }
+.config-native-limit { position: relative; width: 100%; min-width: 0; }
+.config-native-limit > input { padding-right: 34px !important; }
+.config-native-limit:has([aria-expanded=true]) > input { border-color: var(--studio-accent); }
+.config-field .config-native-limit .config-native-limit-toggle.studio-select { position: absolute; top: 1px; right: 1px; bottom: 1px; width: 32px; height: auto; min-height: 0; padding: 0; justify-content: center; border: 0; border-radius: 0 5px 5px 0; background: transparent; }
+.config-native-limit-toggle > .studio-select-value { display: none; }
+.config-native-limit-toggle > .studio-select-chevron { margin: 0; }
 .config-toggle-control { display: flex; align-items: center; gap:8px; min-width: 0; font-size: 13px; }
 
 .compact-schema .config-field input:not([type="checkbox"]):not([type="range"]),

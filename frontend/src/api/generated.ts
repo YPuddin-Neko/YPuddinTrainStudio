@@ -2743,14 +2743,14 @@ export interface components {
             dora_axis: "input" | "output";
             /**
              * Dora Compute Mode
-             * @description 标准模式使用 FP32 计算 DoRA；兼容模式按导出权重的精度和融合精度计算，减少训练与低精度加载出图的差异。
+             * @description 标准模式：使用 FP32 计算 DoRA。兼容模式：训练时考虑权重保存和融合过程中的精度变化，减少导出前后的计算差异。
              * @default standard
              * @enum {string}
              */
             dora_compute_mode: "standard" | "comfyui";
             /**
              * Dora Merge Dtype
-             * @description 兼容模式下，模拟底模与 DoRA 权重合并时的计算精度。自动根据当前底模和加载设置确定；手动选择时，应与实际出图软件的融合精度一致。它不改变可训练参数精度或权重保存精度，FP32 参数仍可保存为 BF16。
+             * @description 底模与 DoRA 权重合并时的计算精度。自动根据当前底模和加载设置确定。它不改变可训练参数精度或权重保存精度。
              * @default auto
              * @enum {string}
              */
@@ -3446,7 +3446,7 @@ export interface components {
             native_max_pixels_mode: "auto" | "custom";
             /**
              * Native Max Pixels
-             * @description 原生模式单图及一次计算的像素上限，1048576 = 1024²。不同尺寸分组计算后，按图片数累积梯度；显存占用还受模型和批量大小影响。
+             * @description 原生模式单图及一次计算的像素上限。最长边限制和模型对齐同时生效，调大通常需要更多显存。
              * @default 1048576
              */
             native_max_pixels: number;

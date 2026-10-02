@@ -657,9 +657,19 @@ function NativePixelLimit({value, mode, estimate, english, label, onChange, onMo
   value: number | string; mode: 'auto' | 'custom'; estimate?: NativeAreaEstimate; english: boolean; label: string;
   onChange: (next: number | string) => void; onModeChange: (next: string, custom: number) => void; invalid: boolean;
 }) {
+  const box = React.useRef<HTMLDivElement>(null);
+  const input = React.useRef<HTMLInputElement>(null);
+  const focusCustom = React.useRef(false);
   const validCustom = typeof value === 'number' && Number.isInteger(value) && value >= 1024 && value <= 67108864;
   const lastCustom = React.useRef(validCustom ? value : 1048576);
   React.useEffect(() => { if (validCustom) lastCustom.current = value as number; }, [validCustom, value]);
+  React.useLayoutEffect(() => {
+    if (mode === 'custom' && focusCustom.current) {
+      focusCustom.current = false;
+      input.current?.focus();
+      input.current?.select();
+    }
+  }, [mode]);
   const side = typeof value === 'number' && value > 0 ? Number(Math.sqrt(value).toFixed(2)) : '';
   const amount = estimate?.state === 'ready' && typeof estimate.maxPixels === 'number' && estimate.maxPixels > 0
     ? String(Number(Math.sqrt(estimate.maxPixels).toFixed(2)))
@@ -667,14 +677,18 @@ function NativePixelLimit({value, mode, estimate, english, label, onChange, onMo
     : estimate?.state === 'error' ? (english ? 'calculation failed' : '计算失败')
     : estimate?.state === 'unavailable' ? (english ? 'unavailable' : '暂不可用')
     : english ? 'from training images' : '随训练图片计算';
-  return <div className="config-native-limit">
-    <StudioSelect id="config-dataset.native_max_pixels" aria-label={label} aria-invalid={invalid}
-      aria-describedby="config-dataset.native_max_pixels-hint" value={mode}
-      options={[{value: 'auto', label: english ? `Auto (${amount})` : `自动（${amount}）`}, {value: 'custom', label: english ? 'Custom' : '自定义'}]}
-      onValueChange={next => onModeChange(next, validCustom ? value as number : lastCustom.current)}/>
-    {mode === 'custom' && <input id="config-dataset.native_max_pixels-custom" aria-label={english ? 'Image area limit (equivalent side, px)' : '图像面积上限（等效边长 px）'}
+  return <div ref={box} className="config-native-limit">
+    {mode === 'custom' && <input ref={input} id="config-dataset.native_max_pixels" aria-label={label}
       aria-describedby="config-dataset.native_max_pixels-hint" aria-invalid={invalid} type="number" min={32} max={8192} step="any" value={side}
       onChange={event=>onChange(event.target.value === '' ? '' : Math.round(Number(event.target.value) ** 2))}/>}
+    <StudioSelect id={`config-dataset.native_max_pixels${mode === 'custom' ? '-mode' : ''}`} aria-label={label} aria-invalid={invalid}
+      className={mode === 'custom' ? 'config-native-limit-toggle' : undefined} anchorRef={box}
+      aria-describedby="config-dataset.native_max_pixels-hint" value={mode}
+      options={[{value: 'auto', label: english ? `Auto (${amount})` : `自动（${amount}）`}, {value: 'custom', label: english ? 'Custom' : '自定义'}]}
+      onValueChange={next => {
+        focusCustom.current = next === 'custom' && mode !== 'custom';
+        onModeChange(next, validCustom ? value as number : lastCustom.current);
+      }}/>
   </div>;
 }
 

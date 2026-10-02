@@ -227,7 +227,7 @@ class DatasetConfig(_Strict):
         1_048_576,
         ge=1024,
         le=67_108_864,
-        help="原生模式单图及一次计算的像素上限，1048576 = 1024²。不同尺寸分组计算后，按图片数累积梯度；显存占用还受模型和批量大小影响。",
+        help="原生模式单图及一次计算的像素上限。最长边限制和模型对齐同时生效，调大通常需要更多显存。",
         ui_=ui("dataset", order=11, show_when="dataset.resolution_mode == 'native'"),
     )
     native_max_side: int = F(
