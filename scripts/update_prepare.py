@@ -147,6 +147,45 @@ def _assert_native_unchanged(boot: ModuleType, protected: dict[str, str]) -> dic
     return versions
 
 
+def _dependency_installer(boot: ModuleType, python: Path) -> list[str]:
+    # Shared DTK packages belong to the vendor interpreter; pip leaves them in place.
+    shared = boot.PROFILE == "linux-dtk" and boot.recorded_vendor_stack()
+    uv = None if shared else boot.uv_path()
+    try:
+        config = (boot.VENV / "pyvenv.cfg").read_text(encoding="utf-8")
+    except OSError:
+        config = ""
+    uv_created = any(line.partition("=")[0].strip() == "uv" for line in config.splitlines())
+    if uv_created and uv:
+        return [uv, "pip", "install", "--python", str(python)]
+
+    probe = subprocess.run(
+        [str(python), "-m", "pip", "--version"],
+        cwd=boot.ROOT, env=boot._env(), capture_output=True, text=True, timeout=30,
+    )
+    if probe.returncode:
+        if uv:
+            boot.log("当前环境缺少可用的 pip，使用 uv 安装更新依赖")
+            return [uv, "pip", "install", "--python", str(python)]
+        boot.log("当前环境缺少可用的 pip，尝试离线修复")
+        repaired = subprocess.run(
+            [str(python), "-m", "ensurepip", "--upgrade"],
+            cwd=boot.ROOT, env=boot._env(), timeout=120,
+        )
+        probe = subprocess.run(
+            [str(python), "-m", "pip", "--version"],
+            cwd=boot.ROOT, env=boot._env(), capture_output=True, text=True, timeout=30,
+        )
+        if repaired.returncode or probe.returncode:
+            reason = (probe.stderr or probe.stdout).strip()
+            raise PreparationError(
+                "pip 离线修复失败，请检查上方 ensurepip 日志。"
+                "安装 uv（https://docs.astral.sh/uv/getting-started/installation/）"
+                "或修复当前 Python 的 pip 后重试。" + (f"\n{reason}" if reason else "")
+            )
+    return [str(python), "-m", "pip", "install", "--disable-pip-version-check", "--no-input"]
+
+
 def install_dependencies(
     root: str | Path,
     python: str | Path,
@@ -201,15 +240,11 @@ def install_dependencies(
     downloads = boot.DOWNLOAD_SETTINGS or {}
     sources = boot.pypi_sources(downloads.get("pypi", "auto"), downloads.get("fallback", True))
     boot.log("检查更新依赖，保留当前 PyTorch 计算环境")
+    installer = _dependency_installer(boot, selected_python)
     requirement = str(boot.ROOT) + (f"[{extras}]" if extras else "")
     for index, source in enumerate(sources):
         command = [
-            str(selected_python),
-            "-m",
-            "pip",
-            "install",
-            "--disable-pip-version-check",
-            "--no-input",
+            *installer,
             "--constraint",
             str(constraints),
             "--index-url",
