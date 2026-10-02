@@ -1,7 +1,7 @@
 import React from 'react';
 import { Check, ChevronRight, ExternalLink, RefreshCw } from 'lucide-react';
 import { apiClient } from '../../api/client';
-import { ApiError, type TrainerUpdateStatus, type TrainerInstallStatus, type TrainerCommit as UpdateCommit } from '../../api/types';
+import { ApiError, type TrainerUpdateStatus, type TrainerInstallStatus } from '../../api/types';
 import Dialog from '../../components/Dialog';
 import { LoadingNote } from '../../components/Loading';
 import { formatApiError } from '../../utils/errors';
@@ -24,6 +24,7 @@ function createUpdateRequestId(): string | null {
 function readPendingUpdate(): UpdateTarget | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(PENDING_UPDATE_KEY) || 'null') as UpdateTarget | null;
+    if (value?.id === sessionStorage.getItem(RELOADED_UPDATE_KEY)) { rememberPendingUpdate(null); return null; }
     return value && typeof value.id === 'string' && /^[a-f0-9]{40}$/i.test(value.target_commit) && typeof value.before_instance_id === 'string' ? value : null;
   } catch { return null; }
 }
@@ -32,7 +33,7 @@ function rememberPendingUpdate(target: UpdateTarget | null) {
 }
 function completedInstall(status: TrainerInstallStatus, expected: UpdateTarget | null): boolean {
   const op = status.operation;
-  return !!op && op.state === 'succeeded' && (!expected || op.id === expected.id && op.target_commit === expected.target_commit && op.before_instance_id === expected.before_instance_id)
+  return !!op && !!expected && op.state === 'succeeded' && op.id === expected.id && op.target_commit === expected.target_commit && op.before_instance_id === expected.before_instance_id
     && status.running_commit === op.target_commit && !!op.before_instance_id && !!op.result_instance_id
     && status.instance_id === op.result_instance_id && status.instance_id !== op.before_instance_id;
 }
@@ -68,6 +69,7 @@ function useTrainerInstall(onReload: () => void) {
   const [error, setError] = React.useState('');
   const [revision, setRevision] = React.useState(0);
   const expected = React.useRef<UpdateTarget | null>(readPendingUpdate());
+  const observed = React.useRef<UpdateTarget | null>(expected.current);
   const posting = React.useRef<AbortController | null>(null);
   const reload = React.useRef(onReload); reload.current = onReload;
   const reloadScheduled = React.useRef<string | null>(null);
@@ -93,6 +95,7 @@ function useTrainerInstall(onReload: () => void) {
           }
           if (op && !['succeeded', 'failed'].includes(op.state) && !expected.current) {
             expected.current = { id: op.id, target_commit: op.target_commit, before_instance_id: op.before_instance_id };
+            observed.current = expected.current;
             rememberPendingUpdate(expected.current);
           }
           const matches = !expected.current || op?.id === expected.current.id && op.target_commit === expected.current.target_commit;
@@ -134,7 +137,7 @@ function useTrainerInstall(onReload: () => void) {
     const id = createUpdateRequestId();
     if (!id) { setError(text('当前浏览器无法创建更新请求，请换用其他浏览器。', 'This browser cannot create an update request. Use another browser.')); return; }
     const target = { id, target_commit: commit, before_instance_id: status.instance_id };
-    expected.current = target; rememberPendingUpdate(target);
+    expected.current = target; observed.current = target; rememberPendingUpdate(target);
     const controller = new AbortController(); posting.current = controller;
     setSubmitting(true); setError(''); setUnconfirmed(false);
     try {
@@ -150,7 +153,7 @@ function useTrainerInstall(onReload: () => void) {
       }
     } finally { if (!controller.signal.aborted) setSubmitting(false); if (posting.current === controller) posting.current = null; }
   };
-  const operation = status?.operation && (expected.current ? status.operation.id === expected.current.id && status.operation.target_commit === expected.current.target_commit : status.operation.state !== 'succeeded' || verified) ? status.operation : null;
+  const operation = status?.operation && observed.current?.id === status.operation.id && observed.current.target_commit === status.operation.target_commit ? status.operation : null;
   const refresh = React.useCallback(() => setRevision(value => value + 1), []);
   const busy = submitting || watching && !!expected.current || !!status?.operation && !['failed', 'succeeded'].includes(status.operation.state)
     || !!expected.current && !verified;
@@ -163,19 +166,6 @@ function externalUrl(value: string | null | undefined): string | undefined {
     const url = new URL(value);
     return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined;
   } catch { return undefined; }
-}
-
-function CommitEntry({ entry }: { entry: UpdateCommit }) {
-  const text = useWorkspaceText();
-  const url = externalUrl(entry.url);
-  const meta = <div className="trainer-commit-meta"><code title={entry.commit}>{entry.commit.slice(0, 8)}</code><span>{entry.author}</span><time dateTime={entry.date}>{formatTime(entry.date)}</time>{url && <a href={url} target="_blank" rel="noreferrer" className="ui-link" aria-label={text(`查看提交 ${entry.commit.slice(0, 8)}`, `View commit ${entry.commit.slice(0, 8)}`)}><ExternalLink size={12}/></a>}</div>;
-  return <li className="trainer-commit">
-    {entry.body.trim() ? <details>
-      <summary><ChevronRight size={14} className="disclosure-chevron" aria-hidden="true"/><span>{entry.subject}</span></summary>
-      <p className="trainer-commit-body">{entry.body}</p>
-    </details> : <p className="trainer-commit-subject">{entry.subject}</p>}
-    {meta}
-  </li>;
 }
 
 export default function TrainerUpdates({ onReload = () => window.location.reload() }: { onReload?: () => void } = {}) {
@@ -221,10 +211,6 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
   }[state];
   const latest = data?.latest;
   const repositoryUrl = externalUrl(data?.repository_url);
-  const commits = data?.commits ?? [];
-  const historyUrl = data?.history_kind === 'updates'
-    ? externalUrl(data.compare_url) || repositoryUrl
-    : repositoryUrl && latest ? `${repositoryUrl.replace(/\/$/, '')}/commits/${encodeURIComponent(latest.commit)}` : repositoryUrl;
   const checkErrors: Record<string, string> = {
     network: text('无法连接 GitHub，请检查网络或代理后重试。', 'Cannot connect to GitHub. Check your network or proxy, then retry.'),
     rate_limit: text('GitHub 请求次数已达上限，请稍后重试。', 'GitHub request limit reached. Try again later.'),
@@ -316,12 +302,6 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
         </div>}
         {latest && reason && !install.busy && <p className="settings-note trainer-install-reason">{blockedReasons[reason] || text('当前无法更新，请稍后重试。', 'Updating is unavailable. Try again later.')}</p>}
         {installPanel}
-        <section className="trainer-update-history" aria-labelledby="trainer-history-title">
-          <div className="trainer-history-heading"><h3 id="trainer-history-title">{data.history_kind === 'updates' ? text('更新记录', 'Changes since your version') : text('最近提交', 'Recent commits')}</h3>{data.total_commits != null && <span className="settings-note">{text(`共 ${data.total_commits} 条`, `${data.total_commits} commits`)}</span>}</div>
-          {commits.length ? <ol className="trainer-commit-list">{commits.map(entry => <CommitEntry key={entry.commit} entry={entry}/>)}</ol>
-            : <p className="settings-note trainer-history-empty">{data.state === 'unchecked' ? text('检查后显示提交记录。', 'Check for updates to see commit history.') : data.history_kind === 'updates' && data.state === 'current' ? text('没有新的提交。', 'No new commits.') : text('暂无提交记录。', 'No commit history is available.')}</p>}
-          {data.has_more && historyUrl && <a className="ui-link trainer-history-more" href={historyUrl} target="_blank" rel="noreferrer">{text('在 GitHub 查看全部', 'View all on GitHub')}<ExternalLink size={12}/></a>}
-        </section>
       </>}
       {!data && installPanel}
     </>}

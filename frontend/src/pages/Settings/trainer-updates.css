@@ -22,23 +22,6 @@
 .trainer-update-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .trainer-update-apply[data-state=busy]:disabled { opacity:1; cursor:wait; }
 .trainer-update-apply[data-state=succeeded]:disabled { opacity:1; cursor:default; color:var(--studio-success); border-color:color-mix(in srgb,var(--studio-success) 25%,var(--studio-line)); background:color-mix(in srgb,var(--studio-success) 8%,var(--studio-panel)); }
-.trainer-update-history { margin-top:22px; }
-.trainer-history-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:6px 12px; padding-bottom:10px; border-bottom:1px solid var(--settings-line); }
-.trainer-history-heading h3 { margin:0; font-size:14px; }
-.trainer-commit-list { list-style:none; padding:0; margin:0; }
-.trainer-commit { padding:12px 0; border-bottom:1px solid var(--settings-line); }
-.trainer-commit summary { display:flex; align-items:flex-start; gap:6px; font-size:13px; font-weight:500; line-height:1.6; cursor:pointer; list-style:none; }
-.trainer-commit summary::-webkit-details-marker { display:none; }
-.trainer-commit summary > svg { flex:none; margin-top:3px; color:var(--settings-muted); }
-.trainer-commit summary > span { min-width:0; overflow-wrap:anywhere; }
-.trainer-commit summary:focus-visible { outline:2px solid var(--studio-accent); outline-offset:3px; border-radius:2px; }
-.trainer-commit-subject { margin:0; font-size:13px; font-weight:500; line-height:1.6; overflow-wrap:anywhere; }
-.trainer-commit-body { margin:9px 0 2px 20px; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.7; }
-.trainer-commit-meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin-top:6px; color:var(--settings-muted); font-size:11px; }
-.trainer-commit-meta > span,.trainer-commit-meta > time { overflow-wrap:anywhere; min-width:0; }
-.trainer-commit-meta code { font-size:11px; }
-.trainer-history-empty { padding:12px 0; }
-.trainer-history-more { margin-top:12px; font-size:12px; }
 @container settings (max-width:560px) { .trainer-version-grid { grid-template-columns:1fr; } }
 @media(max-width:560px) { .trainer-version-grid { grid-template-columns:1fr; } }
 
