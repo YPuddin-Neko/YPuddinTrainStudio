@@ -79,6 +79,49 @@ def write_operation(folder: Path, **fields) -> TrainerInstallOperation:
     return operation
 
 
+def record_update_progress(folder: Path, message: str, *, replace_last: bool = False, **fields) -> None:
+    operation = read_operation(folder)
+    assert operation is not None
+    previous = operation.log[:-1] if replace_last else operation.log
+    write_operation(folder, message=message, log=[*previous, f"[studio] {message}"][-80:], **fields)
+
+
+def source_progress_callback(folder: Path):
+    last_download = None
+    last_written_at = 0.0
+
+    def progress(event):
+        nonlocal last_download, last_written_at
+        phase = event["phase"]
+        archive = event.get("archive")
+        label = "当前版本源码" if archive == "baseline.zip" else "新版本源码"
+        if phase in {"downloading", "downloaded"}:
+            now = time.monotonic()
+            same_download = last_download is not None and last_download == archive
+            if phase == "downloading" and same_download and now - last_written_at < 1:
+                return
+            completed = int(event.get("completed", 0))
+            message = f"{label}下载完成：{completed / 1024 / 1024:.1f} MiB" if phase == "downloaded" else (
+                f"正在下载{label}：{completed / 1024 / 1024:.1f} MiB" if completed else f"正在下载{label}"
+            )
+            record_update_progress(folder, message, state="downloading", replace_last=same_download)
+            last_download, last_written_at = archive, now
+            return
+        messages = {
+            "checking": "正在检查本地源码",
+            "extracting": f"正在解压{label}",
+            "verifying": "正在校验源码文件",
+            "fetching": "正在同步 Git 版本记录",
+            "prepared": "源码准备完成",
+            "ready": "源码与前端构建校验完成",
+        }
+        if phase in messages:
+            record_update_progress(folder, messages[phase], **({"state": "preparing"} if phase == "checking" else {}))
+            last_download = None
+
+    return progress
+
+
 def discard_preparation(folder: Path, operation_id: str) -> None:
     work = folder / str(UUID(operation_id))
     for name in ("baseline", "staged"):
@@ -152,6 +195,7 @@ def run_helper(folder: Path, stage: str, root: Path, python: str, policy: ProxyP
     env = policy.subprocess_env()
     env.pop(UPDATE_ID_ENV, None)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONUNBUFFERED"] = "1"
     output = work / (log_name or f"{stage}.log")
     # Installer output stays bounded on disk and is redacted before reaching the UI.
     with output.open("w", encoding="utf-8") as stream:
@@ -298,7 +342,7 @@ class TrainerInstaller:
             fields = dict(id=str(request.request_id), target_commit=request.target_commit,
                           previous_commit=self.updates.current.commit, before_instance_id=self.lifecycle.instance_id,
                           result_instance_id=None, state="preparing", message="正在准备更新", error=None,
-                          started_at=time.time(), log=[], rolled_back=False)
+                          started_at=time.time(), log=["[studio] 正在准备更新"], rolled_back=False)
             policy = ProxyPolicy()
             maintenance_set = False
             try:
@@ -342,20 +386,21 @@ class TrainerInstaller:
             assert operation is not None
             work = self.folder / operation.id
             work.mkdir(parents=True, exist_ok=True)
-            write_operation(self.folder, state="downloading", message="正在下载更新")
+            progress = source_progress_callback(self.folder)
+            write_operation(self.folder, state="preparing", message="正在准备更新")
             plan = prepare_update(self.root, work, operation.previous_commit, operation.target_commit,
-                                  self.updates.current.source, policy, lambda *args: None)
+                                  self.updates.current.source, policy, progress)
             staged = Path(plan["staged_root"])
             if self.cancel.is_set():
                 raise RuntimeError("更新准备已停止。")
             settings = self.context.settings()
             atomic_json(work / "settings.json", {"downloads": settings.get("downloads", {}), "paths": settings.get("paths", {})})
             snapshot_helpers(work)
-            write_operation(self.folder, state="building", message="正在构建前端")
+            record_update_progress(self.folder, "正在构建前端", state="building")
             run_helper(self.folder, "build", staged, sys.executable, policy, self.cancel)
-            seal_update(work / "plan.json")
+            seal_update(work / "plan.json", progress)
             with self.lock, self.lifecycle.lock, self.context.db.lock:
-                write_operation(self.folder, state="restarting", message="正在安装并重启训练器")
+                record_update_progress(self.folder, "正在安装并重启训练器", state="restarting")
                 self.lifecycle.request_update(operation.id)
         except Exception as exc:
             with self.lock, self.lifecycle.lock, self.context.db.lock:
@@ -387,7 +432,7 @@ class TrainerInstaller:
         if self.lifecycle.instance_id == operation.before_instance_id:
             return
         with self.context.db.lock:
-            write_operation(self.folder, state="succeeded", message="更新完成", result_instance_id=self.lifecycle.instance_id)
+            record_update_progress(self.folder, "更新完成", state="succeeded", result_instance_id=self.lifecycle.instance_id)
             self.context.db.set_kv("environment.maintenance", {"blocked": False})
         threading.Thread(target=discard_preparation, args=(self.folder, operation.id), daemon=True).start()
 
@@ -462,11 +507,11 @@ def apply_from_launcher(data_root: Path, update_id: str, python: str) -> bool | 
     try:
         policy = launcher_policy(data_root)
         plan = json.loads((work / "plan.json").read_text("utf-8"))
-        write_operation(folder, state="applying", message="正在替换源码")
+        record_update_progress(folder, "正在替换源码", state="applying")
         apply_update(work / "plan.json", python)
-        write_operation(folder, state="installing", message="正在检查并安装依赖")
+        record_update_progress(folder, "正在检查并安装依赖", state="installing")
         run_helper(folder, "deps", Path(plan["root"]), python, policy)
-        write_operation(folder, state="restarting", message="正在启动新版本")
+        record_update_progress(folder, "正在启动新版本", state="restarting")
         return True
     except Exception as exc:
         try:

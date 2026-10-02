@@ -179,6 +179,7 @@ def _download_archive(commit: str, destination: Path, policy: ProxyPolicy, callb
     request = urllib.request.Request(url, headers={"User-Agent": "YPuddin-Train-Studio"})
     started = time.monotonic()
     received = 0
+    _emit(callback, "downloading", "Downloading source archive.", archive=destination.name, completed=0)
     try:
         with policy.opener(_NoRedirect()).open(request, timeout=30) as response, destination.open("xb") as stream:
             if response.geturl() != url:
@@ -188,7 +189,8 @@ def _download_archive(commit: str, destination: Path, policy: ProxyPolicy, callb
                 if received > MAX_ARCHIVE_BYTES or time.monotonic() - started > 600:
                     _fail("download_limit", "The source archive exceeds the download limit.")
                 stream.write(block)
-                _emit(callback, "downloading", "Downloading source archive.", completed=received)
+                _emit(callback, "downloading", "Downloading source archive.", archive=destination.name, completed=received)
+        _emit(callback, "downloaded", "Source archive downloaded.", archive=destination.name, completed=received)
     except SourceUpdateError:
         raise
     except (OSError, urllib.error.URLError, http.client.HTTPException):
@@ -312,9 +314,12 @@ def prepare_update(root, work_dir, current_commit, target_commit, source_kind, p
     baseline.mkdir()
     staged.mkdir()
     _download_archive(current_commit, work / "baseline.zip", policy, progress_callback)
+    _emit(progress_callback, "extracting", "Extracting source archive.", archive="baseline.zip")
     before_source = _extract(work / "baseline.zip", baseline, current_commit)
     _download_archive(target_commit, work / "target.zip", policy, progress_callback)
+    _emit(progress_callback, "extracting", "Extracting source archive.", archive="target.zip")
     after_source = _extract(work / "target.zip", staged, target_commit)
+    _emit(progress_callback, "verifying", "Verifying source files.")
     before = _hashes(root, before_source.keys() | after_source.keys())
     for name, digest in before_source.items():
         if source_kind == "package" and before[name] != digest:
