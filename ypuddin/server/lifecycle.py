@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict
 from ypuddin.runtime_profiles import current_profile, profile_root, selected_key
 
 from .environment import EnvironmentError
+from .network import ProxyPolicy
 from .torch_environments import ACTIVE, atomic_json, same_interpreter
 
 RESTART_TOKEN_ENV = "YPUDDIN_SERVICE_RESTART_TOKEN"
@@ -239,7 +240,9 @@ def pending_data_root(root: Path) -> Path | None:
 def launch_service(data_root: str, host: str | None, port: int | None) -> int:
     from .trainer_install import (
         UPDATE_ID_ENV,
+        WorkerStartupLog,
         apply_from_launcher,
+        launcher_policy,
         rollback_from_launcher,
         wait_for_updated_worker,
     )
@@ -312,12 +315,30 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
             child_env.pop(UPDATE_ID_ENV, None)
             if pending_update:
                 child_env[UPDATE_ID_ENV] = pending_update
+                child_env["PYTHONUNBUFFERED"] = "1"
+                child_env["PYTHONIOENCODING"] = "utf-8"
+            startup_log = None
+            policy = ProxyPolicy()
             try:
-                child = subprocess.Popen(command, env=child_env)
-            except OSError as exc:
-                print(f"[studio] Cannot start the selected interpreter: {exc}", flush=True)
                 if pending_update:
-                    if not rollback_from_launcher(root, python, "无法启动更新后的 Python 服务。"):
+                    policy = launcher_policy(root)
+                    child = subprocess.Popen(command, env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                             text=True, encoding="utf-8", errors="replace", bufsize=1)
+                    startup_log = WorkerStartupLog(child, policy)
+                else:
+                    child = subprocess.Popen(command, env=child_env)
+            except (OSError, ValueError, RuntimeError) as exc:
+                reason = policy.redact(exc)
+                print(f"[studio] Cannot start the selected interpreter: {reason}", flush=True)
+                if pending_update:
+                    if child is not None and child.poll() is None:
+                        child.terminate()
+                        try:
+                            child.wait(timeout=8)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait(timeout=8)
+                    if not rollback_from_launcher(root, python, "无法启动更新后的 Python 服务：" + reason):
                         return 1
                     pending_update = None
                     continue
@@ -330,15 +351,23 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                 continue
             if pending_update:
                 if not wait_for_updated_worker(child, root, pending_update):
-                    if child.poll() is None:
+                    exit_code = child.poll()
+                    if exit_code is None:
                         child.terminate()
                         try:
                             child.wait(timeout=8)
                         except subprocess.TimeoutExpired:
                             child.kill()
                             child.wait(timeout=8)
-                    restored = rollback_from_launcher(root, python, "新版本未能正常启动，已停止本次更新。",
-                                                      repair_dependencies=terminated_signal is None)
+                    if terminated_signal is not None:
+                        reason = "新版本启动被中断，已停止本次更新。"
+                    elif exit_code is None:
+                        reason = "新版本启动超时，已停止本次更新。"
+                    else:
+                        reason = f"新版本未能正常启动（退出码 {exit_code}），已停止本次更新。"
+                    restored = rollback_from_launcher(root, python, reason,
+                                                      repair_dependencies=terminated_signal is None,
+                                                      startup_log=startup_log.finish())
                     pending_update = None
                     if terminated_signal is not None:
                         return 128 + terminated_signal
@@ -346,6 +375,7 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                         print("[studio] 更新恢复检查失败，已停止启动。请查看更新日志并重新运行启动脚本修复环境。", flush=True)
                         return 1
                     continue
+                startup_log.release()
                 pending_update = None
             try:
                 code = child.wait()

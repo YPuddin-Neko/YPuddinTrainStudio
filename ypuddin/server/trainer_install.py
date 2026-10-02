@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal
@@ -95,14 +96,63 @@ def helper_command(helper: Path, stage: str, root: Path, python: str, work: Path
     return [python, str(helper), stage, "--root", str(root), "--settings-file", str(work / "settings.json"), "--work-dir", str(work)]
 
 
-def run_helper(folder: Path, stage: str, root: Path, python: str, policy: ProxyPolicy, cancel=None) -> None:
+def redacted_log_lines(stream, policy: ProxyPolicy):
+    dropping_line = False
+    for line in iter(lambda: stream.readline(8192), ""):
+        oversized = len(line) == 8192 and not line.endswith("\n")
+        if oversized or dropping_line:
+            already_dropping = dropping_line
+            dropping_line = oversized
+            if already_dropping:
+                continue
+            line = "[studio] 过长的日志行已省略。"
+        line = policy.redact(line.strip())[-2000:]
+        if line:
+            yield line
+
+
+class WorkerStartupLog:
+    """Drain the worker pipe for its lifetime; retain only bounded startup output."""
+
+    def __init__(self, child, policy: ProxyPolicy):
+        self.lines: deque[str] = deque(maxlen=80)
+        self.lock = threading.Lock()
+        self.capturing = True
+        self.reader = threading.Thread(target=self._read, args=(child.stdout, policy), daemon=True)
+        self.reader.start()
+
+    def _read(self, stream, policy: ProxyPolicy) -> None:
+        try:
+            for line in redacted_log_lines(stream, policy):
+                with self.lock:
+                    if self.capturing:
+                        self.lines.append(line)
+                print(line, flush=True)
+        finally:
+            stream.close()
+
+    def finish(self) -> list[str]:
+        # A descendant may still own the pipe after the HTTP worker exits.
+        self.reader.join(timeout=1)
+        with self.lock:
+            self.capturing = False
+            return list(self.lines)
+
+    def release(self) -> None:
+        with self.lock:
+            self.capturing = False
+            self.lines.clear()
+
+
+def run_helper(folder: Path, stage: str, root: Path, python: str, policy: ProxyPolicy, cancel=None,
+               *, log_name: str | None = None, record_log: bool = True) -> None:
     operation = read_operation(folder)
     assert operation is not None
     work = folder / operation.id
     env = policy.subprocess_env()
     env.pop(UPDATE_ID_ENV, None)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    output = work / f"{stage}.log"
+    output = work / (log_name or f"{stage}.log")
     # Installer output stays bounded on disk and is redacted before reaching the UI.
     with output.open("w", encoding="utf-8") as stream:
         child = subprocess.Popen(helper_command(work / "helper" / "scripts" / "update_prepare.py", stage, root, python, work),
@@ -149,29 +199,25 @@ def run_helper(folder: Path, stage: str, root: Path, python: str, policy: ProxyP
         watcher = threading.Thread(target=guard, daemon=True)
         watcher.start()
         completed = False
+        tail: deque[str] = deque(maxlen=8)
         try:
             assert child.stdout is not None
-            dropping_line = False
-            for line in iter(lambda: child.stdout.readline(8192), ""):
-                oversized = len(line) == 8192 and not line.endswith("\n")
-                if oversized or dropping_line:
-                    already_dropping = dropping_line
-                    dropping_line = oversized
-                    if already_dropping:
-                        continue
-                    line = "[studio] 过长的安装日志行已省略。"
-                line = policy.redact(line.strip())[-2000:]
-                if line:
-                    print(line, flush=True)
-                    if stream.tell() < 2 * 1024 * 1024:
-                        stream.write(line + "\n")
+            for line in redacted_log_lines(child.stdout, policy):
+                tail.append(line)
+                print(line, flush=True)
+                if stream.tell() < 2 * 1024 * 1024:
+                    stream.write(line + "\n")
+                if record_log:
                     op = read_operation(folder)
                     write_operation(folder, log=[*(op.log if op else []), line][-80:])
                 if time.monotonic() > deadline:
                     stop()
             code = child.wait()
             if code or timed_out.is_set():
-                raise RuntimeError("前端构建失败，请查看更新日志。" if stage == "build" else "训练器依赖安装失败，请查看更新日志。")
+                label = "前端构建失败" if stage == "build" else "训练器依赖安装失败"
+                detail = "等待超时或已停止" if timed_out.is_set() else f"退出码 {code}"
+                output_tail = "\n".join(tail)[-4000:]
+                raise RuntimeError(f"{label}（{detail}）。" + ("\n" + output_tail if output_tail else ""))
             completed = True
         finally:
             finished.set()
@@ -191,15 +237,26 @@ class TrainerInstaller:
         self.cancel = threading.Event()
         self.starting_id = os.environ.pop(UPDATE_ID_ENV, None)
         self.previous_maintenance: dict = {}
+        self._failed_operation: TrainerInstallOperation | None = None
         operation = read_operation(self.folder)
         if operation and operation.state in BUSY:
             if self.starting_id == operation.id:
                 self.context.db.set_kv("environment.maintenance", {"blocked": True, "restarting": True, "trainer_update": operation.id})
             else:
-                write_operation(self.folder, state="failed", message="更新被中断", error="更新被中断，请查看启动终端后重试。")
+                self._failed_operation = operation.model_copy(update={
+                    "state": "failed", "message": "更新被中断", "updated_at": time.time(),
+                    "error": operation.error or "更新被中断，请查看启动终端后重试。",
+                })
+                try:
+                    write_operation(self.folder, **self._failed_operation.model_dump())
+                except (OSError, ValueError) as exc:
+                    print("[studio] 无法保存中断的更新记录：" + ProxyPolicy().redact(exc), flush=True)
+
+    def _operation(self) -> TrainerInstallOperation | None:
+        return self._failed_operation or read_operation(self.folder)
 
     def _reason(self) -> str | None:
-        operation = read_operation(self.folder)
+        operation = self._operation()
         if operation and operation.state in BUSY:
             return "update_in_progress"
         reason = self.lifecycle._blocked()
@@ -221,13 +278,13 @@ class TrainerInstaller:
         with self.lock:
             reason = self._reason()
             return TrainerInstallStatus(can_apply=reason is None, reason=reason,
-                                        operation=read_operation(self.folder), running_commit=self.updates.current.commit,
+                                        operation=self._operation(), running_commit=self.updates.current.commit,
                                         instance_id=self.lifecycle.instance_id)
 
     def start(self, request: TrainerInstallRequest) -> TrainerInstallStatus:
         checked = self.updates.status()
         with self.lock, self.lifecycle.lock, self.lifecycle.environment.lock, self.lifecycle.torch.lock, self.context.db.lock:
-            existing = read_operation(self.folder)
+            existing = self._operation()
             if existing and existing.id == str(request.request_id):
                 if existing.target_commit != request.target_commit:
                     raise ApiError("同一次更新不能更换目标版本。", status=409)
@@ -237,27 +294,51 @@ class TrainerInstaller:
                 raise ApiError("当前无法更新训练器，请先处理页面提示。", code="updates.blocked", status=409, details={"reason": reason})
             if checked.state != "available" or not checked.latest or checked.latest.commit != request.target_commit:
                 raise ApiError("请先检查更新，再选择检测到的版本。", code="updates.check_required", status=409)
-            self.folder.mkdir(parents=True, exist_ok=True)
             self.previous_maintenance = self.context.db.get_kv("environment.maintenance", {})
-            self.context.db.set_kv("environment.maintenance", {"blocked": True, "restarting": True, "trainer_update": str(request.request_id)})
-            self.lifecycle.updating = True
-            write_operation(self.folder, id=str(request.request_id), target_commit=request.target_commit,
-                            previous_commit=self.updates.current.commit, before_instance_id=self.lifecycle.instance_id,
-                            result_instance_id=None, state="preparing", message="正在准备更新", error=None,
-                            started_at=time.time(), log=[], rolled_back=False)
-            self.worker = threading.Thread(target=self._prepare, name="trainer-update", daemon=False)
-            self.cancel.clear()
-            self.worker.start()
+            fields = dict(id=str(request.request_id), target_commit=request.target_commit,
+                          previous_commit=self.updates.current.commit, before_instance_id=self.lifecycle.instance_id,
+                          result_instance_id=None, state="preparing", message="正在准备更新", error=None,
+                          started_at=time.time(), log=[], rolled_back=False)
+            policy = ProxyPolicy()
+            maintenance_set = False
+            try:
+                policy = ProxyPolicy.from_context(self.context)
+                self.folder.mkdir(parents=True, exist_ok=True)
+                write_operation(self.folder, **fields)
+                self._failed_operation = None
+                self.context.db.set_kv("environment.maintenance", {"blocked": True, "restarting": True, "trainer_update": str(request.request_id)})
+                maintenance_set = True
+                self.lifecycle.updating = True
+                self.worker = threading.Thread(target=self._prepare, name="trainer-update", daemon=False)
+                self.cancel.clear()
+                self.worker.start()
+            except Exception as exc:
+                self.lifecycle.updating = False
+                self.worker = None
+                reason = policy.redact(exc)
+                if maintenance_set:
+                    try:
+                        self.context.db.set_kv("environment.maintenance", self.previous_maintenance)
+                    except Exception as restore_error:
+                        reason += "；恢复维护状态失败：" + policy.redact(restore_error)
+                fields.update(state="failed", message="更新未能开始", error=reason, updated_at=time.time())
+                self._failed_operation = TrainerInstallOperation.model_validate(fields)
+                try:
+                    write_operation(self.folder, **fields)
+                except Exception as save_error:
+                    print("[studio] 无法保存更新失败记录：" + policy.redact(save_error), flush=True)
+                raise ApiError("训练器更新未能开始：" + reason, code="updates.start_failed", status=500,
+                               details={"reason": reason}) from exc
             return self.status()
 
     def _prepare(self):
         policy = ProxyPolicy()
+        operation = self._operation()
         try:
             policy = ProxyPolicy.from_context(self.context)
             from scripts.update_prepare import snapshot_helpers
 
             from .source_update import prepare_update, seal_update
-            operation = read_operation(self.folder)
             assert operation is not None
             work = self.folder / operation.id
             work.mkdir(parents=True, exist_ok=True)
@@ -278,10 +359,21 @@ class TrainerInstaller:
                 self.lifecycle.request_update(operation.id)
         except Exception as exc:
             with self.lock, self.lifecycle.lock, self.context.db.lock:
-                write_operation(self.folder, state="failed", message="更新准备失败", error=policy.redact(exc))
+                reason = policy.redact(exc)
                 self.lifecycle.updating = False
-                self.context.db.set_kv("environment.maintenance", self.previous_maintenance)
-            operation = read_operation(self.folder)
+                try:
+                    self.context.db.set_kv("environment.maintenance", self.previous_maintenance)
+                except Exception as restore_error:
+                    reason += "；恢复维护状态失败：" + policy.redact(restore_error)
+                operation = read_operation(self.folder) or operation
+                if operation:
+                    self._failed_operation = operation.model_copy(update={
+                        "state": "failed", "message": "更新准备失败", "error": reason, "updated_at": time.time(),
+                    })
+                    try:
+                        write_operation(self.folder, **self._failed_operation.model_dump())
+                    except Exception as save_error:
+                        print("[studio] 无法保存更新失败记录：" + policy.redact(save_error), flush=True)
             if operation:
                 discard_preparation(self.folder, operation.id)
 
@@ -316,7 +408,8 @@ def launcher_policy(data_root: Path) -> ProxyPolicy:
     return ProxyPolicy.from_context(context)
 
 
-def rollback_from_launcher(data_root: Path, python: str, reason: str, *, repair_dependencies: bool = True) -> bool:
+def rollback_from_launcher(data_root: Path, python: str, reason: str, *, repair_dependencies: bool = True,
+                           startup_log: list[str] | None = None) -> bool:
     from .source_update import rollback_update
     folder = update_folder(data_root)
     operation = read_operation(folder)
@@ -325,6 +418,18 @@ def rollback_from_launcher(data_root: Path, python: str, reason: str, *, repair_
     policy = ProxyPolicy()
     restored = False
     dependencies_ready = not repair_dependencies
+    if startup_log:
+        reason += "\n" + "\n".join(startup_log[-8:])[-4000:]
+    try:
+        write_operation(folder, state="applying", message="更新失败，正在恢复原版源码", error=reason,
+                        log=[*operation.log, *(startup_log or [])][-80:])
+    except (OSError, ValueError) as exc:
+        print("[studio] 无法保存更新失败记录：" + policy.redact(exc), flush=True)
+    if startup_log:
+        try:
+            (work / "startup.log").write_text("\n".join(startup_log) + "\n", encoding="utf-8")
+        except OSError as exc:
+            reason += "\n启动日志文件保存失败：" + policy.redact(exc)
     try:
         plan = json.loads((work / "plan.json").read_text("utf-8"))
         rollback_update(work / "plan.json", python)
@@ -332,12 +437,17 @@ def rollback_from_launcher(data_root: Path, python: str, reason: str, *, repair_
         # Reinstall the previous package metadata and satisfy its requirements too.
         if repair_dependencies:
             policy = launcher_policy(data_root)
-            run_helper(folder, "deps", Path(plan["root"]), python, policy)
+            run_helper(folder, "deps", Path(plan["root"]), python, policy,
+                       log_name="rollback-deps.log", record_log=False)
             dependencies_ready = True
     except Exception as exc:
         reason += " 恢复检查失败：" + policy.redact(exc)
-    write_operation(folder, state="failed", message="更新失败，已恢复原版源码" if restored else "更新失败",
-                    error=reason, rolled_back=restored)
+    try:
+        write_operation(folder, state="failed", message="更新失败，已恢复原版源码" if restored else "更新失败",
+                        error=reason, rolled_back=restored)
+    except (OSError, ValueError) as exc:
+        print("[studio] " + policy.redact(reason), flush=True)
+        print("[studio] 无法保存更新失败记录：" + policy.redact(exc), flush=True)
     return restored and dependencies_ready
 
 

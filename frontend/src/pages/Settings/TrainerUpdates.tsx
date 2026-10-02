@@ -67,6 +67,7 @@ function useTrainerInstall(onReload: () => void) {
   const [reconnecting, setReconnecting] = React.useState(false);
   const [unconfirmed, setUnconfirmed] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [startFailed, setStartFailed] = React.useState(false);
   const [revision, setRevision] = React.useState(0);
   const expected = React.useRef<UpdateTarget | null>(readPendingUpdate());
   const observed = React.useRef<UpdateTarget | null>(expected.current);
@@ -81,7 +82,7 @@ function useTrainerInstall(onReload: () => void) {
     let disconnectedAt: number | null = null;
     let unconfirmedAt: number | null = null;
     let slowPoll = false;
-    setWatching(true); setError(''); setUnconfirmed(false);
+    setWatching(true); setError(''); setStartFailed(false); setUnconfirmed(false);
     void (async () => {
       while (!signal.aborted) {
         try {
@@ -93,13 +94,15 @@ function useTrainerInstall(onReload: () => void) {
             expected.current = { id: op.id, target_commit: op.target_commit, before_instance_id: op.before_instance_id };
             rememberPendingUpdate(expected.current);
           }
-          if (op && !['succeeded', 'failed'].includes(op.state) && !expected.current) {
-            expected.current = { id: op.id, target_commit: op.target_commit, before_instance_id: op.before_instance_id };
-            observed.current = expected.current;
-            rememberPendingUpdate(expected.current);
+          if (op && op.state !== 'succeeded' && !expected.current) {
+            observed.current = { id: op.id, target_commit: op.target_commit, before_instance_id: op.before_instance_id };
+            if (op.state !== 'failed') {
+              expected.current = observed.current;
+              rememberPendingUpdate(expected.current);
+            }
           }
           const matches = !expected.current || op?.id === expected.current.id && op.target_commit === expected.current.target_commit;
-          if (matches && op?.state === 'failed') { expected.current = null; rememberPendingUpdate(null); setWatching(false); return; }
+          if (matches && op?.state === 'failed') { expected.current = null; rememberPendingUpdate(null); setUnconfirmed(false); setWatching(false); return; }
           if (matches && completedInstall(next, expected.current)) { setWatching(false); return; }
           if ((!op || op.state === 'succeeded') && !expected.current) { setWatching(false); return; }
           if (!matches || op?.state === 'succeeded') {
@@ -135,19 +138,22 @@ function useTrainerInstall(onReload: () => void) {
   const start = async (commit: string) => {
     if (posting.current || !status?.can_apply || !status.instance_id) return;
     const id = createUpdateRequestId();
-    if (!id) { setError(text('当前浏览器无法创建更新请求，请换用其他浏览器。', 'This browser cannot create an update request. Use another browser.')); return; }
+    if (!id) { setStartFailed(true); setError(text('当前浏览器无法创建更新请求，请换用其他浏览器。', 'This browser cannot create an update request. Use another browser.')); return; }
     const target = { id, target_commit: commit, before_instance_id: status.instance_id };
     expected.current = target; observed.current = target; rememberPendingUpdate(target);
     const controller = new AbortController(); posting.current = controller;
-    setSubmitting(true); setError(''); setUnconfirmed(false);
+    setSubmitting(true); setError(''); setStartFailed(false); setReconnecting(false); setUnconfirmed(false);
     try {
       const next = await installRequest(signal => apiClient.post<TrainerInstallStatus>('/updates/install', { target_commit: commit, request_id: target.id }, { silent: true, signal }), controller.signal, 15000);
       if (controller.signal.aborted) return;
       setStatus(next); setRevision(value => value + 1);
     } catch (failure) {
       if (controller.signal.aborted) return;
-      if (failure instanceof ApiError && failure.status < 500) {
-        expected.current = null; rememberPendingUpdate(null); setError(formatApiError(failure));
+      if (failure instanceof ApiError && (failure.status < 500 || failure.code === 'updates.start_failed')) {
+        expected.current = null; rememberPendingUpdate(null); setStartFailed(true); setReconnecting(false);
+        const reason = failure.details?.reason;
+        const message = formatApiError(failure);
+        setError(typeof reason === 'string' && reason.trim() && !message.includes(reason) ? `${message}\n${reason}` : message);
       } else {
         setReconnecting(true); setRevision(value => value + 1);
       }
@@ -157,7 +163,7 @@ function useTrainerInstall(onReload: () => void) {
   const refresh = React.useCallback(() => setRevision(value => value + 1), []);
   const busy = submitting || watching && !!expected.current || !!status?.operation && !['failed', 'succeeded'].includes(status.operation.state)
     || !!expected.current && !verified;
-  return { status, operation, loading, submitting, watching, reconnecting, unconfirmed, error, verified, busy, start, refresh };
+  return { status, operation, loading, submitting, watching, reconnecting, unconfirmed, error, startFailed, verified, busy, start, refresh };
 }
 
 function externalUrl(value: string | null | undefined): string | undefined {
@@ -247,15 +253,16 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
   const updateComplete = install.verified && op?.target_commit === latest?.commit;
   const mayUpdate = data?.state === 'available' && !!latest && !!install.status?.can_apply && !install.busy && !updateComplete && !install.loading && !install.watching && !install.error && !loading;
   const showOperation = !!op || install.busy;
-  const operationLabel = install.unconfirmed ? install.reconnecting ? text('仍在等待训练器重启…', 'Still waiting for the trainer to restart…') : text('暂未确认更新结果', 'Update result not yet confirmed')
+  const restartExpected = !!op && ['applying', 'installing', 'restarting'].includes(op.state);
+  const operationLabel = install.unconfirmed ? install.reconnecting && restartExpected ? text('仍在等待训练器重启…', 'Still waiting for the trainer to restart…') : text('暂未确认更新结果', 'Update result not yet confirmed')
     : install.reconnecting ? text('正在重新连接服务…', 'Reconnecting to the service…')
       : op ? operationLabels[op.state] : text('正在准备更新…', 'Preparing update…');
 
   const installPanel = <>
-        {install.error && <p role="alert" className="trainer-update-error trainer-install-reason">{install.error}<button type="button" className="ui-btn ui-btn-sm" onClick={install.refresh}>{text('刷新状态', 'Refresh status')}</button></p>}
+        {install.error && <div role="alert" className="trainer-update-error trainer-install-reason">{install.startFailed && <strong className="trainer-install-failure-title">{text('更新失败', 'Update failed')}</strong>}{install.error}<button type="button" className="ui-btn ui-btn-sm" onClick={install.refresh}>{text('刷新状态', 'Refresh status')}</button></div>}
         {showOperation && <div className="trainer-install" data-state={op?.state}>
           <div className="trainer-install-heading"><span role="status">{operationLabel}</span>{op && <code title={op.target_commit}>{op.target_commit.slice(0, 8)}</code>}</div>
-          {op?.state === 'failed' && <p role="alert" className="trainer-update-error">{op.error || op.message}{op.rolled_back && <span>{text(' 已恢复原版源码。', ' The previous source files were restored.')}</span>}</p>}
+          {op?.state === 'failed' && <p role="alert" className="trainer-update-error">{op.error?.trim() || op.message?.trim() || text('请查看更新日志或启动窗口中的错误信息。', 'Check the update log or launcher window for error details.')}{op.rolled_back && <span>{text(' 已恢复原版源码。', ' The previous source files were restored.')}</span>}</p>}
           {install.unconfirmed && <p className="settings-note">{text('请查看启动窗口，页面会继续尝试连接。', 'Check the launcher window. This page will keep trying to connect.')}</p>}
           {!!op?.log?.length && <details className="trainer-install-log"><summary><ChevronRight size={14} className="disclosure-chevron"/>{text('更新日志', 'Update log')}</summary><pre>{op.log.join('\n')}</pre></details>}
           {(install.unconfirmed || op?.state === 'failed') && <button type="button" className="ui-btn ui-btn-sm" onClick={install.refresh}>{text('刷新状态', 'Refresh status')}</button>}
