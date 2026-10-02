@@ -6,6 +6,13 @@ export type GpuReadingKey = typeof GPU_READING_KEYS[number];
 export const GPU_SENSOR_METRICS = ['gpu_power', 'gpu_temp', 'gpu_util', 'gpu_memory'] as const;
 const validReading = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
+/** Legacy steps identify only the primary GPU; keep that identity when a saved layout names a device. */
+export function resolveGpuMetricSource(metrics: JobMetrics, source: string): string {
+  if (source === 'primary' || metrics.gpu_devices?.length) return source;
+  const hasLegacyReadings = [metrics.gpu_power_w, metrics.gpu_temp_c, metrics.gpu_util_pct].some(values => values?.some(validReading));
+  return hasLegacyReadings && (source === 'average' || /^(cuda:(0|[1-9][0-9]*)|mps)$/.test(source)) ? 'primary' : source;
+}
+
 /** Each live reading occupies the same step as the training metrics, including missing devices. */
 export function appendGpuDeviceStep(previous: JobMetrics, incoming: unknown): GpuMetricDevice[] {
   const rows = new Map<string, Record<string, unknown>>();

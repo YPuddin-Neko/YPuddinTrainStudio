@@ -9,7 +9,7 @@ import StudioSelect, { type StudioSelectOption } from '../../components/StudioSe
 import type { JobMetrics, Settings } from '../../api/types';
 import { chartTitle, DEFAULT_METRIC_CHARTS, METRICS, type MetricChartSetting, type MetricKey } from '../../utils/metricCharts';
 import { shapeValidationSeries, smoothLoss } from '../../utils/metrics';
-import { gpuDeviceValues, gpuMetricDeviceLabel, GPU_SENSOR_METRICS } from '../../utils/gpuMetricSeries';
+import { gpuDeviceValues, gpuMetricDeviceLabel, resolveGpuMetricSource, GPU_SENSOR_METRICS } from '../../utils/gpuMetricSeries';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { axisTickLabels, formatMetricValue, formatRateValue, layoutValueAxes, learningRateGroupName, metricChartBase, metricLabels, metricRange } from './metricPresentation';
 import './job-metrics.css';
@@ -114,7 +114,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
     const axisNames: Record<string, string> = { Loss: labels.loss, LR: labels.lr, Norm: labels.gradient };
     const list: Chart[] = [];
     for (const chart of layout) {
-      const source = gpuSources[chart.id] ?? chart.gpu ?? 'primary';
+      const source = resolveGpuMetricSource(metrics, gpuSources[chart.id] ?? chart.gpu ?? 'primary');
       const hasGpuSensors = chart.series.some(item => GPU_SENSOR_METRICS.some(key => key === item.metric));
       const devices = metrics.gpu_devices || [];
       const gpuOptions: StudioSelectOption[] = [
@@ -184,7 +184,8 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
         grid: { ...base.grid, left: base.grid.left + placed.left, right: base.grid.right + placed.right },
         yAxis: axes.length === 1 ? axes[0] : axes,
         series: lines.map(line => ({
-          id: line.name, name: line.name, type: 'line', showSymbol: !!line.symbols, sampling: 'lttb', data: line.data, yAxisIndex: units.indexOf(line.unit),
+          // Replaced axes retain their original indices when an earlier axis disappears.
+          id: line.name, name: line.name, type: 'line', showSymbol: !!line.symbols, sampling: 'lttb', data: line.data, yAxisId: line.unit,
           lineStyle: { width: line.width ?? 1.5, color: line.color }, itemStyle: { color: line.color },
         })),
         // A chart too narrow for every axis keeps one per side; the other lines keep their own scales and

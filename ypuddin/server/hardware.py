@@ -274,12 +274,12 @@ def apple_gpu_reading() -> dict[str, float]:
 class BackgroundReading:
     """The latest result of a slow reading, refreshed on its own thread.
 
-    Apple's sensors take about a third of a second to read, so a training step takes the last
-    reading instead of waiting. The thread ends on close(), or when nobody asked for a minute.
+    Steps take a recent reading without waiting for sensor I/O. By default the thread stops
+    after a minute without requests; idle=None keeps it running until close().
     """
 
     def __init__(
-        self, read: Callable[[], dict[str, Any]], interval: float = 3.0, idle: float = 60.0
+        self, read: Callable[[], dict[str, Any]], interval: float = 3.0, idle: float | None = 60.0
     ) -> None:
         self._read, self._interval, self._idle = read, interval, idle
         self._lock = threading.Lock()
@@ -308,7 +308,7 @@ class BackgroundReading:
                 value = {}
             with self._lock:
                 self._value, self._read_at = copy.deepcopy(value), time.monotonic()
-                unused = self._read_at - self._asked_at > self._idle
+                unused = self._idle is not None and self._read_at - self._asked_at > self._idle
             if unused or self._closed.wait(self._interval):
                 return
 
@@ -466,6 +466,34 @@ def _nvml_metrics(entries: list[dict[str, Any]]) -> None:
         pass
 
 
+def _nvidia_metrics(entries: list[dict[str, Any]]) -> None:
+    """Fill driver fields by identity, using SMI where NVML cannot provide a reading."""
+    _nvml_metrics(entries)
+    fields = ("power_w", "util_pct", "temp_c", "power_limit_w", "mem_used_mb", "mem_free_mb")
+    fallback = _nvidia_smi() if any(any(entry.get(key) is None for key in fields) for entry in entries) else []
+    for entry in entries:
+        # Worker CUDA ordinals can differ from the physical indices reported by SMI.
+        if entry.get("uuid"):
+            matches = [gpu for gpu in fallback if gpu.get("uuid") == entry["uuid"]]
+        elif entry.get("name"):
+            matches = [gpu for gpu in fallback if gpu.get("name") == entry["name"]]
+        else:
+            matches = []
+        if len(matches) == 1:
+            needs_memory = entry.get("mem_used_mb") is None or entry.get("mem_free_mb") is None
+            for key in (*fields, "mem_total_mb"):
+                replace_memory = needs_memory and key.startswith("mem_")
+                if (entry.get(key) is None or replace_memory) and matches[0].get(key) is not None:
+                    entry[key] = matches[0][key]
+                    entry["telemetry_source"] = (
+                        "nvml+nvidia-smi"
+                        if entry.get("telemetry_source", "").startswith("nvml")
+                        else "nvidia-smi"
+                    )
+        if entry.get("power_w") is None:
+            entry["telemetry_note"] = "nvidia_power_unavailable"
+
+
 def nvml_device_reading(uuid: str | None, name: str) -> dict[str, float]:
     """Power, temperature and load of one GPU from the driver, without a CUDA context."""
     entry: dict[str, Any] = {"uuid": uuid, "name": name}
@@ -482,8 +510,8 @@ def training_gpu_reading(entries: list[dict[str, Any]], primary_id: str) -> dict
                 entry.update(reading)
         elif readings and readings[0]["kind"] == "mps":
             readings[0].update(apple_gpu_reading(), name=_apple_name())
-        else:
-            _nvml_metrics([entry for entry in readings if entry.get("uuid") or entry.get("name")])
+        elif readings and readings[0]["kind"] == "cuda":
+            _nvidia_metrics([entry for entry in readings if entry.get("uuid") or entry.get("name")])
     except Exception:  # noqa: BLE001 - retain device identities when driver telemetry fails
         pass
     for entry in readings:
@@ -592,51 +620,7 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
                     else None
                 )
             return out
-        _nvml_metrics(out)
-        fallback = (
-            _nvidia_smi()
-            if any(
-                any(
-                    g.get(key) is None
-                    for key in (
-                        "power_w",
-                        "util_pct",
-                        "temp_c",
-                        "power_limit_w",
-                        "mem_used_mb",
-                        "mem_free_mb",
-                    )
-                )
-                for g in out
-            )
-            else []
-        )
-        for entry in out:
-            # CUDA devices can be reordered; match UUID, then an unambiguous name.
-            matches = [g for g in fallback if g["uuid"] == entry.get("uuid")]
-            if not matches and not entry.get("uuid"):
-                matches = [g for g in fallback if g["name"] == entry["name"]]
-            if len(matches) == 1:
-                needs_memory = entry.get("mem_used_mb") is None or entry.get("mem_free_mb") is None
-                for key in (
-                    "util_pct",
-                    "temp_c",
-                    "power_w",
-                    "power_limit_w",
-                    "mem_total_mb",
-                    "mem_used_mb",
-                    "mem_free_mb",
-                ):
-                    replace_memory = needs_memory and key.startswith("mem_")
-                    if (entry.get(key) is None or replace_memory) and matches[0].get(key) is not None:
-                        entry[key] = matches[0][key]
-                        entry["telemetry_source"] = (
-                            "nvml+nvidia-smi"
-                            if entry["telemetry_source"].startswith("nvml")
-                            else "nvidia-smi"
-                        )
-            if entry["power_w"] is None:
-                entry["telemetry_note"] = "nvidia_power_unavailable"
+        _nvidia_metrics(out)
         return out
     if (
         profile in ("legacy", "macos-mps")

@@ -1622,6 +1622,8 @@ class Trainer:
                 self.adapters.train(True)
                 self.loaded.backbone.train()
                 self._log_start()
+                # Start sensor I/O before the first step needs a reading.
+                self._gpu_reading()
                 if (
                     cfg.sampling.enabled
                     and cfg.sampling.at_start
@@ -1751,7 +1753,8 @@ class Trainer:
                         except Exception:  # noqa: BLE001 - keep missing device readings separate
                             pass
                         entries.append(entry)
-                self._gpu_sampler = BackgroundReading(partial(training_gpu_reading, entries, primary))
+                # A single training step can outlast the reader's normal idle timeout.
+                self._gpu_sampler = BackgroundReading(partial(training_gpu_reading, entries, primary), idle=None)
             return self._gpu_sampler.latest()
         except Exception:  # noqa: BLE001 - unavailable driver telemetry must not stop training
             return {}
