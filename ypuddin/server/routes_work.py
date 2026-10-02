@@ -1136,10 +1136,18 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         from ypuddin.models.precision import model_load_precision
 
         dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[model_load_precision(cfg.model)]
-        if not devices or devices[0]["kind"] == "mps":
+        if cfg.memory.no_half_vae or not devices or devices[0]["kind"] == "mps":
             dtype = torch.float32
         with fingerprint_cache(cache_root / "fingerprints"):
             latent_identity = family.latent_fingerprint(cfg.model, dtype=dtype)
+            if cfg.model.family in {"anima", "krea2"}:
+                from ypuddin.models.vae_tiling import tiled_latent_fingerprint
+
+                latent_identity = tiled_latent_fingerprint(
+                    latent_identity,
+                    vae_tiling=cfg.memory.vae_tiling,
+                    cache_encode_tiled=cfg.memory.cache_encode_tiled,
+                )
         lc = LatentCache(cache_root / "latents")
         from ypuddin.data.dataset import item_latent_key
 

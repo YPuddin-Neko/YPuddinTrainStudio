@@ -153,18 +153,27 @@ class AnimaLatent(LatentPipeline):
         dtype: torch.dtype = torch.float32,
         use_2d: bool = True,
         vae_attention_chunking: bool = False,
+        vae_tiling: bool = False,
+        cache_encode_tiled: bool = False,
     ):
         self.path = Path(vae_path)
         self.device = torch.device(device)
         self.dtype = dtype
         self.use_2d = use_2d
         self.vae_attention_chunking = vae_attention_chunking
+        self.vae_tiling = vae_tiling
+        self.cache_encode_tiled = cache_encode_tiled
         self.vae: nn.Module | None = None
         self._loaded_once = False
         from ypuddin.models.fingerprints import content_fingerprint
 
         self.fingerprint = content_fingerprint(
             [self.path], namespace=f"{AnimaLatent.fingerprint}:2d={use_2d}:dtype={dtype}"
+        )
+        from ypuddin.models.vae_tiling import tiled_latent_fingerprint
+
+        self.fingerprint = tiled_latent_fingerprint(
+            self.fingerprint, vae_tiling=vae_tiling, cache_encode_tiled=cache_encode_tiled,
         )
 
     def _ensure(self) -> nn.Module:
@@ -216,13 +225,66 @@ class AnimaLatent(LatentPipeline):
 
     @torch.no_grad()
     def encode(self, pixels: Tensor) -> Tensor:
-        vae = self._ensure()
-        return vae.encode_pixels_to_latents(pixels.to(self.device, self.dtype)).float()
+        from ypuddin.models.vae_tiling import VAE_TILE_PIXELS
+
+        return self._encode(pixels, tile=VAE_TILE_PIXELS if self.vae_tiling else None)
+
+    @torch.no_grad()
+    def encode_for_cache(self, pixels: Tensor) -> Tensor:
+        from ypuddin.models.vae_tiling import CACHE_TILE_PIXELS, CACHE_TILE_THRESHOLD
+
+        if self.cache_encode_tiled and pixels.shape[-2] * pixels.shape[-1] > CACHE_TILE_THRESHOLD:
+            return self._encode(pixels, tile=CACHE_TILE_PIXELS)
+        return self.encode(pixels)
+
+    def _encode(self, pixels: Tensor, *, tile: int | None) -> Tensor:
+        from ypuddin.models.vae_tiling import TILE_OVERLAP_PIXELS, spatial_tiled_apply
+
+        with torch.autocast(device_type=self.device.type, enabled=False):
+            vae = self._ensure()
+            pixels = pixels.to(self.device, self.dtype)
+            if tile is None:
+                return vae.encode_pixels_to_latents(pixels).float()
+            return spatial_tiled_apply(
+                pixels, vae.encode_pixels_to_latents, tile=tile,
+                overlap=TILE_OVERLAP_PIXELS, scale_den=self.stride,
+            ).float()
 
     @torch.no_grad()
     def decode(self, latents: Tensor) -> Tensor:
-        vae = self._ensure()
-        return vae.decode_to_pixels(latents.to(self.device, self.dtype)).float().clamp(-1, 1)
+        with torch.autocast(device_type=self.device.type, enabled=False):
+            vae = self._ensure()
+            return self._decode_spatial(
+                latents.to(self.device, self.dtype), vae.decode_to_pixels,
+            ).float().clamp(-1, 1)
+
+    def _decode_spatial(self, latents: Tensor, operation) -> Tensor:
+        if not self.vae_tiling:
+            return operation(latents)
+        from ypuddin.models.vae_tiling import TILE_OVERLAP_PIXELS, VAE_TILE_PIXELS, spatial_tiled_apply
+
+        return spatial_tiled_apply(
+            latents, operation, tile=VAE_TILE_PIXELS // self.stride,
+            overlap=TILE_OVERLAP_PIXELS // self.stride, scale_num=self.stride,
+        )
+
+    @torch.no_grad()
+    def decode_comfy(self, latents: Tensor) -> Tensor:
+        """Undo Wan21 normalization before casting to the VAE's compute precision."""
+        with torch.autocast(device_type=self.device.type, enabled=False):
+            vae = self._ensure()
+            raw = latents.to(self.device)
+            shape = (1, self.channels, *([1] * (raw.ndim - 2)))
+            mean = torch.tensor(vae.latents_mean, device=raw.device, dtype=raw.dtype).view(shape)
+            std = torch.tensor(vae.latents_std, device=raw.device, dtype=raw.dtype).view(shape)
+            raw = (raw * std + mean).to(self.dtype)
+            image_only = not self.use_2d and raw.ndim == 4
+            if image_only:
+                raw = raw.unsqueeze(2)
+            pixels = self._decode_spatial(raw, lambda tile: vae.decode(tile, return_dict=False)[0])
+            if image_only:
+                pixels = pixels.squeeze(2)
+            return pixels.float().clamp(-1, 1)
 
 
 # --------------------------------------------------------------------------- family
@@ -312,8 +374,11 @@ class AnimaFamily(ModelFamily):
         dit.attn_mode = self.resolve_attention(cfg.attention, device)
         text = AnimaText(cfg.text_encoder_path, tokenizer_path=cfg.tokenizer_path, dtype=dtype, device=device)
         latent = AnimaLatent(
-            cfg.vae_path, device=device, dtype=torch.float32 if torch.device(device).type == "cpu" else dtype,
+            cfg.vae_path, device=device,
+            dtype=torch.float32 if memory.no_half_vae or torch.device(device).type == "cpu" else dtype,
             vae_attention_chunking=memory.vae_attention_chunking,
+            vae_tiling=memory.vae_tiling,
+            cache_encode_tiled=memory.cache_encode_tiled,
         )
         log.info(
             "loaded Anima DiT: width=%s blocks=%s heads=%s",

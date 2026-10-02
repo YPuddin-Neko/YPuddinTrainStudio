@@ -206,12 +206,20 @@ def er_sde_sample(
         )
         if cfg == 0 and predict_uncond is not None:
             v = velocity(predict_uncond, model_x, batch_t)
+            denoised = _finite(x - current * v, "denoised prediction")
+        elif noise.source == "comfyui":
+            denoised = x - velocity(predict, model_x, batch_t) * current
+            if cfg != 1.0 and predict_uncond is not None:
+                uncond = x - velocity(predict_uncond, model_x, batch_t) * current
+                denoised = uncond + (denoised - uncond) * cfg
+            denoised = _finite(denoised, "denoised prediction")
         else:
             v = velocity(predict, model_x, batch_t)
             if cfg != 1.0 and predict_uncond is not None:
                 uncond = velocity(predict_uncond, model_x, batch_t)
                 v = _finite(uncond + cfg * (v - uncond), "guided velocity")
-        denoised = _finite(x - current * v, "denoised prediction")
+        if noise.source != "comfyui":
+            denoised = _finite(x - current * v, "denoised prediction")
         if following == 0:
             x = denoised
         else:

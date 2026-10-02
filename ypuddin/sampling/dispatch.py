@@ -8,7 +8,7 @@ from collections.abc import Callable
 import torch
 from torch import Tensor
 
-from .euler import euler_sample, flow_schedule
+from .euler import comfyui_denoised, euler_sample, flow_schedule
 from .noise import SeedNoise
 
 SAMPLERS = ("euler", "euler_ancestral", "heun", "er_sde")
@@ -22,6 +22,7 @@ def noise_schedule(
     *,
     device: torch.device | str = "cpu",
     dtype: torch.dtype = torch.float32,
+    comfyui: bool = False,
 ) -> Tensor:
     """Flow times, including terminal zero. SGM/normal use the discrete-flow sigma endpoints.
 
@@ -35,7 +36,14 @@ def noise_schedule(
         raise ValueError("sampling shift must be finite and positive")
     if scheduler not in SCHEDULERS:
         raise ValueError(f"unknown sampling scheduler: {scheduler}")
-    if scheduler == "uniform" and dtype == torch.float32:
+    if scheduler == "simple" and comfyui:
+        # ComfyUI builds the discrete-flow buffer in FP32 before selecting steps.
+        grid = torch.arange(1, 1001, dtype=torch.float32) / 1000
+        if shift != 1.0:
+            grid = shift * grid / (1 + (shift - 1) * grid)
+        values = [float(grid[-(1 + int(index * (1000 / steps)))]) for index in range(steps)]
+        result = torch.tensor([*values, 0.0], dtype=torch.float32).to(device=device, dtype=dtype)
+    elif scheduler == "uniform" and dtype == torch.float32:
         # Keep existing Euler previews identical, including float32 rounding.
         result = flow_schedule(steps, shift, device=device)
     else:
@@ -98,7 +106,8 @@ def sample(
         generator.seed()
     seeded = SeedNoise(generator, noise, device)
     times = noise_schedule(
-        steps, shift, scheduler, dtype=torch.float64 if sampler == "er_sde" else torch.float32
+        steps, shift, scheduler, dtype=torch.float64 if sampler == "er_sde" else torch.float32,
+        comfyui=noise == "comfyui",
     )
     if sampler == "er_sde":
         from .er_sde import er_sde_sample
@@ -146,6 +155,23 @@ def sample(
         return v.to(dtype)
 
     for index, (current, following) in enumerate(zip(times[:-1], times[1:], strict=True)):
+        if noise == "comfyui":
+            denoised = comfyui_denoised(predict, predict_uncond, x, current, cfg)
+            if sampler == "euler_ancestral":
+                x = _ancestral_denoised_step(x, current, following, denoised, seeded)
+            else:
+                first = (x - denoised) / current
+                delta = following - current
+                proposed = x + first * delta
+                if sampler == "heun" and index < steps - 1:
+                    next_denoised = comfyui_denoised(predict, predict_uncond, proposed, following, cfg)
+                    second = (proposed - next_denoised) / following
+                    x = x + ((first + second) / 2) * delta
+                else:
+                    x = proposed
+            if on_step is not None:
+                on_step(index + 1, steps)
+            continue
         if sampler == "euler_ancestral":
             x = _ancestral_step(x, current, following, velocity(x, current), seeded)
             if on_step is not None:
@@ -166,7 +192,12 @@ def sample(
 def _ancestral_step(x: Tensor, current: Tensor, following: Tensor, v: Tensor, seeded: SeedNoise) -> Tensor:
     """One rectified-flow Euler ancestral step (eta 1), ComfyUI's ``sample_euler_ancestral_RF``: step down
     to ``following² / current`` toward the denoised estimate, then add fresh noise back up to ``following``."""
-    denoised = x - current * v
+    return _ancestral_denoised_step(x, current, following, x - current * v, seeded)
+
+
+def _ancestral_denoised_step(
+    x: Tensor, current: Tensor, following: Tensor, denoised: Tensor, seeded: SeedNoise
+) -> Tensor:
     if float(following) == 0:
         return denoised
     # ComfyUI's downstep ratio at eta 1, kept in its order of float operations.

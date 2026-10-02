@@ -100,6 +100,9 @@ export const FIELD_HINTS: Record<string, Copy> = {
 
   'memory.base_precision': ['降低冻结底模精度可省显存，可能影响质量。', 'Lower frozen-weight precision saves memory; may cost quality.'],
   'memory.blocks_to_swap': ['暂放到内存的模型块数，省显存但更慢。', 'Blocks parked in system memory; saves VRAM, runs slower.'],
+  'memory.vae_tiling': ['将图像按 512 像素分块进行 VAE 编码和解码，相邻块重叠 128 像素，可减少显存占用，但可能增加耗时。默认关闭。', 'Encodes and decodes images in 512-pixel VAE tiles with 128-pixel overlap. This reduces VRAM use but may take longer. Off by default.'],
+  'memory.cache_encode_tiled': ['仅在创建图像缓存时，对面积超过 2048×2048 像素的图片按 1024 像素分块编码，相邻块重叠 128 像素。小图沿用 VAE 分块设置，不影响预览解码。默认关闭。', 'When creating image caches, images larger than 2048×2048 pixels in area are encoded in 1024-pixel tiles with 128-pixel overlap. Smaller images follow the VAE tiling setting. Preview decoding is unchanged. Off by default.'],
+  'memory.no_half_vae': ['强制 VAE 使用 FP32 编码和解码图像，能减少低精度计算引起的数值异常，但会增加显存占用，并可能降低速度。默认关闭。', 'Forces the VAE to encode and decode images in FP32. This reduces numerical issues from low-precision computation, but uses more VRAM and may be slower. Off by default.'],
   'memory.vae_attention_chunking': ['减少 HIP VAE 数学注意力的临时显存，默认关闭。', 'Reduces temporary memory for HIP VAE math attention; off by default.'],
   'memory.activation_checkpointing': ['大幅减少显存，训练稍慢；显存不够时优先开启。', 'Much less memory, slightly slower; turn on first when memory is short.'],
 
@@ -126,7 +129,8 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'sampling.width': ['预览图宽度，单条提示词可覆盖。', 'Preview width; prompts can override it.'],
   'sampling.height': ['预览图高度，单条提示词可覆盖。', 'Preview height; prompts can override it.'],
   'sampling.seed': ['0 表示每次训练随机一个种子；手动输入种子值会固定训练时使用的种子。', '0 picks a random seed per run; a seed you enter stays fixed for training.'],
-  'sampling.noise': ['选择初始噪声和采样过程中的随机数规则。采样由训练器执行。', 'Selects the random-number rules for initial noise and during sampling. Sampling runs in the trainer.'],
+  'sampling.noise': ['选择适配器融合与噪声规则，仅影响采样。', 'Selects adapter merging and noise rules for sampling only.'],
+  'sampling.adapter_merge_dtype': ['自动跟随底模精度；可按外部加载方式指定。', 'Auto follows the base model precision; override it to match an external loader.'],
   'sampling.sampler': ['生成预览图的采样算法。', 'Algorithm used to generate previews.'],
   'sampling.scheduler': ['采样时噪声逐步减少的方式。', 'How noise is reduced while sampling.'],
   'sampling.steps': ['生成一张预览的步数，越多越慢。', 'Steps per preview; more is slower.'],
@@ -159,6 +163,9 @@ export const FIELD_HINTS: Record<string, Copy> = {
 };
 
 export const FIELD_HELP: Record<string, Copy> = {
+  'memory.vae_tiling': ['将图像按 512 像素分块进行 VAE 编码和解码，相邻块重叠 128 像素，可减少显存占用，但可能增加耗时。默认关闭。', 'Encodes and decodes images in 512-pixel VAE tiles with 128-pixel overlap. This reduces VRAM use but may take longer. Off by default.'],
+  'memory.cache_encode_tiled': ['仅在创建图像缓存时，对面积超过 2048×2048 像素的图片按 1024 像素分块编码，相邻块重叠 128 像素。小图沿用 VAE 分块设置，不影响预览解码。默认关闭。', 'When creating image caches, images larger than 2048×2048 pixels in area are encoded in 1024-pixel tiles with 128-pixel overlap. Smaller images follow the VAE tiling setting. Preview decoding is unchanged. Off by default.'],
+  'memory.no_half_vae': ['强制 VAE 使用 FP32 编码和解码图像，能减少低精度计算引起的数值异常，但会增加显存占用，并可能降低速度。默认关闭。', 'Forces the VAE to encode and decode images in FP32. This reduces numerical issues from low-precision computation, but uses more VRAM and may be slower. Off by default.'],
   'memory.vae_attention_chunking': ['默认关闭。用于 Anima / Krea 2 在 HIP 环境下的图片 VAE，编码和解码均适用。\n开启后，仅在 VAE 没有可用融合注意力后端时，把查询按最多 2048 个一组计算，仍使用整张图的键和值，减少数学注意力的临时显存；可能增加耗时。可用的融合后端仍优先使用。\n这不是按图片区域切块的 Tiled VAE，也不改变主模型的注意力后端。', 'Off by default. Applies to image VAE encoding and decoding for Anima / Krea 2 on HIP.\nWhen enabled, and only when no fused VAE attention backend is available, queries are processed in chunks of up to 2048 while retaining keys and values for the whole image. This reduces temporary memory for math attention and may take longer. Available fused backends still take priority.\nThis is not spatial Tiled VAE and does not change the main model attention backend.'],
   // What each weight is for; the model's own hint about files follows on the next line.
   'model.dit_path': ['生成图像的主模型权重，训练针对的就是它。', 'Weights of the model that generates the images; training targets it.'],
@@ -206,7 +213,8 @@ export const FIELD_HELP: Record<string, Copy> = {
   'checkpoint.save_dtype': ['导出权重及 DoRA 幅度的精度，默认 BF16；缩放用的 alpha 标量保留 FP32。不会改变训练参数、完整恢复状态或外部工具的融合精度。FP32 文件更大，导出舍入更少。', 'Precision of exported weights and DoRA magnitudes, BF16 by default; numeric alpha scalars stay FP32 to preserve scaling. This does not change training parameters, full recovery states, or the merging precision of external tools. FP32 exports are larger with less rounding.'],
   'checkpoint.output_dir': ['导出权重的保存根目录，任务按项目、版本和任务 ID 分开保存。未单独指定的恢复点和日志也保存在这里。', 'Root for exported weights, organized by project, version and job ID. Recovery points and logs also go here unless configured separately.'],
   'checkpoint.state_dir': ['保存续训所需的权重、优化器、步数与随机状态。留空使用“设置 → 存储路径”中的恢复点目录；该项也未设置时保存在版本目录的 jobs/<任务>/resume。自定义目录下按项目、版本和任务分开存放。', 'Stores weights, optimizer, step and random state for resuming. Blank uses the recovery directory in Settings → Storage paths, or jobs/<job>/resume in the version folder if unset. Custom roots are organized by project, version and job.'],
-  'sampling.noise': ['选择初始噪声和采样过程中的随机数规则。采样由训练器执行。\nComfyUI：初始噪声在 CPU 上按种子生成。\nA1111 WebUI：逐张按种子生成噪声；NVIDIA / 海光显卡使用显卡，CPU / Apple 芯片使用 CPU。\nEuler a、ER-SDE 在采样过程中追加的噪声也使用所选规则。仅影响采样，不影响训练。', 'Selects the random-number rules for initial noise and during sampling. Sampling runs in the trainer.\nComfyUI: initial noise is drawn from the seed on the CPU.\nA1111 WebUI: noise is drawn from each image’s seed on the GPU for NVIDIA / Hygon, or on the CPU for CPU / Apple devices.\nEuler a and ER-SDE use the selected rules for noise added during sampling. Affects sampling, not training.'],
+  'sampling.noise': ['ComfyUI：使用对应的导出适配器融合规则，初始噪声在 CPU 上生成。\nA1111 WebUI：保留训练器原有融合方式，逐张按种子生成噪声；NVIDIA / 海光显卡使用显卡，CPU / Apple 芯片使用 CPU。\nEuler a、ER-SDE 追加噪声也使用所选规则。仅影响采样，不改变训练计算。', 'ComfyUI: uses the corresponding exported-adapter merging rules and draws initial noise on the CPU.\nA1111 WebUI: keeps the trainer’s original merging and draws per-image seeded noise on NVIDIA / Hygon GPUs, or on the CPU for CPU / Apple devices.\nEuler a and ER-SDE also follow the selected noise rules. Affects sampling, not training.'],
+  'sampling.adapter_merge_dtype': ['ComfyUI 模式下融合导出适配器的计算精度。\n自动：跟随底模实际浮点精度，对应 ComfyUI 0.38.1 的动态加载方式。\nBF16 / FP16 / FP32：按外部加载方式指定融合精度。只控制适配器融合，不改变推理精度或训练计算。', 'The precision used to merge exported adapters in ComfyUI mode.\nAuto: follows the base model’s actual floating-point precision, matching dynamic loading in ComfyUI 0.38.1.\nBF16 / FP16 / FP32: select the merge precision used by your external loader. This does not change inference precision or training computation.'],
   'sampling.output_dir': ['保存训练预览图。留空使用“设置 → 存储路径”中的采样图目录；该项也未设置时保存在项目版本的 samples 目录。自定义目录下按项目、版本和任务分开存放。', 'Stores training previews. Blank uses the sample directory in Settings → Storage paths, or the project version’s samples folder if unset. Custom roots are organized by project, version and job.'],
   'checkpoint.save_on_finish': ['训练结束时导出最终权重。关闭后只保留按步或按轮导出的文件。', 'Exports the final weights when training ends. When off, only step or epoch exports are kept.'],
   'checkpoint.keep_last_n': ['只保留最近 N 组按步导出的权重，更早的自动删除；按轮导出和最终权重不受影响。留空保留全部。', 'Keeps only the latest N step exports and deletes older ones; epoch exports and final weights are unaffected. Blank keeps all.'],

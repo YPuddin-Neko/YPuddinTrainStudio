@@ -70,7 +70,7 @@ Anima、Krea 2、FLUX.2 的文本编码器使用 `lora_te_` 前缀，SDXL 使用
 
 DoRA 默认关闭；开启时默认按输入通道归一化，每个输入通道保存一个幅度 `(1, in)`。按输出通道则为 `(out, 1)`，是 LyCORIS 的默认方向。继续训练必须与原权重方向一致，不能仅修改文件形状来切换。训练器两种方向均使用合并权重 `W₀ + ΔW` 的范数，并在 FP32 中计算范数与归一化。强度不为 1 时（模型测试、合并），在底模权重与完整 DoRA 权重之间按强度线性插值。
 
-外部加载器的行为取决于版本和运行路径。例如 [ComfyUI 0.38.1 的 `weight_decompose`](https://github.com/Comfy-Org/ComfyUI/blob/20ca544ee0436721d8eb5f544665e490609f72c8/comfy/weight_adapter/base.py#L275) 对 input 使用 `W₀ + ΔW` 的范数，对 output 使用 `W₀` 的范数；训练器两种方向都使用前者。该版本还按融合权重的 dtype 选择 epsilon，BF16 为 `0.0078125`，FP32 约为 `1.19e-7`，对较小的范数影响更大。方向相同不代表融合算法、精度或生成结果相同。
+外部加载器的行为取决于版本和运行路径。例如 [ComfyUI 0.38.1 的 `weight_decompose`](https://github.com/Comfy-Org/ComfyUI/blob/20ca544ee0436721d8eb5f544665e490609f72c8/comfy/weight_adapter/base.py#L275) 对 input 使用 `W₀ + ΔW` 的范数，对 output 使用 `W₀` 的范数；训练器两种方向都使用前者。该版本还按融合权重的 dtype 选择 epsilon，BF16 为 `0.0078125`，FP32 约为 `1.19e-7`，对较小的范数影响更大。方向相同不代表融合算法、精度或生成结果相同。训练预览和模型测试的 ComfyUI 模式使用该版本的动态加载融合公式；训练计算本身仍使用训练器的归一化。
 
 外部工具低精度融合 LoKr/DoRA 时可能偏色，可改用 FP32 重建增量、计算 DoRA 范数并融合，再转换为推理所需精度。FP32 融合不等于 FP32 推理；FP32 保存也不会强制加载器用 FP32 融合。可训练参数精度（默认 FP32）、保存精度（默认 BF16）与外部融合精度是三个独立设置。
 

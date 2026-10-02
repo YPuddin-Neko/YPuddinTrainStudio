@@ -7,6 +7,7 @@ export interface XyzAxis { key: AxisKey; values: AxisValue[] }
 export interface SamplingValues {
   prompt: string; negative: string; width: number; height: number; steps: number; cfg: number;
   seed: number; sampler: string; scheduler: string; noise: string; shift: number | null; guidance: number | null;
+  adapter_merge_dtype?: 'auto' | 'bf16' | 'fp16' | 'fp32';
   adapter_scale: number; checkpoint_id: string | null; sampling_model_id: string | null;
 }
 export interface XyzRequest extends SamplingValues { gpu_devices?: string[]; name?: string; x: XyzAxis; y?: XyzAxis | null; z?: XyzAxis | null }
@@ -23,6 +24,7 @@ export interface XyzOptions {
 export interface XyzCell {
   index: number; x: number; y: number; z: number; x_value: AxisValue; y_value: AxisValue | null; z_value: AxisValue | null;
   seed: number; steps: number; cfg: number; sampler: string; scheduler: string; noise?: string; shift: number | null;
+  adapter_merge_dtype?: 'auto' | 'bf16' | 'fp16' | 'fp32';
   adapter_scale: number; checkpoint_id: string | null; file: string; url: string;
 }
 export interface XyzTask {
@@ -62,7 +64,7 @@ export function taskProgress(task: XyzTask): number | null {
 
 export const axisNames: Record<AxisKey, [string, string]> = {
   steps: ['采样步数', 'Steps'], cfg: ['CFG 引导强度', 'CFG'], seed: ['随机种子', 'Seed'],
-  sampler: ['采样器', 'Sampler'], scheduler: ['调度器', 'Scheduler'], noise: ['噪声生成方式', 'Noise generation'], shift: ['时间步偏移', 'Shift'],
+  sampler: ['采样器', 'Sampler'], scheduler: ['调度器', 'Scheduler'], noise: ['采样兼容模式', 'Sampling compatibility'], shift: ['时间步偏移', 'Shift'],
   adapter_scale: ['LoRA 强度', 'LoRA strength'], checkpoint: ['训练权重', 'Checkpoint'],
 };
 export function parseAxis(key: AxisKey, raw: string): XyzAxis {

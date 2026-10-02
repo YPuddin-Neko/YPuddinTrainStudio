@@ -364,3 +364,8 @@ class ShardedTrainer(DistributedTrainer):
 
     def sample_images(self, tag):
         return Trainer.sample_images(self, tag)
+
+    def _preview_adapter_export(self):
+        from .sharded_adapters import gathered_adapter_export
+
+        return gathered_adapter_export(self.adapters)

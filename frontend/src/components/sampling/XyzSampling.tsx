@@ -6,6 +6,9 @@ import { EVENT_TYPES } from '../../events/eventTypes';
 import { useEventStream } from '../../events/useEventStream';
 import { formatApiError } from '../../utils/errors';
 import { formatTime } from '../../utils/format';
+import { configOptionLabel } from '../../utils/configPresentation';
+import { FIELD_HELP } from '../../utils/fieldCopy';
+import ConfigHelp from '../ConfigHelp';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
 import CheckboxSelect from '../CheckboxSelect';
@@ -34,6 +37,7 @@ const initialAxis = (options: XyzOptions): AxisDraft => ownCheckpoints(options).
   : { key: 'steps', raw: [Math.max(1, options.defaults.steps - 5), options.defaults.steps, options.defaults.steps + 5].join(', ') };
 
 function compatibleValues(values: SamplingValues, options: XyzOptions): SamplingValues {
+  values = { ...values, adapter_merge_dtype: values.adapter_merge_dtype || 'auto' };
   if (options.training_mode !== 'full') return values;
   return { ...values, sampling_model_id: null, adapter_scale: 1,
     checkpoint_id: options.checkpoints.some(cp => cp.id === values.checkpoint_id)
@@ -296,7 +300,8 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
           <div className="xyz-axes">{(['X', 'Y', 'Z'] as const).map((position, index) => <AxisEditor key={position} position={position} draft={drafts[index]} options={options} disabled={locked} weights={weights} used={drafts.filter((_, other) => other !== index).flatMap(draft => draft ? [draft.key] : [])} onChange={draft => changeAxis(index, draft)}/>)}</div>
           <details className="xyz-settings"><summary>{text('固定参数', 'Fixed parameters')}<span>{values.width} × {values.height} · Seed {values.seed}</span></summary><fieldset className="xyz-fields" disabled={locked}>
             {(['width', 'height', 'seed', 'steps', 'cfg', 'adapter_scale'] as const).filter(key => !fullModel || key !== 'adapter_scale').map(key => <label key={key}><span>{key === 'width' ? text('宽度', 'Width') : key === 'height' ? text('高度', 'Height') : name(key)}</span><input aria-label={`${text('固定', 'Fixed')} ${key}`} type="number" min={key === 'adapter_scale' ? -4 : key === 'cfg' || key === 'seed' ? 0 : 1} step={key === 'cfg' || key === 'adapter_scale' ? 0.1 : 1} required disabled={axes.some(axis => axis?.key === key)} value={values[key]} onChange={event => update(key, Number(event.target.value))}/></label>)}
-            {(['sampler', 'scheduler', 'noise'] as const).map(key => <label key={key}><span>{name(key)}</span><StudioSelect aria-label={`${text('固定', 'Fixed')} ${name(key)}`} disabled={locked || axes.some(axis => axis?.key === key)} value={values[key]} options={(options.axes.find(axis => axis.key === key)?.values || [values[key]]).map(value => ({ value: String(value), label: choiceLabel(key, value) }))} onValueChange={value => update(key, value)}/></label>)}
+            {(['sampler', 'scheduler', 'noise'] as const).map(key => <label key={key}><span>{name(key)}{key === 'noise' && <ConfigHelp label={text('采样兼容模式说明', 'Sampling compatibility help')}>{text(...FIELD_HELP['sampling.noise'])}</ConfigHelp>}</span><StudioSelect aria-label={`${text('固定', 'Fixed')} ${name(key)}`} disabled={locked || axes.some(axis => axis?.key === key)} value={values[key]} options={(options.axes.find(axis => axis.key === key)?.values || [values[key]]).map(value => ({ value: String(value), label: choiceLabel(key, value) }))} onValueChange={value => update(key, value)}/></label>)}
+            {!fullModel && (values.noise === 'comfyui' || axes.some(axis => axis?.key === 'noise' && axis.values.includes('comfyui'))) && <label><span>{text('适配器融合精度', 'Adapter merge precision')}<ConfigHelp label={text('适配器融合精度说明', 'Adapter merge precision help')}>{text(...FIELD_HELP['sampling.adapter_merge_dtype'])}</ConfigHelp></span><StudioSelect aria-label={text('固定 适配器融合精度', 'Fixed Adapter merge precision')} disabled={locked} value={values.adapter_merge_dtype || 'auto'} options={['auto', 'bf16', 'fp16', 'fp32'].map(value => ({ value, label: text(configOptionLabel('sampling.adapter_merge_dtype', value), configOptionLabel('sampling.adapter_merge_dtype', value, true)) }))} onValueChange={value => update('adapter_merge_dtype', value as SamplingValues['adapter_merge_dtype'])}/></label>}
             <label className="xyz-span"><span>{text('负面提示词', 'Negative prompt')}</span><textarea rows={2} value={values.negative} onChange={event => update('negative', event.target.value)}/></label>
           </fieldset></details>
         </div>

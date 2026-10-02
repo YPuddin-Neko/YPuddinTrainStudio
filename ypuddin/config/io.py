@@ -127,8 +127,9 @@ _LEGACY_VALUES: dict[str, dict[str, Any]] = {
     },
     # Linear layers only, with no separate convolution rank.
     "adapter": {"layer_types": "linear", "conv_rank": None, "conv_alpha": None},
-    # Preview noise drawn from the seed on the CPU.
-    "sampling": {"noise": "comfyui"},
+    "memory": {"no_half_vae": False, "vae_tiling": False, "cache_encode_tiled": False},
+    # Default sampling settings added after earlier checkpoints.
+    "sampling": {"noise": "comfyui", "adapter_merge_dtype": "auto"},
 }
 
 

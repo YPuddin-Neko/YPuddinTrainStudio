@@ -12,6 +12,7 @@ from contextlib import nullcontext
 from pathlib import Path
 
 from ypuddin.models.precision import model_load_precision
+from ypuddin.sampling.decoding import decode_preview
 
 from .xyz import (
     AXES,
@@ -135,6 +136,8 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
                 wrapper_type = AdaptedLinear
             wrapper = wrapper_type(base, adapter, dora=dora is not None, dora_axis=axis, name=name)
             wrapper.component = component
+            wrapper._sampling_export_key = key
+            wrapper._sampling_export_tensors = tensors
             if dora is not None:
                 wrapper.dora.load_tensor(dora)
             wrapper.requires_grad_(False).eval()
@@ -147,6 +150,18 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
     for parent, attr, _, wrapper in plans:
         setattr(parent, attr, wrapper)
     return plans
+
+
+def _checkpoint_preview(bindings, cell):
+    if cell.get("noise", "comfyui") != "comfyui" or not bindings:
+        return nullcontext()
+    from ypuddin.sampling.adapter_preview import exported_adapter_preview
+
+    layers = {wrapper._sampling_export_key: wrapper for *_, wrapper in bindings}
+    tensors = bindings[0][3]._sampling_export_tensors
+    return exported_adapter_preview(
+        layers, tensors, merge_dtype=cell.get("adapter_merge_dtype", "auto")
+    )
 
 
 def _font():
@@ -434,93 +449,94 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                     previous_checkpoint = cell["checkpoint_id"]
                 for *_, wrapper in bindings:
                     wrapper.multiplier = cell["adapter_scale"]
-                if any(getattr(wrapper, "component", "backbone") != "backbone" for *_, wrapper in bindings):
-                    # Embeddings depend on both checkpoint and scale. Keep the installed
-                    # text adapters when parking encoders; unloading would discard them.
-                    emit("phase.changed", phase="encoding_text")
-                    loaded.text.to(device)
-                    conditions = {}
-                    for prompt in base_conditions:
-                        check()
-                        conditions[prompt] = loaded.text.encode([prompt], device=device).to("cpu")
-                    loaded.text.to("cpu")
-                if swapper:
-                    swapper.move_model_to_device(loaded.backbone)
-                else:
-                    loaded.backbone.to(device)
-                loaded.device = device
-                defaults = family.sampling_defaults(loaded)
-                stride, patch = family.spec.latent.stride, family.spec.latent.patch
-                shift = (
-                    cell["shift"]
-                    if cell["shift"] is not None
-                    else family.sampling_shift_for_model(
-                        loaded,
-                        (request.height // stride // patch) * (request.width // stride // patch),
-                        steps=cell["steps"],
+                with _checkpoint_preview(bindings, cell) as fusion_dtypes:
+                    if any(getattr(wrapper, "component", "backbone") != "backbone" for *_, wrapper in bindings):
+                        # Embeddings depend on both checkpoint and scale. Keep the installed
+                        # text adapters when parking encoders; unloading would discard them.
+                        emit("phase.changed", phase="encoding_text")
+                        loaded.text.to(device)
+                        conditions = {}
+                        for prompt in base_conditions:
+                            check()
+                            conditions[prompt] = loaded.text.encode([prompt], device=device).to("cpu")
+                        loaded.text.to("cpu")
+                    if swapper:
+                        swapper.move_model_to_device(loaded.backbone)
+                    else:
+                        loaded.backbone.to(device)
+                    loaded.device = device
+                    defaults = family.sampling_defaults(loaded)
+                    stride, patch = family.spec.latent.stride, family.spec.latent.patch
+                    shift = (
+                        cell["shift"]
+                        if cell["shift"] is not None
+                        else family.sampling_shift_for_model(
+                            loaded,
+                            (request.height // stride // patch) * (request.width // stride // patch),
+                            steps=cell["steps"],
+                        )
                     )
-                )
-                guidance = cell["guidance"] if cell["guidance"] is not None else defaults.guidance
-                cond = conditions[request.prompt].to(device)
-                uncond = (
-                    conditions[request.negative].to(device) if needs_uncond(loaded, cell["cfg"]) else None
-                )
-                emit(
-                    "xyz.progress",
-                    phase="sampling",
-                    done=cell["index"],
-                    total=len(cells),
-                    cell_index=cell["index"],
-                    sample_step=0,
-                    sample_steps=cell["steps"],
-                )
-
-                def predict(x, t, condition=cond, guidance_value=guidance, current_loaded=loaded):
-                    check()
-                    precision = (
-                        torch.autocast("cuda", dtype=dtype)
-                        if device.type == "cuda" and dtype != torch.float32
-                        else nullcontext()
+                    guidance = cell["guidance"] if cell["guidance"] is not None else defaults.guidance
+                    cond = conditions[request.prompt].to(device)
+                    uncond = (
+                        conditions[request.negative].to(device) if needs_uncond(loaded, cell["cfg"]) else None
                     )
-                    with precision:
-                        return family.forward(
-                            current_loaded,
-                            x.to(dtype),
-                            t.to(device),
-                            condition,
-                            inference=True,
-                            guidance=guidance_value,
-                        ).float()
-
-                def step(done, total, cell_index=cell["index"]):
-                    check()
                     emit(
                         "xyz.progress",
                         phase="sampling",
-                        done=cell_index,
+                        done=cell["index"],
                         total=len(cells),
-                        cell_index=cell_index,
-                        sample_step=done,
-                        sample_steps=total,
+                        cell_index=cell["index"],
+                        sample_step=0,
+                        sample_steps=cell["steps"],
                     )
 
-                latents = family.sample_latents(
-                    loaded,
-                    predict,
-                    (1, family.spec.latent.channels, request.height // stride, request.width // stride),
-                    steps=cell["steps"],
-                    cfg=cell["cfg"],
-                    shift=shift,
-                    sampler=cell["sampler"],
-                    scheduler=cell["scheduler"],
-                    predict_uncond=(lambda x, t, condition=uncond, forward=predict: forward(x, t, condition))
-                    if uncond is not None
-                    else None,
-                    generator=torch.Generator().manual_seed(cell["seed"]),
-                    noise=cell.get("noise", "comfyui"),
-                    device=device,
-                    on_step=step,
-                )
+                    def predict(x, t, condition=cond, guidance_value=guidance, current_loaded=loaded):
+                        check()
+                        precision = (
+                            torch.autocast("cuda", dtype=dtype)
+                            if device.type == "cuda" and dtype != torch.float32
+                            else nullcontext()
+                        )
+                        with precision:
+                            return family.forward(
+                                current_loaded,
+                                x.to(dtype),
+                                t.to(device),
+                                condition,
+                                inference=True,
+                                guidance=guidance_value,
+                            ).float()
+
+                    def step(done, total, cell_index=cell["index"]):
+                        check()
+                        emit(
+                            "xyz.progress",
+                            phase="sampling",
+                            done=cell_index,
+                            total=len(cells),
+                            cell_index=cell_index,
+                            sample_step=done,
+                            sample_steps=total,
+                        )
+
+                    latents = family.sample_latents(
+                        loaded,
+                        predict,
+                        (1, family.spec.latent.channels, request.height // stride, request.width // stride),
+                        steps=cell["steps"],
+                        cfg=cell["cfg"],
+                        shift=shift,
+                        sampler=cell["sampler"],
+                        scheduler=cell["scheduler"],
+                        predict_uncond=(lambda x, t, condition=uncond, forward=predict: forward(x, t, condition))
+                        if uncond is not None
+                        else None,
+                        generator=torch.Generator().manual_seed(cell["seed"]),
+                        noise=cell.get("noise", "comfyui"),
+                        device=device,
+                        on_step=step,
+                    )
                 if not torch.isfinite(latents).all():
                     raise ValueError("Sampling produced non-finite latents; reduce the comparison settings")
                 if swapper:
@@ -537,7 +553,7 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                     cell_index=cell["index"],
                 )
                 loaded.latent.to(device)
-                pixels = loaded.latent.decode(latents).clamp(-1, 1)
+                pixels = decode_preview(loaded.latent, latents, noise=cell.get("noise", "comfyui")).clamp(-1, 1)
                 if not torch.isfinite(pixels).all():
                     raise ValueError("VAE decoding produced non-finite pixels")
                 array = (
@@ -555,6 +571,8 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                         "file": name,
                         "shift": shift,
                         "guidance": guidance,
+                        "adapter_fusion_dtypes": sorted(set((fusion_dtypes or {}).values())),
+                        "vae_dtype": str(getattr(loaded.latent, "dtype", "unknown")).removeprefix("torch."),
                         "checkpoint_name": checkpoints[cell["checkpoint_id"]]["name"]
                         if cell["checkpoint_id"]
                         else None,

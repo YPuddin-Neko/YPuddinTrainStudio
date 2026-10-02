@@ -287,12 +287,12 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       return text(`按图像 token 数插值偏移量的两个参考点，${name} 默认 256 和 ${family.name === 'krea2' ? 6400 : 4096}。它们不是图像尺寸上限，范围外会外推；与下方 mu 成对使用。`, `The two image token counts the shift is interpolated between; ${name} uses 256 and ${family.name === 'krea2' ? 6400 : 4096}. They are not size limits (values outside extrapolate) and pair with the mu values below.`);
     case 'sampling.noise':
       return join([
-        text('选择初始噪声和采样过程中的随机数规则。采样由训练器执行。', 'Selects the random-number rules for initial noise and during sampling. Sampling runs in the trainer.'),
+        text('选择适配器融合与噪声规则。采样由训练器执行。', 'Selects adapter merging and noise rules. Sampling runs in the trainer.'),
         ...optionLines({
-          comfyui: ['初始噪声在 CPU 上按种子生成。', 'initial noise is drawn from the seed on the CPU.'],
+          comfyui: ['使用对应的导出适配器融合规则，初始噪声在 CPU 上按种子生成。', 'uses the corresponding exported-adapter merging rules and draws initial noise on the CPU.'],
           a1111: onGpu(runtime)
-            ? ['在显卡上逐张按种子生成噪声。', 'noise is drawn from each image’s seed on the GPU.']
-            : ['这台机器使用 CPU 逐张按种子生成噪声。', 'noise is drawn from each image’s seed on the CPU on this machine.'],
+            ? ['保留训练器原有融合方式，在显卡上逐张按种子生成噪声。', 'keeps the trainer’s original merging and draws per-image seeded noise on the GPU.']
+            : ['保留训练器原有融合方式，这台机器使用 CPU 逐张按种子生成噪声。', 'keeps the trainer’s original merging and draws per-image seeded noise on the CPU on this machine.'],
         }),
         ddpm && text(`${name} 的初始噪声缩放也随选项切换。`, `${name}'s initial-noise scaling also follows this selection.`),
         text('Euler a、ER-SDE 在采样过程中追加的噪声也使用所选规则。仅影响采样，不影响训练。', 'Euler a and ER-SDE use the selected rules for noise added during sampling. Affects sampling, not training.'),

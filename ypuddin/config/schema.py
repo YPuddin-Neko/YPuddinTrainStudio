@@ -1084,6 +1084,21 @@ class MemoryConfig(_Strict):
             show_when='model.family == "anima" || model.family == "krea2"',
         ),
     )
+    no_half_vae: bool = F(
+        False,
+        help="强制 VAE 使用 FP32 编码和解码图像，能减少低精度计算引起的数值异常，但会增加显存占用，并可能降低速度。默认关闭。",
+        ui_=ui("memory", order=26, control="switch", advanced=True, show_when="model.family in ['anima', 'krea2']"),
+    )
+    vae_tiling: bool = F(
+        False,
+        help="将图像按 512 像素分块进行 VAE 编码和解码，相邻块重叠 128 像素，可减少显存占用，但可能增加耗时。默认关闭。",
+        ui_=ui("memory", order=27, control="switch", advanced=True, show_when="model.family in ['anima', 'krea2']"),
+    )
+    cache_encode_tiled: bool = F(
+        False,
+        help="仅在创建图像缓存时，对面积超过 2048×2048 像素的图片按 1024 像素分块编码，相邻块重叠 128 像素。小图沿用 VAE 分块设置，不影响预览解码。默认关闭。",
+        ui_=ui("memory", order=28, control="switch", advanced=True, show_when="model.family in ['anima', 'krea2']"),
+    )
     offload_text_encoder: bool = F(
         False,
         help="在线编码标签时，在每次编码后把文本编码器移到 CPU，默认关闭；可减少驻留显存但增加传输。cached 文本模式已预编码并卸载编码器，无需依靠此开关。",
@@ -1362,10 +1377,21 @@ class SamplingConfig(_Strict):
     noise: Literal["comfyui", "a1111"] = F(
         "comfyui",
         help=(
-            "按哪个软件的方式由种子生成噪声，默认 comfyui：初始噪声在 CPU 上生成；a1111 按 A1111 WebUI 的默认设置在显卡上"
-            "为每张图生成。Euler a、ER-SDE 每步加入的噪声也随之变化。采样设置相同时，同一种子的构图与所选软件一致。"
+            "ComfyUI 使用对应的导出适配器融合规则，并在 CPU 上生成初始噪声；"
+            "A1111 使用逐张噪声规则并保留训练器原有融合方式。仅影响采样，不改变训练计算。"
         ),
         ui_=ui("sampling", advanced=True, order=115, control="select", show_when="sampling.enabled == true"),
+    )
+    adapter_merge_dtype: Literal["auto", "bf16", "fp16", "fp32"] = F(
+        "auto",
+        help=(
+            "ComfyUI 模式下融合导出适配器的计算精度。自动跟随底模实际浮点精度；"
+            "可按外部加载方式指定 BF16、FP16 或 FP32。只控制适配器融合，不改变推理精度或训练计算。"
+        ),
+        ui_=ui(
+            "sampling", advanced=True, order=116, control="select",
+            show_when="sampling.enabled == true && sampling.noise == 'comfyui' && training.mode != 'full'",
+        ),
     )
     sampler: Literal["euler", "euler_ancestral", "heun", "er_sde"] = F(
         "euler",

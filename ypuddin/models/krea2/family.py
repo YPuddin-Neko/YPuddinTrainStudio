@@ -373,8 +373,11 @@ class Krea2Family(ModelFamily):
                 "(Krea 2 needs Qwen3-VL-4B-Instruct)"
             )
         latent = AnimaLatent(
-            cfg.vae_path, device=device, dtype=torch.float32 if torch.device(device).type == "cpu" else dtype,
+            cfg.vae_path, device=device,
+            dtype=torch.float32 if memory.no_half_vae or torch.device(device).type == "cpu" else dtype,
             vae_attention_chunking=memory.vae_attention_chunking,
+            vae_tiling=memory.vae_tiling,
+            cache_encode_tiled=memory.cache_encode_tiled,
         )
         log.info(
             "prepared Krea 2 DiT metadata: features=%s layers=%s heads=%s/%s; weights deferred until after caching",

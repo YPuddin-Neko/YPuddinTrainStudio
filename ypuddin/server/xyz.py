@@ -104,6 +104,7 @@ class XyzRequest(GpuSelection):
     sampler: str = "euler"
     scheduler: str = "uniform"
     noise: Literal["comfyui", "a1111"] = "comfyui"
+    adapter_merge_dtype: Literal["auto", "bf16", "fp16", "fp32"] = "auto"
     shift: float | None = Field(None, gt=0, le=100, allow_inf_nan=False)
     guidance: float | None = Field(None, ge=0, le=30, allow_inf_nan=False)
     adapter_scale: float = Field(1, ge=-4, le=4, allow_inf_nan=False)
@@ -455,7 +456,7 @@ def options(context, source_id):
     own = [row for row in checkpoints if row["job_id"] == source_id]
     defaults = {
         key: getattr(sampling, key)
-        for key in ("width", "height", "steps", "cfg", "sampler", "scheduler", "noise", "shift", "guidance")
+        for key in ("width", "height", "steps", "cfg", "sampler", "scheduler", "noise", "adapter_merge_dtype", "shift", "guidance")
     }
     defaults.update(
         prompt=prompt.prompt if prompt else "",
@@ -613,6 +614,7 @@ def start(context, source_id: str, request: XyzRequest):
                         "sampler",
                         "scheduler",
                         "noise",
+                        "adapter_merge_dtype",
                         "shift",
                         "guidance",
                     )

@@ -21,6 +21,16 @@ def flow_schedule(steps: int, shift: float = 1.0, device: torch.device | str = "
     return t
 
 
+def comfyui_denoised(predict, predict_uncond, x: Tensor, sigma: Tensor, cfg: float) -> Tensor:
+    """RF model output and CFG in ComfyUI's denoised-space operation order."""
+    batch_time = sigma.expand(x.shape[0]).float()
+    denoised = x - predict(x, batch_time).to(x.dtype) * sigma
+    if cfg != 1.0 and predict_uncond is not None:
+        uncond = x - predict_uncond(x, batch_time).to(x.dtype) * sigma
+        denoised = uncond + (denoised - uncond) * cfg
+    return denoised
+
+
 @torch.no_grad()
 def euler_sample(
     predict: Callable[[Tensor, Tensor], Tensor],
@@ -46,6 +56,13 @@ def euler_sample(
     ts = flow_schedule(steps, shift, device=device)
     for i in range(steps):
         t_cur, t_next = ts[i], ts[i + 1]
+        if start.source == "comfyui":
+            denoised = comfyui_denoised(predict, predict_uncond, x, t_cur, cfg)
+            direction = (x - denoised) / t_cur
+            x = x + direction * (t_next - t_cur)
+            if on_step is not None:
+                on_step(i + 1, steps)
+            continue
         tb = t_cur.expand(shape[0]).float()
         v = predict(x, tb)
         if cfg != 1.0 and predict_uncond is not None:

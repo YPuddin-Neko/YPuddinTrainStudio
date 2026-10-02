@@ -12,7 +12,7 @@ import signal
 import threading
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import replace
 from functools import partial, wraps
@@ -467,7 +467,7 @@ class Trainer:
             latent_log = self._cache_progress_log("VAE")
             n = cache_latents(
                 self.bundle,
-                self.loaded.latent.encode,
+                getattr(self.loaded.latent, "encode_for_cache", self.loaded.latent.encode),
                 device=self.device,
                 batch_size=1 if cfg.dataset.resolution_mode == "native" else max(1, cfg.dataset.batch_size),
                 dtype=model_dtype,
@@ -1394,10 +1394,16 @@ class Trainer:
     def _latents(self, batch: dict[str, Any]) -> Tensor:
         if "latents" in batch:
             return batch["latents"].to(self.device, torch.float32)
+        encode = self.loaded.latent.encode
+        cache_enabled = "partial_latents" in batch or (
+            getattr(self, "cfg", None) is not None and self.cfg.dataset.cache_latents
+        )
+        if cache_enabled:
+            encode = getattr(self.loaded.latent, "encode_for_cache", encode)
         with torch.no_grad():
             if "partial_latents" in batch:
                 encoded = {
-                    index: self.loaded.latent.encode(pixels[None].to(self.device))[0].float()
+                    index: encode(pixels[None].to(self.device))[0].float()
                     for index, pixels in batch["pixels"].items()
                 }
                 return torch.stack(
@@ -1406,7 +1412,7 @@ class Trainer:
                         for index, latents in enumerate(batch["partial_latents"])
                     ]
                 )
-            return self.loaded.latent.encode(batch["pixels"].to(self.device)).float()
+            return encode(batch["pixels"].to(self.device)).float()
 
     def _num_tokens(self, latents: Tensor) -> int:
         p = self.family.spec.latent.patch
@@ -2177,13 +2183,28 @@ class Trainer:
         log.debug("validation on %d images took %.1fs", len(ds.items), time.perf_counter() - started)
         return result
 
+    def _preview_adapter_export(self) -> dict[str, Tensor]:
+        return self.adapters.export_state()[0]
+
+    @contextmanager
+    def _sampling_adapter_preview(self):
+        adapters = getattr(self, "adapters", None)
+        if self.cfg.sampling.noise != "comfyui" or not isinstance(adapters, (AdapterSet, ComponentAdapterSet)):
+            yield {}
+            return
+        from ypuddin.sampling.adapter_preview import exported_adapter_bindings, exported_adapter_preview
+
+        with exported_adapter_preview(
+            exported_adapter_bindings(adapters),
+            self._preview_adapter_export(),
+            merge_dtype=self.cfg.sampling.adapter_merge_dtype,
+            save_dtype=self.cfg.checkpoint.save_dtype,
+        ) as used:
+            yield used
+
     @torch.no_grad()
     @evaluation
     def sample_images(self, tag: str) -> list[Path]:
-        from PIL import Image
-
-        from .preview_compute import preview_linear_compute
-
         scfg = self.cfg.sampling
         prompts = list(scfg.prompts)
         if scfg.prompts_file:
@@ -2194,6 +2215,17 @@ class Trainer:
         set_noise_level = getattr(getattr(self, "adapters", None), "set_noise_level", None)
         if set_noise_level is not None:
             set_noise_level(None)
+        with Trainer._sampling_adapter_preview(self) as fusion_dtypes:
+            return Trainer._sample_images_from_prompts(self, tag, prompts, fusion_dtypes)
+
+    def _sample_images_from_prompts(self, tag: str, prompts: list, fusion_dtypes: dict[str, str]) -> list[Path]:
+        from PIL import Image
+
+        from ypuddin.sampling.decoding import decode_preview
+
+        from .preview_compute import preview_linear_compute
+
+        scfg = self.cfg.sampling
         defaults = self.family.sampling_defaults(self.loaded)
         out_dir = (
             Path(self.cfg.sampling.output_dir) if self.cfg.sampling.output_dir else self.run_dir / "samples"
@@ -2226,7 +2258,11 @@ class Trainer:
             def predict(
                 x: Tensor, t: Tensor, c: TextCond = cond, dt: torch.dtype = model_dtype, g=guidance
             ) -> Tensor:
-                with self._autocast(), preview_linear_compute(self.compute_policy, self.loaded.backbone):
+                preview_compute = (
+                    nullcontext() if scfg.noise == "comfyui"
+                    else preview_linear_compute(self.compute_policy, self.loaded.backbone)
+                )
+                with self._autocast(), preview_compute:
                     return self.family.forward(
                         self.loaded, x.to(dt), t.to(self.device), c, inference=True, guidance=g
                     ).float()
@@ -2263,7 +2299,7 @@ class Trainer:
                 on_step=on_step,
             )
             self.loaded.latent.to(self.device)
-            pixels = self.loaded.latent.decode(latents).clamp(-1, 1)
+            pixels = decode_preview(self.loaded.latent, latents, noise=scfg.noise).clamp(-1, 1)
             arr = ((pixels[0].permute(1, 2, 0).cpu().float().numpy() + 1) * 127.5).round().astype("uint8")
             path = out_dir / f"{tag}_{i:02d}_{seed}.png"
             if self.is_primary:
@@ -2289,6 +2325,8 @@ class Trainer:
                 guidance=guidance,
                 er_sde_order=scfg.er_sde_order,
                 er_sde_s_noise=scfg.er_sde_s_noise,
+                **({"adapter_merge_dtype": scfg.adapter_merge_dtype,
+                    "adapter_fusion_dtypes": sorted(set(fusion_dtypes.values()))} if scfg.noise == "comfyui" else {}),
             )
             log.info(
                 "preview %d/%d saved: %s (%dx%d, seed %d, %.1fs)",
