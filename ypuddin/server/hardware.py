@@ -58,6 +58,14 @@ def _hip_unique_id(value: Any) -> str | None:
     return raw if re.fullmatch(r"[0-9a-f]{16}", raw) and int(raw, 16) else None
 
 
+def _gpu_uuid(value: Any) -> str | None:
+    """One spelling of an NVIDIA UUID: Torch prints it bare, nvidia-smi and NVML with ``GPU-`` / ``MIG-``."""
+    raw = str(value or "").strip().lower()
+    for prefix in ("gpu-", "mig-"):
+        raw = raw.removeprefix(prefix)
+    return raw or None
+
+
 def _pci_address(value: Any) -> str | None:
     raw = str(value or "").lower()
     return raw if re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", raw) else None
@@ -421,7 +429,7 @@ def _nvml_metrics(entries: list[dict[str, Any]]) -> None:
             for entry in entries:
                 try:
                     if entry.get("uuid"):
-                        handle = pynvml.nvmlDeviceGetHandleByUUID(entry["uuid"])
+                        handle = _nvml_handle_by_uuid(pynvml, entry["uuid"])
                     else:
                         matches = []
                         for physical_index in range(pynvml.nvmlDeviceGetCount()):
@@ -466,6 +474,18 @@ def _nvml_metrics(entries: list[dict[str, Any]]) -> None:
         pass
 
 
+def _nvml_handle_by_uuid(pynvml: Any, uuid: str) -> Any:
+    """NVML documents prefixed UUIDs; Torch's bare form works only with some drivers."""
+    bare = _gpu_uuid(uuid)
+    candidates = list(dict.fromkeys([uuid, f"GPU-{bare}", f"MIG-{bare}"]))
+    for candidate in candidates[:-1]:
+        try:
+            return pynvml.nvmlDeviceGetHandleByUUID(candidate)
+        except Exception:  # noqa: BLE001 - try the next documented spelling
+            continue
+    return pynvml.nvmlDeviceGetHandleByUUID(candidates[-1])
+
+
 def _nvidia_metrics(entries: list[dict[str, Any]]) -> None:
     """Fill driver fields by identity, using SMI where NVML cannot provide a reading."""
     _nvml_metrics(entries)
@@ -474,7 +494,8 @@ def _nvidia_metrics(entries: list[dict[str, Any]]) -> None:
     for entry in entries:
         # Worker CUDA ordinals can differ from the physical indices reported by SMI.
         if entry.get("uuid"):
-            matches = [gpu for gpu in fallback if gpu.get("uuid") == entry["uuid"]]
+            identity = _gpu_uuid(entry["uuid"])
+            matches = [gpu for gpu in fallback if identity and _gpu_uuid(gpu.get("uuid")) == identity]
         elif entry.get("name"):
             matches = [gpu for gpu in fallback if gpu.get("name") == entry["name"]]
         else:

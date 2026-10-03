@@ -27,7 +27,7 @@ from .db import Database, new_id, now
 from .environment import maintenance_blocked, maintenance_reason
 from .gpu_selection import selection_error
 from .hardware import gpu_info
-from .job_logs import SUPERVISOR_SOURCE, append_failure_record, read_log
+from .job_logs import SUPERVISOR_SOURCE, append_failure_record, entry_levels, read_log
 from .job_paths import event_file, log_file, state_directory
 from .memory_fit import capacity_shortfall, device_label, fits_now, gb, shortfall_reason
 from .process_output import ProcessOutput
@@ -41,6 +41,9 @@ TERMINAL = ("completed", "failed", "cancelled", "paused")
 EVENT_BATCH_SIZE = 128
 EVENT_BATCH_BYTES = 256 * 1024
 RELEASE_WAIT_SECONDS = 30
+# How long an exited worker's last output may keep arriving, from a descendant
+# still holding the pipe, before its exit is reconciled without it.
+OUTPUT_DRAIN_SECONDS = 2.0
 
 
 # Writes start failing well before a volume reports exactly zero free bytes.
@@ -67,11 +70,14 @@ def _exit_diagnostics(log_path: Path, start: int = 0) -> list[str]:
         lines = read_log(log_path, tail=True, limit=1000)["lines"]
     except OSError:
         lines = []
+    # The exception line of a traceback logged with a warning (an optional package that is
+    # missing, for example) belongs to that warning and does not explain the exit.
     errors = [
         line["msg"]
-        for line in lines
+        for line, entry in zip(lines, entry_levels(lines), strict=True)
         if line["offset"] >= start
         and line["level"] == "error"
+        and entry == "error"
         and line["kind"] != "traceback"
         and line["source"] != SUPERVISOR_SOURCE
         and not _launcher_line(line)
@@ -180,6 +186,8 @@ class JobSupervisor:
         self.python = python or sys.executable
         self._procs: dict[str, subprocess.Popen] = {}
         self._output_captures: dict[int, ProcessOutput] = {}
+        # When each exited job was first seen with its output still arriving.
+        self._draining_since: dict[str, float] = {}
         self._devices: dict[str, str | tuple[str, ...]] = {}
         self._offsets: dict[str, int] = {}
         # Where each running job's log stood when its current process started.
@@ -238,6 +246,7 @@ class JobSupervisor:
             for job_id, proc in list(self._procs.items()):
                 drained = self._pump_events(job_id)
                 if proc.poll() is not None and drained and self._pump_events(job_id):
+                    await self._drain_output(proc)
                     self._on_exit(job_id, proc.returncode)
                     del self._procs[job_id]
                     self._devices.pop(job_id, None)
@@ -248,6 +257,7 @@ class JobSupervisor:
             await asyncio.to_thread(proc.wait, 5)
             while not self._pump_events(job_id):
                 await asyncio.sleep(0)
+            await self._drain_output(proc)
             self._on_exit(job_id, proc.returncode)
         self._procs.clear()
         self._devices.clear()
@@ -277,6 +287,9 @@ class JobSupervisor:
                     continue
                 if not self._pump_events(job_id):
                     backlog = True
+                    continue
+                # Exit diagnostics read the log: wait, without blocking the loop, for its last lines.
+                if not self._output_drained(job_id, proc):
                     continue
                 self._on_exit(job_id, proc.returncode)
                 del self._procs[job_id]
@@ -826,7 +839,7 @@ class JobSupervisor:
 
     def _forget_resident(self, proc: subprocess.Popen) -> None:
         if proc.poll() is not None:
-            self._finish_output(proc)
+            self._detach_output(proc)
         for resident in list(self._residents.values()):
             if resident.proc is proc:
                 self._residents.pop(resident.devices, None)
@@ -837,7 +850,7 @@ class JobSupervisor:
         with self.db.lock:
             for proc, _since in self._releasing:
                 if proc.poll() is not None:
-                    self._finish_output(proc)
+                    self._detach_output(proc)
             # A worker that outlives its kill for long must not hold the queue forever.
             self._releasing = [
                 (proc, since)
@@ -1103,9 +1116,37 @@ class JobSupervisor:
             self._set_status(job_id, status, finished_at=now(), exit_code=code, error=error)
 
     def _finish_output(self, proc: subprocess.Popen) -> None:
+        """Stop tracking a worker's output, waiting briefly for its last lines off the event loop.
+
+        The loop never waits here: its callers drain first (``_output_drained``,
+        ``_drain_output``), so a descendant holding the pipe cannot stall the API.
+        """
         capture = self._output_captures.pop(id(proc), None)
-        if capture is not None:
+        if capture is None or capture.finished:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
             capture.join()
+
+    def _detach_output(self, proc: subprocess.Popen) -> None:
+        """Forget a released worker's capture; its thread still drains what is left into the log."""
+        self._output_captures.pop(id(proc), None)
+
+    def _output_drained(self, job_id: str, proc: subprocess.Popen) -> bool:
+        """Whether an exited job's output reached its log, or a holder of the pipe had its time."""
+        capture = self._output_captures.get(id(proc))
+        if capture is not None and not capture.finished:
+            since = self._draining_since.setdefault(job_id, time.monotonic())
+            if time.monotonic() - since < OUTPUT_DRAIN_SECONDS:
+                return False
+        self._draining_since.pop(job_id, None)
+        return True
+
+    async def _drain_output(self, proc: subprocess.Popen) -> None:
+        capture = self._output_captures.get(id(proc))
+        if capture is not None and not capture.finished:
+            await asyncio.to_thread(capture.join, OUTPUT_DRAIN_SECONDS)
 
     def _set_status(self, job_id: str, status: str, **fields: Any) -> None:
         with self.db.lock:

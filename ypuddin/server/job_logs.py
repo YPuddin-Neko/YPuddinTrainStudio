@@ -34,6 +34,13 @@ _BASIC_RECORD = re.compile(
 _BARE_RECORD = re.compile(_RANK + r"(?P<level>WARN(?:ING)?|ERROR|CRITICAL|FATAL):(?P<message>.*)$")
 _TRACEBACK = re.compile(_RANK + r"\s*Traceback \(most recent call last\):")
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_PROCESS_RANK = re.compile(r"^\[rank(\d+)\]:\s?")
+_WARNING_HEAD = re.compile(r"^(?:\[rank\d+\]:\s*)?(?:[^\n]+:\d+:\s*)?\w*Warning:")
+_CHAINED = re.compile(
+    r"^(?:During handling of the above exception, another exception occurred:"
+    r"|The above exception was the direct cause of the following exception:)$"
+)
+_ORDER = {"debug": 10, "info": 20, "warn": 30, "error": 40}
 _LEVELS = {"warning": "warn", "critical": "error", "fatal": "error"}
 _GLOG_LEVELS = {"I": "info", "W": "warn", "E": "error", "F": "error"}
 _CAPTURED = re.compile(r"^\[captured (?P<time>[^\]]+)\] (?P<message>.*)$")
@@ -205,6 +212,53 @@ def _parse_plain_lines(lines: list[str], *, now: datetime) -> list[dict[str, Any
             level = "warn"
         out.append({"kind": "text", "ts": None, "level": level, "source": None, "msg": line})
     return out
+
+
+def entry_levels(lines: list[Mapping[str, Any]]) -> list[str]:
+    """The level of the log entry each parsed line belongs to, grouped as the job log view groups them.
+
+    A record keeps its own level for every line joined to it, so the traceback a warning was logged
+    with (``exc_info``) reads as part of that warning. Any other traceback starts an error entry:
+    one after an info or debug record, after plain output, or after a warning whose own traceback
+    has ended. Keep in step with ``groupLogLines`` in ``frontend/src/utils/jobLogs.ts``.
+    """
+    levels: list[str] = []
+    level = kind = rank = None
+    traceback = "none"
+    chained = False
+    for line in lines:
+        line_kind = line.get("kind") or "text"
+        line_level = line.get("level") if line.get("level") in _ORDER else "info"
+        message = str(line.get("msg") or "")
+        found = _PROCESS_RANK.match(message)
+        line_rank = found[1] if found else None
+        body = message[found.end() :] if found else message
+        different_rank = line_rank is not None and rank is not None and line_rank != rank
+        if level is None or different_rank:
+            joins = False
+        elif line_kind == "traceback":
+            joins = (
+                kind == "traceback"
+                or level == "error"
+                or (kind == "record" and level == "warn" and (traceback == "none" or chained))
+            )
+        elif line_kind == "text":
+            warning_head = traceback != "frames" and _WARNING_HEAD.match(message) is not None
+            joins = not warning_head and (
+                traceback == "frames" or line_level == "info" or _ORDER[line_level] <= _ORDER[level]
+            )
+        else:
+            joins = False
+        if not joins:
+            level, kind, rank, traceback = line_level, line_kind, line_rank, "none"
+        if line_kind == "traceback":
+            traceback = "frames"
+        elif traceback == "frames" and body.strip() and not body[:1].isspace():
+            traceback = "done"  # the unindented exception line ends the frames
+        if body.strip():
+            chained = _CHAINED.match(body.strip()) is not None
+        levels.append(level)
+    return levels
 
 
 def _split(chunk: bytes, base: int) -> list[tuple[int, bytes]]:

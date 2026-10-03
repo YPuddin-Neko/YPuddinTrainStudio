@@ -71,9 +71,11 @@ def _linux_cpu_quota() -> float | None:
             try:
                 budget = _quota(directory, unified=unified)
             except FileNotFoundError:
-                # v2's hierarchy root has no cpu.max. A mounted subtree's root
-                # can carry a quota, so its missing file remains unknown.
-                if not (unified and directory == mount and root == PurePosixPath("/")):
+                # A v2 cgroup without cpu.max has no CPU controller and so no limit
+                # at that level: the hierarchy root, or a systemd user session
+                # without CPU delegation. Its parents can still set one. A missing
+                # cgroup directory means the membership did not resolve.
+                if not (unified and directory.is_dir()):
                     raise
                 budget = None
             if budget is not None:

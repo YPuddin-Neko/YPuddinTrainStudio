@@ -43,6 +43,11 @@ class ProcessOutput:
             self._switches[marker.encode("ascii")] = path
         return marker
 
+    @property
+    def finished(self) -> bool:
+        """Whether the pipe reached its end and every line is in the log."""
+        return not self._thread.is_alive()
+
     def join(self, timeout: float = 2.0) -> None:
         # A surviving descendant may still hold the pipe. Do not let collecting
         # its logs block the supervisor's process-exit or cancellation handling.
