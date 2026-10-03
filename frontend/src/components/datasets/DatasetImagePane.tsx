@@ -29,7 +29,7 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
   const title = all ? text('全部图片', 'All images') : training ? text('参与训练', 'In training') : text('暂不训练', 'Not in training');
   const grid = React.useRef<HTMLDivElement>(null);
   const anchor = React.useRef<string | null>(null);
-  const [viewport, setViewport] = React.useState({ width: 600, height: 600, top: 0 });
+  const [viewport, setViewport] = React.useState({ width: 600, height: 600, top: 0, measured: false });
   const cols = Math.max(1, Math.floor((viewport.width - GAP) / (minWidth + GAP)));
   const width = Math.max(1, (viewport.width - GAP * (cols + 1)) / cols);
   const rowHeight = Math.round(width) + (previewOnly ? 26 : 52) + GAP;
@@ -37,7 +37,8 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
   const startRow = Math.max(0, Math.floor(viewport.top / rowHeight) - 2);
   const endRow = Math.min(rows, Math.ceil((viewport.top + viewport.height) / rowHeight) + 2);
   const setColumns = images.setColumns;
-  React.useEffect(() => { setColumns?.(cols); }, [cols, setColumns]);
+  // Columns are reported once the grid is measured, so a waiting first request uses the real page size.
+  React.useEffect(() => { if (viewport.measured) setColumns?.(cols); }, [cols, viewport.measured, setColumns]);
   const knownCount = typeof count === 'number' && Number.isFinite(count) && count >= 0 ? count : null;
   const firstLoad = images.loading && images.items.length === 0 && !images.error && knownCount !== 0;
   const loadingRows = Math.max(1, Math.ceil((viewport.height - GAP) / rowHeight));
@@ -47,7 +48,7 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
   React.useLayoutEffect(() => {
     const element = grid.current;
     if (!element) return;
-    const measure = () => setViewport(previous => ({ ...previous, width: element.clientWidth || 600, height: element.clientHeight || 600, top: element.scrollTop }));
+    const measure = () => setViewport(previous => ({ ...previous, width: element.clientWidth || 600, height: element.clientHeight || 600, top: element.scrollTop, measured: true }));
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     observer?.observe(element);

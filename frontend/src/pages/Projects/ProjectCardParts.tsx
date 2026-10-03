@@ -1,11 +1,12 @@
 import React from 'react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import type { Project } from '../../api/types';
 import ProgressBar from '../../components/ProgressBar';
 import { JobStatus } from '../Queue/jobPresentation';
 import { shortTime } from '../../utils/jobs';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { ProjectCover } from './ProjectEditor';
-import { coverSource } from './projectGallery';
+import { coverSource, type ProjectDeletion } from './projectGallery';
 import './projects.css';
 
 /** The cover, or the name's first character on a tint derived from the name. */
@@ -32,4 +33,12 @@ export function ProjectActivityLine({ job }: { job?: Project['latest_job'] }) {
     {moving && progress !== null && <ProgressBar className="project-activity-bar" label={text('训练进度', 'Training progress')} value={job.step ?? 0} max={job.total_steps ?? 0}/>}
     {detail && <span className="project-activity-detail">{detail}</span>}
   </div>;
+}
+
+/** A deletion in the background, or one that stopped; shown instead of the training activity. */
+export function ProjectDeletionLine({ deletion }: { deletion: ProjectDeletion }) {
+  const text = useWorkspaceText();
+  return deletion.state === 'deleting'
+    ? <div className="project-deletion" role="status" data-state="deleting"><Loader2 size={13} className="animate-spin" aria-hidden="true"/><span>{text('正在删除…', 'Deleting…')}</span></div>
+    : <div className="project-deletion" role="status" data-state="failed" title={deletion.error || undefined}><AlertCircle size={13} aria-hidden="true"/><span>{text('删除没有完成', 'Deletion did not finish')}{deletion.error ? `：${deletion.error}` : ''}</span></div>;
 }

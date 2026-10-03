@@ -66,7 +66,13 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
     refetchInterval: q => q.state.data?.busy || q.state.data?.operations.some(op => !terminal(op.status)) ? 1200 : false,
   });
   const refresh = () => { void query.refetch(); onChanged(); };
-  useEventStream(EVENT_TYPES.DATASET_CHANGED, () => { void query.refetch(); });
+  useEventStream<{ dataset_id?: string; project_id?: string; version_id?: string; reason?: string }>(EVENT_TYPES.DATASET_CHANGED, event => {
+    if (event.project_id && event.project_id !== projectId || event.version_id && event.version_id !== versionId) return;
+    // An event naming only a dataset concerns this panel when it is one of this version's datasets.
+    if (!(event.project_id && event.version_id) && !datasets.some(row => row.source.id === event.dataset_id)) return;
+    // A refresh that has only started changed nothing yet; its finish sends another event.
+    if (event.reason !== 'refreshing') void query.refetch();
+  });
   useEventStream(EVENT_TYPES.JOB_STATE, () => { void query.refetch(); });
   const snapshot = query.data;
   const report = snapshot?.inspection;

@@ -11,7 +11,10 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import ProjectEditor from './ProjectEditor';
 import { categoryLabel, type GalleryProject } from './projectGallery';
 import ProjectCardMenu from './ProjectCardMenu';
-import { ProjectActivityLine, ProjectArtwork } from './ProjectCardParts';
+import { ProjectActivityLine, ProjectArtwork, ProjectDeletionLine } from './ProjectCardParts';
+import ProjectDeleteDialog from './ProjectDeleteDialog';
+import { useEventStream } from '../../events/useEventStream';
+import { EVENT_TYPES } from '../../events/eventTypes';
 import '../../styles/project-workspace.css';
 import './projects.css';
 import Switch from '../../components/Switch';
@@ -35,6 +38,7 @@ export default function Projects() {
   const [loading, setLoading] = React.useState(true);
   const [editor, setEditor] = React.useState<GalleryProject | 'new' | null>(null);
   const [pending, setPending] = React.useState<string | null>(null);
+  const [deleting, setDeleting] = React.useState<GalleryProject | null>(null);
   const pendingRef = React.useRef<string | null>(null);
   const families = useQuery({ queryKey: ['families'], queryFn: () => apiClient.get<FamilyInfo[]>('/families', { silent: true }), staleTime: 5 * 60 * 1000 });
   const search = params.get('q') || '';
@@ -49,13 +53,23 @@ export default function Projects() {
     Object.entries(patch).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
     setParams(next, { replace });
   };
-  const fetchProjects = React.useCallback(() => {
-    setLoading(true);
+  // `quiet` refreshes keep the cards on screen, e.g. while a deletion runs.
+  const fetchProjects = React.useCallback((quiet = false) => {
+    if (!quiet) setLoading(true);
     return apiClient.get<{ items: GalleryProject[] } | GalleryProject[]>('/projects', { params: { include_archived: true }, silent: true })
       .then(data => { setProjects(Array.isArray(data) ? data : data.items || []); setError(''); })
-      .catch(failure => setError(formatApiError(failure))).finally(() => setLoading(false));
+      .catch(failure => setError(formatApiError(failure))).finally(() => { if (!quiet) setLoading(false); });
   }, []);
   React.useEffect(() => { void fetchProjects(); }, [fetchProjects]);
+  const deletionRunning = projects.some(project => project.deletion?.state === 'deleting');
+  React.useEffect(() => {
+    if (!deletionRunning) return;
+    const timer = window.setInterval(() => { void fetchProjects(true); }, 2000);
+    return () => window.clearInterval(timer);
+  }, [deletionRunning, fetchProjects]);
+  useEventStream<{ kind?: string; state?: string }>(EVENT_TYPES.BACKGROUND_CHANGED, task => {
+    if (task.kind === 'project_delete' && task.state !== 'running') void fetchProjects(true);
+  });
   const updateProject = (project: GalleryProject) => {
     queryClient.setQueryData(['project',project.id],project);
     setProjects(rows => rows.some(row => row.id === project.id)
@@ -69,8 +83,8 @@ export default function Projects() {
     finally { pendingRef.current = null; setPending(null); }
   };
   const remove = (project: GalleryProject) => {
-    if (!project.archived || pendingRef.current) return;
-    if (window.confirm(t('projects.deleteConfirm').replace('{name}', project.name))) void mutate(project.id, () => apiClient.delete(`/projects/${project.id}`, { params: { delete_files: true } }));
+    if (!project.archived || pendingRef.current || project.deletion?.state === 'deleting') return;
+    setDeleting(project);
   };
   const categories = [...new Set(projects.map(project => project.category?.trim()).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
   const categoryCount = (value: string | null) => projects.filter(project => (project.category || null) === value).length;
@@ -114,7 +128,8 @@ export default function Projects() {
     ? text(`显示 ${visibleProjects.length} / ${projects.length} 个项目`, `${visibleProjects.length} of ${projects.length} projects`)
     : [text(`${projects.length - archivedCount} 个项目`, `${projects.length - archivedCount} projects`), training > 0 && text(`${training} 个训练中`, `${training} training`), archivedCount > 0 && text(`${archivedCount} 个已归档`, `${archivedCount} archived`)].filter(Boolean).join(' · ');
   const open = (project: GalleryProject) => `/projects/${encodeURIComponent(project.id)}?step=overview`;
-  const menu = (project: GalleryProject) => <ProjectCardMenu name={project.name} archived={project.archived} busy={!!pending} onEdit={() => setEditor(project)} onArchive={() => void mutate(project.id, () => apiClient.patch(`/projects/${project.id}`, { archived: !project.archived }))} onDelete={() => remove(project)}/>;
+  const menu = (project: GalleryProject) => <ProjectCardMenu name={project.name} archived={project.archived} busy={!!pending || project.deletion?.state === 'deleting'} onEdit={() => setEditor(project)} onArchive={() => void mutate(project.id, () => apiClient.patch(`/projects/${project.id}`, { archived: !project.archived }))} onDelete={() => remove(project)}/>;
+  const activity = (project: GalleryProject) => project.deletion ? <ProjectDeletionLine deletion={project.deletion}/> : <ProjectActivityLine job={project.latest_job}/>;
   const meta = (project: GalleryProject) => [project.category ? categoryLabel(project.category, english) : text('未分类', 'Uncategorized'), familyLabel(project.active_family), versionLabel(project)].filter(Boolean);
 
   return <div className="projects-workspace" data-testid="projects-page">
@@ -143,7 +158,7 @@ export default function Projects() {
               <strong className="project-card-name" title={project.name}>{project.name}</strong>
               <div className="project-card-meta">{meta(project).map((item, index) => <span key={index} className={index === 0 ? 'project-category' : undefined} title={item}>{item}</span>)}</div>
               {project.note?.trim() && <p className="project-card-note" title={project.note}>{project.note}</p>}
-              <ProjectActivityLine job={project.latest_job}/>
+              {activity(project)}
               <div className="project-card-footer"><div className="project-stats">{counts(project).map(item => <span key={item.key} aria-label={`${item.label}: ${item.value ?? '—'}`}>{item.value == null ? `${item.label} —` : `${item.value} ${item.unit}`}</span>)}</div>{updated(project.updated_at)}</div>
             </div>
           </Link>
@@ -156,7 +171,7 @@ export default function Projects() {
               <div className="project-row-thumb"><ProjectArtwork name={project.name} coverUrl={project.cover_url}/></div>
               <div className="project-row-name"><strong title={project.name}>{project.name}</strong>{project.archived ? <small>{t('projects.archived')}</small> : project.note?.trim() && <small title={project.note}>{project.note}</small>}</div>
               <div className="project-row-meta"><span className="project-category">{meta(project)[0]}</span><small title={meta(project).slice(1).join(' · ')}>{meta(project).slice(1).join(' · ')}</small></div>
-              <ProjectActivityLine job={project.latest_job}/>
+              {activity(project)}
               {counts(project).map(item => <span key={item.key} className="project-row-number" aria-label={`${item.label}: ${item.value ?? '—'}`}>{item.value ?? '—'}</span>)}
               {updated(project.updated_at)}
             </Link>
@@ -171,6 +186,7 @@ export default function Projects() {
         {!filtered && projects.length === 0 && <button type="button" className="ui-btn ui-btn-primary" onClick={() => setEditor('new')}><FolderPlus size={15}/>{text('创建第一个项目', 'Create your first project')}</button>}
       </div>}
     {!loading && pageCount > 1 && <nav className="projects-pagination" aria-label={text('项目分页', 'Project pagination')}><span>{text(`共 ${visibleProjects.length} 个项目 · 每页 ${PAGE_SIZE} 个`, `${visibleProjects.length} projects · ${PAGE_SIZE} per page`)}</span><div><button type="button" className="ui-btn ui-btn-sm" aria-label={text('上一页', 'Previous')} disabled={page <= 1} onClick={() => changeFilter({ page: String(page - 1) })}><ChevronLeft size={15}/>{text('上一页', 'Previous')}</button><span aria-label={text('当前页', 'Current page')}>{page} / {pageCount}</span><button type="button" className="ui-btn ui-btn-sm" aria-label={text('下一页', 'Next')} disabled={page >= pageCount} onClick={() => changeFilter({ page: String(page + 1) })}>{text('下一页', 'Next')}<ChevronRight size={15}/></button></div></nav>}
+    {deleting && <ProjectDeleteDialog project={deleting} onClose={() => setDeleting(null)} onStarted={() => { setDeleting(null); void fetchProjects(true); }}/>}
     {editor && <ProjectEditor project={editor === 'new' ? undefined : editor} categories={categories} onClose={() => setEditor(null)} onPartial={updateProject} onSaved={project => { updateProject(project); setEditor(null); if (editor === 'new') navigate(`/projects/${encodeURIComponent(project.id)}?step=overview`); }}/>}
   </div>;
 }

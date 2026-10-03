@@ -10,8 +10,15 @@ import { fullRowPageSize } from './useGridPageSize';
  * - 支持追加加载（loadMore）与全量刷新（refresh）
  * - 本地更新某张图 caption（caption 编辑保存后）
  */
-export function useDatasetImages(datasetId: string | undefined, targetPageSize = 60, membership: 'all' | 'training' | 'unused' = 'all') {
-  const [columns, setColumns] = React.useState(1);
+export function useDatasetImages(
+  datasetId: string | undefined, targetPageSize = 60, membership: 'all' | 'training' | 'unused' = 'all',
+  { enabled = true, waitForColumns = false }: { enabled?: boolean; waitForColumns?: boolean } = {},
+) {
+  const [columns, setColumnCount] = React.useState(1);
+  const [measured, setMeasured] = React.useState(false);
+  // The grid reports its columns once measured; a caller may wait for them so the first page fills whole rows.
+  const setColumns = React.useCallback((count: number) => { setColumnCount(count); setMeasured(true); }, []);
+  const ready = enabled && (!waitForColumns || measured);
   const pageSize = fullRowPageSize(targetPageSize, columns);
   const [items, setItems] = React.useState<DatasetImage[]>([]);
   const [total, setTotal] = React.useState(0);
@@ -60,6 +67,7 @@ export function useDatasetImages(datasetId: string | undefined, targetPageSize =
 
   // Resizing fills the last row without clearing images already in view.
   React.useEffect(() => {
+    if (!ready) return;
     const scope = JSON.stringify([datasetId, q, membership, sort]);
     const previous = previousQuery.current;
     previousQuery.current = { scope, pageSize };
@@ -76,7 +84,7 @@ export function useDatasetImages(datasetId: string | undefined, targetPageSize =
       void fetchPage(1, q, false);
     }
     return () => request.current?.abort();
-  }, [datasetId, q, membership, pageSize, sort, fetchPage]);
+  }, [datasetId, q, membership, pageSize, sort, fetchPage, ready]);
 
   React.useEffect(() => { setSelected(new Set()); }, [datasetId, q, membership, sort]);
 
@@ -91,8 +99,8 @@ export function useDatasetImages(datasetId: string | undefined, targetPageSize =
   }, [loading, items.length, total, pageSize, q, fetchPage]);
 
   const refresh = React.useCallback(() => {
-    fetchPage(1, q, false);
-  }, [fetchPage, q]);
+    if (ready) fetchPage(1, q, false);
+  }, [fetchPage, q, ready]);
 
   const toggleSelect = React.useCallback((relPath: string) => {
     setSelected((prev) => {
@@ -127,7 +135,7 @@ export function useDatasetImages(datasetId: string | undefined, targetPageSize =
     setQ,
     sort,
     setSort,
-    loading,
+    loading: loading || !ready,
     error,
     selected,
     toggleSelect,

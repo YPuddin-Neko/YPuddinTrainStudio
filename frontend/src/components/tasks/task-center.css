@@ -1,0 +1,51 @@
+/* Sits in the empty corner under the hardware status: right of the page's content inset, below the top bar. */
+/* Above sticky page headers (up to 31), below the phone menu (40) and dialogs. */
+.task-center { position:relative; height:0; z-index:35; }
+.task-center-ball { position:absolute; top:-4px; right:8px; display:grid; place-items:center; width:24px; height:24px; padding:0; border:0; border-radius:999px; background:var(--studio-panel); color:var(--studio-accent); box-shadow:0 1px 3px rgb(15 23 42 / .2), 0 0 0 1px var(--studio-line); font-size:10px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums; transition:transform var(--motion-quick,140ms) var(--motion-ease,ease-out); }
+.task-center-ball:hover { transform:scale(1.08); }
+.task-center-ball:focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
+.task-center-ball[data-state=failed] { color:var(--studio-danger); }
+.task-center-ball[data-state=done] { color:var(--studio-success); }
+.task-center-ring { position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg); }
+.task-center-track, .task-center-value { fill:none; stroke-width:3.5; }
+.task-center-track { stroke:var(--studio-line); }
+.task-center-value { stroke:currentColor; stroke-linecap:round; transition:stroke-dasharray .3s ease; }
+.task-center-ball[data-progress=indeterminate] .task-center-ring { animation:task-center-spin 1.1s linear infinite; }
+.task-center-count { position:relative; display:inline-flex; color:var(--studio-text); }
+.task-center-ball[data-state=failed] .task-center-count { color:var(--studio-danger); }
+.task-center-ball[data-state=done] .task-center-count { color:var(--studio-success); }
+.task-center-alert { position:absolute; top:-2px; right:-2px; width:8px; height:8px; border-radius:999px; background:var(--studio-danger-line); box-shadow:0 0 0 2px var(--studio-panel); }
+.task-center-panel { position:absolute; top:26px; right:8px; display:flex; flex-direction:column; width:min(380px,calc(100vw - 24px)); max-height:min(560px,calc(100dvh - 96px)); overflow:hidden; border:1px solid var(--studio-line); border-radius:10px; background:var(--studio-panel); color:var(--studio-text); box-shadow:0 12px 32px rgb(15 23 42 / .18); font-size:12px; }
+.task-center-panel:focus { outline:none; }
+.task-center-panel:focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
+.task-center-panel > header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px 8px 14px; border-bottom:1px solid var(--studio-line); }
+.task-center-panel h2 { margin:0; font-size:13px; font-weight:600; }
+.task-center-list { flex:1; min-height:0; overflow:auto; margin:0; padding:0; list-style:none; }
+.task-center-item { display:grid; grid-template-columns:auto minmax(0,1fr); gap:10px; padding:12px 14px; border-bottom:1px solid var(--studio-line); }
+.task-center-item:last-child { border-bottom:0; }
+.task-center-item > svg { margin-top:1px; color:var(--studio-dim); }
+.task-center-item[data-state=failed] > svg, .task-center-item[data-state=interrupted] > svg { color:var(--studio-danger); }
+.task-center-item[data-state=completed] > svg { color:var(--studio-success); }
+.task-center-item-main { display:grid; gap:5px; min-width:0; }
+.task-center-item-title { display:flex; align-items:baseline; justify-content:space-between; gap:8px; min-width:0; }
+.task-center-item-title strong { min-width:0; font-size:12px; font-weight:600; }
+.task-center-item-title span { flex:none; color:var(--studio-dim); font-size:11px; font-variant-numeric:tabular-nums; }
+.task-center-item[data-state=failed] .task-center-item-title span, .task-center-item[data-state=interrupted] .task-center-item-title span { color:var(--studio-danger); }
+.task-center-item[data-state=completed] .task-center-item-title span { color:var(--studio-success); }
+.task-center-subject { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--studio-text); }
+.task-center-meta { margin:0; color:var(--studio-dim); font-size:11px; line-height:1.5; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.task-center-error { margin:0; color:var(--studio-danger); font-size:11px; line-height:1.5; white-space:pre-line; overflow-wrap:anywhere; }
+.task-center-action-error { padding:8px 14px; border-bottom:1px solid var(--studio-line); }
+.task-center-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.task-center-actions:empty { display:none; }
+.task-center-empty { margin:0; padding:20px 14px; color:var(--studio-dim); text-align:center; }
+@keyframes task-center-spin { to { transform:rotate(270deg); } }
+@media (prefers-reduced-motion:reduce) { .task-center-ball[data-progress=indeterminate] .task-center-ring { animation:none; } .task-center-ball:hover { transform:none; } }
+@media (max-width:1100px) { .task-center-ball { width:20px; height:20px; font-size:9px; } .task-center-panel { top:22px; } }
+/* Phones: the content inset is too narrow for the ball, so it joins the top bar, which leaves room for it. */
+@media (max-width:767px) {
+  .task-center { position:static; }
+  .task-center-ball { top:10px; right:12px; width:28px; height:28px; font-size:11px; }
+  .app-main:has(.task-center-ball) .app-topbar { padding-right:48px; }
+  .task-center-panel { top:54px; right:12px; }
+}

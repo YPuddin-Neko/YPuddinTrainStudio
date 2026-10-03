@@ -13,6 +13,13 @@ export function formatDatasetImportError(error: unknown): string {
   if (error.code === 'upload.update_required') return english
     ? 'This training service does not support chunked uploads. Update it, then retry.'
     : '当前训练服务不支持分片上传，请更新训练器后重试。';
+  // The service words these two in English; an upload waiting on them is kept for another attempt.
+  if (error.code === 'version.indexing') return english
+    ? 'A dataset of this version is being indexed. Retry the import when indexing finishes.'
+    : '当前版本的数据集正在建立索引，完成后可以重试导入。';
+  if (error.code === 'version.jobs_busy') return english
+    ? 'A queued or running job uses this version\'s data. Retry the import after it finishes.'
+    : '当前版本的数据正在被排队或运行中的任务使用，任务结束后可以重试导入。';
   if (error.status === 413 && error.code === 'http_413') return english
     ? "The upload exceeds the connection's request size limit. Increase the proxy upload limit, or upload to the server and use Import from server computer."
     : '上传请求超过连接入口的大小限制。请提高代理上传限制，或先把文件上传到服务器，再从服务端电脑导入。';

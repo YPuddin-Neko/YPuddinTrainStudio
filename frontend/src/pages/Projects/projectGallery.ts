@@ -1,7 +1,9 @@
 import { apiUrl } from '../../api/client';
 import type { Project } from '../../api/types';
 
-export type GalleryProject = Project & { category?: string | null; cover_url?: string | null; active_family?: string | null };
+// `deletion`: files are being removed in the background, or the last deletion stopped and can be retried.
+export type ProjectDeletion = { state: 'deleting' | 'failed'; error?: string | null; task_id?: string | null };
+export type GalleryProject = Project & { category?: string | null; cover_url?: string | null; active_family?: string | null; deletion?: ProjectDeletion | null };
 export const PROJECT_CATEGORIES = ['大模型微调', '人物 LoRA', '画风 LoRA'];
 export function categoryLabel(value: string, english = false) {
   return english ? ({ '大模型微调': 'Base model finetuning', '人物 LoRA': 'Character LoRA', '画风 LoRA': 'Style LoRA' } as Record<string, string>)[value] || value : value;

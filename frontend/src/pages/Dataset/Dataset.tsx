@@ -18,6 +18,7 @@ import { formatBytes, formatParams } from '../../utils/format';
 import '../../styles/project-workspace.css';
 import './dataset-workspace.css';
 import ProjectDataImport from '../ProjectDetail/ProjectDataImport';
+import { isActiveUpload, useTargetUpload } from '../../utils/datasetUploads';
 import DatasetImagePane from '../../components/datasets/DatasetImagePane';
 import ProgressBar from '../../components/ProgressBar';
 import { LazyImage } from '../../components/Loading';
@@ -84,6 +85,11 @@ export function DatasetWorkspace({id}: {id?:string}) {
   const [showBatch, setShowBatch] = React.useState(false);
   const [showAddImages,setShowAddImages] = React.useState(false);
   const [addingImages,setAddingImages] = React.useState(false);
+  // Images being added keep uploading when the form closes; the folder's own actions wait for them.
+  const appendUpload = useTargetUpload({ projectId: info?.source.project_id || '', versionId: info?.source.version_id || undefined, datasetId: id });
+  const adding = addingImages || !!appendUpload && isActiveUpload(appendUpload);
+  const appendUploadId = appendUpload && !(appendUpload.phase === 'completed' && appendUpload.acknowledged) ? appendUpload.id : '';
+  React.useEffect(() => { if (appendUploadId) setShowAddImages(true); }, [appendUploadId]);
   const [folderName, setFolderName] = React.useState('');
   const [repeats, setRepeats] = React.useState('1');
   const savedFolderName = (info?.source.path || '').replace(/\\/g,'/').replace(/\/+$/,'').split('/').pop() || '';
@@ -107,7 +113,10 @@ export function DatasetWorkspace({id}: {id?:string}) {
     return () => { versionRequest.current?.abort(); window.removeEventListener('focus', checkVersionAccess); };
   }, [checkVersionAccess]);
 
-  const images = useDatasetImages(id, 60, 'all');
+  // One first request: after the metadata answer (which may rebuild the index) and the grid's measured columns.
+  const [infoSettled, setInfoSettled] = React.useState(false);
+  const firstInfo = React.useRef(true);
+  const images = useDatasetImages(id, 60, 'all', { enabled: infoSettled, waitForColumns: true });
   const activeImg = activeImage ? editorImage : undefined;
   const activeStructure = getCaptionStructure(activeImg ?? undefined);
   const activeJson = activeImg?.caption_format?.toLowerCase().replace(/^\./, '') === 'json';
@@ -123,9 +132,9 @@ export function DatasetWorkspace({id}: {id?:string}) {
     const request = apiClient.get<DatasetInfo>(`/datasets/${id}`, {silent:true,params:{include_cache:false}}).then((data) => {
       setInfo(data); setInfoError('');
       if (data.index_status !== 'indexing') setIndexProgress(null);
-      // The metadata request may rebuild the index after images loaded in parallel.
-      if (data.index_status === 'ready') refreshImages.current();
-    }).catch(error => {setInfoError(formatApiError(error));setProjectContext(null);});
+      // Later answers may follow an index rebuilt since the images loaded; the first one starts them.
+      if (data.index_status === 'ready' && !firstInfo.current) refreshImages.current();
+    }).catch(error => {setInfoError(formatApiError(error));setProjectContext(null);}).finally(() => {firstInfo.current = false; setInfoSettled(true);});
     infoRequest.current = request;
     void request.then(() => { if (infoRequest.current === request) infoRequest.current = null; });
     return request;
@@ -157,7 +166,8 @@ export function DatasetWorkspace({id}: {id?:string}) {
 
   // 索引完成 / caption 修改 / rescan 完成 → 重新拉取数据集信息
   useEventStream(EVENT_TYPES.DATASET_CHANGED, (data: any) => {
-    if (data.dataset_id === id) {
+    // A refresh that has only started changed nothing yet; its finish sends another event.
+    if (data.dataset_id === id && data.reason !== 'refreshing') {
       void fetchInfo();
     }
   });
@@ -203,12 +213,11 @@ export function DatasetWorkspace({id}: {id?:string}) {
   };
   const closeCaption = () => {if(!savingCaption && (!captionDirty || window.confirm(text('标签尚未保存，确定放弃这些修改？','Discard the unsaved caption changes?'))))setActiveImage(null);};
   const beforeNavigation = async () => {
-    if(addingImages)throw new Error(text('图片正在添加，请完成后再离开。','Images are being added. Wait for completion before leaving.'));
     if(maskImage)throw new Error(text('请先在遮罩编辑器中保存或关闭，再切换项目页面。','Save or close the mask editor before switching project pages.'));
     if(activeImage && captionDirty || captionSave.current)await saveCaption();
   };
   const leaveRef=React.useRef({beforeNavigation,dirty:false});
-  React.useLayoutEffect(()=>{leaveRef.current={beforeNavigation,dirty:addingImages || !!maskImage || !!activeImage && captionDirty || savingCaption};});
+  React.useLayoutEffect(()=>{leaveRef.current={beforeNavigation,dirty:!!maskImage || !!activeImage && captionDirty || savingCaption};});
   React.useEffect(()=>{
     let leaving=false;
     const click=(event:MouseEvent)=>{
@@ -314,18 +323,18 @@ export function DatasetWorkspace({id}: {id?:string}) {
           event.preventDefault();
           void beforeNavigation().then(() => updateSettings({ ...(folderName !== savedFolderName ? { name: folderName.trim() } : {}), repeats: Number(repeats) })).catch(error => setActionError(formatApiError(error)));
         }}>
-          <label>{text('文件夹名称','Folder name')}<input aria-label={text('文件夹名称','Folder name')} value={folderName} required disabled={!canEdit || !!busyAction || addingImages || !info.source.can_rename} onChange={event => setFolderName(event.target.value)}/></label>
-          <label className="dataset-repeat-field">{text('每轮重复次数','Repeats per epoch')}<input aria-label={text('每轮重复次数','Repeats per epoch')} type="number" min={1} max={1000000} required value={repeats} disabled={!canEdit || !!busyAction || addingImages} onChange={event => setRepeats(event.target.value)}/></label>
-          <button type="submit" className="ui-btn ui-btn-primary" aria-label={text('保存目录设置','Save folder settings')} disabled={!canEdit || !!busyAction || addingImages || !folderName.trim() || !Number.isInteger(Number(repeats)) || Number(repeats)<1 || Number(repeats)>1000000 || (folderName === savedFolderName && Number(repeats) === info.source.repeats)}>{busyAction === 'settings' ? text('保存中…','Saving…') : text('保存','Save')}</button>
+          <label>{text('文件夹名称','Folder name')}<input aria-label={text('文件夹名称','Folder name')} value={folderName} required disabled={!canEdit || !!busyAction || adding || !info.source.can_rename} onChange={event => setFolderName(event.target.value)}/></label>
+          <label className="dataset-repeat-field">{text('每轮重复次数','Repeats per epoch')}<input aria-label={text('每轮重复次数','Repeats per epoch')} type="number" min={1} max={1000000} required value={repeats} disabled={!canEdit || !!busyAction || adding} onChange={event => setRepeats(event.target.value)}/></label>
+          <button type="submit" className="ui-btn ui-btn-primary" aria-label={text('保存目录设置','Save folder settings')} disabled={!canEdit || !!busyAction || adding || !folderName.trim() || !Number.isInteger(Number(repeats)) || Number(repeats)<1 || Number(repeats)>1000000 || (folderName === savedFolderName && Number(repeats) === info.source.repeats)}>{busyAction === 'settings' ? text('保存中…','Saving…') : text('保存','Save')}</button>
         </form>}
         <div className="dataset-folder-actions">
           {curationUrl && <Link className="ui-btn" to={curationUrl}>{text('数据集筛选','Curation')}</Link>}
-          {canEdit && info?.source.can_append && <button type="button" className="ui-btn" aria-expanded={showAddImages} onClick={()=>setShowAddImages(value=>!value)} disabled={addingImages}>{text('添加图片', 'Add images')}</button>}
-          <button type="button" className="ui-btn ui-btn-icon" onClick={handleRescan} disabled={!canEdit || !!busyAction || addingImages} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={15}/></button>
-          <button type="button" className="ui-btn ui-btn-icon ui-btn-danger" onClick={handleDelete} disabled={!canEdit || !!busyAction || addingImages} title={t('dataset.remove')} aria-label={t('dataset.remove')}><Trash2 size={15}/></button>
+          {canEdit && info?.source.can_append && <button type="button" className="ui-btn" aria-expanded={showAddImages} onClick={()=>setShowAddImages(value=>!value)}>{text('添加图片', 'Add images')}</button>}
+          <button type="button" className="ui-btn ui-btn-icon" onClick={handleRescan} disabled={!canEdit || !!busyAction || adding} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={15}/></button>
+          <button type="button" className="ui-btn ui-btn-icon ui-btn-danger" onClick={handleDelete} disabled={!canEdit || !!busyAction || adding} title={t('dataset.remove')} aria-label={t('dataset.remove')}><Trash2 size={15}/></button>
         </div>
       </div>
-      {showAddImages && (canEdit || addingImages) && info?.source.can_append && info.source.project_id && <ProjectDataImport
+      {showAddImages && (canEdit || adding) && info?.source.can_append && info.source.project_id && <ProjectDataImport
         projectId={info.source.project_id} versionId={info.source.version_id || undefined} targetDataset={info}
         onBusyChange={setAddingImages} onImported={()=>{void fetchInfo();void queryClient.invalidateQueries({queryKey:['caption-datasets']});}}/>}
       <div className="dataset-library-meta">

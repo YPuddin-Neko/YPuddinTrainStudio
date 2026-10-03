@@ -40,6 +40,8 @@ import { LoadingNote } from '../../components/Loading';
 const presetFamily = (preset: Preset): string | undefined => { const model = preset.config.model; return model && typeof model === 'object' && 'family' in model && typeof model.family === 'string' ? model.family : undefined; };
 
 const trainingDraftKey = (projectId: string, versionId?: string) => `training-draft:${projectId}:${versionId || 'legacy'}`;
+// Unsaved edits wait for the dataset list: saving them first could drop dataset changes made elsewhere.
+class DatasetListUnavailable extends Error {}
 const isConfigObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
 // Restore only locally changed fields, preserving unrelated server changes made while away.
@@ -147,6 +149,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [auxiliaryLoading,setAuxiliaryLoading] = React.useState(false);
   const [datasetRefreshing, setDatasetRefreshing] = React.useState(false);
   const [datasetRefreshError, setDatasetRefreshError] = React.useState('');
+  // Read after awaiting a refresh, so a failure that lands during a click still names its reason.
+  const datasetRefreshErrorRef = React.useRef('');
+  const [leaveBlocked, setLeaveBlocked] = React.useState(false);
+  const datasetRefreshRetry = React.useRef<HTMLButtonElement>(null);
   const datasetRefreshController = React.useRef<AbortController | null>(null);
   const datasetRefreshPending = React.useRef<Promise<void> | null>(null);
   const datasetRefreshBlocked = React.useRef(false);
@@ -252,7 +258,12 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
   const flushDraft = async () => {
     if (datasetRefreshPending.current) await datasetRefreshPending.current;
-    if (datasetRefreshBlocked.current) throw new Error(datasetRefreshError);
+    if (datasetRefreshBlocked.current) {
+      // Saving now could drop dataset changes made elsewhere; a draft without edits has nothing to save.
+      const draft = draftRef.current;
+      if (!draft.loaded || draft.archived || JSON.stringify(draft.config) === lastSavedRef.current) return;
+      throw new DatasetListUnavailable(text(`数据集列表读取失败，参数修改还没有保存。请先重新读取数据集列表。${datasetRefreshErrorRef.current ? `\n${datasetRefreshErrorRef.current}` : ''}`, `The dataset list could not be loaded, so parameter changes are not saved yet. Reload the dataset list first.${datasetRefreshErrorRef.current ? `\n${datasetRefreshErrorRef.current}` : ''}`));
+    }
     while (true) {
       const draft = draftRef.current;
       if (!draft.projectId || !draft.loaded || draft.archived) break;
@@ -278,7 +289,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     if (navigationPendingRef.current) return;
     navigationPendingRef.current = true; setSavingNavigation(true); setError('');
     try { await flushDraft(); }
-    catch (err) { setError(`${text('草稿保存失败，修改仍保留在此页面。', 'Draft could not be saved. Your changes remain on this page.')}\n${formatApiError(err)}`); }
+    catch (err) {
+      if (err instanceof DatasetListUnavailable) { setLeaveBlocked(true); datasetRefreshRetry.current?.focus(); }
+      else setError(`${text('草稿保存失败，修改仍保留在此页面。', 'Draft could not be saved. Your changes remain on this page.')}\n${formatApiError(err)}`);
+    }
     finally { navigationPendingRef.current = false; setSavingNavigation(false); }
   };
   const navigateWithSavedDraft = async (destination: string) => {
@@ -288,7 +302,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       await flushDraft();
       navigate(destination, destination.startsWith('/settings') ? { state: { backgroundLocation: location } } : undefined);
     } catch (err) {
-      setError(`${text('草稿保存失败，已留在当前页面。请重试后再离开。', 'Draft could not be saved. Your changes remain here; retry before leaving.')}\n${formatApiError(err)}`);
+      // The dataset alert says why and holds the retry; a second alert would repeat it.
+      if (err instanceof DatasetListUnavailable) { setLeaveBlocked(true); datasetRefreshRetry.current?.focus(); }
+      else setError(`${text('草稿保存失败，已留在当前页面。请重试后再离开。', 'Draft could not be saved. Your changes remain here; retry before leaving.')}\n${formatApiError(err)}`);
     } finally { navigationPendingRef.current = false; setSavingNavigation(false); }
   };
 
@@ -322,8 +338,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     let active = true;
     datasetRefreshController.current?.abort();
     datasetRefreshBlocked.current = false;
+    datasetRefreshErrorRef.current = '';
     setDatasetRefreshing(false);
     setDatasetRefreshError('');
+    setLeaveBlocked(false);
     setLoaded(false);
     setOutputBinding(null);
     setError('');
@@ -400,6 +418,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     const controller = new AbortController();
     datasetRefreshController.current = controller;
     datasetRefreshBlocked.current = true;
+    datasetRefreshErrorRef.current = '';
     setDatasetRefreshing(true);
     setDatasetRefreshError('');
     setValidatedConfig('');
@@ -422,11 +441,14 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         setDatasets(nextDatasets);
         setConfig(previous => restoreDatasetDraft(next, base, previous));
         datasetRefreshBlocked.current = false;
+        datasetRefreshErrorRef.current = '';
+        setLeaveBlocked(false);
         setDatasetRefreshing(false);
         setAuxiliaryReload(value => value + 1);
       } catch (err) {
         if (controller.signal.aborted) return;
         const message = formatApiError(err);
+        datasetRefreshErrorRef.current = message;
         setDatasetRefreshError(message);
         setPlanError(message);
         setDatasetRefreshing(false);
@@ -436,7 +458,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     datasetRefreshPending.current = pending;
   };
   React.useEffect(() => () => { datasetRefreshController.current?.abort(); }, []);
-  useEventStream<{project_id?: string; version_id?: string; dataset_id?: string}>(EVENT_TYPES.DATASET_CHANGED, event => {
+  useEventStream<{project_id?: string; version_id?: string; dataset_id?: string; reason?: string}>(EVENT_TYPES.DATASET_CHANGED, event => {
+    // A refresh that has only started changed nothing yet; its finish sends another event.
+    if (event.reason === 'refreshing') return;
     const relevant = !!projectId && event.project_id === projectId && (!event.version_id || event.version_id === versionId)
       || !!event.dataset_id && datasets.some(dataset => dataset.source.id === event.dataset_id);
     if (relevant) refreshDatasetConfiguration();
@@ -709,6 +733,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     </div>
     {inactiveReason && <div role="alert" className="studio-error" data-testid="retired-training-config">{inactiveReason}</div>}
     {error && <div role="alert" className="studio-error">{error}<button type="button" className="ui-btn ui-btn-sm" onClick={() => { setError(''); if (!loaded) setReload(v => v + 1); }}>{loaded ? text('关闭', 'Dismiss') : t('common.retry')}</button></div>}
+    {datasetRefreshError && loaded && <div role="alert" className="studio-error" data-testid="dataset-refresh-error"><span>{leaveBlocked && dirty ? text('数据集列表读取失败，参数修改还没有保存。重新读取后才能离开此页面。', 'The dataset list could not be loaded, so parameter changes are not saved yet. Reload it before leaving this page.') : dirty ? text('数据集列表读取失败，参数修改暂未保存。', 'The dataset list could not be loaded; parameter changes are not saved yet.') : text('数据集列表读取失败。', 'The dataset list could not be loaded.')}{`\n${datasetRefreshError}`}</span><button ref={datasetRefreshRetry} type="button" className="ui-btn ui-btn-sm" disabled={datasetRefreshing} onClick={refreshDatasetConfiguration}>{text('重新读取', 'Reload')}</button></div>}
     {gpuSelectionNotice && <p className="workspace-message" role="status">{gpuSelectionNotice}</p>}
     {recoveredDraft && loaded && <p className="workspace-message" role="status">{text('已恢复此版本上次未保存的草稿。', 'Recovered the unsaved draft for this version.')}</p>}
     {Object.keys(auxiliaryErrors).length>0 && <div role="alert" className="studio-error" data-testid="training-auxiliary-error"><div>{Object.entries(auxiliaryErrors).map(([key,message])=><p key={key}>{key==='presets'?text('预设列表读取失败','Preset list could not be loaded'):key==='sources'?text('数据目录用途读取失败','Dataset directory ownership could not be loaded'):key==='output'?text('权重保存位置读取失败','Weight output binding could not be loaded'):text('模型库读取失败','Model registry could not be loaded')}: {message}</p>)}<p>{text('草稿已保留，可继续编辑。','Your draft is retained and editable.')}</p></div><button type="button" className="ui-btn ui-btn-sm" disabled={auxiliaryLoading} onClick={()=>setAuxiliaryReload(value=>value+1)}>{text('重试辅助信息','Retry supporting data')}</button></div>}

@@ -1,8 +1,8 @@
 import DatasetLink from '../../components/datasets/DatasetLink';
 import React from 'react';
-import { Upload, FolderOpen, X, Loader2, CheckCircle2, Plus, ChevronUp } from 'lucide-react';
+import { Upload, FolderOpen, X, Loader2, CheckCircle2, Plus, ChevronUp, RotateCcw } from 'lucide-react';
 import { apiClient } from '../../api/client';
-import { ApiError, type DatasetInfo } from '../../api/types';
+import type { DatasetInfo } from '../../api/types';
 import { PathInput } from '../../components/PathBrowser';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
@@ -11,8 +11,9 @@ import ConfigHelp from '../../components/ConfigHelp';
 import { formatBytes, formatEta } from '../../utils/format';
 import { filesFromDrop, filesFromSelection, type DatasetUploadFile } from '../../utils/datasetFiles';
 import { formatDatasetImportError } from '../../utils/datasetImportErrors';
-import { useDatasetImportProgress } from '../../utils/useDatasetImportProgress';
-import { uploadDataset } from '../../utils/uploadDataset';
+import { useDatasetImportProgress, type DatasetImportOperation } from '../../utils/useDatasetImportProgress';
+import { datasetUploads, isActiveUpload, useTargetUpload, type UploadEntry } from '../../utils/datasetUploads';
+import { canChooseFilesAgain, formatUploadBytes, uploadErrorMessage } from '../../utils/datasetUploadCopy';
 import DatasetImportProgress from '../../components/datasets/DatasetImportProgress';
 import SiteDownloadImport from '../../components/datasets/SiteDownloadImport';
 import './project-data-import.css';
@@ -23,6 +24,27 @@ type ProjectDataImportProps = { projectId: string; versionId?: string; onImporte
 
 export default function ProjectDataImport(props: ProjectDataImportProps) {
   return <ProjectDataImportForm key={`${props.projectId}/${props.versionId || ''}/${props.targetDataset?.source.id || ''}`} {...props}/>;
+}
+
+/** An upload as the shared progress display reads it. */
+function uploadOperation(entry: UploadEntry, now: number): DatasetImportOperation {
+  const sending = entry.phase === 'preparing' || entry.phase === 'uploading';
+  return {
+    id: entry.id, mode: 'upload', state: entry.phase === 'completed' ? 'completed' : entry.phase === 'failed' ? 'failed' : 'active',
+    snapshot: entry.server ?? null, elapsed: Math.max(0, ((entry.finishedAt ?? now) - entry.startedAt) / 1000), unavailable: false,
+    upload: { bytesDone: entry.bytesDone, bytesTotal: entry.bytesTotal, filesDone: entry.filesDone, filesTotal: entry.filesTotal, bytesPerSecond: entry.rate, complete: !sending },
+    preparing: entry.phase === 'preparing', waiting: entry.phase === 'waiting' ? entry.waiting : undefined,
+  };
+}
+
+function useNow(active: boolean) {
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!active) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  return now;
 }
 
 function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg = false, captionFormats, targetDataset, onBusyChange }: ProjectDataImportProps) {
@@ -51,16 +73,41 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
   const [dragging, setDragging] = React.useState(false);
   const [error, setError] = React.useState('');
   const [created, setCreated] = React.useState<DatasetInfo[]>([]);
+  const [createdElapsed, setCreatedElapsed] = React.useState<number | null>(null);
   const [showForm, setShowForm] = React.useState(true);
   const selectionGeneration = React.useRef(0);
   const importGeneration = React.useRef(0);
-  const uploadRequest = React.useRef<AbortController | null>(null);
-  const healthRequest = React.useRef<AbortController | null>(null);
-  const { operation, start: startProgress, finish: finishProgress, reset: resetProgress, updateUpload } = useDatasetImportProgress(projectId);
-  React.useEffect(() => () => { selectionGeneration.current += 1; importGeneration.current += 1; healthRequest.current?.abort(); uploadRequest.current?.abort(); }, [projectId, versionId, targetDataset?.source.id]);
+  const { operation, start: startProgress, finish: finishProgress, reset: resetProgress } = useDatasetImportProgress(projectId);
+  // Uploads belong to the page, not this form: leaving the form or the page keeps them going.
+  const upload = useTargetUpload({ projectId, versionId, isReg: defaultIsReg, datasetId: targetDataset?.source.id });
+  const uploading = !!upload && isActiveUpload(upload);
+  const now = useNow(uploading || upload?.phase === 'interrupted');
+  React.useEffect(() => () => { selectionGeneration.current += 1; importGeneration.current += 1; }, [projectId, versionId, targetDataset?.source.id]);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const folderInput = React.useRef<HTMLInputElement>(null);
+  const resumeFileInput = React.useRef<HTMLInputElement>(null);
+  const resumeFolderInput = React.useRef<HTMLInputElement>(null);
   const inputClass = 'project-import-input';
+  const onImportedRef = React.useRef(onImported);
+  onImportedRef.current = onImported;
+  // A finished upload is reported once, here or on the next visit if it finished meanwhile.
+  React.useEffect(() => {
+    if (upload?.phase !== 'completed' || upload.acknowledged || !upload.result) return;
+    datasetUploads.acknowledge(upload.id);
+    setFiles([]); setError('');
+    if (fileInput.current) fileInput.current.value = '';
+    if (folderInput.current) folderInput.current.value = '';
+    setCreated(upload.result.datasets || [upload.result]);
+    setCreatedElapsed(Math.max(0, ((upload.finishedAt ?? upload.startedAt) - upload.startedAt) / 1000));
+    setShowForm(false);
+    onImportedRef.current();
+  }, [upload]);
+  const shownUpload = React.useRef(upload);
+  shownUpload.current = upload;
+  React.useEffect(() => () => {
+    const entry = shownUpload.current;
+    if (entry?.phase === 'completed' && entry.acknowledged) datasetUploads.dismiss(entry.id);
+  }, []);
   const selectFiles = (incoming: DatasetUploadFile[]) => {
     resetProgress();
     setError(''); setCreated([]);
@@ -70,6 +117,13 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
   };
   const chooseFiles = (incoming: File[]) => {
     try { selectFiles(filesFromSelection(incoming)); }
+    catch (failure) { setError(formatApiError(failure)); }
+  };
+  const resumeWith = (incoming: File[]) => {
+    if (resumeFileInput.current) resumeFileInput.current.value = '';
+    if (resumeFolderInput.current) resumeFolderInput.current.value = '';
+    if (!upload) return;
+    try { datasetUploads.resume(upload.id, filesFromSelection(incoming)); setError(''); }
     catch (failure) { setError(formatApiError(failure)); }
   };
   const dropFiles = async (transfer: DataTransfer) => {
@@ -83,7 +137,7 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
       if (generation === selectionGeneration.current) setError(formatApiError(failure));
     } finally { if (generation === selectionGeneration.current) setReading(false); }
   };
-  const locked = busy || reading;
+  const locked = busy || reading || uploading;
   React.useEffect(()=>{onBusyChange?.(locked || siteBusy);return()=>onBusyChange?.(false);},[locked,siteBusy,onBusyChange]);
   const folderName = mode === 'path' ? path.replace(/\\/g,'/').split('/').filter(Boolean).pop() : files[0]?.relativePath.split('/').slice(0,-1)[0];
   const autoName = files.length === 1 && files[0].relativePath.toLowerCase().endsWith('.zip') ? files[0].file.name.replace(/\.zip$/i, '') : folderName || '';
@@ -91,51 +145,37 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (mode === 'site' || locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())) return;
+    if (mode === 'upload') {
+      setError(''); setCreated([]); resetProgress();
+      // A new upload replaces one that stopped here: its staged files are released.
+      if (upload && !isActiveUpload(upload)) datasetUploads.dismiss(upload.id);
+      const datasetName = targetDataset?.source.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+      datasetUploads.start({ projectId, versionId, isReg, datasetId: targetDataset?.source.id }, files, {
+        version_id: versionId, target_dataset_id: targetDataset?.source.id,
+        ...(!targetDataset ? { name: autoName, repeats, is_reg: isReg, prior_weight: priorWeight, class_prompt: classPrompt.trim() } : {}),
+        caption_ext: captionExt,
+      }, datasetName || autoName || files[0].relativePath);
+      return;
+    }
     const generation = ++importGeneration.current;
     const current = () => generation === importGeneration.current;
     setBusy(true); setError(''); setCreated([]);
     try {
       const progressId = startProgress(mode);
-      let result: DatasetInfo & { datasets?: DatasetInfo[] };
-      if (mode === 'upload') {
-        const controller = new AbortController();
-        uploadRequest.current = controller;
-        result = await uploadDataset(projectId, files, {
-          version_id: versionId, progress_id: progressId, target_dataset_id: targetDataset?.source.id,
-          ...(!targetDataset ? { name: autoName, repeats, is_reg: isReg, prior_weight: priorWeight, class_prompt: classPrompt.trim() } : {}),
-          caption_ext: captionExt,
-        }, controller.signal, progress => { if (current()) updateUpload(progress); });
-        if (!current()) return;
-        setFiles([]);
-        if (fileInput.current) fileInput.current.value = '';
-        if (folderInput.current) folderInput.current.value = '';
-      } else {
-        result = await apiClient.post<DatasetInfo>(`/projects/${projectId}/datasets`, {
-          path: path.trim(), repeats, caption_ext: captionExt.trim(), is_reg: isReg, prior_weight: priorWeight, class_prompt: classPrompt.trim() || null,
-        }, { params: { version_id: versionId, progress_id: progressId }, silent: true });
-        if (!current()) return;
-        setPath('');
-      }
+      const result = await apiClient.post<DatasetInfo & { datasets?: DatasetInfo[] }>(`/projects/${projectId}/datasets`, {
+        path: path.trim(), repeats, caption_ext: captionExt.trim(), is_reg: isReg, prior_weight: priorWeight, class_prompt: classPrompt.trim() || null,
+      }, { params: { version_id: versionId, progress_id: progressId }, silent: true });
+      if (!current()) return;
+      setPath('');
       finishProgress('completed');
+      setCreatedElapsed(null);
       setCreated(result.datasets || [result]); setShowForm(false); onImported();
     } catch (failure) {
       if (!current()) return;
-      const unconfirmed = failure instanceof ApiError && failure.code === 'upload.result_unconfirmed';
-      finishProgress('failed', unconfirmed);
-      const isNetworkFailure = failure instanceof Error && /^(Failed to fetch|Load failed|NetworkError when attempting to fetch resource\.?)$/i.test(failure.message);
-      if (mode === 'upload' && (isNetworkFailure || unconfirmed)) {
-        const controller = new AbortController();
-        healthRequest.current = controller;
-        const timeout = window.setTimeout(() => controller.abort(), 3000);
-        try {
-          await apiClient.get('/health', { silent: true, signal: controller.signal });
-          if (!current()) return;
-          setError(text('训练服务仍可连接，但未能确认导入结果。所选文件已保留，请检查数据集列表后重试。', 'The training service is reachable, but the import result could not be confirmed. Your selection is retained. Check the dataset list before retrying.'));
-        } catch { if (current()) setError(text('上传连接已中断，所选文件已保留。请检查训练服务与网络连接后重试。', 'The upload connection was interrupted. Your selection is retained. Check the training service and network, then retry.')); }
-        finally { window.clearTimeout(timeout); if (healthRequest.current === controller) healthRequest.current = null; }
-      } else setError(formatDatasetImportError(failure));
+      finishProgress('failed');
+      setError(formatDatasetImportError(failure));
     }
-    finally { if (current()) { uploadRequest.current = null; setBusy(false); } }
+    finally { if (current()) setBusy(false); }
   };
 
   const modes: [typeof mode, string][] = [
@@ -144,6 +184,39 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
     ...(siteAllowed ? [['site', text('从图站下载', 'Download from image boards')] as [typeof mode, string]] : []),
   ];
   const site = mode === 'site' && siteAllowed;
+  const uploadMessage = upload?.phase === 'failed' || upload?.phase === 'interrupted' ? uploadErrorMessage(upload, text) : '';
+  const reselect = !!upload && canChooseFilesAgain(upload);
+  const elapsed = createdElapsed ?? operation?.elapsed;
+  const minutesLeft = upload?.expiresAt ? Math.max(1, Math.ceil((upload.expiresAt - now) / 60000)) : null;
+  const uploadStatus = upload && upload.phase !== 'completed' && <>
+    {isActiveUpload(upload) && <DatasetImportProgress operation={uploadOperation(upload, now)} actions={!upload.remote && <button type="button" className="ui-btn ui-btn-sm" disabled={upload.phase === 'importing'} title={upload.phase === 'importing' ? text('文件正在导入，无法取消', 'The files are being imported and cannot be cancelled') : undefined} onClick={() => void datasetUploads.cancel(upload.id)}>{text('取消上传', 'Cancel upload')}</button>}/>}
+    {upload.phase === 'interrupted' && <div className="project-import-resume" role="status">
+      <div className="project-import-resume-copy">
+        <strong>{upload.needsFiles ? text('上传未完成', 'Upload not finished') : text('文件已上传，尚未导入', 'Files uploaded, not yet imported')}</strong>
+        <p>{upload.subject} · {formatUploadBytes(upload.bytesDone)} / {formatUploadBytes(upload.bytesTotal)} · {text(`${upload.filesDone} / ${upload.filesTotal} 个文件`, `${upload.filesDone} / ${upload.filesTotal} files`)}</p>
+        {upload.needsFiles && <p>{minutesLeft ? text(`${minutesLeft} 分钟内重新选择相同的文件夹或文件，即可从中断处继续。`, `Choose the same folder or files within ${minutesLeft} min to continue where it stopped.`) : text('重新选择相同的文件夹或文件，即可从中断处继续。', 'Choose the same folder or files to continue where it stopped.')}</p>}
+      </div>
+      <div className="project-import-resume-actions">
+        {upload.needsFiles ? <>
+          <button type="button" className="ui-btn ui-btn-primary ui-btn-sm" onClick={() => resumeFolderInput.current?.click()}><FolderOpen size={14}/>{text('选择文件夹继续', 'Choose folder to continue')}</button>
+          <button type="button" className="ui-btn ui-btn-sm" onClick={() => resumeFileInput.current?.click()}>{text('选择文件继续', 'Choose files to continue')}</button>
+        </> : <button type="button" className="ui-btn ui-btn-primary ui-btn-sm" onClick={() => datasetUploads.retry(upload.id)}>{text('导入', 'Import')}</button>}
+        <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" onClick={() => datasetUploads.discard(upload.id)}>{text('放弃', 'Discard')}</button>
+      </div>
+    </div>}
+    {uploadMessage && <div role="alert" className="project-import-message project-import-error project-import-upload-error">
+      <span>{uploadMessage}</span>
+      {upload.phase === 'failed' && <span className="project-import-message-actions">
+        {upload.canRetry && <button type="button" className="ui-btn ui-btn-sm" onClick={() => datasetUploads.retry(upload.id)}><RotateCcw size={14}/>{upload.error?.problem === 'expired' ? text('重新上传', 'Upload again') : text('重试', 'Retry')}</button>}
+        {reselect && <button type="button" className="ui-btn ui-btn-sm" onClick={() => resumeFolderInput.current?.click()}>{text('重新选择文件夹', 'Choose folder again')}</button>}
+        <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" aria-label={upload.sessionId ? text('放弃这次上传', 'Discard this upload') : text('关闭提示', 'Dismiss')} title={upload.sessionId ? text('放弃这次上传', 'Discard this upload') : text('关闭提示', 'Dismiss')} onClick={() => datasetUploads.dismiss(upload.id)}><X size={14}/></button>
+      </span>}
+    </div>}
+    {(upload.phase === 'interrupted' || reselect) && <>
+      <input ref={resumeFileInput} hidden type="file" multiple accept="image/*,.txt,.json,.mask,.zip" aria-label={text('选择文件继续上传', 'Choose files to continue the upload')} onChange={event => resumeWith(Array.from(event.target.files || []))}/>
+      <input ref={resumeFolderInput} hidden type="file" multiple {...{ webkitdirectory: '' }} aria-label={text('选择文件夹继续上传', 'Choose a folder to continue the upload')} onChange={event => resumeWith(Array.from(event.target.files || []))}/>
+    </>}
+  </>;
   return <div className="project-data-import" data-testid="project-data-import" aria-busy={locked} data-completed={!site && !showForm}>
     <header className="project-import-heading">
       <h3>{targetDataset ? text('添加到当前数据集', 'Add to this dataset') : defaultIsReg ? text('添加已有正则图', 'Add existing regularization images') : text('添加训练图片', 'Add training images')}</h3>
@@ -151,11 +224,12 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
         {modes.map(([key, label]) => <button key={key} type="button" disabled={locked} onClick={() => chooseMode(key)} aria-pressed={mode === key}>{label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/>
       </OverflowStrip> : <button type="button" className="ui-btn" onClick={() => setShowForm(true)}><Plus size={16}/>{text('继续添加', 'Add more')}</button>}
     </header>
+    {uploadStatus}
     {site ? <SiteDownloadImport projectId={projectId} versionId={versionId!} targetDataset={targetDataset} captionFormats={captionFormats} onImported={onImported} onBusyChange={setSiteBusy}/>
       : <form onSubmit={submit} className="project-import-form">
     {operation && operation.state !== 'completed' && <DatasetImportProgress operation={operation}/>}
     {error && <div role="alert" className="project-import-message project-import-error">{error}</div>}
-    {created.length > 0 && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={20}/><div><strong>{targetDataset ? text('图片已添加到当前数据集。', 'Images added to this dataset.') : text(`已导入当前版本，共 ${created.length} 组图片。`, `Imported ${created.length} image groups into this version.`)}</strong>{!targetDataset && <div className="project-import-result-links">{created.map(dataset => <DatasetLink className="ui-link" key={dataset.source.id} to={`/datasets/${dataset.source.id}`}>{created.length === 1 ? text('查看图片与标签', 'Review images and captions') : dataset.source.path.replace(/\\/g, '/').split('/').pop()}</DatasetLink>)}</div>}</div>{operation && <span className="project-import-elapsed">{text('用时', 'Elapsed')} {operation.elapsed < 1 ? text('不足 1 秒', '<1s') : formatEta(operation.elapsed)}</span>}</div>}
+    {created.length > 0 && <div role="status" className="project-import-message project-import-success"><CheckCircle2 size={20}/><div><strong>{targetDataset ? text('图片已添加到当前数据集。', 'Images added to this dataset.') : text(`已导入当前版本，共 ${created.length} 组图片。`, `Imported ${created.length} image groups into this version.`)}</strong>{!targetDataset && <div className="project-import-result-links">{created.map(dataset => <DatasetLink className="ui-link" key={dataset.source.id} to={`/datasets/${dataset.source.id}`}>{created.length === 1 ? text('查看图片与标签', 'Review images and captions') : dataset.source.path.replace(/\\/g, '/').split('/').pop()}</DatasetLink>)}</div>}</div>{elapsed != null && <span className="project-import-elapsed">{text('用时', 'Elapsed')} {elapsed < 1 ? text('不足 1 秒', '<1s') : formatEta(elapsed)}</span>}</div>}
     {showForm && <>
     {mode === 'upload' ? <>
       <div className="project-import-dropzone" data-testid="dataset-dropzone" data-dragging={dragging} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = locked ? 'none' : 'copy'; if (!locked) setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }} onDrop={event => { event.preventDefault(); event.stopPropagation(); setDragging(false); if (!locked) void dropFiles(event.dataTransfer); }}>
@@ -179,13 +253,13 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
     <div className="project-import-configuration">
       {!targetDataset && <details className="project-import-options"><summary>{text('导入选项', 'Import options')}</summary>
         <div className="project-import-fields">
-          <label className="project-import-field project-import-caption">{text('标签格式', 'Caption format')}<CaptionFormatSelect value={captionExt} onChange={setCaptionExt} disabled={busy} formats={captionFormats}/></label>
-          <div className="project-import-field project-import-repeats"><div className="project-import-field-label"><label htmlFor={repeatsId}>{text('每张图片重复次数', 'Repeats per image')}</label><ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮使用每张图片的次数，默认 1 次。次数越高，这组图片的训练占比越大；5_character 这样的目录名可自动识别为 5 次。','Times each image is used per epoch, default 1. More repeats increase this dataset’s share; a folder named 5_character suggests 5 repeats.')}</ConfigHelp></div><input id={repeatsId} className={inputClass} type="number" min="1" step="1" required value={repeats} onChange={event => setRepeats(Number(event.target.value))} disabled={busy}/></div>
+          <label className="project-import-field project-import-caption">{text('标签格式', 'Caption format')}<CaptionFormatSelect value={captionExt} onChange={setCaptionExt} disabled={locked} formats={captionFormats}/></label>
+          <div className="project-import-field project-import-repeats"><div className="project-import-field-label"><label htmlFor={repeatsId}>{text('每张图片重复次数', 'Repeats per image')}</label><ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮使用每张图片的次数，默认 1 次。次数越高，这组图片的训练占比越大；5_character 这样的目录名可自动识别为 5 次。','Times each image is used per epoch, default 1. More repeats increase this dataset’s share; a folder named 5_character suggests 5 repeats.')}</ConfigHelp></div><input id={repeatsId} className={inputClass} type="number" min="1" step="1" required value={repeats} onChange={event => setRepeats(Number(event.target.value))} disabled={locked}/></div>
         </div>
-        {detectedRepeats && Number(detectedRepeats)!==repeats && <button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={()=>setRepeats(Number(detectedRepeats))}>{text(`目录名检测到重复 ${detectedRepeats} 次，应用`, `Folder name suggests ${detectedRepeats} repeats — apply`)}</button>}
-        {isReg && <div className="project-import-reg-options"><label className="project-import-field project-import-prompt">{text('类别提示词', 'Class prompt')}<input className={inputClass} disabled={busy} value={classPrompt} onChange={event => setClassPrompt(event.target.value)}/></label><label className="project-import-field project-import-prior">{text('正则损失权重', 'Regularization loss weight')}<input className={inputClass} type="number" min="0" step="0.1" disabled={busy} value={priorWeight} onChange={event => setPriorWeight(Number(event.target.value))}/></label></div>}
+        {detectedRepeats && Number(detectedRepeats)!==repeats && <button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={()=>setRepeats(Number(detectedRepeats))}>{text(`目录名检测到重复 ${detectedRepeats} 次，应用`, `Folder name suggests ${detectedRepeats} repeats — apply`)}</button>}
+        {isReg && <div className="project-import-reg-options"><label className="project-import-field project-import-prompt">{text('类别提示词', 'Class prompt')}<input className={inputClass} disabled={locked} value={classPrompt} onChange={event => setClassPrompt(event.target.value)}/></label><label className="project-import-field project-import-prior">{text('正则损失权重', 'Regularization loss weight')}<input className={inputClass} type="number" min="0" step="0.1" disabled={locked} value={priorWeight} onChange={event => setPriorWeight(Number(event.target.value))}/></label></div>}
       </details>}
-      <button type="submit" disabled={locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())} className="ui-btn ui-btn-primary project-import-submit">{busy && <Loader2 size={14} className="animate-spin"/>}{busy ? text('正在导入…', 'Importing…') : targetDataset ? text('添加到此数据集', 'Add to this dataset') : text('导入当前版本', 'Import into this version')}</button>
+      <button type="submit" disabled={locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())} className="ui-btn ui-btn-primary project-import-submit">{(busy || uploading) && <Loader2 size={14} className="animate-spin"/>}{busy || uploading ? text('正在导入…', 'Importing…') : targetDataset ? text('添加到此数据集', 'Add to this dataset') : text('导入当前版本', 'Import into this version')}</button>
       {created.length > 0 && <button type="button" className="ui-btn ui-btn-quiet" disabled={locked} onClick={() => setShowForm(false)}><ChevronUp size={14}/>{text('收起', 'Collapse')}</button>}
     </div>
     </>}

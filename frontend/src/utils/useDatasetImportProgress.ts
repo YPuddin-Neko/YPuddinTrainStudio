@@ -15,6 +15,10 @@ export interface DatasetImportOperation {
   unavailable: boolean;
   upload?: DatasetUploadProgress;
   unconfirmed?: boolean;
+  /** Creating the upload session, before any byte is sent. */
+  preparing?: boolean;
+  /** The busy state the import waits for, such as version.indexing. */
+  waiting?: string;
 }
 interface ProgressRun {
   id: string;
@@ -35,7 +39,7 @@ function stopRun(run: ProgressRun | null) {
   run.controller?.abort();
 }
 
-function createProgressId(): string | undefined {
+export function createProgressId(): string | undefined {
   try {
     if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
   } catch { /* Some embedded browsers expose an unavailable secure-context method. */ }

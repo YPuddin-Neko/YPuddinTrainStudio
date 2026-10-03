@@ -16,6 +16,7 @@ export const EVENT_TYPES = {
   QUEUE_CHANGED: 'queue.changed',
   DATASET_CHANGED: 'dataset.changed',
   ARTIFACT_CREATED: 'artifact.created',
+  BACKGROUND_CHANGED: 'background.changed',
 } as const;
 
 export type EventType = typeof EVENT_TYPES[keyof typeof EVENT_TYPES];

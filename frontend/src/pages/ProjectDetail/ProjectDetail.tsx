@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +22,12 @@ import DatasetPipelinePanel from '../../components/datasets/DatasetPipelinePanel
 import ProjectDatasetCards, { type WorkspaceDataset } from '../../components/datasets/ProjectDatasetCards';
 import '../../styles/project-workspace.css';
 import './project-data.css';
+
+// The server looks for files changed outside the studio when the list is read, at most this often.
+const RECHECK_MS = 10_000;
+// Edits that change sidecar contents; the views showing them reload themselves, only counts may change.
+const CONTENT_EDITS = new Set(['caption', 'tags', 'mask']);
+type DatasetEvent = { dataset_id?: string; project_id?: string; version_id?: string; reason?: string };
 
 export default function ProjectDetail() {
   const { id, versionId } = useParams<{ id: string; versionId: string }>();
@@ -48,13 +54,16 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
     queryKey:['families'], queryFn:()=>apiClient.get<FamilyInfo[]>('/families',{silent:true}),
     enabled:!!project && scopedReady && step === 'data',
   });
+  // The refresh button asks the server to look at the folders now instead of when next due.
+  const checkFolders = useRef(false);
   const datasetsQuery = useQuery({
     queryKey:['project-workspace-datasets',id,versionId],enabled:!!project && scopedReady,
     queryFn:async()=>{
-      const rows=await apiClient.get<Array<DatasetInfo|DatasetSource>>(`/projects/${id}/datasets`,{params:{version_id:versionId,include_cache:false},silent:true});
+      const refresh=checkFolders.current; checkFolders.current=false;
+      const rows=await apiClient.get<Array<DatasetInfo|DatasetSource>>(`/projects/${id}/datasets`,{params:{version_id:versionId,include_cache:false,...(refresh?{refresh:true}:{})},silent:true});
       return rows.map(item=>'source' in item?item as DatasetInfo:{source:item as DatasetSource}) as WorkspaceDataset[];
     },
-    refetchInterval:query=>query.state.data?.some(item=>item.index_status==='indexing')?2000:false,
+    refetchInterval:query=>query.state.data?.some(item=>item.index_status==='indexing'||item.refreshing)?2000:false,
   });
   const jobsQuery = useQuery({
     queryKey:['project-workspace-active-jobs',id,versionId],enabled:!!project && scopedReady,
@@ -76,9 +85,10 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
   }, [client, id, versionId]);
   const datasetRefresh = useRef<Promise<boolean> | null>(null);
   const refetchDatasets = datasetsQuery.refetch;
-  const refreshDatasets = useCallback(() => {
+  const refreshDatasets = useCallback((checkNow = false) => {
     if (datasetRefresh.current) return datasetRefresh.current;
     const pending = (async () => {
+      checkFolders.current = checkNow;
       // A scan can emit dataset.changed before this request returns. Reuse it.
       const result = await refetchDatasets({ cancelRefetch: false });
       if (result.isError) return false;
@@ -93,20 +103,28 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
   const previousIndexes = useRef(new Map<string, string | undefined>());
   useEffect(() => {
     const rows = datasetsQuery.data || [];
-    const completed = rows.some(row => previousIndexes.current.get(row.source.id) === 'indexing' && row.index_status === 'ready');
-    previousIndexes.current = new Map(rows.map(row => [row.source.id, row.index_status]));
-    if (completed) void refreshDatasetViews(rows);
+    const state = (row: WorkspaceDataset) => row.refreshing ? 'refreshing' : row.index_status;
+    const completed = rows.some(row => ['indexing', 'refreshing'].includes(previousIndexes.current.get(row.source.id) || '') && state(row) === 'ready');
+    previousIndexes.current = new Map(rows.map(row => [row.source.id, state(row)]));
+    // A refresh in progress reloads the views itself once its list arrives.
+    if (completed && !datasetRefresh.current) void refreshDatasetViews(rows);
   }, [datasetsQuery.data, refreshDatasetViews]);
   const imported = () => { void configQuery.refetch({ cancelRefetch: false }); return refreshDatasets(); };
   const datasetView = step === 'data' ? `data/${params.get('data_step') || 'datasets'}` : step;
   const previousDatasetView = useRef(datasetView);
+  const datasetsLoadedAt = datasetsQuery.dataUpdatedAt;
   useEffect(() => {
     if (previousDatasetView.current === datasetView) return;
     previousDatasetView.current = datasetView;
-    if (project && scopedReady && step !== 'results') void refreshDatasets();
-  }, [datasetView, step, project, scopedReady, refreshDatasets]);
-  useEventStream(EVENT_TYPES.DATASET_CHANGED, event => {
+    // Reading the list lets the server look for outside changes; the new stage loads its own data.
+    if (project && scopedReady && step !== 'results' && Date.now() - datasetsLoadedAt >= RECHECK_MS) void refetchDatasets({ cancelRefetch: false });
+  }, [datasetView, step, project, scopedReady, refetchDatasets, datasetsLoadedAt]);
+  const datasetIds = useMemo(() => new Set((datasetsQuery.data || []).map(row => row.source.id)), [datasetsQuery.data]);
+  useEventStream<DatasetEvent>(EVENT_TYPES.DATASET_CHANGED, event => {
     if (event.project_id && event.project_id !== id || event.version_id && event.version_id !== versionId) return;
+    // An event naming only a dataset concerns this page when it is one of this version's datasets.
+    if (!(event.dataset_id && datasetIds.has(event.dataset_id)) && !(event.project_id && event.version_id)) return;
+    if (event.reason === 'refreshing' || CONTENT_EDITS.has(event.reason || '')) { void refetchDatasets({ cancelRefetch: false }); return; }
     void imported();
   });
   useEventStream(EVENT_TYPES.JOB_STATE, () => {void jobsQuery.refetch();void versions.refresh();});
@@ -132,9 +150,9 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
       {step === 'results' ? <VersionResults projectId={id} versionId={versionId} readOnly={archived}/> : configQuery.isPending || datasetsQuery.isPending ? <div className="workspace-loading" role="status"><Loader2 size={16} className="animate-spin"/>{text('正在读取版本数据…','Loading version data…')}</div> : configQuery.isError || !config || (datasetsQuery.isError && !datasetsQuery.data) ? null : step === 'overview' ? <ProjectOverview project={project} version={versions.current} versionId={versionId} config={config} datasets={datasets}/> : <section className="version-data-section">
 
         {versionId ? <DatasetPipelinePanel projectId={id} versionId={versionId} config={config} readOnly={archived} datasets={datasets} onChanged={imported}
-          datasetList={<ProjectDatasetCards datasets={datasets} projectId={id} versionId={versionId} onRefresh={refreshDatasets} refreshing={datasetsQuery.isFetching}/>}
+          datasetList={<ProjectDatasetCards datasets={datasets} projectId={id} versionId={versionId} onRefresh={() => refreshDatasets(true)} refreshing={datasetsQuery.isFetching}/>}
           importPanel={<ProjectDataImport key={`${id}/${versionId}`} projectId={id} versionId={versionId} onImported={imported} captionFormats={captionFormats}/>}/>
-          : <div className={archived ? '' : 'version-data-layout'}><ProjectDatasetCards datasets={datasets} projectId={id} versionId={versionId} onRefresh={refreshDatasets} refreshing={datasetsQuery.isFetching}/>{!archived && <ProjectDataImport key={`${id}/${versionId}`} projectId={id} versionId={versionId} onImported={imported} captionFormats={captionFormats}/>}</div>}
+          : <div className={archived ? '' : 'version-data-layout'}><ProjectDatasetCards datasets={datasets} projectId={id} versionId={versionId} onRefresh={() => refreshDatasets(true)} refreshing={datasetsQuery.isFetching}/>{!archived && <ProjectDataImport key={`${id}/${versionId}`} projectId={id} versionId={versionId} onImported={imported} captionFormats={captionFormats}/>}</div>}
       </section>}
     </>}
   </div>;

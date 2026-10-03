@@ -11,6 +11,7 @@ import { EVENT_TYPES } from '../events/eventTypes';
 import { formatApiError } from '../utils/errors';
 import { useWorkspaceText } from '../utils/workspaceText';
 import SystemTelemetry from './SystemTelemetry';
+import TaskCenter from './tasks/TaskCenter';
 import PersistentProjectSidebar from './projects/PersistentProjectSidebar';
 import { ProjectSidebarContext, type ProjectSidebarSelection } from './projects/ProjectSidebarContext';
 import { TopbarContext } from './topbarContext';
@@ -234,6 +235,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
           </div>
         </header>
         <ApiErrorNotice />
+        <TaskCenter />
 
         <div ref={contentRef} className="app-page-viewport" data-testid="app-page-viewport" data-help-bounds>
           <div ref={pageFrame} className="app-page-frame" data-testid="app-page-frame"><React.Suspense fallback={<div data-testid="app-page-loading"><LoadingNote block label={t('common.loading')}/></div>}><Outlet /></React.Suspense></div>

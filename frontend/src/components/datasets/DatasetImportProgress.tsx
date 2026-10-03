@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { DatasetImportOperation, DatasetImportPhase } from '../../utils/useDatasetImportProgress';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import DatasetOperationProgress from './DatasetOperationProgress';
@@ -12,6 +13,11 @@ const phaseLabels: Record<DatasetImportPhase, [string, string]> = {
   failed: ['正在返回导入结果', 'Waiting for the import result'],
 };
 
+const waitingLabels: Record<string, [string, string]> = {
+  'version.indexing': ['等待数据集索引完成后导入', 'Waiting for dataset indexing to finish'],
+  'service.restarting': ['等待训练服务重启后导入', 'Waiting for the training service to restart'],
+};
+
 function bytes(value: number): string {
   if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GiB`;
   if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)} MiB`;
@@ -19,9 +25,14 @@ function bytes(value: number): string {
   return `${Math.max(0, Math.round(value))} B`;
 }
 
-export default function DatasetImportProgress({ operation }: { operation: DatasetImportOperation }) {
+export default function DatasetImportProgress({ operation, actions }: { operation: DatasetImportOperation; actions?: ReactNode }) {
   const text = useWorkspaceText();
   const { snapshot, state, unavailable, upload } = operation;
+  if (state === 'active' && (operation.preparing || operation.waiting)) {
+    const phaseText = operation.preparing ? text('正在准备上传', 'Preparing the upload')
+      : text(...(waitingLabels[operation.waiting!] || ['等待当前版本的其他操作完成后导入', 'Waiting for another operation on this version to finish']));
+    return <DatasetOperationProgress label={text('导入进度', 'Import progress')} phaseText={phaseText} state={state} done={null} total={null} elapsed={operation.elapsed} actions={actions}/>;
+  }
   if (state === 'active' && upload && !upload.complete) {
     const remaining = upload.bytesPerSecond != null && upload.bytesPerSecond > 0
       ? (upload.bytesTotal - upload.bytesDone) / upload.bytesPerSecond : null;
@@ -30,7 +41,7 @@ export default function DatasetImportProgress({ operation }: { operation: Datase
       state={state} done={upload.bytesDone} total={upload.bytesTotal}
       detail={`${bytes(upload.bytesDone)} / ${bytes(upload.bytesTotal)} · ${text(`${upload.filesDone} / ${upload.filesTotal} 个文件`, `${upload.filesDone} / ${upload.filesTotal} files`)}`}
       speed={upload.bytesPerSecond != null ? `${(upload.bytesPerSecond / 1024 ** 2).toFixed(2)} MiB/s` : null}
-      elapsed={operation.elapsed} remaining={remaining}/>;
+      elapsed={operation.elapsed} remaining={remaining} actions={actions}/>;
   }
   const waitingForProcessing = upload?.complete && (!snapshot || snapshot.phase === 'receiving' || unavailable);
   const terminalSnapshot = snapshot?.phase === 'completed' || snapshot?.phase === 'failed';
@@ -57,5 +68,5 @@ export default function DatasetImportProgress({ operation }: { operation: Datase
     state={state} done={done} total={total}
     detail={counts.length ? counts.join(' · ') : undefined}
     speed={state === 'active' ? rate != null ? `${(rate / 1024 ** 2).toFixed(2)} MiB/s` : null : undefined}
-    elapsed={operation.elapsed} remaining={measured ? snapshot.eta_seconds : null}/>
+    elapsed={operation.elapsed} remaining={measured ? snapshot.eta_seconds : null} actions={actions}/>
 }
