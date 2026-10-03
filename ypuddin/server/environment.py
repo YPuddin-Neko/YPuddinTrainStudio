@@ -37,7 +37,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ypuddin.package_sources import pypi_sources, run_sources, torch_sources
 from ypuddin.runtime_profiles import current_profile, profile_root
 
-from . import dtk_catalog, metal_attention_catalog, windows_attention_catalog
+from . import dtk_catalog, metal_attention_catalog, triton_catalog, windows_attention_catalog
 from .db import Database, new_id, now
 from .download_sources import probe_options
 from .errors import ApiError
@@ -64,12 +64,57 @@ CATALOG = {
     # Automatic tagging and masks. Both builds provide the same module; one is installed at a time.
     "onnxruntime": ("onnxruntime", None, "https://onnxruntime.ai/docs/install/"),
     "onnxruntime-gpu": ("onnxruntime", None, "https://onnxruntime.ai/docs/install/#python-installs"),
+    # Kernel compiler for torch.compile and optional extension kernels: installed with PyTorch on Linux
+    # and DTK, the matching triton-windows build on Windows (triton_catalog).
+    "triton": ("triton", None, triton_catalog.DOCS_URL),
+    "triton-windows": ("triton", None, triton_catalog.WINDOWS_DOCS_URL),
 }
 ONNX_RUNTIMES = ("onnxruntime", "onnxruntime-gpu")
 ATTENTION = ("auto", "sdpa", "xformers", "flash_attn", "sage", "metal_flash")
 MUTATING = ("installing", "verifying")
 BUSY = ("planning", *MUTATING)
 MAX_WHEEL_BYTES = 2 * 1024**3
+# Finished installs stay in the task center this long; failures of this run stay until dismissed.
+TASK_KEEP_SECONDS = 600
+PACKAGE_LABELS = {
+    "xformers": "xFormers", "flash-attn": "FlashAttention 2", "sageattention": "SageAttention",
+    "mtlattn": "Metal FlashAttention", "onnxruntime": "ONNX Runtime", "onnxruntime-gpu": "ONNX Runtime GPU",
+    "triton-windows": "Triton",
+}
+_TASK_FIELDS = {"id", "package", "action", "status", "phase", "downloaded_bytes", "total_bytes", "restart_required",
+                "dismissed_at", "created_at", "updated_at", "error"}
+
+
+# Why a reviewed prebuilt wheel does not fit this machine, worded as in the wheel lists on the environment page.
+_WHEEL_REASONS = {
+    "dtk_profile_required": "请使用独立的 Linux DTK 启动入口",
+    "requires_linux_x86_64": "需要 Linux x86_64 环境",
+    "hip_runtime_unavailable": "当前 HIP 运行时无法访问显卡",
+    "dtk_version_mismatch": "与当前 DTK 版本不匹配",
+    "integrity_verification_pending": "尚未完成官方包完整性核验",
+    "requires_windows_cuda": "需要 NVIDIA CUDA 环境",
+    "requires_windows_x86_64": "需要 Windows 或 Linux x86_64 系统",
+    "platform_mismatch": "与当前系统平台不匹配",
+    "cuda_runtime_unavailable": "当前 PyTorch 无法使用 CUDA",
+    "runtime_version_unrecognized": "无法识别当前运行时版本",
+    "python_abi_mismatch": "与当前 Python 版本不匹配",
+    "torch_version_mismatch": "与当前 PyTorch 版本不匹配",
+    "cuda_version_mismatch": "CUDA 构建版本不匹配",
+}
+
+
+def wheel_reason(reason: str) -> str:
+    if reason.startswith("requires_package:"):
+        return f"需要先安装 {reason.removeprefix('requires_package:')}。"
+    if reason.startswith("requires_torch_runtime_api"):
+        return f"当前 PyTorch 缺少此包需要的功能，要求 {reason.removeprefix('requires_torch_runtime_api')}。"
+    return _WHEEL_REASONS.get(reason, reason) + "。"
+
+
+def task_error(message: str | None, fallback: str) -> str:
+    """A failure reason for the task center: the recorded one when it is written in Chinese,
+    otherwise a pointer to the page that shows the installer's own output."""
+    return message if message and re.search(r"[\u4e00-\u9fff]", message) else fallback
 
 
 class EnvironmentError(ApiError):
@@ -90,6 +135,7 @@ class EnvironmentRequest(BaseModel):
         "bitsandbytes",
         "onnxruntime",
         "onnxruntime-gpu",
+        "triton-windows",
     ]
     action: Literal["install", "repair", "uninstall"] = "install"
     version: str | None = None
@@ -99,12 +145,12 @@ class EnvironmentRequest(BaseModel):
     @model_validator(mode="after")
     def one_wheel_source(self):
         if self.wheel_id and self.vendor_wheel_id:
-            raise ValueError("Choose either an uploaded wheel or a vendor wheel")
+            raise ValueError("上传的 wheel 和预编译 wheel 只能选择一个。")
         if self.action == "uninstall" and (self.wheel_id or self.vendor_wheel_id):
-            raise ValueError("Uninstall does not accept a wheel source")
+            raise ValueError("卸载时不能指定 wheel。")
         if self.package == "mtlattn" and self.action != "uninstall":
             if self.version not in (None, metal_attention_catalog.VERSION):
-                raise ValueError("Metal FlashAttention currently supports only mtlattn 0.4.1")
+                raise ValueError("Metal FlashAttention 目前只支持 mtlattn 0.4.1。")
             self.version = metal_attention_catalog.VERSION
         return self
 
@@ -116,7 +162,7 @@ class EnvironmentRequest(BaseModel):
         try:
             return str(Version(value.strip()))
         except InvalidVersion as exc:
-            raise ValueError("version must be an exact package version, for example 0.0.32.post2") from exc
+            raise ValueError("版本号需要是确切的包版本，例如 0.0.32.post2。") from exc
 
 
 class EnvironmentSettings(BaseModel):
@@ -312,7 +358,7 @@ def protected(name: str) -> bool:
 def gpu_checked(name: str) -> bool:
     """Packages that count as available only once they have run on the GPU: attention kernels and
     the 8-bit optimizers. An import alone does not show that their native code suits the device."""
-    return bool(CATALOG[name][1]) or name == "bitsandbytes"
+    return bool(CATALOG[name][1]) or name in ("bitsandbytes", *triton_catalog.PACKAGES)
 
 
 def environment_identity(versions: dict[str, str]) -> str:
@@ -425,9 +471,9 @@ for name, module in names.items():
                 optimizer.step()
                 torch.cuda.synchronize()
                 if optimizer.state[p]["state1"].dtype != torch.uint8:
-                    raise RuntimeError("The optimizer did not keep 8-bit state")
+                    raise RuntimeError("优化器没有保持 8-bit 状态。")
                 if not bool(torch.isfinite(p).all()) or torch.equal(p.detach(), before):
-                    raise RuntimeError("The 8-bit optimizer step did not update the weights")
+                    raise RuntimeError("8-bit 优化器的更新步骤没有改变权重。")
                 tested = True
                 out[name] = {"importable": True, "kernel_tested": tested, "error": None}
                 continue
@@ -438,9 +484,9 @@ for name, module in names.items():
                 with torch.no_grad(): y = m.sageattn(q.transpose(1,2), q.transpose(1,2), q.transpose(1,2), tensor_layout="HND", is_causal=False)
             if name != "sageattention": y.float().sum().backward()
             torch.cuda.synchronize()
-            if not bool(torch.isfinite(y).all()): raise RuntimeError("Attention output is not finite")
+            if not bool(torch.isfinite(y).all()): raise RuntimeError("注意力输出含有 NaN 或 Inf。")
             if name != "sageattention" and (q.grad is None or not bool(torch.isfinite(q.grad).all())):
-                raise RuntimeError("Attention gradient is missing or not finite")
+                raise RuntimeError("注意力梯度缺失，或含有 NaN 或 Inf。")
             tested = True
         out[name] = {"importable": True, "kernel_tested": tested, "error": None}
     except Exception as exc:
@@ -472,6 +518,23 @@ for name, module in names.items():
         out[name] = {"importable": imported, "kernel_tested": False, "error": error}
         if kernel_unavailable:
             out[name]["kernel_unavailable"] = True
+import importlib.metadata as metadata
+for name in ("triton", "triton-windows"):
+    try:
+        metadata.version(name)
+    except metadata.PackageNotFoundError:
+        continue
+    imported = False
+    try:
+        importlib.import_module("triton")
+        imported = True
+        tested = False
+        if accelerators_allowed and current_profile() != "macos-mps" and torch.cuda.is_available():
+            importlib.import_module("ypuddin.server.triton_check").run()
+            tested = True
+        out[name] = {"importable": True, "kernel_tested": tested, "error": None}
+    except Exception as exc:
+        out[name] = {"importable": imported, "kernel_tested": False, "error": str(exc)[-1500:]}
 from ypuddin.server.metal_attention_catalog import probe_metal_attention
 out["mtlattn"] = probe_metal_attention(torch)
 print("YPUDDIN_ENV=" + json.dumps(out))
@@ -496,7 +559,7 @@ def probe_packages() -> dict[str, Any]:
         )
         if result is None:
             raise RuntimeError(
-                (proc.stderr or proc.stdout)[-1500:] or f"probe exited with code {proc.returncode}"
+                (proc.stderr or proc.stdout)[-1500:] or f"检测进程异常退出，退出码 {proc.returncode}。"
             )
         return json.loads(result)
     except Exception as exc:
@@ -532,7 +595,7 @@ class Installer:
         tool = self.root / "installer"
         python = tool / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
         if not python.exists():
-            log("Preparing an isolated pip helper; the training environment is unchanged.")
+            log("正在准备独立的 pip 工具，训练环境不受影响。")
             self.run([sys.executable, "-m", "venv", str(tool)], log, cancel, timeout=120)
         return [
             str(python),
@@ -557,6 +620,8 @@ class Installer:
         env["PIP_CONFIG_FILE"] = os.devnull
         env["PYTHONUNBUFFERED"] = "1"
         env["PYTHONNOUSERSITE"] = "1"
+        # The output is read as UTF-8; on Windows a child would otherwise write the system code page.
+        env["PYTHONIOENCODING"] = "utf-8"
         env.pop("PYTHONHOME", None)
         env.pop("PYTHONPATH", None)
         log(policy.redact("$ " + subprocess.list2cmdline(args)))
@@ -587,13 +652,13 @@ class Installer:
         try:
             while proc.poll() is None:
                 if cancel.wait(0.1):
-                    raise InterruptedError("Operation cancelled before dependency mutation")
+                    raise InterruptedError("已在修改依赖前取消。")
                 if time.monotonic() > end:
-                    raise TimeoutError(f"Installer exceeded {timeout} seconds")
+                    raise TimeoutError(f"安装程序超过 {timeout} 秒仍未完成。")
             reader.join(timeout=5)
             if proc.returncode:
                 raise RuntimeError(
-                    f"Installer exited with code {proc.returncode}:\n" + "\n".join(lines[-12:])
+                    f"安装程序异常退出，退出码 {proc.returncode}：\n" + "\n".join(lines[-12:])
                 )
         finally:
             if proc.poll() is None:
@@ -636,7 +701,14 @@ class EnvironmentManager:
         self._latest_lock = threading.Lock()
         self._windows_catalog = windows_attention_catalog.Catalog()
         self._closed = False
+        # What the task center shows of the operations this service changes; it reads them every
+        # second, so from memory rather than from the database.
+        self._task_ops: dict[str, dict[str, Any]] = {}
+        self._task_lock = threading.Lock()
+        self._started_at = time.time()
         self.context.db.set_kv("environment.maintenance", {"blocked": False})
+        if (tasks := getattr(context, "background_tasks", None)) is not None:
+            tasks.add_source(self.background_tasks)
         # A fresh service has released imported DLLs. An interrupted mutation must still be
         # visible as a failed operation and can be repaired through the same workflow.
         for op in self.list():
@@ -644,7 +716,7 @@ class EnvironmentManager:
                 self._update(
                     op.id,
                     status="failed",
-                    error="Service stopped during this operation; inspect the environment and repair the affected package.",
+                    error="训练器在这项操作进行时停止了。请检查运行环境，并修复受影响的扩展。",
                     restart_required=False,
                 )
 
@@ -660,16 +732,62 @@ class EnvironmentManager:
             reverse=True,
         )
 
+    def _remember(self, op: EnvironmentOperation) -> None:
+        with self._task_lock:
+            self._task_ops[op.id] = op.model_dump(include=_TASK_FIELDS)
+
+    def background_tasks(self) -> list[dict[str, Any]]:
+        """Extension installs for the task center, while they run and for a while after they end.
+        A plan waiting for review is not running work."""
+        cutoff = time.time() - TASK_KEEP_SECONDS
+
+        def listed(op: dict[str, Any]) -> bool:
+            if op["status"] in BUSY:
+                return True
+            failed_now = op["status"] == "failed" and op["updated_at"] >= self._started_at
+            return not op["dismissed_at"] and (failed_now or op["updated_at"] >= cutoff)
+
+        with self._task_lock:
+            for key in [key for key, op in self._task_ops.items() if not listed(op)]:
+                del self._task_ops[key]
+            ops = sorted(self._task_ops.values(), key=lambda op: op["created_at"], reverse=True)
+        tasks = []
+        for op in ops:
+            running = op["status"] in BUSY
+            if op["status"] == "ready":
+                continue
+            downloading = op["status"] == "planning" and op["phase"] == "download"
+            sized = downloading and bool(op["total_bytes"])
+            detail = {
+                "planning": "下载适配包" if downloading else "检查兼容性",
+                "installing": {"uninstall": "正在卸载", "repair": "正在重装"}.get(op["action"], "正在安装"),
+                "verifying": "验证环境",
+                "completed": "已完成，重启训练器后生效" if op["restart_required"] else "已完成",
+                "failed": "失败",
+                "cancelled": "已取消",
+            }[op["status"]]
+            tasks.append({
+                "id": f"environment-{op['id']}", "kind": "environment",
+                "subject": PACKAGE_LABELS.get(op["package"], op["package"]),
+                "state": "running" if running else op["status"], "detail": detail,
+                "done": op["downloaded_bytes"] if sized else None, "total": op["total_bytes"] if sized else None,
+                "unit": "bytes" if sized else None,
+                "link": "/settings/environment", "cancellable": False, "started_at": op["created_at"],
+                "finished_at": None if running else op["updated_at"],
+                "error": task_error(op["error"], "安装未完成，原因见运行环境页的记录。") if op["status"] == "failed" else None,
+            })
+        return tasks
+
     def get(self, id_: str) -> EnvironmentOperation:
         item = self.context.db.get_kv("environment.operation." + id_)
         if not item or item.get("environment_profile", "legacy") != self.profile:
-            raise EnvironmentError(404, "Environment operation not found")
+            raise EnvironmentError(404, "找不到这项环境操作。")
         return EnvironmentOperation.model_validate(item)
 
     def dismiss(self, id_: str) -> EnvironmentOperation:
         with self.lock:
             if self.get(id_).status not in ("completed", "failed", "cancelled"):
-                raise EnvironmentError(409, "Only a finished operation notification can be dismissed")
+                raise EnvironmentError(409, "只能移除已结束的操作记录。")
             return self._update(id_, dismissed_at=now())
 
     def _update(self, id_, **fields):
@@ -677,7 +795,9 @@ class EnvironmentManager:
             op = self.get(id_).model_dump()
             op.update(fields, updated_at=now())
             self.context.db.set_kv("environment.operation." + id_, op)
-        return EnvironmentOperation.model_validate(op)
+            result = EnvironmentOperation.model_validate(op)
+            self._remember(result)
+        return result
 
     def _log(self, id_, line):
         with self.lock:
@@ -710,16 +830,16 @@ class EnvironmentManager:
     def _idle(self):
         maintenance = self.context.db.get_kv("environment.maintenance", {})
         if maintenance.get("torch_operation") or maintenance.get("restarting"):
-            raise EnvironmentError(409, "The service is switching or preparing its runtime")
+            raise EnvironmentError(409, "训练器正在切换或准备运行环境，请稍后再试。")
         # A model-test worker keeping its base model holds the installed libraries open.
         self.context.supervisor.release_models()
         if self._running():
             raise EnvironmentError(
                 409,
-                "A training, cache, AI regularization or data worker is running. Stop it and wait for the process to exit before modifying dependencies.",
+                "训练、缓存、AI 正则图或数据处理任务正在运行。请先停止，等进程退出后再修改依赖。",
             )
         if self._closed:
-            raise EnvironmentError(503, "Environment manager is stopping")
+            raise EnvironmentError(503, "训练器正在关闭，暂时无法修改运行环境。")
 
     def status(self, refresh=False):
         with self.lock:
@@ -752,8 +872,11 @@ class EnvironmentManager:
             packages = []
             for name, (_, backend, docs) in CATALOG.items():
                 reason = "supported"
+                triton_installable = False
                 if name == "torch":
                     reason = "protected_runtime"
+                elif name in triton_catalog.PACKAGES:
+                    triton_installable, reason = triton_catalog.package_state(name, runtime, versions, self.profile)
                 elif name == "mtlattn":
                     reason = metal_attention_catalog.incompatibility(runtime, self.profile) or "supported"
                 elif self.profile == "linux-dtk" and name in ("sageattention", "nvidia-ml-py"):
@@ -773,7 +896,8 @@ class EnvironmentManager:
                     # The GPU build targets NVIDIA CUDA; DTK and Apple chips run the CPU build.
                     reason = "requires_cuda"
                 probe = probes.get(name, {})
-                supported = reason == "supported"
+                # A Triton row can be shown, and checked, where this page does not install it.
+                supported = triton_installable if name in triton_catalog.PACKAGES else reason == "supported"
                 packages.append(
                     {
                         "name": name,
@@ -785,7 +909,8 @@ class EnvironmentManager:
                         "importable": probe.get("importable", name == "torch"),
                         "kernel_tested": probe.get("kernel_tested", False),
                         "error": probe.get("error") if name in versions else None,
-                        "available": supported
+                        "available": (supported or reason in ("bundled_with_torch", "vendor_build"))
+                        and reason != "triton_version_mismatch"
                         and name in versions
                         and (name != "mtlattn" or versions[name] == metal_attention_catalog.VERSION)
                         and bool(probe.get("importable"))
@@ -824,7 +949,7 @@ class EnvironmentManager:
             ):
                 raise EnvironmentError(
                     422,
-                    "The selected attention backend must pass its device's forward/backward kernel probe before becoming the default.",
+                    "所选注意力后端需要先在本机设备上通过正反向内核检测，才能设为默认。",
                 )
         self.context.db.set_kv("environment.settings", settings.model_dump())
         return settings
@@ -833,12 +958,12 @@ class EnvironmentManager:
         try:
             name, version, _, tags = parse_wheel_filename(path.name)
         except Exception as exc:
-            raise ValueError("Invalid wheel filename") from exc
+            raise ValueError("wheel 文件名无效。") from exc
         name = canonicalize_name(name)
         if name not in CATALOG or name == "torch" or package and name != package:
-            raise ValueError("Wheel must contain the selected managed optional package")
+            raise ValueError("wheel 必须是所选的可选扩展包。")
         if not tags.intersection(set(sys_tags())):
-            raise ValueError("Wheel Python ABI or platform does not match this server")
+            raise ValueError("wheel 的 Python ABI 或平台与训练器所在的机器不符。")
         with zipfile.ZipFile(path) as archive:
             native_files = [
                 i.filename
@@ -847,13 +972,13 @@ class EnvironmentManager:
             ]
             entries = [i for i in archive.infolist() if i.filename.endswith(".dist-info/METADATA")]
             if len(entries) != 1 or entries[0].file_size > 1024**2:
-                raise ValueError("Wheel must have exactly one valid package METADATA")
+                raise ValueError("wheel 中必须有且只有一个有效的包元数据（METADATA）。")
             metadata = BytesParser().parsebytes(archive.read(entries[0]))
             build_info = None
             if name == "xformers" and "xformers/cpp_lib.json" in archive.namelist():
                 entry = archive.getinfo("xformers/cpp_lib.json")
                 if entry.file_size > 1024**2:
-                    raise ValueError("Invalid xFormers build metadata")
+                    raise ValueError("xFormers 构建信息无效。")
                 build_info = json.loads(archive.read(entry)).get("version", {})
             pure_sage = (
                 name == "sageattention"
@@ -864,11 +989,11 @@ class EnvironmentManager:
             canonicalize_name(metadata.get("Name", "")) != name
             or Version(metadata.get("Version", "0")) != version
         ):
-            raise ValueError("Wheel filename and package metadata disagree")
+            raise ValueError("wheel 文件名与包元数据不一致。")
         if metadata.get("Requires-Python") and not SpecifierSet(metadata["Requires-Python"]).contains(
             platform.python_version(), prereleases=True
         ):
-            raise ValueError("Wheel Requires-Python does not match this server")
+            raise ValueError("wheel 要求的 Python 版本（Requires-Python）与训练器所在的机器不符。")
         versions = self.versions()
         torch_constraint = False
         torch_requirement = False
@@ -879,10 +1004,10 @@ class EnvironmentManager:
             dep = canonicalize_name(req.name)
             if protected(dep):
                 if req.url:
-                    raise ValueError(f"Wheel requests a direct replacement of protected runtime {dep}")
+                    raise ValueError(f"wheel 要求直接替换受保护的运行时组件 {dep}。")
                 if dep not in versions or versions[dep] not in req.specifier:
                     raise ValueError(
-                        f"Wheel requires {req}; current protected runtime has {versions.get(dep, 'not installed')}"
+                        f"wheel 需要 {req}，当前受保护的运行时组件为 {versions.get(dep, '未安装')}。"
                     )
                 if dep == "torch" and any(
                     s.operator in ("==", "===") and "*" not in s.version for s in req.specifier
@@ -897,17 +1022,21 @@ class EnvironmentManager:
             if reason:
                 raise ValueError(metal_attention_catalog.MESSAGES[reason])
             if str(version) != metal_attention_catalog.VERSION or not torch_requirement:
-                raise ValueError("Metal FlashAttention requires the reviewed mtlattn 0.4.1 Torch extension")
+                raise ValueError("Metal FlashAttention 需要经过审核的 mtlattn 0.4.1 Torch 扩展。")
             metal_attention_catalog.validate_release_file(path.name, self._hash(path), path.stat().st_size)
         elif self.profile == "linux-dtk" and CATALOG[name][1]:
             vendor = dtk_catalog.wheel_for_file(path)
             reason = dtk_catalog.incompatibility(vendor, runtime, versions, self.profile)
             if reason:
-                raise ValueError("DTK vendor wheel does not match this environment: " + reason)
+                raise ValueError("DTK 厂商 wheel 不适用于当前环境：" + wheel_reason(reason))
             if path.stat().st_size != vendor.size_bytes or self._hash(path) != vendor.sha256:
-                raise ValueError("DTK vendor wheel differs from the reviewed official SHA256 or size")
+                raise ValueError("DTK 厂商 wheel 的 SHA256 或大小与官方审核记录不符。")
             if not vendor.binary and native_files:
-                raise ValueError("The reviewed Python-only vendor wheel unexpectedly contains native code")
+                raise ValueError("这个审核为纯 Python 的厂商 wheel 意外包含本地二进制代码。")
+        elif name == "triton-windows":
+            reason = triton_catalog.windows_mismatch(str(version), runtime)
+            if reason:
+                raise ValueError(triton_catalog.message(reason, runtime, str(version)))
         elif CATALOG[name][1]:
             match_torch = re.search(r"torch(\d+\.\d+(?:\.\d+)?)", path.name)
             match_cuda = re.search(r"cu(\d{2,3})", path.name)
@@ -916,22 +1045,22 @@ class EnvironmentManager:
                 and not str(runtime["torch"]).startswith(match_torch[1] + ".")
                 and Version(str(runtime["torch"])).base_version != match_torch[1]
             ):
-                raise ValueError("Wheel PyTorch build tag does not match the current PyTorch version")
+                raise ValueError("wheel 的 PyTorch 构建标记与当前 PyTorch 版本不符。")
             if match_cuda and match_cuda[1] != str(runtime.get("cuda_runtime") or "").replace(".", ""):
-                raise ValueError("Wheel CUDA build tag does not match the PyTorch CUDA runtime")
+                raise ValueError("wheel 的 CUDA 构建标记与 PyTorch 的 CUDA 运行时不符。")
             abi = re.search(r"cxx11abi(true|false)", path.name, re.IGNORECASE)
             if (
                 abi
                 and runtime.get("cxx11_abi") is not None
                 and (abi[1].lower() == "true") != runtime["cxx11_abi"]
             ):
-                raise ValueError("Wheel C++ ABI does not match the current PyTorch build")
+                raise ValueError("wheel 的 C++ ABI 与当前 PyTorch 构建不符。")
             build_verified = False
             if build_info:
                 cuda = str(runtime.get("cuda_runtime") or "").split(".")
                 expected_cuda = int(cuda[0]) * 100 + int(cuda[1]) if len(cuda) == 2 else None
                 if build_info.get("cuda") != expected_cuda:
-                    raise ValueError("xFormers compiled CUDA version does not match the PyTorch CUDA runtime")
+                    raise ValueError("xFormers 编译时的 CUDA 版本与 PyTorch 的 CUDA 运行时不符。")
                 # New xFormers wheels use the stable Torch ABI. Respect their declared
                 # Torch range instead of rejecting a newer compatible runtime merely
                 # because the wheel was compiled against an older version.
@@ -946,7 +1075,7 @@ class EnvironmentManager:
                 and not (match_cuda and (torch_constraint or match_torch))
             ):
                 raise ValueError(
-                    "Cannot verify this accelerator wheel's Torch/CUDA compatibility; use explicit torch+cu build tags or xFormers compiled build metadata"
+                    "无法确认这个加速扩展 wheel 与 Torch/CUDA 的兼容性。请使用文件名带 torch 和 cu 构建标记的 wheel，或带有 xFormers 编译信息的 wheel。"
                 )
         return {
             "package": name,
@@ -969,7 +1098,7 @@ class EnvironmentManager:
             actual = versions.get(canonicalize_name(req.name))
             if req.url or actual is None or actual not in req.specifier:
                 raise ValueError(
-                    f"Vendor wheel requires {req}; prepare the compatible dependency in this DTK environment first"
+                    f"厂商 wheel 需要 {req}，请先在这个 DTK 环境中准备兼容的依赖。"
                 )
 
     def vendor_wheels(self):
@@ -1047,6 +1176,8 @@ class EnvironmentManager:
         for name in ("onnxruntime", *(("onnxruntime-gpu",) if cuda else ())):
             packages[name] = online(name, "pypi", pypi, torch=False)
         packages["mtlattn"] = {"version": metal_attention_catalog.VERSION, "source": "pinned", "error": None}
+        if matching := triton_catalog.matching_version(runtime, self.profile):
+            packages[matching[0]] = matching[1]
         result = {"checked_at": time.time(), "packages": packages}
         with self._latest_lock:
             self._latest = (time.monotonic(), cache_key, result)
@@ -1106,24 +1237,35 @@ class EnvironmentManager:
         with self.lock, self.context.db.lock:
             self._idle()
             if any(op.status in BUSY for op in self.list()):
-                raise EnvironmentError(409, "Another environment operation is in progress")
+                raise EnvironmentError(409, "另一项环境操作正在进行，请等它结束。")
             runtime = self.runtime()
             if request.package == "mtlattn" and request.action != "uninstall":
                 reason = metal_attention_catalog.incompatibility(runtime, self.profile)
                 if reason:
                     raise EnvironmentError(422, metal_attention_catalog.MESSAGES[reason])
+            if request.package == "triton-windows" and request.action != "uninstall":
+                pin, reason = triton_catalog.windows_build(runtime)
+                installed = self.versions().get("triton-windows")
+                if not reason and request.action == "repair" and installed:
+                    reason = triton_catalog.windows_mismatch(installed, runtime)
+                if reason:
+                    raise EnvironmentError(422, triton_catalog.message(reason, runtime, installed))
+                if request.action == "install" and not request.wheel_id:
+                    if request.version not in (None, pin):
+                        raise EnvironmentError(422, f"只安装与当前 PyTorch 配套的 triton-windows {pin}。")
+                    request.version = pin
             if request.vendor_wheel_id:
                 try:
                     provider, vendor = self._wheel_provider(request.vendor_wheel_id)
                     reason = provider.incompatibility(vendor, runtime, self.versions(), self.profile)
                     if reason:
-                        raise ValueError("Selected prebuilt wheel is unavailable: " + reason)
+                        raise ValueError("所选预编译 wheel 不可用：" + wheel_reason(reason))
                     if (
                         vendor.package != request.package
                         or request.version
                         and vendor.version != request.version
                     ):
-                        raise ValueError("Vendor wheel does not match the selected package or version")
+                        raise ValueError("预编译 wheel 与所选的包或版本不符。")
                 except ValueError as exc:
                     raise EnvironmentError(422, str(exc)) from exc
             if (
@@ -1136,7 +1278,7 @@ class EnvironmentManager:
             ):
                 raise EnvironmentError(
                     422,
-                    "DTK requires a matching SourceFind vendor wheel or verified offline wheel; NVIDIA CUDA packages cannot be installed",
+                    "DTK 环境需要匹配的 SourceFind 厂商 wheel 或经过校验的离线 wheel，不能安装 NVIDIA CUDA 包。",
                 )
             if (
                 request.action != "uninstall"
@@ -1146,9 +1288,9 @@ class EnvironmentManager:
             ):
                 raise EnvironmentError(
                     422,
-                    "8-bit optimizers require a working CUDA PyTorch runtime"
+                    "8-bit 优化器需要能使用 CUDA 的 PyTorch。"
                     if request.package == "bitsandbytes"
-                    else "This attention extension requires a working NVIDIA CUDA PyTorch runtime",
+                    else "这个注意力扩展需要能使用 NVIDIA CUDA 的 PyTorch。",
                 )
             if (
                 request.action != "uninstall"
@@ -1158,14 +1300,14 @@ class EnvironmentManager:
             ):
                 raise EnvironmentError(
                     422,
-                    "Windows installation requires an uploaded compatible prebuilt wheel. Source compilation is disabled.",
+                    "在 Windows 上安装需要上传兼容的预编译 wheel，不支持从源码编译。",
                 )
             installed = self.versions().get(request.package)
             if request.action in ("repair", "uninstall") and not installed:
-                raise EnvironmentError(422, "Package is not installed")
+                raise EnvironmentError(422, "这个包尚未安装。")
             if request.action == "repair" and request.version and request.version != installed:
                 raise EnvironmentError(
-                    422, "Repair reinstalls the current version; choose Install to change version"
+                    422, "修复会重装当前版本；要更换版本请选择安装。"
                 )
             op = EnvironmentOperation(
                 environment_profile=self.profile,
@@ -1179,6 +1321,7 @@ class EnvironmentManager:
                 vendor_wheel_id=request.vendor_wheel_id,
             )
             self.context.db.set_kv("environment.operation." + op.id, op.model_dump())
+            self._remember(op)
             self._cancel[op.id] = threading.Event()
             self.pool.submit(self._plan, op.id, request)
             return op
@@ -1206,7 +1349,7 @@ class EnvironmentManager:
                 other = next(name for name in ONNX_RUNTIMES if name != request.package)
                 if other in versions:
                     # Both distributions write the same onnxruntime package; removing one breaks the other.
-                    raise ValueError(f"{other} is installed; uninstall it before installing {request.package}")
+                    raise ValueError(f"已安装 {other}，请先卸载它再安装 {request.package}。")
             work = self.root / id_
             work.mkdir(exist_ok=True)
             constraints = work / "protected.txt"
@@ -1224,9 +1367,9 @@ class EnvironmentManager:
                 provider, vendor = self._wheel_provider(request.vendor_wheel_id)
                 reason = provider.incompatibility(vendor, self.runtime(), versions, self.profile)
                 if reason:
-                    raise ValueError("Selected prebuilt wheel is no longer compatible: " + reason)
+                    raise ValueError("所选预编译 wheel 已不再兼容：" + wheel_reason(reason))
                 self._update(id_, phase="download", total_bytes=vendor.size_bytes)
-                log("Download reviewed prebuilt wheel: " + vendor.filename)
+                log("下载经过审核的预编译 wheel：" + vendor.filename)
 
                 def progress(downloaded, total, speed, eta):
                     self._update(
@@ -1251,16 +1394,16 @@ class EnvironmentManager:
                 self._update(id_, phase="validate", bytes_per_second=None, eta_seconds=None)
                 current = self.validate_wheel(path, package=request.package)
                 if version and current["version"] != version:
-                    raise ValueError("Vendor wheel does not match the requested repair version")
+                    raise ValueError("预编译 wheel 与要修复的版本不符。")
                 target = str(path)
             if request.wheel_id:
                 wheel = self.context.db.get_kv("environment.wheel." + request.wheel_id)
                 if not wheel:
-                    raise ValueError("Uploaded wheel not found")
+                    raise ValueError("找不到上传的 wheel，请重新上传。")
                 path = Path(wheel["path"])
                 current = self.validate_wheel(path, package=request.package)
                 if current["sha256"] != wheel["sha256"] or version and current["version"] != version:
-                    raise ValueError("Uploaded wheel changed or does not match the selected version")
+                    raise ValueError("上传的 wheel 已变化，或与所选版本不符。")
                 if current.get("vendor_wheel_id"):
                     provider, vendor = self._wheel_provider(current["vendor_wheel_id"])
                 target = str(path)
@@ -1334,7 +1477,7 @@ class EnvironmentManager:
                     if actual is None or actual not in requirement.specifier:
                         supplemental_requirements.append(value)
             if supplemental_requirements:
-                log("Resolve vendor Python runtime dependencies: " + ", ".join(supplemental_requirements))
+                log("解析厂商 wheel 需要的 Python 依赖：" + ", ".join(supplemental_requirements))
                 supplemental_report = work / "python-runtime-report.json"
                 run_sources(
                     self.installer,
@@ -1367,7 +1510,7 @@ class EnvironmentManager:
                 supplemental_names = {canonicalize_name(row["metadata"]["name"]) for row in supplemental_rows}
                 if any(protected(name) or name in CATALOG for name in supplemental_names):
                     raise ValueError(
-                        "Vendor Python dependencies cannot install or replace native/managed packages"
+                        "厂商 wheel 的 Python 依赖不能安装或替换本地二进制包和受管理的扩展。"
                     )
                 rows.extend(supplemental_rows)
             planned_versions = {
@@ -1378,14 +1521,14 @@ class EnvironmentManager:
                 requirement = Requirement(value)
                 actual = planned_versions.get(canonicalize_name(requirement.name))
                 if actual is None or actual not in requirement.specifier:
-                    raise ValueError("Vendor Python runtime dependency is missing from the plan: " + value)
+                    raise ValueError("安装计划缺少厂商 wheel 需要的 Python 依赖：" + value)
             plan = []
             for row in rows:
                 meta = row["metadata"]
                 name, selected = canonicalize_name(meta["name"]), meta["version"]
-                if protected(name):
+                if protected(name) and not (name == request.package == "triton-windows"):
                     raise ValueError(
-                        f"Plan would modify protected runtime {name} ({versions.get(name, 'absent')} -> {selected}). Choose a compatible extension version or wheel."
+                        f"安装计划会改动受保护的运行时组件 {name}（{versions.get(name, '未安装')} → {selected}）。请选择兼容的扩展版本或 wheel。"
                     )
                 info = row["download_info"]
                 url = info["url"]
@@ -1396,7 +1539,7 @@ class EnvironmentManager:
                         or not local_wheel
                         or Path(url2pathname(parsed.path)).resolve() != Path(target).resolve()
                     ):
-                        raise ValueError("Unexpected local dependency in installation plan")
+                        raise ValueError("安装计划中出现了意外的本地依赖。")
                 elif parsed.scheme != "https" or parsed.hostname not in (
                     "files.pythonhosted.org",
                     "download.pytorch.org",
@@ -1406,24 +1549,24 @@ class EnvironmentManager:
                     "mirrors.aliyun.com",
                     "mirror.sjtu.edu.cn",
                 ):
-                    raise ValueError("Installation plan uses an unsupported wheel source")
+                    raise ValueError("安装计划使用了不受支持的 wheel 来源。")
                 filename = urllib.parse.unquote(parsed.path).rsplit("/", 1)[-1]
                 if not filename.endswith(".whl"):
-                    raise ValueError("Source builds are disabled; a compatible prebuilt wheel is required")
+                    raise ValueError("不支持从源码构建，需要兼容的预编译 wheel。")
                 if name in supplemental_names:
                     _, _, _, tags = parse_wheel_filename(filename)
                     if any(tag.abi != "none" or tag.platform != "any" for tag in tags):
-                        raise ValueError("Vendor supplemental dependencies must be Python-only wheels")
+                        raise ValueError("厂商 wheel 的补充依赖必须是纯 Python wheel。")
                 if name != request.package and name in versions and selected != versions[name]:
                     raise ValueError(
-                        f"Plan would change existing dependency {name}; only the selected package may change version"
+                        f"安装计划会改动已有依赖 {name}；只有所选的包可以更换版本。"
                     )
                 sha = info.get("archive_info", {}).get("hashes", {}).get("sha256")
                 if not sha or not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
-                    raise ValueError("Wheel plan is missing its SHA256 digest")
+                    raise ValueError("安装计划缺少 wheel 的 SHA256 校验值。")
                 if name == "mtlattn":
                     if selected != metal_attention_catalog.VERSION:
-                        raise ValueError("Metal FlashAttention only accepts mtlattn 0.4.1")
+                        raise ValueError("Metal FlashAttention 只支持 mtlattn 0.4.1。")
                     metal_attention_catalog.validate_release_file(filename, sha)
                 # Same-version repair must still satisfy existing dependency requirements.
                 if request.action == "repair" or name in supplemental_names:
@@ -1435,7 +1578,7 @@ class EnvironmentManager:
                             canonicalize_name(req.name) not in planned_versions
                             or planned_versions[canonicalize_name(req.name)] not in req.specifier
                         ):
-                            raise ValueError(f"Installation plan does not satisfy {req}")
+                            raise ValueError(f"安装计划不满足依赖要求 {req}。")
                 plan.append(
                     {
                         "name": name,
@@ -1457,14 +1600,14 @@ class EnvironmentManager:
                     }
                 )
             if not plan:
-                log("Requested version is already installed; use Repair to reinstall it.")
+                log("所选版本已经安装；如需重装请使用修复。")
                 self._update(id_, status="completed")
                 return
             if cancel.is_set():
                 raise InterruptedError()
             self._update(id_, status="ready", plan=plan)
             log(
-                "Plan ready. Existing Torch/CUDA/NumPy runtime is protected. Review every package change before applying."
+                "安装计划已就绪。现有的 Torch/CUDA/NumPy 运行时不会改动；请逐项检查包变更后再应用。"
             )
         except InterruptedError:
             self._update(id_, status="cancelled", bytes_per_second=None, eta_seconds=None)
@@ -1478,14 +1621,14 @@ class EnvironmentManager:
             self._idle()
             op = self.get(id_)
             if op.status != "ready":
-                raise EnvironmentError(409, "Only a reviewed, ready plan can be applied")
+                raise EnvironmentError(409, "只能应用已就绪的安装计划。")
             if op.python_executable and op.python_executable != sys.executable:
-                raise EnvironmentError(409, "This plan belongs to another interpreter; create a new plan")
+                raise EnvironmentError(409, "这个安装计划属于另一个 Python 环境，请重新生成计划。")
             if any(other.status in BUSY for other in self.list()):
-                raise EnvironmentError(409, "Another environment operation is in progress")
+                raise EnvironmentError(409, "另一项环境操作正在进行，请等它结束。")
             if environment_identity(self.versions()) != self.context.db.get_kv("environment.identity." + id_):
                 raise EnvironmentError(
-                    409, "Environment changed since this plan was created; create a new plan"
+                    409, "生成安装计划后运行环境发生了变化，请重新生成计划。"
                 )
             previous = self.context.db.get_kv("environment.maintenance", {})
             self.context.db.set_kv("environment.prior_maintenance." + id_, previous)
@@ -1545,7 +1688,7 @@ class EnvironmentManager:
                     wheel = work / item["filename"]
                     if not wheel.is_file() or self._hash(wheel) != item["sha256"]:
                         raise ValueError(
-                            f"Downloaded wheel digest does not match the reviewed plan: {item['name']}"
+                            f"下载的 wheel 校验值与安装计划不符：{item['name']}"
                         )
                     if item["name"] == op.package and CATALOG[op.package][1]:
                         self.validate_wheel(wheel, package=op.package)
@@ -1556,26 +1699,26 @@ class EnvironmentManager:
                 )
             self._update(id_, status="verifying", phase="verify")
             after = self.versions()
-            if {k: v for k, v in before.items() if protected(k)} != {
-                k: v for k, v in after.items() if protected(k)
+            if {k: v for k, v in before.items() if protected(k) and k != op.package} != {
+                k: v for k, v in after.items() if protected(k) and k != op.package
             }:
                 raise RuntimeError(
-                    "Protected runtime changed unexpectedly. Restore the original environment before training."
+                    "受保护的运行时组件意外发生了变化。请先恢复原来的运行环境再训练。"
                 )
             if op.action == "uninstall":
                 if op.package in after:
-                    raise RuntimeError("Package remains installed after uninstall")
+                    raise RuntimeError("卸载后这个包仍然存在。")
                 if CATALOG[op.package][1] == self.context.db.get_kv("environment.settings", {}).get(
                     "attention_default", "auto"
                 ):
                     self.context.db.set_kv("environment.settings", {"attention_default": "auto"})
                     log(
-                        "Removed the selected default backend; new configurations now use PyTorch SDPA (auto)."
+                        "已卸载当前默认的注意力后端，新配置改用 PyTorch SDPA（自动）。"
                     )
             else:
                 for item in op.plan:
                     if after.get(item["name"]) != item["version"]:
-                        raise RuntimeError(f"Installed version does not match reviewed plan: {item['name']}")
+                        raise RuntimeError(f"安装后的版本与安装计划不符：{item['name']}")
                 probes = self.probe()
                 self._probe_cache, self._probe_time = probes, time.monotonic()
                 self._probed_at = time.time()
@@ -1585,8 +1728,8 @@ class EnvironmentManager:
                     if probe.get("kernel_unavailable"):
                         raise RuntimeError(probe["error"])
                     raise RuntimeError(
-                        "Package was installed but its runtime probe failed: "
-                        + str(probe.get("error") or "Selected device kernel unavailable")
+                        "包已安装，但运行检测未通过："
+                        + str(probe.get("error") or "所选设备没有可用的内核。")
                     )
             if op.package in ONNX_RUNTIMES:
                 # Only the tagging and head-mask child processes import ONNX Runtime; each job
@@ -1616,7 +1759,7 @@ class EnvironmentManager:
             if op.status in MUTATING:
                 raise EnvironmentError(
                     409,
-                    "Applying dependency changes cannot be interrupted safely. Wait for verification, then restart Studio.",
+                    "正在应用依赖变更，中途停止不安全。请等待验证完成，然后重启训练器。",
                 )
             if op.status == "planning":
                 self._cancel.setdefault(id_, threading.Event()).set()

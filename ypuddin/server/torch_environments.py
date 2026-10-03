@@ -13,7 +13,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Literal
@@ -25,7 +27,7 @@ from ypuddin.runtime_profiles import current_profile, selected_key
 
 from .db import new_id, now
 from .download_sources import probe_options
-from .environment import EnvironmentError, Installer, protected
+from .environment import TASK_KEEP_SECONDS, EnvironmentError, Installer, protected, task_error
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 OPTIONAL_EXTENSIONS = {"xformers", "flash-attn", "sageattention", "bitsandbytes", "mtlattn"}
@@ -37,6 +39,25 @@ VERSIONS = {
 # Conservative native driver floors, not the broader minor-version compatibility claim.
 DRIVER_FLOORS = {"cu126": 560, "cu128": 570, "cu130": 580}
 ACTIVE = {"planning", "installing", "verifying"}
+WINDOWS = os.name == "nt"
+
+
+# Why a PyTorch build cannot be prepared on this machine, worded for the environment page.
+_BUILD_REASONS = {
+    "requires_apple_silicon": "Apple MPS 版本需要 Apple 芯片的 Mac。",
+    "use_macos_mps_build": "在 Mac 上请选择 Apple MPS 版本。",
+    "requires_windows_or_linux_nvidia": "CUDA 版本需要装有 NVIDIA 显卡的 Windows 或 Linux。",
+    "nvidia_driver_not_detected": "没有检测到 NVIDIA 驱动，请先安装显卡驱动。",
+    "blackwell_requires_cu128_or_newer": "RTX 50 系列（Blackwell）显卡需要 CUDA 12.8 或更新的版本（cu128 及以上）。",
+    "different_deployment_profile": "这个版本不适用于当前部署环境，请使用对应的启动脚本。",
+}
+
+
+def build_reason(reason: str | None) -> str:
+    """A sentence for a build's ``reason`` code; the catalog keeps the code for the page."""
+    if reason and reason.startswith("requires_driver_"):
+        return f"需要 NVIDIA {reason.removeprefix('requires_driver_')}+ 驱动，请先更新显卡驱动。"
+    return _BUILD_REASONS.get(reason or "", "这个 PyTorch 版本不适用于当前机器。")
 
 
 class TorchBuild(BaseModel):
@@ -114,9 +135,23 @@ def same_interpreter(left: str | None, right: str | None) -> bool:
 
 def atomic_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    with tempfile.NamedTemporaryFile(
+        "w", dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False, encoding="utf-8"
+    ) as stream:
+        temporary = Path(stream.name)
+        stream.write(json.dumps(value, ensure_ascii=False, indent=2))
+    try:
+        for attempt in range(40):
+            try:
+                temporary.replace(path)
+                return
+            except PermissionError:
+                # On Windows a reader or a virus scanner holding the file blocks replacing it for a moment.
+                if not WINDOWS or attempt == 39:
+                    raise
+                time.sleep(0.05)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def nvidia_driver_major() -> int | None:
@@ -192,15 +227,15 @@ import json, sys, torch, torchvision
 from pathlib import Path
 from ypuddin.server.app import create_app
 expected, backend, report = sys.argv[1:]
-assert torch.__version__.split('+')[0] == expected, (torch.__version__, expected)
+assert torch.__version__.split('+')[0] == expected, f'安装的 PyTorch 版本 {torch.__version__} 与所选版本 {expected} 不符。'
 device = 'cuda' if backend.startswith('cu') else ('mps' if backend == 'mps' else 'cpu')
 if device == 'cuda':
-    assert torch.cuda.is_available(), 'CUDA wheel installed, but driver/GPU is unavailable'
+    assert torch.cuda.is_available(), '已安装 CUDA 版 PyTorch，但无法使用 NVIDIA 驱动或显卡。'
 if device == 'mps':
-    assert torch.backends.mps.is_available(), 'Apple MPS is unavailable'
+    assert torch.backends.mps.is_available(), '新环境中的 PyTorch 无法使用 Apple MPS。'
 x = torch.randn(4, 4, device=device, requires_grad=True)
 y = (x @ x).square().mean(); y.backward()
-assert torch.isfinite(x.grad).all(), 'Framework forward/backward verification failed'
+assert torch.isfinite(x.grad).all(), 'PyTorch 正反向计算检查未通过。'
 Path(report).write_text(json.dumps({'torch':str(torch.__version__), 'torchvision':str(torchvision.__version__), 'device':device, 'forward_backward':True, 'python':sys.executable}), encoding='utf-8')
 """
 
@@ -217,13 +252,63 @@ class TorchEnvironments:
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="torch-environment")
         self.lock = threading.RLock()
         self.cancel_events: dict[str, threading.Event] = {}
+        # What the task center shows of the preparations this service changes, read from memory every second.
+        self._task_ops: dict[str, dict[str, Any]] = {}
+        self._task_lock = threading.Lock()
+        self._started_at = time.time()
         for op in self.list():
             if op.status in ACTIVE:
                 self._update(
                     op.id,
                     status="failed",
-                    error="Service stopped while preparing this environment. The previous environment is unchanged.",
+                    error="训练器在准备这个 PyTorch 环境时停止了，原来的环境没有改动。",
                 )
+        if (tasks := getattr(context, "background_tasks", None)) is not None:
+            tasks.add_source(self.background_tasks)
+
+    def _remember(self, op: TorchOperation) -> None:
+        with self._task_lock:
+            self._task_ops[op.id] = op.model_dump(
+                include={"id", "build_id", "status", "phase", "dismissed_at", "created_at", "updated_at", "error"}
+            )
+
+    def background_tasks(self) -> list[dict[str, Any]]:
+        """PyTorch environments being prepared, for the task center; finished ones stay a while,
+        failures of this run until dismissed."""
+        cutoff = time.time() - TASK_KEEP_SECONDS
+
+        def listed(op: dict[str, Any]) -> bool:
+            if op["status"] in ACTIVE:
+                return True
+            failed_now = op["status"] == "failed" and op["updated_at"] >= self._started_at
+            return not op["dismissed_at"] and (failed_now or op["updated_at"] >= cutoff)
+
+        with self._task_lock:
+            for key in [key for key, op in self._task_ops.items() if not listed(op)]:
+                del self._task_ops[key]
+            ops = sorted(self._task_ops.values(), key=lambda op: op["created_at"], reverse=True)
+        tasks = []
+        for op in ops:
+            running = op["status"] in ACTIVE
+            if op["status"] == "ready":
+                continue
+            version, _, backend = op["build_id"].partition("-")
+            detail = {
+                "creating_environment": "创建独立环境", "installing_pytorch": "安装 PyTorch",
+                "installing_dependencies": "安装依赖", "verifying": "验证环境",
+            }.get(op["phase"], "正在准备") if running else {
+                "completed": "已完成，重启并切换后启用", "failed": "失败", "cancelled": "已取消",
+            }.get(op["status"], op["status"])
+            tasks.append({
+                "id": f"torch-{op['id']}", "kind": "environment",
+                "subject": f"PyTorch {version}" + (f" · {'Apple MPS' if backend == 'mps' else backend.upper()}" if backend else ""),
+                "state": "running" if running else op["status"], "detail": detail, "done": None, "total": None,
+                "unit": None, "link": "/settings/environment", "cancellable": False, "started_at": op["created_at"],
+                "finished_at": None if running else op["updated_at"],
+                "error": task_error(op["error"], "PyTorch 环境未能准备完成，原因见运行环境页的记录。")
+                if op["status"] == "failed" else None,
+            })
+        return tasks
 
     def list(self) -> list[TorchOperation]:
         rows = self.context.db.fetchall("SELECT value FROM kv WHERE key LIKE 'torch.operation.%'")
@@ -240,7 +325,7 @@ class TorchEnvironments:
     def get(self, id_: str) -> TorchOperation:
         value = self.context.db.get_kv("torch.operation." + id_)
         if not value or value.get("environment_profile", "legacy") != self.profile:
-            raise EnvironmentError(404, "PyTorch operation not found")
+            raise EnvironmentError(404, "找不到这项 PyTorch 环境操作。")
         return TorchOperation.model_validate(value)
 
     def _update(self, id_: str, **changes) -> TorchOperation:
@@ -248,7 +333,9 @@ class TorchEnvironments:
             value = self.get(id_).model_dump()
             value.update(changes, updated_at=now())
             self.context.db.set_kv("torch.operation." + id_, value)
-            return TorchOperation.model_validate(value)
+            op = TorchOperation.model_validate(value)
+            self._remember(op)
+            return op
 
     def _log(self, id_: str, message: str):
         with self.lock:
@@ -287,9 +374,9 @@ class TorchEnvironments:
     def _idle(self):
         self.environment._idle()
         if any(op.status in ACTIVE for op in self.list()):
-            raise EnvironmentError(409, "Another PyTorch operation is in progress")
+            raise EnvironmentError(409, "另一项 PyTorch 环境操作正在进行，请等它结束。")
         if any(op.status in ("planning", "installing", "verifying") for op in self.environment.list()):
-            raise EnvironmentError(409, "An extension operation is in progress")
+            raise EnvironmentError(409, "有扩展正在安装或卸载，请等它结束。")
 
     def start(self, request: TorchRequest):
         with self.environment.lock, self.lock, self.context.db.lock:
@@ -303,12 +390,12 @@ class TorchEnvironments:
                 None,
             )
             if not build or not build.supported:
-                raise EnvironmentError(422, build.reason if build else "Unknown PyTorch build")
+                raise EnvironmentError(422, build_reason(build.reason) if build else "找不到所选的 PyTorch 版本。")
             required = (12 if build.backend.startswith("cu") else 8) * 1024**3
             if shutil.disk_usage(self.root).free < required:
                 raise EnvironmentError(
                     422,
-                    f"At least {required // 1024**3} GiB of free space is required to keep the existing environment and prepare a replacement",
+                    f"需要至少 {required // 1024**3} GiB 可用空间，才能保留现有环境并准备新环境。",
                 )
             op = TorchOperation(
                 environment_profile=self.profile,
@@ -342,13 +429,14 @@ class TorchEnvironments:
                 ],
             )
             self.context.db.set_kv("torch.operation." + op.id, op.model_dump())
+            self._remember(op)
             return op
 
     def apply(self, id_: str):
         with self.environment.lock, self.lock, self.context.db.lock:
             self._idle()
             if self.get(id_).status != "ready":
-                raise EnvironmentError(409, "Create a new plan before preparing this environment")
+                raise EnvironmentError(409, "这项安装已失效，请重新检查安装条件。")
             previous = self.context.db.get_kv("environment.maintenance", {})
             self.context.db.set_kv("torch.prior_maintenance." + id_, previous)
             self.context.db.set_kv(
@@ -373,7 +461,7 @@ class TorchEnvironments:
                 if b.id == self.get(id_).build_id
             )
             if not build.supported:
-                raise ValueError(build.reason)
+                raise ValueError(build_reason(build.reason))
             # All writes stay inside this operation directory. Failed environments are never selected.
             self.installer.run([sys.executable, "-m", "venv", str(work)], log, cancel, timeout=180)
             py = str(python_in(work))
@@ -500,7 +588,7 @@ class TorchEnvironments:
             self.context.db.set_kv("torch.environment." + id_, record)
             self._update(id_, status="completed", phase="ready_to_restart", environment_id=id_, progress=1.0)
             log(
-                "Environment verified. Choose Restart and switch to activate it; the previous environment is preserved."
+                "新环境检查通过。点击“重启并切换到此环境”即可启用，原来的环境会保留。"
             )
         except InterruptedError:
             self._update(id_, status="cancelled", phase="cancelled")
@@ -519,10 +607,10 @@ class TorchEnvironments:
             or record.get("environment_profile", "legacy") != self.profile
             or self.get(id_).status != "completed"
         ):
-            raise EnvironmentError(422, "Only a verified environment can be activated")
+            raise EnvironmentError(422, "只能启用检查通过的环境。")
         expected = python_in(self.root / id_)
         if record["python"] != str(expected) or not expected.is_file() or (self.root / id_).is_symlink():
-            raise EnvironmentError(422, "Prepared environment no longer exists at its verified location")
+            raise EnvironmentError(422, "准备好的环境已不在检查时的位置，请重新安装。")
         return str(expected)
 
     def cancel(self, id_: str):
@@ -532,11 +620,11 @@ class TorchEnvironments:
         if op.status in ACTIVE and id_ in self.cancel_events:
             self.cancel_events[id_].set()
             return op
-        raise EnvironmentError(409, "Operation is already finished")
+        raise EnvironmentError(409, "这项操作已经结束。")
 
     def dismiss(self, id_: str):
         if self.get(id_).status not in ("completed", "failed", "cancelled"):
-            raise EnvironmentError(409, "Only a finished notification can be dismissed")
+            raise EnvironmentError(409, "只能移除已结束的操作记录。")
         return self._update(id_, dismissed_at=now())
 
     def close(self):

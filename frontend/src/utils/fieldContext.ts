@@ -153,6 +153,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
     case 'memory.compile':
       return join([
         text('用 torch.compile 编译模型：第一次启动要多等几分钟编译，之后每步更快。', 'Compiles the model with torch.compile: the first start takes a few extra minutes, later steps are faster.'),
+        onGpu(runtime) && text('编译需要可用的 Triton：Linux 随 PyTorch 安装，Windows 在“设置 → 运行环境”安装。', 'Compiling needs a working Triton: it ships with PyTorch on Linux; on Windows, install it under Settings → Runtime.'),
         has(family, 'block_swap') && text(`不能与「${configFieldLabel('memory.blocks_to_swap', '')}」同时使用。`, 'Cannot be combined with block swapping.'),
       ]);
     case 'memory.blocks_to_swap':

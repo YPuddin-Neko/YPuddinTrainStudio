@@ -20,6 +20,8 @@ Windows FlashAttention 使用 [mjun0812 的社区预编译包](https://github.co
 
 xFormers 内核还需支持当前显卡架构。出现 `No operator found` 等错误时，检查构建和设备检测；可改用当前环境可用的 SDPA。
 
+任务日志中的 `A matching Triton is not available` 只表示 xFormers 的部分可选 Triton 内核不可用，`triton not found; flop counting will not work for triton kernels` 只表示 Triton 内核的 FLOPs 统计不可用；两者都不会中止训练。Triton 的安装见 [运行环境](RUNTIME.md#扩展安装)。
+
 ## Apple Metal FlashAttention
 
 当前安装器使用 `mtlattn 0.4.1`，要求 Apple Silicon、macOS 15+、CPython 3.11 / 3.12、PyTorch 2.13.x。该预编译包不适用于 PyTorch 2.14。

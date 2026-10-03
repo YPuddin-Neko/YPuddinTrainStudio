@@ -36,6 +36,15 @@ xFormers、FlashAttention、SageAttention、bitsandbytes 等扩展需要与新�
 
 扩展更新后需重启服务。具体后端的版本要求和计算限制见 [注意力后端](ATTENTION.md)。
 
+Triton 是编译模型（`torch.compile`）使用的 GPU 内核编译器，xFormers 的部分可选内核和 Triton 内核的 FLOPs 统计也依赖它；没有 Triton 也能训练。它列在“注意力加速”一栏：
+
+- Linux CUDA：随 PyTorch 安装，显示 PyTorch 要求的版本，不单独安装。
+- Windows CUDA：可安装与当前 PyTorch 配套的固定 `triton-windows` 版本，按[维护方的版本对应表](https://github.com/triton-lang/triton-windows/tree/readme#3-pytorch)选择（PyTorch 2.11 对应 3.6.0.post26），使用预编译 wheel。没有配套版本或显卡不受支持时不提供安装；在线没有合适的构建时，可上传同一 Triton 系列的 `triton-windows` wheel。
+- 海光 DTK：显示随厂商 PyTorch 安装的配套 Triton。
+- Apple 芯片与 CPU：不使用 Triton。
+
+安装后会在显卡上运行一个小型 Triton 内核，通过后才标记为可用。
+
 每个扩展的“云端版本”是当前 Python（和 PyTorch）能安装的最新正式版本，从安装时使用的来源查询：bitsandbytes 和 ONNX Runtime 查“软件下载源”中的 Python 依赖包来源，xFormers 查与 CUDA 版本对应的 PyTorch 来源，按顺序尝试，前一个来源不可用或没有兼容构建时换下一个；FlashAttention 2 查社区预编译包，海光环境的 xFormers、FlashAttention 和 bitsandbytes 查内置的厂商构建目录，Metal FlashAttention 显示安装器固定的“兼容版本”。结果保留一小时，更换下载源后重新查询。每个扩展的操作按钮均为“管理”，展开后安装、重装或卸载。
 
 ## LoRA 环境

@@ -99,7 +99,7 @@ def wheel(file: UploadFile, service: EnvironmentManager = Depends(environment)):
         or "\\" in filename
         or not filename.endswith(".whl")
     ):
-        raise EnvironmentError(422, "Choose a .whl file with a valid wheel filename")
+        raise EnvironmentError(422, "请选择文件名有效的 .whl 文件。")
     folder = service.root / "uploads" / new_id("upload")
     folder.mkdir(parents=True)
     target = folder / filename
@@ -109,7 +109,7 @@ def wheel(file: UploadFile, service: EnvironmentManager = Depends(environment)):
             while chunk := file.file.read(1024**2):
                 size += len(chunk)
                 if size > MAX_WHEEL_BYTES:
-                    raise EnvironmentError(413, "Wheel exceeds the 2 GiB upload limit")
+                    raise EnvironmentError(413, "wheel 超过 2 GiB 的上传上限。")
                 stream.write(chunk)
         return service.register_wheel(target)
     except EnvironmentError:
