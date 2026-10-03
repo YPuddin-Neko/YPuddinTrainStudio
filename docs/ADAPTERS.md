@@ -50,13 +50,24 @@ OrthoLoRA 冻结底模权重的主要奇异向量与奇异值，训练 Cayley �
 
 卷积层的 DoRA 幅度覆盖卷积核：按输出通道为 `(out, 1, 1…)`，按输入通道为 `(1, in, 1…)`。
 
+一维和三维卷积使用 LoKr 时，W2 须低秩拆分（设置较小的数值秩）；W2 不拆分的设置会被拒绝，可改用 LoRA 或 LoHa。
+
 卷积层的冻结权重保持加载精度，“底模存储精度”（含 FP8）只转换线性层。海光 DTK 的可复现计算配方只覆盖线性适配器；训练卷积层时这些配方不生效，按常规计算执行。
 
 ## 导出与恢复
 
 LoRA、LoKr、LoHa 和 Full 使用对应的 Kohya / LyCORIS 键布局，Full 在层有偏置时另存 `diff_b`。OrthoLoRA 导出为同秩 LoRA；正交初始化的 T-LoRA 导出为两倍秩的 LoRA，用两个项精确表示训练后的增量。导出文件只包含推理权重；完整恢复点另存优化器、调度器、随机状态和原始训练参数。
 
-“保存训练元数据”默认关闭：文件头只保留加载所需的模型类型和网络结构；无法从权重形状还原的逐层结构按需保留，例如卷积核尺寸。兼容模式另保留简短的 DoRA 模式、方向与精度记录，用于检查能否继续训练。开启后再附加步数、轮数及学习率、优化器、训练尺寸等训练配方，普通和 EMA 权重均使用此设置。不写入本机目录、图片标签、提示词或访问密钥。
+“保存训练元数据”默认关闭：文件头只保留出图软件识别底模所需的键和网络结构；无法从权重形状还原的逐层结构按需保留，例如卷积核尺寸。兼容模式另保留简短的 DoRA 模式、方向与精度记录，用于检查能否继续训练。开启后再附加标题、步数、轮数及学习率、优化器、训练尺寸等训练配方，普通和 EMA 权重均使用此设置。不写入本机目录、图片标签、提示词或访问密钥。
+
+识别底模的键始终写入，取值与 kohya sd-scripts、musubi-tuner 相同。A1111 按 `ss_base_model_version` 归类 SDXL LoRA，Forge 读取 `modelspec.architecture` 与 `modelspec.implementation`，LoKr、LoHa 等算法同样标为 `/lora`，算法记录在 `ss_network_args` 中。
+
+| 模型 | `ss_base_model_version` | `modelspec.architecture` |
+| --- | --- | --- |
+| SDXL | `sdxl_base_v1-0` | `stable-diffusion-xl-v1-base/lora` |
+| FLUX.2 Klein 4B / 9B | `flux_2_klein_4b` / `flux_2_klein_9b` | `Flux.2-klein-4b/lora` / `Flux.2-klein-9b/lora` |
+| Krea 2 | `krea2` | `Krea-2/lora` |
+| Anima | `anima` | `anima-preview/lora` |
 
 “权重保存精度”控制导出权重及 DoRA 幅度的精度，默认 BF16；缩放用的 `alpha` 标量保留 FP32。该设置不改变训练参数、完整恢复点或外部工具的融合精度。
 
@@ -68,15 +79,22 @@ Anima、Krea 2、FLUX.2 的文本编码器使用 `lora_te_` 前缀，SDXL 使用
 
 ### DoRA 融合与外部加载
 
-DoRA 默认关闭；开启时默认按输入通道归一化，每个输入通道保存一个幅度 `(1, in)`。按输出通道则为 `(out, 1)`，是 LyCORIS 的默认方向。继续训练必须与原权重方向一致，不能仅修改文件形状来切换。“标准模式”在两种方向均使用合并权重 `W₀ + ΔW` 的范数，并在 FP32 中计算范数与归一化。强度不为 1 时（模型测试、合并），在底模权重与完整 DoRA 权重之间按强度线性插值。
+DoRA 默认关闭；开启时默认按输入通道归一化，每个输入通道保存一个幅度 `(1, in)`。按输出通道则为 `(out, 1)`，是 LyCORIS 的默认方向。继续训练必须与原权重方向一致，不能仅修改文件形状来切换。强度不为 1 时（模型测试、合并），在底模权重与完整 DoRA 权重之间按强度线性插值。
 
-外部加载器的行为取决于版本和运行路径。例如 [ComfyUI 的 `weight_decompose`](https://github.com/Comfy-Org/ComfyUI/blob/20ca544ee0436721d8eb5f544665e490609f72c8/comfy/weight_adapter/base.py#L275) 对 input 使用 `W₀ + ΔW` 的范数，对 output 使用 `W₀` 的范数；训练器的标准模式两种方向都使用前者。该实现按融合权重的 dtype 选择 epsilon，BF16 为 `0.0078125`，FP32 约为 `1.19e-7`，对较小的范数影响更大。方向相同不代表融合算法、精度或生成结果相同。
+只有一个输出通道的层（例如 Krea 2 的 `txtfusion.projector`）不使用 DoRA，按所选算法训练为普通的 LoRA、LoKr 等层。继续训练时沿用原任务对这些层的设置。
 
-“兼容模式”（`adapter.dora_compute_mode = "comfyui"`） 在训练前向中按 `checkpoint.save_dtype` 重建导出的适配器，再按 `adapter.dora_merge_dtype` 进行 ComfyUI 动态加载的 DoRA 融合。`auto` 使用底模实际浮点精度，也可明确选择 BF16、FP16 或 FP32。可训练参数仍按 `adapter.param_dtype` 保存和更新。该模式针对指定保存精度与融合精度的计算；融合精度或加载方式改变后，结果也可能改变。训练预览和模型测试的 ComfyUI 采样模式同样采用官方导出权重的融合规则。
+| 方向 | ComfyUI | Forge | A1111 | LyCORIS 自带的工具 |
+| --- | --- | --- | --- | --- |
+| 按输入通道（默认） | 支持 | 支持 | 支持 | 不支持 |
+| 按输出通道 | 支持 | 支持 | 不支持 | 支持 |
 
-界面新建配置显式选择 `comfyui`；旧配置、旧预设或 CLI TOML 缺少 `dora_compute_mode` 时按 `standard` 处理。继续训练时，DoRA 计算模式与方向须与原任务保持一致；兼容模式还须保持保存精度与融合精度。
+ComfyUI 的 [`weight_decompose`](https://github.com/Comfy-Org/ComfyUI/blob/20ca544ee0436721d8eb5f544665e490609f72c8/comfy/weight_adapter/base.py#L275) 与 Forge 的同名函数按幅度的形状判断方向：按输入通道时使用合并权重 `W₀ + ΔW` 的范数，按输出通道时使用底模权重 `W₀` 的范数，再加上融合权重 dtype 的 epsilon（BF16 为 `0.0078125`，FP32 约为 `1.19e-7`）。A1111 只按输入通道计算 `W₀ + ΔW` 的范数。
 
-标准模式训练的 LoKr/DoRA 在外部低精度融合时可能偏色，可改用 FP32 重建增量、计算 DoRA 范数并融合，再转换为推理所需精度。兼容模式则应使用训练时匹配的融合精度。FP32 融合不等于 FP32 推理；FP32 保存也不会强制加载器用 FP32 融合。可训练参数精度（默认 FP32）、保存精度（默认 BF16）与外部融合精度是三个独立设置。
+“标准模式”在两种方向均使用 `W₀ + ΔW` 的范数，并在 FP32 中计算范数与归一化。“兼容模式”（`adapter.dora_compute_mode = "comfyui"`）在训练前向中按 `checkpoint.save_dtype` 重建导出的适配器，再按 `adapter.dora_merge_dtype` 进行 ComfyUI 动态加载的 DoRA 融合，两种方向的范数与上述 ComfyUI 相同。`auto` 使用底模实际浮点精度，也可明确选择 BF16、FP16 或 FP32。可训练参数仍按 `adapter.param_dtype` 保存和更新。训练预览和模型测试的 ComfyUI 采样模式同样采用这一融合规则；模型测试按文件中记录的融合精度融合兼容模式的 DoRA 文件，与训练预览相同。
+
+训练页面新建的配置使用 `comfyui`，打开缺少 `dora_compute_mode` 的配置时同样填入 `comfyui`。含 DoRA 设置但缺少该字段的旧预设，以及命令行读取的配置文件，按 `standard` 处理。继续训练时，DoRA 计算模式与方向须与原任务保持一致；兼容模式还须保持保存精度与融合精度。
+
+可训练参数精度默认 FP32，权重保存精度默认 BF16，DoRA 融合精度默认自动（跟随底模），三者分别设置。
 
 ## 与 LyCORIS 的边界
 

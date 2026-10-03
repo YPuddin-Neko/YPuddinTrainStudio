@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Container, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,6 +34,44 @@ def compute_scale(alpha: float, rank: int | None, rs_lora: bool) -> float:
     if rank is None:
         return 1.0
     return float(alpha) / (math.sqrt(rank) if rs_lora else rank)
+
+
+def exported_factor_delta(
+    keys: Container[str], factor: Callable[[str], Tensor], alpha: float | None, shape: Sequence[int],
+) -> tuple[Tensor, float]:
+    """The unscaled ``ΔW`` of exported LoRA, LoHa or LoKr factors and its ``alpha / rank`` scale.
+
+    ``factor`` returns a saved tensor in the computation dtype. Follows ComfyUI's reconstruction order;
+    see ypuddin/sampling/ADAPTER_FUSION_NOTICE.md. Differentiable.
+    """
+    if "lora_up.weight" in keys:
+        up, down = factor("lora_up.weight"), factor("lora_down.weight")
+        rank = down.shape[0]
+        delta = torch.mm(up.flatten(start_dim=1), down.flatten(start_dim=1))
+    elif "hada_w1_a" in keys:
+        second_factor = factor("hada_w1_b")
+        rank = second_factor.shape[0]
+        delta = torch.mm(factor("hada_w1_a"), second_factor) * torch.mm(factor("hada_w2_a"), factor("hada_w2_b"))
+    elif "lokr_w1" in keys or "lokr_w1_a" in keys:
+        rank = None
+        if "lokr_w1" in keys:
+            first = factor("lokr_w1")
+        else:
+            second_factor = factor("lokr_w1_b")
+            rank = second_factor.shape[0]
+            first = torch.mm(factor("lokr_w1_a"), second_factor)
+        if "lokr_w2" in keys:
+            second = factor("lokr_w2")
+        else:
+            second_factor = factor("lokr_w2_b")
+            rank = second_factor.shape[0]
+            second = torch.mm(factor("lokr_w2_a"), second_factor)
+        if second.ndim == 4:
+            first = first.unsqueeze(2).unsqueeze(2)
+        delta = torch.kron(first, second)
+    else:
+        raise ValueError("unsupported exported adapter layout")
+    return delta.reshape(tuple(shape)), alpha / rank if alpha is not None and rank is not None else 1.0
 
 
 def probability(name: str, value: float) -> float:
@@ -223,42 +262,16 @@ class AdapterModule(nn.Module, ABC):
         raise NotImplementedError(f"{self.kind} does not support differentiable exported factors")
 
     def exported_delta(self, save_dtype: torch.dtype, compute_dtype: torch.dtype) -> tuple[Tensor, float]:
-        """Reconstruct saved factors in ComfyUI's order, without detaching trainable tensors."""
+        """Reconstruct saved factors in ComfyUI's order (see ypuddin/sampling/ADAPTER_FUSION_NOTICE.md),
+        without detaching trainable tensors."""
         with torch.autocast(device_type=next(self.parameters()).device.type, enabled=False):
             values = self.differentiable_export_tensors(rank_dropout=True)
-
-            def cast(name: str) -> Tensor:
-                return values[name].to(save_dtype).to(compute_dtype)
-
-            alpha = float(values["alpha"].item())
-            if "lora_up.weight" in values:
-                up, down = cast("lora_up.weight"), cast("lora_down.weight")
-                delta = torch.mm(up.flatten(start_dim=1), down.flatten(start_dim=1))
-                alpha /= down.shape[0]
-            elif "hada_w1_a" in values:
-                first = torch.mm(cast("hada_w1_a"), cast("hada_w1_b"))
-                second = torch.mm(cast("hada_w2_a"), cast("hada_w2_b"))
-                delta = first * second
-                alpha /= values["hada_w1_b"].shape[0]
-            elif "lokr_w1" in values or "lokr_w1_a" in values:
-                rank = None
-                if "lokr_w1" in values:
-                    first = cast("lokr_w1")
-                else:
-                    rank = values["lokr_w1_b"].shape[0]
-                    first = torch.mm(cast("lokr_w1_a"), cast("lokr_w1_b"))
-                if "lokr_w2" in values:
-                    second = cast("lokr_w2")
-                else:
-                    rank = values["lokr_w2_b"].shape[0]
-                    second = torch.mm(cast("lokr_w2_a"), cast("lokr_w2_b"))
-                if second.ndim == 4:
-                    first = first.unsqueeze(2).unsqueeze(2)
-                delta = torch.kron(first, second)
-                alpha = alpha / rank if rank is not None else 1.0
-            else:
-                raise ValueError(f"unsupported differentiable exported layout: {self.kind}")
-            return delta.reshape(self.weight_shape), alpha
+            return exported_factor_delta(
+                values,
+                lambda name: values[name].to(save_dtype).to(compute_dtype),
+                float(values["alpha"].item()),
+                self.weight_shape,
+            )
 
     def _lora_export(self, down: Tensor, up: Tensor, alpha: float) -> dict[str, Tensor]:
         """Plain LoRA tensors; a convolution's ``down`` keeps its kernel and ``up`` is 1×1 (LoCon)."""

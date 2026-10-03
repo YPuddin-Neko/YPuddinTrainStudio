@@ -71,6 +71,31 @@ class LoadedModels:
         _release_memory()
 
 
+def recorded_dora_settings(metadata: dict[str, str]) -> dict:
+    """The compatible-mode DoRA computation an export records, so model tests fuse it as training did.
+
+    An export without the record trained in standard mode. One whose layers merged at several precisions
+    (automatic precision over mixed base dtypes) keeps each layer's own base precision.
+    """
+    import json
+
+    from ypuddin.adapters.dora import MERGE_DTYPES
+    from ypuddin.adapters.dora_contract import METADATA_KEY
+
+    dtypes = {str(dtype).removeprefix("torch."): dtype for dtype in MERGE_DTYPES}
+    try:
+        record = json.loads(metadata.get(METADATA_KEY) or "null")
+        precisions = {(merge, save) for _, merge, save in record["precisions"]} if record else set()
+    except (TypeError, ValueError, KeyError):
+        return {}
+    if not record or record.get("mode") != "comfyui" or len(precisions) != 1:
+        return {}
+    ((merge, save),) = precisions
+    if merge not in dtypes or save not in dtypes:
+        return {}
+    return {"dora_compute_mode": "comfyui", "dora_merge_dtype": dtypes[merge], "dora_save_dtype": dtypes[save]}
+
+
 def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None):
     """Rebuild each exported adapter, requiring complete name/shape compatibility."""
     from ypuddin.adapters import (
@@ -87,8 +112,10 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
         text_export_root,
     )
     from ypuddin.adapters.dora import magnitude_axis
+    from ypuddin.sampling.adapter_preview import AdapterSnapshot
 
     tensors, metadata = load_adapter_file(path)
+    dora_settings = recorded_dora_settings(metadata)
     if metadata.get("ypuddin.family", family) != family:
         raise ValueError("Adapter model family differs from the selected sampling model")
     keys = {key.partition(".")[0] for key in tensors}
@@ -134,10 +161,12 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
             else:
                 base = original if isinstance(original, FrozenLinear) else FrozenLinear.from_linear(original)
                 wrapper_type = AdaptedLinear
-            wrapper = wrapper_type(base, adapter, dora=dora is not None, dora_axis=axis, name=name)
+            wrapper = wrapper_type(
+                base, adapter, dora=dora is not None, dora_axis=axis, name=name,
+                **(dora_settings if dora is not None else {}),
+            )
             wrapper.component = component
             wrapper._sampling_export_key = key
-            wrapper._sampling_export_tensors = tensors
             if dora is not None:
                 wrapper.dora.load_tensor(dora)
             wrapper.requires_grad_(False).eval()
@@ -147,7 +176,10 @@ def bind_checkpoint(backbone, path: Path, family: str, prefix: str, *, text=None
             plans.append((parent, attr, base, wrapper))
     if not matched or keys != matched:
         raise ValueError("Checkpoint includes unsupported or unmatched adapter modules")
+    # One copy per checkpoint serves every comparison cell's preview.
+    snapshot = AdapterSnapshot(tensors)
     for parent, attr, _, wrapper in plans:
+        wrapper._sampling_snapshot = snapshot
         setattr(parent, attr, wrapper)
     return plans
 
@@ -158,9 +190,8 @@ def _checkpoint_preview(bindings, cell):
     from ypuddin.sampling.adapter_preview import exported_adapter_preview
 
     layers = {wrapper._sampling_export_key: wrapper for *_, wrapper in bindings}
-    tensors = bindings[0][3]._sampling_export_tensors
     return exported_adapter_preview(
-        layers, tensors, merge_dtype=cell.get("adapter_merge_dtype", "auto")
+        layers, bindings[0][3]._sampling_snapshot, merge_dtype=cell.get("adapter_merge_dtype", "auto")
     )
 
 

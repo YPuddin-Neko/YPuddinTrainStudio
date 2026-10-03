@@ -33,6 +33,7 @@ from ypuddin.adapters.dora_contract import (
 from ypuddin.adapters.dora_contract import (
     compute_contract,
     export_contract_metadata,
+    saved_magnitudes,
     validate_active_config,
     validate_resume_contract,
     validate_warm_start,
@@ -53,6 +54,7 @@ from ypuddin.config.compute_policy import (
     resolve_training_compute_config,
     validate_resume_compute_policy,
 )
+from ypuddin.config.io import config_hash_variants
 from ypuddin.data import (
     BucketBatchSampler,
     DataBundle,
@@ -575,6 +577,7 @@ class Trainer:
                 )
             base_precision = cfg.memory.base_precision if cfg.memory.base_precision != "auto" else "keep"
             self.loaded.backbone.requires_grad_(False)
+            kept = self._kept_dora_layers()
             components = {}
             if cfg.training.train_backbone:
                 components["backbone"] = inject(
@@ -585,23 +588,36 @@ class Trainer:
                     base_precision=base_precision,
                     dora_save_dtype=cfg.checkpoint.save_dtype,
                     compute_dtype=self.loaded.dtype,
+                    keep_dora=kept.get("backbone", ()),
                 )
             if cfg.training.train_text_encoder:
                 self.loaded.text.to(self.device)
                 components.update(
                     inject_text_adapters(self.loaded.text.enable_adapter_training(), cfg.adapter,
                                          dora_save_dtype=cfg.checkpoint.save_dtype,
-                                         compute_dtype=self.loaded.dtype)
+                                         compute_dtype=self.loaded.dtype, keep_dora=kept)
                 )
                 self.adapters = ComponentAdapterSet(components)
             else:
                 self.adapters = components["backbone"]
+            self._report_kept_dora_layers()
             if cfg.adapter.resume_weights:
                 from ypuddin.adapters import load_adapter_file
 
                 tensors, metadata = load_adapter_file(cfg.adapter.resume_weights)
                 validate_warm_start(self.adapters, metadata)
-                missing = self.adapters.load_state(tensors, strict=False)
+                unused_dora: list[str] = []
+                missing = self.adapters.load_state(tensors, strict=False, unused_dora=unused_dora)
+                if unused_dora:
+                    self.emit(
+                        "warning",
+                        code="adapter.unused_dora",
+                        message=(
+                            f"权重文件中 {len(unused_dora)} 层带 DoRA 幅度，当前设置下这些层不使用 DoRA，"
+                            f"幅度未加载：{_layer_list(unused_dora)}。"
+                        ),
+                        layers=unused_dora,
+                    )
                 matched = len(self.adapters.layers) - len(missing)
                 if matched == 0:
                     raise ValueError(
@@ -706,6 +722,7 @@ class Trainer:
         if cfg.loop.distributed_strategy != "fsdp" or not hasattr(self, "distributed"):
             # DDP saves on rank zero but every rank must retain identical progress.
             self.progress.extra["scheduler_contract"] = deepcopy(self._scheduler_contract)
+        self.progress.extra[DORA_STATE_KEY] = compute_contract(self.adapters)
         self.progress.extra["deterministic"] = cfg.loop.deterministic
         if cfg.dataset.resolution_mode == "native":
             self.progress.extra["native_max_pixels"] = self.bundle.plan.native_max_pixels
@@ -729,6 +746,33 @@ class Trainer:
             deterministic=cfg.loop.deterministic,
             compute_policy=self.compute_policy,
         )
+
+    def _kept_dora_layers(self) -> dict[str, set[str]]:
+        """Per component, the single-output layers whose resumed state holds a DoRA magnitude."""
+        cfg = self.cfg
+        if not (cfg.checkpoint.resume and cfg.adapter.dora):
+            return {}
+        saved = saved_magnitudes(cfg.checkpoint.resume)
+        if not cfg.training.train_text_encoder:
+            return {"backbone": saved}
+        components: dict[str, set[str]] = {}
+        for key in saved:
+            component, _, name = key.partition(".")
+            components.setdefault(component, set()).add(name)
+        return components
+
+    def _report_kept_dora_layers(self) -> None:
+        single = sorted(
+            name for name, layer in self.adapters.layers.items()
+            if layer.dora is not None and layer.adapter.out_features == 1
+        )
+        if not single:
+            return
+        message = f"继续训练沿用原任务在 {len(single)} 个单输出层上的 DoRA：{_layer_list(single)}。"
+        if self.cfg.adapter.dora_axis == "input":
+            message += "这些层按输入通道保存的幅度在 ComfyUI 和 Forge 中按输出通道融合，效果与训练计算不同。"
+        self.emit("warning", code="adapter.single_output_dora", message=message + "新任务在单输出层不使用 DoRA。",
+                  layers=single)
 
     def _place_training_model(self) -> None:
         """Place selected parameters before binding an optimizer to their final objects."""
@@ -1123,11 +1167,12 @@ class Trainer:
         )
 
     def _resume_config_hashes(self) -> set[str]:
-        """The run's config hash with and without the resume path it was started with."""
+        """The run's config hashes, as any version wrote them, with and without the resume path it was
+        started with."""
         # A paused run is resumed from its own state: only checkpoint.resume differs.
         neutral = self.cfg.model_copy(deep=True)
         neutral.checkpoint.resume = None
-        return {self.config_hash, config_hash(neutral)}
+        return {self.config_hash, *config_hash_variants(self.cfg), *config_hash_variants(neutral)}
 
     def _validate_dora_contract(self) -> None:
         validate_active_config(self.adapters, self.cfg, compute_dtype=getattr(getattr(self, "loaded", None), "dtype", None))
@@ -1158,6 +1203,7 @@ class Trainer:
             family=self.family.spec.name,
             architecture=f"{self.family.spec.architecture}/{self.cfg.adapter.algo}",
             title=self.cfg.checkpoint.name,
+            variant=(getattr(getattr(self, "loaded", None), "extra", None) or {}).get("variant"),
             resolution=(
                 None
                 if self.cfg.dataset.resolution_mode == "native"
@@ -2372,6 +2418,10 @@ def _epoch_text(epoch: float | None) -> str:
     if epoch is None:
         return "-"
     return str(round(epoch)) if abs(epoch - round(epoch)) < 0.005 else f"{epoch:.2f}"
+
+
+def _layer_list(names: list[str], shown: int = 3) -> str:
+    return "、".join(names[:shown]) + (f" 等 {len(names)} 层" if len(names) > shown else "")
 
 
 def _random_preview_seed() -> int:

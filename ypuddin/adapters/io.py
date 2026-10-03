@@ -56,6 +56,34 @@ def sha256_of_tensors(tensors: dict[str, Tensor]) -> str:
     return h.hexdigest()
 
 
+# How mainstream tools recognise a family's adapters, as kohya sd-scripts and musubi-tuner write them:
+# A1111 lists a LoRA under SDXL only when ss_base_model_version starts with "sdxl_"; Forge and SwarmUI
+# read the ModelSpec architecture and implementation. FLUX.2 Klein entries are per variant.
+_MODEL_IDENTITIES: dict[str, tuple[str, str, str]] = {
+    "sdxl": ("sdxl_base_v1-0", "stable-diffusion-xl-v1-base", "https://github.com/Stability-AI/generative-models"),
+    "flux": ("flux1", "flux-1-dev", "https://github.com/black-forest-labs/flux"),
+    "flux2/klein-base-4b": ("flux_2_klein_4b", "Flux.2-klein-4b", "https://github.com/black-forest-labs/flux2"),
+    "flux2/klein-base-9b": ("flux_2_klein_9b", "Flux.2-klein-9b", "https://github.com/black-forest-labs/flux2"),
+    "krea2": ("krea2", "Krea-2", "https://github.com/krea-ai/krea-2"),
+    "anima": ("anima", "anima-preview", "https://huggingface.co/circlestone-labs/Anima"),
+}
+
+
+def model_identity(family: str, variant: str | None = None) -> dict[str, str]:
+    """The base-model keys external tools read; empty for a family or variant without a convention."""
+    known = _MODEL_IDENTITIES.get(f"{family}/{variant}") or _MODEL_IDENTITIES.get(family)
+    if known is None:
+        return {}
+    version, architecture, implementation = known
+    return {
+        "ss_base_model_version": version,
+        "modelspec.sai_model_spec": "1.0.1",
+        # Every adapter algorithm loads as a LoRA-type network; ss_network_args names the algorithm.
+        "modelspec.architecture": f"{architecture}/lora",
+        "modelspec.implementation": implementation,
+    }
+
+
 def build_metadata(
     *,
     targets: dict[str, Any],
@@ -63,6 +91,7 @@ def build_metadata(
     family: str,
     architecture: str,
     title: str,
+    variant: str | None = None,
     resolution: str | None = None,
     extra: dict[str, str] | None = None,
     config_hash: str | None = None,
@@ -71,7 +100,10 @@ def build_metadata(
     epoch: int | None = None,
     include_training_metadata: bool = True,
 ) -> dict[str, str]:
-    """kohya ``ss_*`` + ModelSpec ``modelspec.*`` + our ``ypuddin.*`` keys (all values are strings)."""
+    """kohya ``ss_*`` + ModelSpec ``modelspec.*`` + our ``ypuddin.*`` keys (all values are strings).
+
+    The base-model identification is always written; ``include_training_metadata`` adds the training details.
+    """
     adapter_cfg = {key: value for key, value in adapter_cfg.items() if key != "resume_weights"}
     algo = adapter_cfg.get("algo")
 
@@ -119,6 +151,8 @@ def build_metadata(
         "ss_network_args": json.dumps(network_args, ensure_ascii=False),
         "ypuddin.family": family,
     }
+    identity = model_identity(family, variant)
+    meta.update(identity)
     if not include_training_metadata:
         # Flattened convolution factors cannot always recover their spatial dimensions.
         kernels = {
@@ -129,12 +163,15 @@ def build_metadata(
         if kernels:
             meta["ypuddin.targets"] = json.dumps(kernels, ensure_ascii=False)
         return meta
+    if not identity:
+        meta.update({
+            "ss_base_model_version": family,
+            "modelspec.sai_model_spec": "1.0.1",
+            "modelspec.architecture": architecture,
+            "modelspec.implementation": "ypuddin",
+        })
     meta.update({
-        "ss_base_model_version": family,
         "ss_training_finished_at": str(time.time()),
-        "modelspec.sai_model_spec": "1.0.1",
-        "modelspec.architecture": architecture,
-        "modelspec.implementation": "ypuddin",
         "modelspec.title": title,
         "modelspec.date": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "ypuddin.version": ypuddin.__version__,

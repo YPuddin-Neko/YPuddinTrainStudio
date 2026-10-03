@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ypuddin.config import TrainConfig, config_hash, load_config
+from ypuddin.config import TrainConfig, load_config
+from ypuddin.config.io import config_hash_variants
 from ypuddin.config.optimizer_rules import optimizer_key
 from ypuddin.optim import manages_learning_rate
 
@@ -99,7 +100,7 @@ def read_resume_scheduler_contract(
                 path.parent / "config.toml",
             )
             original = load_config(source)
-            if not metadata.get("config_hash") or config_hash(original) != metadata["config_hash"]:
+            if not metadata.get("config_hash") or metadata["config_hash"] not in config_hash_variants(original):
                 raise ValueError("原训练配置已修改或无法确认来源")
             contract = scheduler_recipe(original, progress["total_steps"])
         except (OSError, ValueError, KeyError) as exc:

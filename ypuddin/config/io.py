@@ -133,22 +133,98 @@ _LEGACY_VALUES: dict[str, dict[str, Any]] = {
         "v_pred_like_loss": 0.0,
         "debiased_estimation_loss": False,
     },
-    # Linear layers only, with no separate convolution rank.
+    # Linear layers only, with no separate convolution rank; T-LoRA settings at their defaults.
     "adapter": {"layer_types": "linear", "conv_rank": None, "conv_alpha": None,
-                "dora_compute_mode": "standard", "dora_merge_dtype": "auto"},
-    "memory": {"no_half_vae": False, "vae_tiling": False, "cache_encode_tiled": False},
+                "dora_compute_mode": "standard", "dora_merge_dtype": "auto",
+                "tlora_min_rank": None, "tlora_power": 1.0, "tlora_ortho": True},
+    # Optional VAE memory and precision switches, off.
+    "memory": {
+        "vae_attention_chunking": False,
+        "no_half_vae": False,
+        "vae_tiling": False,
+        "cache_encode_tiled": False,
+    },
     # Default sampling settings added after earlier checkpoints.
     "sampling": {"noise": "comfyui", "adapter_merge_dtype": "auto"},
 }
 
 
+# Hash-relevant schema history since 2026-09-13, newest first. ``registered``: settings registered above
+# only after resume points had hashed them at their default. ``added``: settings that resume points
+# written before them never hashed, with the value a config without them reads as today; ``section``: a
+# whole section of that kind.
+_HASH_HISTORY: tuple[tuple[str, str, Any], ...] = (
+    ("registered", "memory", ("vae_attention_chunking",)),  # hashed 2026-10-01 to 2026-10-03
+    ("added", "adapter", {"dora_axis": "input"}),  # 2026-09-28
+    ("registered", "adapter", ("tlora_min_rank", "tlora_power", "tlora_ortho")),  # hashed from 2026-09-27
+    ("added", "loop", {"distributed_strategy": "ddp"}),  # 2026-09-15
+    ("added", "loop", {"gpu_count": 1}),  # 2026-09-15
+    ("section", "training", {
+        "mode": "adapter", "train_backbone": True, "train_text_encoder": False, "resume_weights": None,
+    }),  # 2026-09-14
+    ("added", "optimizer", {
+        "beta2": 0.999, "beta3": None, "clip_threshold": 1.0, "d0": 1e-06, "d_coef": 1.0, "d_limiter": True,
+        "decouple": True, "factored": True, "factored_fp32": True, "growth_rate": None, "lr_bump": 1e-06,
+        "max_lr": 0.001, "min_lr": 1e-07, "prodigy_steps": 0, "safeguard_warmup": False,
+        "schedulefree_c": 0.0, "slice_p": 1, "split_groups": True, "split_groups_mean": False,
+        "stochastic_rounding": True, "use_adopt": False, "use_bias_correction": False,
+        "use_cautious": False, "use_focus": False, "use_grams": False, "use_orthograd": False,
+        "use_schedulefree": True, "use_speed": False, "use_stableadamw": True, "weight_decay_by_lr": True,
+    }),  # 2026-09-14
+    ("added", "model", {"krea2_variant": "raw"}),  # 2026-09-14
+)
+
+
 def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
+    return _hashed(_fingerprint(config))
+
+
+def config_hash_variants(config: TrainConfig | Mapping[str, Any]) -> frozenset[str]:
+    """Every hash this unchanged config carries in resume points written by earlier versions."""
+    kept = {
+        (section, key) for kind, section, keys in _HASH_HISTORY if kind == "registered" for key in keys
+    }
+    absent: list[tuple[str, Any]] = []
+    hashes = {config_hash(config)}
+    for entry in (None, *_HASH_HISTORY):
+        if entry is not None:
+            kind, section, values = entry
+            if kind == "registered":
+                kept -= {(section, key) for key in values}
+            else:
+                absent.append(entry)
+        data = _fingerprint(config, kept=kept)
+        for kind, section, values in absent:
+            current = data.get(section)
+            if kind == "section" and current == values:
+                del data[section]
+            elif kind == "added" and isinstance(current, Mapping) and all(
+                current.get(key, value) == value for key, value in values.items()
+            ):
+                data[section] = {key: value for key, value in current.items() if key not in values}
+            else:
+                # The config holds a setting that did not exist yet, so no older version wrote it.
+                return frozenset(hashes)
+        hashes.add(_hashed(data))
+    return frozenset(hashes)
+
+
+def _hashed(data: Mapping[str, Any]) -> str:
+    blob = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return hashlib.blake2b(blob, digest_size=8).hexdigest()
+
+
+def _fingerprint(
+    config: TrainConfig | Mapping[str, Any], *, kept: set[tuple[str, str]] | frozenset = frozenset()
+) -> dict[str, Any]:
+    """The hashed form: legacy settings at their legacy value are left out, except ``kept`` ones."""
     data = config.to_dict() if isinstance(config, TrainConfig) else dict(config)
     for section, legacy in _LEGACY_VALUES.items():
         values = data.get(section)
         if isinstance(values, Mapping):
             data[section] = {
-                key: value for key, value in values.items() if key not in legacy or value != legacy[key]
+                key: value for key, value in values.items()
+                if key not in legacy or value != legacy[key] or (section, key) in kept
             }
     # Checkpoints from before the DoRA axis option trained the output axis; without DoRA it does nothing.
     adapter = data.get("adapter")
@@ -161,8 +237,7 @@ def config_hash(config: TrainConfig | Mapping[str, Any]) -> str:
         }
     if isinstance(adapter, Mapping) and (adapter.get("dora_axis") == "output" or not adapter.get("dora")):
         data["adapter"] = {key: value for key, value in adapter.items() if key != "dora_axis"}
-    blob = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-    return hashlib.blake2b(blob, digest_size=8).hexdigest()
+    return data
 
 
 def absolute_paths(config: TrainConfig) -> TrainConfig:

@@ -23,7 +23,7 @@ from torch import nn
 from torch.distributed.tensor import DTensor, Replicate, Shard
 
 from ypuddin.config.compute_policy import validate_resume_compute_policy
-from ypuddin.config.io import config_hash, load_config
+from ypuddin.config.io import config_hash_variants, load_config
 
 from .state import Progress
 from .training_modes import FullTrainingSet, save_model_artifact
@@ -356,7 +356,7 @@ def _scheduler_contract(path: Path, meta: dict[str, Any]) -> dict[str, Any]:
     # checkpoint, never a newly edited config or the current resume job's output/resume paths.
     try:
         original = load_config(path.parent / "config.toml")
-        if not meta.get("config_hash") or config_hash(original) != meta["config_hash"]:
+        if not meta.get("config_hash") or meta["config_hash"] not in config_hash_variants(original):
             raise ValueError("原训练配置已修改或无法确认来源")
         return {
             "config": original.scheduler.model_dump(mode="json"),

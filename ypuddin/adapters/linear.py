@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 from .base import AdapterModule, probability
-from .dora import DoRA
+from .dora import DoRA, auto_merge_dtype
 from .frozen import FrozenLinear
 
 Mode = str  # "bypass" | "merged"
@@ -78,7 +78,7 @@ class AdaptedLayer(nn.Module):
         weight = self.frozen_weight(torch.float32) if dora or bind is not None else None
         merge_dtype = dora_merge_dtype
         if dora and merge_dtype is None:
-            merge_dtype = torch.float32 if isinstance(base, FrozenLinear) and base.is_fp8 else base.weight.dtype
+            merge_dtype = auto_merge_dtype(base)
         dora_weight = self.frozen_weight(merge_dtype) if dora and dora_compute_mode == "comfyui" else weight
         self.dora = DoRA(
             dora_weight, dtype=adapter.param_dtype, axis=dora_axis,

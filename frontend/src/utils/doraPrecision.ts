@@ -31,7 +31,7 @@ export function doraConfirmationMessages(report: DoraPrecisionReport, english: b
   const text = (zh: string, en: string) => english ? en : zh;
   const merged = doraDtypeLabel(report.merge_dtypes), automatic = doraDtypeLabel(report.auto_merge_dtypes);
   const messages = (report.confirmation_reasons || []).flatMap(reason => {
-    if (reason === 'standard_mode') return [text('标准模式使用 FP32 计算 DoRA；低精度加载导出权重时，出图效果可能与训练预览不同。', 'Standard mode computes DoRA in FP32. Loading the exported weights at lower precision may produce images that differ from the training preview.')];
+    if (reason === 'standard_mode') return [text('标准模式按 FP32 计算 DoRA；出图软件融合导出权重时使用自身的精度和算法，效果与训练计算有差异。默认训练预览显示 ComfyUI 融合后的效果。', 'Standard mode computes DoRA in FP32; image tools merge the exported weights with their own precision and method, so results differ from the training computation. The default training preview shows the ComfyUI-merged result.')];
     if (reason === 'manual_merge_dtype_mismatch') return [merged && automatic
       ? text(`已选择 ${merged} 融合，当前底模自动解析为 ${automatic}。使用不同的融合精度可能改变出图效果。`, `${merged} merging is selected; Auto resolves to ${automatic} for the current base model. Using a different merge precision may change the generated result.`)
       : text('手动选择的融合精度与自动检测结果不同，可能改变出图效果。', 'The selected merge precision differs from Auto and may change the generated result.')];

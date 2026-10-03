@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,6 +15,7 @@ from ypuddin.config import AdapterConfig
 
 from .base import AdapterModule, refuse_tucker
 from .conv import CONV_TYPES, AdaptedConv
+from .dora import resolve_merge_dtype
 from .frozen import FrozenLinear
 from .full import Full
 from .linear import AdaptedLinear
@@ -212,8 +214,11 @@ class AdapterSet:
             }
         return tensors, targets_meta
 
-    def load_state(self, tensors: dict[str, Tensor], *, strict: bool = True) -> list[str]:
-        """Load exported tensors into existing layers (same architecture). Returns missing layer names."""
+    def load_state(
+        self, tensors: dict[str, Tensor], *, strict: bool = True, unused_dora: list[str] | None = None,
+    ) -> list[str]:
+        """Load exported tensors into existing layers (same architecture). Returns missing layer names;
+        ``unused_dora`` collects layers whose file has a DoRA magnitude the layer does not train."""
         missing = []
         for name, layer in self.layers.items():
             for key in self.file_keys(name):
@@ -241,6 +246,8 @@ class AdapterSet:
                     layer.adapter.scalar.fill_(1.0)
             if dora is not None and layer.dora is not None:
                 layer.dora.load_tensor(dora)
+            elif dora is not None and unused_dora is not None:
+                unused_dora.append(name)
         if missing and strict:
             raise KeyError(f"{len(missing)} adapted layers have no tensors in the file, e.g. {missing[:3]}")
         return missing
@@ -275,6 +282,17 @@ class AdapterSet:
 DORA_ALGOS = frozenset({"lora", "loha", "lokr", "ortho"})
 
 
+def wants_dora(cfg: AdapterConfig, algo: str, out_features: int, *, keep: bool = False) -> bool:
+    """Whether a layer trains the run's DoRA.
+
+    A layer with one output channel trains without it. ComfyUI and Forge tell the axes apart by the
+    magnitude's first dimension, which a per-input magnitude ``(1, in)`` shares with such a layer, so they
+    apply it per output; per input channel, normalising one row leaves only the signs of ``W₀ + ΔW``.
+    ``keep`` retains DoRA on such a layer where a resumed training state already holds its magnitude.
+    """
+    return bool(cfg.dora) and (algo in DORA_ALGOS or algo == cfg.algo) and (out_features > 1 or keep)
+
+
 def adaptable_modules(model: nn.Module) -> dict[str, tuple[int, ...]]:
     """Every layer adapters can train, in module order: its kernel size, ``()`` for a linear layer.
 
@@ -306,12 +324,15 @@ def inject(
     keep_originals: bool = False,
     dora_save_dtype: torch.dtype | str | None = None,
     compute_dtype: torch.dtype | None = None,
+    keep_dora: Collection[str] = (),
 ) -> AdapterSet:
     """Replace every selected ``nn.Linear`` with ``AdaptedLinear`` and convolution with ``AdaptedConv``.
 
     ``base_precision`` controls the storage of frozen linear base weights (``keep``/``bf16``/``fp8_e4m3``...);
     a convolution keeps its own module and dtype. ``dora_save_dtype`` is the actual
     checkpoint output dtype. ``compute_dtype`` resolves automatic DoRA fusion for FP8 bases.
+    ``keep_dora`` names single-output layers (module names or export keys) whose resumed state holds a
+    DoRA magnitude; they keep training it.
     """
     modules = adaptable_modules(model)
     targets = resolve_targets(modules, cfg, preset, extra_exclude=extra_exclude)
@@ -346,18 +367,13 @@ def inject(
             base = module if frozen else FrozenLinear.from_linear(module, precision=base_precision)
             wrapper = AdaptedLinear
         compute_mode = getattr(cfg, "dora_compute_mode", "standard")
-        merge_precision = getattr(cfg, "dora_merge_dtype", "auto")
-        if merge_precision == "auto":
-            merge_dtype = base.weight.dtype
-            if isinstance(base, FrozenLinear) and base.is_fp8:
-                merge_dtype = compute_dtype or torch.float32
-        else:
-            merge_dtype = _FLOAT_DTYPES[merge_precision]
+        merge_dtype = resolve_merge_dtype(getattr(cfg, "dora_merge_dtype", "auto"), base, compute_dtype)
+        kept = t.name in keep_dora or kohya_key(t.name, prefix) in keep_dora
         layer = wrapper(
             base,
             adapter,
             mode=cfg.mode,
-            dora=cfg.dora and (t.algo in DORA_ALGOS or t.algo == cfg.algo),
+            dora=wants_dora(cfg, t.algo, int(out_features), keep=kept),
             dora_axis=cfg.dora_axis,
             dora_compute_mode=compute_mode,
             dora_merge_dtype=merge_dtype,

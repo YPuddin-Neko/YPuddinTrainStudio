@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Collection, Mapping
 
 import torch
 from torch import nn
@@ -86,12 +87,14 @@ class ComponentAdapterSet:
             targets.update({item.export_key(k): v for k, v in metadata.items()})
         return tensors, targets
 
-    def load_state(self, tensors, *, strict=True):
-        missing = [
-            f"{component}.{name}"
-            for component, item in self.components.items()
-            for name in item.load_state(tensors, strict=False)
-        ]
+    def load_state(self, tensors, *, strict=True, unused_dora=None):
+        missing, unused = [], []
+        for component, item in self.components.items():
+            skipped = [] if unused_dora is not None else None
+            missing += [f"{component}.{name}" for name in item.load_state(tensors, strict=False, unused_dora=skipped)]
+            unused += [f"{component}.{name}" for name in skipped or ()]
+        if unused_dora is not None:
+            unused_dora.extend(unused)
         if strict and missing:
             raise KeyError(f"adapter file is missing component layers: {missing[:3]}")
         return missing
@@ -121,19 +124,23 @@ def text_export_root(module: nn.Module) -> str:
 
 def inject_text_adapters(
     modules: dict[str, nn.Module], cfg, *, dora_save_dtype: torch.dtype | str | None = None,
-    compute_dtype: torch.dtype | None = None,
+    compute_dtype: torch.dtype | None = None, keep_dora: Mapping[str, Collection[str]] | None = None,
 ):
+    """``keep_dora`` names, per component, single-output layers whose resumed state holds a DoRA magnitude."""
     if not modules or not modules.keys() <= TEXT_ADAPTER_PREFIXES.keys():
         raise ValueError("text pipeline returned unsupported component names")
+    keep_dora = keep_dora or {}
     if len(modules) == 1:
         ((name, module),) = modules.items()
         adapters = inject(module, cfg, TEXT_ADAPTER_PRESET, prefix=SINGLE_TEXT_ADAPTER_PREFIX,
-                          dora_save_dtype=dora_save_dtype, compute_dtype=compute_dtype)
+                          dora_save_dtype=dora_save_dtype, compute_dtype=compute_dtype,
+                          keep_dora=keep_dora.get(name, ()))
         adapters.export_root = text_export_root(module)
         adapters.legacy_prefix = TEXT_ADAPTER_PREFIXES[name]
         return {name: adapters}
     return {
         name: inject(module, cfg, TEXT_ADAPTER_PRESET, prefix=TEXT_ADAPTER_PREFIXES[name],
-                     dora_save_dtype=dora_save_dtype, compute_dtype=compute_dtype)
+                     dora_save_dtype=dora_save_dtype, compute_dtype=compute_dtype,
+                     keep_dora=keep_dora.get(name, ()))
         for name, module in modules.items()
     }

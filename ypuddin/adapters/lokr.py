@@ -7,6 +7,7 @@ Shapes for ``Linear(in -> out)`` with ``(a, b) = factorization(out)`` and ``(c, 
 
 A convolution factors its channels the same way and keeps the kernel in ``W2``, as LyCORIS does:
 ``w2: (b, d, *k)`` or ``w2_b: (r, d·k…)``; ``W1 ⊗ W2`` over the flattened ``(b, d·k…)`` is the kernel.
+A one- or three-dimensional convolution needs the low-rank ``W2``.
 
 The bypass path uses ``(W1 ⊗ W2) vec(X) = vec(W1 · X · W2ᵀ)`` and never materializes ``ΔW``; a
 convolution runs ``W2`` over each of the ``c`` input channel groups and mixes the groups with ``W1``.
@@ -77,6 +78,13 @@ class LoKr(AdapterModule):
         )
         if (self.w1_lowrank or self.w2_lowrank) and r is None:
             raise ValueError("low-rank factors require an integer rank")
+        if len(self.kernel) in (1, 3) and not self.w2_lowrank:
+            # Loaders give W1 kernel axes only for a 4-D W2; a 3-D or 5-D W2 would be multiplied
+            # across its kernel axes and reshaped into a different weight than training uses.
+            raise ValueError(
+                "一维和三维卷积层不能使用不拆分 W2 的 LoKr：ComfyUI 等工具展开它的方式与训练不同。"
+                "请为这些层设置较小的数值秩，或改用 LoRA、LoHa。"
+            )
         self.rank = r if (self.w1_lowrank or self.w2_lowrank) else None
         self.alpha = float(alpha)
         self.rs_lora = bool(rs_lora)

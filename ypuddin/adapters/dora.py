@@ -17,7 +17,20 @@ from torch import Tensor, nn
 AXES = ("input", "output")
 COMPUTE_MODES = ("standard", "comfyui")
 MERGE_DTYPES = (torch.float16, torch.bfloat16, torch.float32)
+MERGE_PRECISIONS = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}
 _AXIS_NAMES = {"output": "输出通道", "input": "输入通道"}
+
+
+def auto_merge_dtype(base: nn.Module, compute_dtype: torch.dtype | None = None) -> torch.dtype:
+    """The automatic merge precision: the base weight's dtype; FP8 storage merges in the compute dtype."""
+    return (compute_dtype or torch.float32) if getattr(base, "is_fp8", False) else base.weight.dtype
+
+
+def resolve_merge_dtype(
+    selected: str, base: nn.Module, compute_dtype: torch.dtype | None = None
+) -> torch.dtype:
+    """``adapter.dora_merge_dtype`` for one layer: ``auto`` or an explicit ``bf16`` / ``fp16`` / ``fp32``."""
+    return auto_merge_dtype(base, compute_dtype) if selected == "auto" else MERGE_PRECISIONS[selected]
 
 
 def magnitude_axis(scale: Tensor) -> str:
@@ -41,11 +54,28 @@ def decompose(weight: Tensor, scale: Tensor) -> Tensor:
 
 
 def loader_weight_norm(weight: Tensor, axis: str) -> Tensor:
-    """Preserve the loader's reshape/reduction order, including convolution kernels."""
+    """Preserve the loader's reshape/reduction order, including convolution kernels.
+
+    Follows ComfyUI's ``weight_decompose``; see ypuddin/sampling/ADAPTER_FUSION_NOTICE.md.
+    """
     matrix = weight if axis == "output" else weight.transpose(0, 1)
     norm = matrix.reshape(matrix.shape[0], -1).norm(dim=1, keepdim=True)
     norm = norm.reshape(matrix.shape[0], *[1] * (weight.ndim - 1))
     return norm if axis == "output" else norm.transpose(0, 1)
+
+
+def loader_decompose(base: Tensor, delta: Tensor, magnitude: Tensor, *, alpha: float, strength: float) -> Tensor:
+    """``base`` with the unscaled ``delta`` and a ``magnitude`` in ``base.dtype``, in ComfyUI's
+    ``weight_decompose`` order (see ypuddin/sampling/ADAPTER_FUSION_NOTICE.md): alpha scales the delta
+    before normalisation and strength interpolates afterwards; the magnitude's first dimension names the
+    axis and epsilon follows the base dtype. Differentiable; nothing is modified in place."""
+    merged = base + (delta * alpha).to(base.dtype)
+    # The shape check is the external loader's axis convention.
+    axis = "output" if magnitude.shape[0] == base.shape[0] else "input"
+    norm = loader_weight_norm(base if axis == "output" else merged, axis)
+    norm = norm + torch.finfo(base.dtype).eps
+    effective = merged * (magnitude / norm).to(base.dtype)
+    return effective if strength == 1.0 else base + strength * (effective - base)
 
 
 class DoRA(nn.Module):
@@ -86,17 +116,12 @@ class DoRA(nn.Module):
     def rescale_exported(
         self, base_weight: Tensor, delta: Tensor, *, alpha: float = 1.0, strength: float = 1.0,
     ) -> Tensor:
-        """Differentiable saved-precision fusion; FP32 optimizer leaves stay attached."""
+        """Differentiable saved-precision fusion in ComfyUI's order (see
+        ypuddin/sampling/ADAPTER_FUSION_NOTICE.md); FP32 optimizer leaves stay attached."""
         with torch.autocast(device_type=base_weight.device.type, enabled=False):
             base = base_weight.to(self.merge_dtype)
-            merged = base + (delta * alpha).to(base.dtype)
             magnitude = self.dora_scale.to(self.save_dtype).to(base.dtype)
-            # The shape check is the external loader's axis convention.
-            axis = "output" if magnitude.shape[0] == base.shape[0] else "input"
-            norm = loader_weight_norm(base if axis == "output" else merged, axis)
-            norm = norm + torch.finfo(base.dtype).eps
-            effective = merged * (magnitude / norm).to(base.dtype)
-            return effective if strength == 1.0 else base + strength * (effective - base)
+            return loader_decompose(base, delta, magnitude, alpha=alpha, strength=strength)
 
     def rescale(self, weight: Tensor) -> Tensor:
         return decompose(weight, self.dora_scale)

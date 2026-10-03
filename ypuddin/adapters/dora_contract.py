@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import torch
+from safetensors import safe_open
 
 from .components import ComponentAdapterSet
-from .inject import DORA_ALGOS
+from .dora import resolve_merge_dtype
+from .inject import wants_dora
 
 METADATA_KEY = "ypuddin.dora_compute"
 STATE_KEY = "dora_compute"
@@ -21,18 +24,32 @@ def validate_active_config(adapters, config, *, compute_dtype: torch.dtype | Non
         return
     requested = config.adapter
     for layer in getattr(adapters, "layers", {}).values():
-        enabled = requested.dora and layer.adapter.kind in DORA_ALGOS
         dora = layer.dora
+        # A single-output layer keeps DoRA only where a resumed state held its magnitude.
+        enabled = wants_dora(requested, layer.adapter.kind, layer.adapter.out_features, keep=dora is not None)
         matches = enabled == (dora is not None)
         if dora is not None:
             matches = matches and (dora.compute_mode, dora.axis) == (requested.dora_compute_mode, requested.dora_axis)
             if dora.compute_mode == "comfyui":
-                merge_dtype = (compute_dtype or torch.float32) if getattr(layer.base, "is_fp8", False) else layer.base.weight.dtype
-                if requested.dora_merge_dtype != "auto":
-                    merge_dtype = _DTYPES[requested.dora_merge_dtype]
+                merge_dtype = resolve_merge_dtype(requested.dora_merge_dtype, layer.base, compute_dtype)
                 matches = matches and (dora.merge_dtype, dora.save_dtype) == (merge_dtype, _DTYPES[config.checkpoint.save_dtype])
         if not matches:
             raise ValueError("DoRA 计算设置或权重保存精度在训练期间发生变化，不能保存。请恢复启动训练时的设置。")
+
+
+def saved_magnitudes(path: str | Path) -> set[str]:
+    """Layers whose resume point holds a DoRA magnitude: layer names from the training or sharded state,
+    export keys from the oldest states, which kept only the exported adapter."""
+    path = Path(path).expanduser()
+    for name, suffix in (
+        ("training.safetensors", ".dora.dora_scale"),
+        ("model.safetensors", ".dora.dora_scale"),
+        ("adapter.safetensors", ".dora_scale"),
+    ):
+        if (path / name).is_file():
+            with safe_open(str(path / name), framework="pt", device="cpu") as tensors:
+                return {key.removesuffix(suffix) for key in tensors.keys() if key.endswith(suffix)}
+    return set()
 
 
 def compute_contract(adapters) -> dict[str, Any] | None:

@@ -372,15 +372,18 @@ class AdapterConfig(_Strict):
     )
     dora: bool = F(
         False,
-        help="DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。计算模式与融合精度需匹配目标加载方式。",
+        help=(
+            "DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。"
+            "只有一个输出通道的层（如 Krea 2 的 txtfusion.projector）不使用 DoRA，按所选算法训练；继续训练时沿用原任务的设置。"
+        ),
         ui_=ui("adapter", order=60, control="switch"),
     )
     dora_axis: Literal["input", "output"] = F(
         "input",
         help=(
-            "input 每个输入通道一个幅度，是默认方向；LyCORIS 自带的工具不支持。"
-            "output 每个输出通道一个幅度，是 LyCORIS 的默认方向。继续训练时须与原权重方向一致。"
-            "方向本身不保证外部出图与训练预览一致，融合算法和精度也会影响结果。"
+            "input 每个输入通道一个幅度，是默认方向；ComfyUI、Forge 和 A1111 都能加载，LyCORIS 自带的工具不支持。"
+            "output 每个输出通道一个幅度，是 LyCORIS 的默认方向；ComfyUI 和 Forge 能加载，A1111 不支持。"
+            "继续训练时须与原权重方向一致。"
         ),
         ui_=ui("adapter", advanced=True, order=61, control="select", show_when="adapter.dora == true"),
     )
@@ -1264,7 +1267,10 @@ class CheckpointConfig(_Strict):
     )
     save_training_metadata: bool = F(
         False,
-        help="默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
+        help=(
+            "默认关闭，只写入出图软件识别底模的键、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。"
+            "开启后额外写入标题、步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。"
+        ),
         ui_=ui("checkpoint", advanced=True, order=65, control="switch", show_when="training.mode == 'adapter'"),
     )
     save_on_finish: bool = F(

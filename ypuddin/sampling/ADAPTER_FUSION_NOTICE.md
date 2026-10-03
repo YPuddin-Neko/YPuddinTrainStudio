@@ -1,9 +1,18 @@
 # Adapter fusion provenance
 
-`adapter_fusion.py` adapts inference arithmetic from ComfyUI 0.38.1,
-commit `20ca544ee0436721d8eb5f544665e490609f72c8`, by the ComfyUI authors and
-contributors. The upstream code is licensed under GNU GPL version 3; the
-license is included in the project's root `LICENSE`.
+The following code adapts inference arithmetic from ComfyUI 0.38.1, commit
+`20ca544ee0436721d8eb5f544665e490609f72c8`, by the ComfyUI authors and contributors:
+
+- `adapter_fusion.py`: fusion of one exported layer, including Full differences and bias differences;
+- `ypuddin/adapters/base.py` (`exported_factor_delta`): reconstruction of LoRA, LoHa and LoKr deltas
+  and their alpha / rank scale, shared with the trainer's `comfyui` DoRA compute mode;
+- `ypuddin/adapters/dora.py` (`loader_weight_norm`, `loader_decompose`): DoRA weight decomposition,
+  shared with the same compute mode.
+
+Upstream `comfy/lora.py` and `comfy/model_patcher.py` state "This file is part of ComfyUI.
+Copyright (C) 2024 Comfy" and license the code under the GNU GPL version 3 or (at your option) any
+later version; the `comfy/weight_adapter` files carry no separate notice. This project uses the code
+under GPL version 3, whose text is the project's root `LICENSE`.
 
 Upstream sources:
 
@@ -12,9 +21,11 @@ Upstream sources:
 - [LoHa](https://github.com/Comfy-Org/ComfyUI/blob/20ca544ee0436721d8eb5f544665e490609f72c8/comfy/weight_adapter/loha.py)
 - [DoRA decomposition](https://github.com/Comfy-Org/ComfyUI/blob/20ca544ee0436721d8eb5f544665e490609f72c8/comfy/weight_adapter/base.py)
 - [Full difference patches](https://github.com/Comfy-Org/ComfyUI/blob/20ca544ee0436721d8eb5f544665e490609f72c8/comfy/lora.py)
+- [`LowVramPatch`](https://github.com/Comfy-Org/ComfyUI/blob/20ca544ee0436721d8eb5f544665e490609f72c8/comfy/model_patcher.py)
 
-The adaptation selects a single exported layer, clones the base before fusion,
-disables gradients and outer autocast, and raises errors for unsupported formats.
+The adaptation selects a single exported layer, leaves the base and exported
+tensors unmodified, disables gradients and outer autocast, and raises errors for
+unsupported formats.
 It preserves the upstream operation order, alpha handling, DoRA axis detection,
 epsilon and strength interpolation. It covers this trainer's LoRA, LoKr, LoHa
 and Full exports, including scalar and rsLoRA gains already folded into their

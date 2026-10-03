@@ -3,6 +3,8 @@
 Adapted from ComfyUI commit 20ca544ee0436721d8eb5f544665e490609f72c8,
 under GPL-3.0; see ADAPTER_FUSION_NOTICE.md. The requested dtype is used for
 both the base weight and intermediate values, as in its LowVramPatch path.
+Factor reconstruction and DoRA decomposition are shared with training's
+compatible DoRA mode (``ypuddin.adapters.base`` and ``ypuddin.adapters.dora``).
 This module does not implement static patching's separate intermediate dtype,
 stochastic rounding, model-strength patches, offsets or custom patch functions.
 """
@@ -18,6 +20,9 @@ from typing import Literal
 import torch
 from torch import Tensor
 
+from ypuddin.adapters.base import exported_factor_delta
+from ypuddin.adapters.dora import loader_decompose
+
 COMFYUI_COMMIT = "20ca544ee0436721d8eb5f544665e490609f72c8"
 _DTYPES = (torch.float16, torch.bfloat16, torch.float32)
 _Kind = Literal["lora", "lokr", "loha", "full"]
@@ -30,33 +35,16 @@ def _strength(value: float) -> float:
     return value
 
 
-def _copy_base(weight: Tensor, dtype: torch.dtype) -> Tensor:
+def _base_in(weight: Tensor, dtype: torch.dtype, *, copy: bool = False) -> Tensor:
     if dtype not in _DTYPES:
         raise ValueError("adapter fusion dtype must be float16, bfloat16 or float32")
     if not weight.is_floating_point():
         raise ValueError("adapter fusion requires a dequantized floating-point base weight")
-    return weight.detach().to(dtype=dtype, copy=True)
+    return weight.detach().to(dtype=dtype, copy=copy)
 
 
-def _decompose(weight: Tensor, delta: Tensor, magnitude: Tensor, alpha: float, strength: float) -> Tensor:
-    # Preserve upstream's order and dtype: epsilon is tied to the weight, not its file's dtype.
-    delta = delta * alpha
-    calculated = weight + delta.to(weight.dtype)
-    output_axis = magnitude.shape[0] == calculated.shape[0]
-    if output_axis:
-        norm = weight.reshape(weight.shape[0], -1).norm(dim=1, keepdim=True)
-        norm = norm.reshape(weight.shape[0], *[1] * (weight.ndim - 1))
-    else:
-        norm = calculated.transpose(0, 1).reshape(calculated.shape[1], -1).norm(dim=1, keepdim=True)
-        norm = norm.reshape(calculated.shape[1], *[1] * (calculated.ndim - 1)).transpose(0, 1)
-    norm = norm + torch.finfo(weight.dtype).eps
-    calculated *= (magnitude / norm).to(weight.dtype)
-    if strength != 1.0:
-        calculated -= weight
-        weight += strength * calculated
-    else:
-        weight[:] = calculated
-    return weight
+def _copy_base(weight: Tensor, dtype: torch.dtype) -> Tensor:
+    return _base_in(weight, dtype, copy=True)
 
 
 @torch.no_grad()
@@ -80,13 +68,15 @@ def fuse_adapter_delta(
     if not math.isfinite(alpha):
         raise ValueError("adapter alpha must be finite")
     with torch.autocast(device_type=base_weight.device.type, enabled=False):
-        weight = _copy_base(base_weight, dtype)
+        # DoRA builds new tensors; the plain update adds in place to a copy of the base.
+        weight = _copy_base(base_weight, dtype) if magnitude is None else _base_in(base_weight, dtype)
         delta = delta.detach().to(device=weight.device, dtype=dtype)
         if delta.shape != weight.shape:
             raise ValueError("adapter delta does not match the base weight shape")
         if magnitude is not None:
+            # Epsilon is tied to the fusion dtype, not the file's.
             scale = magnitude.detach().to(device=weight.device, dtype=dtype)
-            return _decompose(weight, delta, scale, alpha, strength)
+            return loader_decompose(weight, delta, scale, alpha=alpha, strength=strength)
         weight += ((strength * alpha) * delta).to(weight.dtype)
         return weight
 
@@ -161,6 +151,15 @@ class ComfyAdapterFusion:
                 raise ValueError("adapter alpha must be finite")
         return cls(kind, MappingProxyType({key: value.detach() for key, value in selected.items()}), alpha)
 
+    @property
+    def nbytes(self) -> int:
+        return sum(tensor.numel() * tensor.element_size() for tensor in self.tensors.values())
+
+    def to(self, device: torch.device | str) -> ComfyAdapterFusion:
+        """The same layer with its saved tensors on ``device``, unchanged in dtype and value."""
+        tensors = {key: value.to(device=device) for key, value in self.tensors.items()}
+        return ComfyAdapterFusion(self.kind, MappingProxyType(tensors), self.alpha)
+
     @torch.no_grad()
     def reconstruct_delta(
         self, weight_shape: Sequence[int], *, device: torch.device | str, dtype: torch.dtype,
@@ -179,46 +178,20 @@ class ComfyAdapterFusion:
                 if diff.shape != shape:
                     raise ValueError("Full adapter difference does not match the base weight shape")
                 return diff.clone(), 1.0
-            if self.kind == "lora":
-                up, down = cast("lora_up.weight"), cast("lora_down.weight")
-                alpha = self.alpha / down.shape[0] if self.alpha is not None else 1.0
-                delta = torch.mm(up.flatten(start_dim=1), down.flatten(start_dim=1)).reshape(shape)
-            elif self.kind == "loha":
-                a, b = cast("hada_w1_a"), cast("hada_w1_b")
-                alpha = self.alpha / b.shape[0] if self.alpha is not None else 1.0
-                first = torch.mm(a, b)
-                second = torch.mm(cast("hada_w2_a"), cast("hada_w2_b"))
-                delta = (first * second).reshape(shape)
-            else:
-                rank = None
-                if "lokr_w1" in self.tensors:
-                    first = cast("lokr_w1")
-                else:
-                    b = cast("lokr_w1_b")
-                    rank = b.shape[0]
-                    first = torch.mm(cast("lokr_w1_a"), b)
-                if "lokr_w2" in self.tensors:
-                    second = cast("lokr_w2")
-                else:
-                    b = cast("lokr_w2_b")
-                    rank = b.shape[0]
-                    second = torch.mm(cast("lokr_w2_a"), b)
-                if second.ndim == 4:
-                    first = first.unsqueeze(2).unsqueeze(2)
-                alpha = self.alpha / rank if self.alpha is not None and rank is not None else 1.0
-                delta = torch.kron(first, second).reshape(shape)
-            return delta, alpha
+            return exported_factor_delta(self.tensors, cast, self.alpha, shape)
 
     @torch.no_grad()
-    def fuse_weight(self, base_weight: Tensor, *, dtype: torch.dtype, strength: float = 1.0) -> Tensor:
-        """Fuse into a new tensor on the base's device, using the specified inference dtype."""
+    def fuse(
+        self, base_weight: Tensor, delta: Tensor, alpha: float, *, dtype: torch.dtype, strength: float = 1.0,
+    ) -> Tensor:
+        """Apply this layer's reconstructed delta to a new tensor, in the inference ``dtype``: Full is skipped
+        at zero strength and DoRA uses the exported magnitude, as ComfyUI does."""
         strength = _strength(strength)
-        delta, alpha = self.reconstruct_delta(base_weight.shape, device=base_weight.device, dtype=dtype)
         if self.kind == "full" and strength == 0.0:
             return _copy_base(base_weight, dtype)
         return fuse_adapter_delta(
-            base_weight, delta, dtype=dtype, alpha=alpha,
-            magnitude=self.tensors.get("dora_scale"), strength=strength,
+            base_weight, delta, dtype=dtype, alpha=alpha, magnitude=self.tensors.get("dora_scale"),
+            strength=strength,
         )
 
     @torch.no_grad()
