@@ -862,7 +862,7 @@ def plan(
                 }
                 if native and ds.native_max_pixels_mode == "auto" and out.get("native") is None:
                     error_loc = "dataset.native_max_pixels_mode"
-                    raise ValueError("automatic native pixel budget is unavailable; check the training dataset")
+                    raise ValueError("无法自动计算图像面积上限，请检查训练图片")
                 if full_training:
                     params["components"] = {
                         "backbone": base_params if cfg.training.train_backbone else 0,
@@ -1243,7 +1243,13 @@ def plan(
                         }
                     )
         except Exception as e:  # noqa: BLE001
-            issue = {"loc": error_loc, "msg": f"could not prepare model/adapter plan: {e}"}
+            issue = {
+                "loc": error_loc,
+                # The automatic area limit's own reason is already plain; others name the failed step.
+                "msg": str(e)
+                if error_loc == "dataset.native_max_pixels_mode"
+                else f"could not prepare model/adapter plan: {e}",
+            }
             out["errors"].append(issue)
             memory["unavailable_issue"] = issue
     out["params"] = params

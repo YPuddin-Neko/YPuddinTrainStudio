@@ -48,45 +48,78 @@ def native_size(
     if image_fit == "pad":
         return _native_pad_size(width, height, align, max_pixels, max_side, overflow)
     if min(width, height) < align:
-        raise ValueError(f"image {width}x{height} is smaller than model alignment {align}")
+        raise ValueError(f"图片 {width}×{height} 的短边小于模型要求的 {align} 像素")
     if max_pixels < align * align or max_side < align:
-        raise ValueError("native resolution budget is smaller than model alignment")
+        raise ValueError(f"图像面积上限或最长边上限小于模型要求的 {align} 像素")
     aligned_w, aligned_h = width // align * align, height // align * align
     if aligned_w * aligned_h <= max_pixels and max(aligned_w, aligned_h) <= max_side:
         return NativeSize(aligned_w, aligned_h, 1.0)
     if overflow == "error":
         raise ValueError(
-            f"image {width}x{height} exceeds native budget {max_pixels} pixels / {max_side}px side"
+            f"图片 {width}×{height} 超过图像面积上限 {max_pixels} 像素或最长边上限 {max_side} 像素"
         )
     if auto_area:
-        # A side-limited, floor-aligned canvas may already fit the area budget;
-        # applying sqrt(area/original_area) again would unnecessarily shrink it.
-        side_scale = min(1.0, max_side / width, max_side / height)
-        side_w, side_h = int(width * side_scale) // align * align, int(height * side_scale) // align * align
-        if min(side_w, side_h) >= align and side_w * side_h <= max_pixels:
-            return NativeSize(side_w, side_h, side_scale)
+        # The automatic budget is the largest of these side-limited canvases, so a
+        # training image's canvas depends on nothing else. Only a validation image
+        # larger than every training image still takes the area formula below.
+        side = _side_limited_size(width, height, align=align, max_side=max_side)
+        if min(side.width, side.height) >= align and side.width * side.height <= max_pixels:
+            return side
     scale = min(1.0, math.sqrt(max_pixels / (width * height)), max_side / width, max_side / height)
     target_w, target_h = int(width * scale) // align * align, int(height * scale) // align * align
     if min(target_w, target_h) < align:
-        raise ValueError(
-            f"image {width}x{height} cannot fit the native budget without enlarging its short side"
-        )
+        raise ValueError(f"图片 {width}×{height} 缩小到图像面积上限内后，短边不足模型要求的 {align} 像素")
     return NativeSize(target_w, target_h, scale)
+
+
+def _side_limited_size(width: int, height: int, *, align: int, max_side: int) -> NativeSize:
+    """Floor-aligned canvas after scaling the longest side to the limit, in exact integer arithmetic."""
+    aligned_w, aligned_h = width // align * align, height // align * align
+    if max(aligned_w, aligned_h) <= max_side:
+        return NativeSize(aligned_w, aligned_h, 1.0)
+    longest = max(width, height)
+    return NativeSize(
+        width * max_side // longest // align * align,
+        height * max_side // longest // align * align,
+        max_side / longest,
+    )
 
 
 def automatic_max_pixels(
     sizes: Sequence[tuple[int, int]], *, align: int, max_side: int,
     overflow: str = "downscale", image_fit: str = "crop",
 ) -> int:
-    """Smallest canvas budget covering every selected image after the side limit."""
+    """Smallest canvas budget covering every selected image after the side limit.
+
+    Each canvas follows the longest-side rule alone, exactly as automatic native
+    sizing places it, so no image's size depends on the rest of the set.
+    """
     if not sizes:
-        raise ValueError("no readable training images available to calculate the native pixel budget")
+        raise ValueError("没有可读取的训练图片，无法自动计算图像面积上限")
+    if max_side < align:
+        raise ValueError(f"最长边上限 {max_side} 像素小于模型要求的 {align} 像素")
     area = 0
     for width, height in sizes:
-        size = native_size(
-            width, height, align=align, max_pixels=max_side * max_side,
-            max_side=max_side, overflow=overflow, image_fit=image_fit,
-        )
+        if image_fit == "pad":
+            try:
+                size = native_size(
+                    width, height, align=align, max_pixels=max_side * max_side,
+                    max_side=max_side, overflow=overflow, image_fit=image_fit,
+                )
+            except ValueError as error:
+                raise ValueError(f"无法自动计算图像面积上限：{error}") from error
+        else:
+            if min(width, height) < align:
+                raise ValueError(
+                    f"图片 {width}×{height} 的短边小于模型要求的 {align} 像素，无法自动计算图像面积上限"
+                )
+            size = _side_limited_size(width, height, align=align, max_side=max_side)
+            if size.scale < 1.0 and overflow == "error":
+                raise ValueError(f"图片 {width}×{height} 的最长边超过 {max_side} 像素上限")
+            if min(size.width, size.height) < align:
+                raise ValueError(
+                    f"图片 {width}×{height} 按最长边 {max_side} 像素缩小后，短边不足模型要求的 {align} 像素"
+                )
         area = max(area, size.width * size.height)
     return area
 
@@ -96,9 +129,9 @@ def _native_pad_size(
 ) -> NativeSize:
     """Ceil-align the whole image, budgeting the canvas including its padding."""
     if min(width, height, align) <= 0:
-        raise ValueError("native image dimensions and alignment must be positive")
+        raise ValueError("图片尺寸和模型对齐尺寸必须大于 0")
     if max_pixels < align * align or max_side < align:
-        raise ValueError("native resolution budget is smaller than model alignment")
+        raise ValueError(f"图像面积上限或最长边上限小于模型要求的 {align} 像素")
 
     def canvas(scale: float) -> tuple[int, int]:
         return tuple(((max(1, round(side * scale)) + align - 1) // align) * align for side in (width, height))
@@ -111,8 +144,7 @@ def _native_pad_size(
         return NativeSize(*original_canvas, 1.0)
     if overflow == "error":
         raise ValueError(
-            f"image {width}x{height} including alignment padding exceeds native budget "
-            f"{max_pixels} pixels / {max_side}px side"
+            f"图片 {width}×{height} 补边对齐后超过图像面积上限 {max_pixels} 像素或最长边上限 {max_side} 像素"
         )
     # Canvas dimensions are monotone stair functions of scale. Search the greatest
     # supported scale; rounding/filling above is identical to the pixel transform.
