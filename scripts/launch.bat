@@ -3,67 +3,30 @@ setlocal
 cd /d "%~dp0.."
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
-
-REM ============================================================================
-REM Shared Windows launcher stage, called by studio-windows-cuda.bat and
-REM studio-cpu.bat after they select a profile. It only finds a usable Python;
-REM all logic lives in scripts\bootstrap.py.
-REM
-REM Keep this file pure ASCII with CRLF line endings (enforced by .gitattributes).
-REM Do not use "chcp 65001": switching the code page mid-script makes cmd.exe
-REM resume reading at a wrong byte offset. Chinese output comes from bootstrap.py.
-REM ============================================================================
-
+REM Shared Windows launcher stage: finds Python 3.10 - 3.12 for scripts\bootstrap.py.
+REM Pure ASCII, CRLF; never "chcp 65001" (cmd.exe would misread byte offsets).
+REM An update can replace this file while the trainer runs, and cmd.exe reads each
+REM next line at a saved byte offset: the trainer starts on the last line read (:run).
 echo [studio] YPuddin Train Studio
-
-if defined YPUDDIN_BOOTSTRAP_VENV if exist "%YPUDDIN_BOOTSTRAP_VENV%\Scripts\python.exe" goto :run_profile
-if exist "venv\Scripts\python.exe" goto :run_venv
-
-py -3.12 -c "import sys" >nul 2>&1
-if %errorlevel%==0 (set "PY=py -3.12" & goto :run_py)
-py -3.11 -c "import sys" >nul 2>&1
-if %errorlevel%==0 (set "PY=py -3.11" & goto :run_py)
-py -3.10 -c "import sys" >nul 2>&1
-if %errorlevel%==0 (set "PY=py -3.10" & goto :run_py)
-
-python -c "import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] < (3,13) else 1)" >nul 2>&1
-if %errorlevel%==0 (set "PY=python" & goto :run_py)
-
-where uv >nul 2>&1
-if not errorlevel 1 goto :run_uv
-
+set "PY="
+if defined YPUDDIN_BOOTSTRAP_VENV if exist "%YPUDDIN_BOOTSTRAP_VENV%\Scripts\python.exe" set "PY="%YPUDDIN_BOOTSTRAP_VENV%\Scripts\python.exe""
+if not defined PY if exist "venv\Scripts\python.exe" set "PY="venv\Scripts\python.exe""
+for %%V in (3.12 3.11 3.10) do if not defined PY py -%%V -c "import sys" >nul 2>&1 && set "PY=py -%%V"
+if not defined PY python -c "import sys; sys.exit(0 if (3,10) <= sys.version_info[:2] < (3,13) else 1)" >nul 2>&1 && set "PY=python"
+if not defined PY where uv >nul 2>&1 && goto :uv
+if defined PY goto :run
 echo [studio] ERROR: Python 3.10 - 3.12 not found. Install it from https://www.python.org (tick "Add python.exe to PATH") and run this again.
 goto :fail
-
-:run_profile
-"%YPUDDIN_BOOTSTRAP_VENV%\Scripts\python.exe" scripts\bootstrap.py %*
-goto :done
-
-:run_venv
-"venv\Scripts\python.exe" scripts\bootstrap.py %*
-goto :done
-
-:run_py
-%PY% scripts\bootstrap.py %*
-goto :done
-
-:run_uv
+:uv
 echo [studio] No Python 3.10 - 3.12 found; installing Python 3.12 via uv ...
-uv python install 3.12
-if errorlevel 1 goto :fail
-for /f "delims=" %%P in ('uv python find 3.12') do "%%P" scripts\bootstrap.py %*
-goto :done
-
+uv python install 3.12 || goto :fail
+for /f "delims=" %%P in ('uv python find 3.12') do set "PY="%%P""
+if defined PY goto :run
 :fail
-set "RC=1"
-goto :pause
-
-:done
-set "RC=%errorlevel%"
-
-:pause
-if not "%RC%"=="0" (
-  echo [studio] Exited with code %RC% - scroll up for the reason.
-  pause
-)
-endlocal & exit /b %RC%
+echo [studio] Exited with code 1 - scroll up for the reason.
+pause
+endlocal & exit /b 1
+REM Launchers from before this layout resume below once the trainer exits.
+                                                                                                                                                                                                                                                                                                                                                                                                                                                  (if not errorlevel 1 if errorlevel 0 exit /b 0) & call echo [studio] Exited with code %%errorlevel%% - scroll up for the reason.& pause & exit /b 1
+:run
+%PY% scripts\bootstrap.py %* & (if not errorlevel 1 if errorlevel 0 exit /b 0) & call echo [studio] Exited with code %%errorlevel%% - scroll up for the reason.& pause & exit /b 1

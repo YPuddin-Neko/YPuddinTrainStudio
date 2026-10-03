@@ -64,7 +64,7 @@ DTK 启动入口还会在项目环境中补齐 `setuptools>=69`，满足镜像�
 
 其他训练依赖从所选 Python 包源获取。启动器保留厂商 Torch、TorchVision、Triton 的版本约束，依赖冲突时停止安装。FlashAttention、xFormers 通过运行环境页安装，不因文件出现在 wheel 目录中而自动启用。
 
-已有环境继续使用原启动入口和同一 DTK 路径。`--reinstall` 会删除并重建当前 DTK 基础环境，使用已装 PyTorch 的环境仍从原来的 Python 重建；准备其他版本时应使用独立环境目录。
+已有环境继续使用原启动入口和同一 DTK 路径；网页更新同样沿用该环境及其厂商 PyTorch。`--reinstall` 会删除并重建当前 DTK 基础环境，使用已装 PyTorch 的环境仍从原来的 Python 重建；准备其他版本时应使用独立环境目录。
 
 ### 旧启动脚本的依赖报错
 

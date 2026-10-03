@@ -1,8 +1,9 @@
 """Prepare an in-place source update without replacing the selected compute runtime.
 
-The launcher copies this helper before replacing source files and runs its ``build``
-and ``deps`` commands in separate processes. Source rollback belongs to the launcher;
-Python package installation is not transactional.
+The launcher copies this helper before replacing source files and runs its commands in
+separate processes: ``build`` and ``deps`` prepare the frontend and the Python packages,
+``apply`` replaces the source files and ``recover`` finishes or undoes an apply that
+stopped part-way. Python package installation is not transactional.
 """
 
 from __future__ import annotations
@@ -13,21 +14,27 @@ import json
 import os
 import platform
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
+PROFILES = {"legacy", "windows-cuda", "linux-cuda", "linux-dtk", "macos-mps", "windows-cpu", "linux-cpu", "macos-cpu"}
 _HELPER_FILES = (
     "scripts/update_prepare.py",
     "scripts/bootstrap.py",
     "ypuddin/__init__.py",
     "ypuddin/dtk_builds.py",
     "ypuddin/package_sources.py",
+    "ypuddin/server/source_update.py",
 )
+LOCK_WAIT = 1800
 
 
 class PreparationError(RuntimeError):
@@ -74,6 +81,7 @@ def prepare_frontend(staged_root: str | Path, settings: dict[str, Any], work_dir
     """Validate a complete prebuild or build inside the staged source tree."""
     Path(work_dir).mkdir(parents=True, exist_ok=True)
     boot = _bootstrap(staged_root, settings)
+    boot.FRONTEND_PURPOSE = "update"
     if not (boot.FRONTEND / "package.json").is_file():
         raise PreparationError("更新源码缺少前端 package.json。")
     boot.build_frontend()
@@ -106,6 +114,12 @@ print(json.dumps({
 
 
 def _install_options(boot: ModuleType, project: dict, runtime: dict) -> tuple[str, str]:
+    """Extras and PyTorch tag for the existing environment; sets ``boot.PROFILE``.
+
+    The environment keeps the profile its install record names, then the one its location
+    names; only an environment with neither is classified by its PyTorch build. The launcher
+    refuses an environment recorded under another profile.
+    """
     try:
         saved = json.loads(boot.MARKER.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -113,27 +127,29 @@ def _install_options(boot: ModuleType, project: dict, runtime: dict) -> tuple[st
     if not isinstance(saved, dict):
         saved = {}
     if runtime.get("hip"):
-        boot.PROFILE = "linux-dtk"
-        tag = "dtk"
+        guessed, tag = "linux-dtk", "dtk"
     elif runtime.get("cuda"):
-        boot.PROFILE = "windows-cuda" if os.name == "nt" else "linux-cuda"
+        guessed = "windows-cuda" if os.name == "nt" else "linux-cuda"
         tag = "cu" + runtime["cuda"].replace(".", "")
     else:
-        boot.PROFILE = (
+        guessed = (
             "macos-mps"
             if platform.system() == "Darwin"
             else ("windows-cpu" if os.name == "nt" else "linux-cpu")
         )
         tag = "cpu"
-    # Legacy environments keep their cache/marker identity; HIP constraints still apply.
-    if saved.get("profile") == "legacy" and not runtime.get("hip"):
-        boot.PROFILE = "legacy"
+    venv = boot.VENV
+    location = venv.parent.name if venv.name == "venv" and venv.parent.parent.name == "environment" else None
+    recorded = saved.get("profile")
+    boot.PROFILE = recorded if recorded in PROFILES else location if location in PROFILES else guessed
     declared = set(project["extras"])
     extras = [name for name in boot.EXTRAS_BASE.split(",") if name in declared]
     previous = saved.get("extras", "")
     if isinstance(previous, str):
         extras += [name for name in previous.split(",") if name in declared and name not in extras]
-    for name, enabled in (("dtk", bool(runtime.get("hip"))), ("nvidia", bool(runtime.get("cuda")))):
+    hip = bool(runtime.get("hip")) and boot.PROFILE in ("linux-dtk", "legacy")
+    cuda = bool(runtime.get("cuda")) and not boot.PROFILE.endswith("-cpu")
+    for name, enabled in (("dtk", hip), ("nvidia", cuda)):
         if enabled and name in declared and name not in extras:
             extras.append(name)
     return ",".join(extras), tag
@@ -214,6 +230,11 @@ def install_dependencies(
         raise PreparationError("当前环境缺少 " + " / ".join(missing) + "，请先修复运行环境。")
     runtime = boot.torch_runtime()
     extras, tag = _install_options(boot, project, runtime)
+    recorded = boot.PROFILE
+    if runtime.get("hip") and recorded == "legacy":
+        # A legacy environment with vendor HIP PyTorch keeps its identity, but its
+        # dependencies follow the DTK rules.
+        boot.PROFILE = "linux-dtk"
     if boot.PROFILE == "linux-dtk":
         boot.validate_dtk_runtime(runtime)
     protected = boot.protected_versions(versions)
@@ -272,6 +293,7 @@ def install_dependencies(
     if not boot.editable_install_ready():
         raise PreparationError("更新后的训练器安装信息校验失败。")
     boot.cleanup_build_metadata()
+    boot.PROFILE = recorded
     # Use the target bootstrap's bytes for the next normal startup's signature.
     bootstrap_file = boot.ROOT / "scripts" / "bootstrap.py"
     if bootstrap_file.is_file():
@@ -293,14 +315,133 @@ def install_dependencies(
     boot.log("更新依赖检查完成")
 
 
+def _source_update() -> ModuleType:
+    """The update code saved with this helper, unaffected by the files it replaces."""
+    spec = importlib.util.spec_from_file_location(
+        "_ypuddin_update_source", SOURCE_ROOT / "ypuddin" / "server" / "source_update.py"
+    )
+    if spec is None or spec.loader is None:
+        raise PreparationError("无法加载更新安装脚本。")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _try_lock(stream) -> bool:
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
+def lock_update(work_dir: str | Path, *, wait: bool):
+    """Hold the update folder for one apply or recovery; the system releases it when the process ends.
+
+    Returns the open lock file, or None when another process holds it and ``wait`` is false.
+    """
+    stream = (Path(work_dir) / "apply.lock").open("a+b")
+    deadline = time.monotonic() + LOCK_WAIT
+    announced = False
+    while not _try_lock(stream):
+        if not wait or time.monotonic() > deadline:
+            stream.close()
+            return None
+        if not announced:
+            print("[studio] 等待上次的源码替换结束…", flush=True)
+            announced = True
+        time.sleep(0.5)
+    return stream
+
+
+def _print_progress(event: dict) -> None:
+    print(f"[studio] {event['message']}", flush=True)
+
+
+def apply_source(work_dir: str | Path) -> int:
+    """Replace the installed files. 0: applied; 2: not applied, previous files restored; 1: failed."""
+    work = Path(work_dir).absolute()
+    lock = lock_update(work, wait=False)
+    if lock is None:
+        print("[studio] 另一个进程正在安装此更新。", flush=True)
+        return 1
+    with lock:
+        source = _source_update()
+        try:
+            source.apply_update(work / "plan.json", progress_callback=_print_progress)
+        except source.SourceUpdateError as error:
+            print(f"[studio] {error.message}", flush=True)
+            return 2 if error.code == "apply_failed" else 1
+    return 0
+
+
+def recover_source(work_dir: str | Path) -> int:
+    """Finish or undo an apply that stopped part-way. 0: the installed files are consistent."""
+    work = Path(work_dir).absolute()
+    lock = lock_update(work, wait=True)
+    if lock is None:
+        print("[studio] 上次的源码替换仍未结束。", flush=True)
+        return 1
+    with lock:
+        source = _source_update()
+        try:
+            phase = source.recover_update(work / "plan.json", progress_callback=_print_progress)
+        except source.SourceUpdateError as error:
+            print(f"[studio] 无法完成或撤销上次中断的更新：{error.message}", flush=True)
+            return 1
+    print(f"[studio] 更新记录状态：{phase}", flush=True)
+    return 0
+
+
+def _stop_with_parent(pid: int) -> None:
+    """End this helper and the installers it started once the process waiting for it is gone."""
+
+    def watch() -> None:
+        if os.name == "nt":
+            import ctypes
+
+            kernel = ctypes.windll.kernel32
+            handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+            if handle:
+                kernel.WaitForSingleObject(handle, 0xFFFFFFFF)
+                kernel.CloseHandle(handle)
+            subprocess.run(["taskkill", "/PID", str(os.getpid()), "/T", "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            os._exit(1)
+        while os.getppid() == pid:
+            time.sleep(0.5)
+        if os.getpgrp() == os.getpid():  # the helper leads its own group: npm and pip go too
+            os.killpg(os.getpgrp(), signal.SIGKILL)
+        os._exit(1)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("build", "deps"))
-    parser.add_argument("--root", required=True, type=Path)
+    parser.add_argument("action", choices=("build", "deps", "apply", "recover"))
+    parser.add_argument("--root", type=Path)
     parser.add_argument("--work-dir", required=True, type=Path)
     parser.add_argument("--settings-file", type=Path)
     parser.add_argument("--python", default=sys.executable)
+    parser.add_argument("--parent-pid", type=int)
     args = parser.parse_args(argv)
+    if args.action == "apply":
+        return apply_source(args.work_dir)
+    if args.action == "recover":
+        return recover_source(args.work_dir)
+    if args.root is None:
+        parser.error("--root is required")
+    if args.parent_pid:
+        _stop_with_parent(args.parent_pid)
     try:
         settings = json.loads(args.settings_file.read_text(encoding="utf-8")) if args.settings_file else {}
         if not isinstance(settings, dict):

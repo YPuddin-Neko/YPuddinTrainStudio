@@ -26,6 +26,39 @@ from .network import ProxyPolicy
 from .torch_environments import ACTIVE, atomic_json, same_interpreter
 
 RESTART_TOKEN_ENV = "YPUDDIN_SERVICE_RESTART_TOKEN"
+DOWNLOADING = ("queued", "downloading", "verifying")
+# Task-center work a restart would cut off, by kind.
+BACKGROUND_REASONS = {
+    "dataset_upload": "data_operation_running",
+    "dataset_refresh": "data_operation_running",
+    "project_delete": "data_operation_running",
+    "environment": "extension_operation_running",
+}
+# Why a prepared trainer update did not restart the service.
+UPDATE_BLOCKED = {
+    "restart_in_progress": "服务正在重启",
+    "data_operation_running": "数据处理正在进行",
+    "training_or_data_worker_running": "训练或数据任务正在运行",
+    "extension_operation_running": "扩展安装正在进行",
+    "torch_operation_running": "PyTorch 环境正在安装",
+    "model_download_running": "模型正在下载",
+    "version_operation_running": "版本操作正在进行",
+}
+_UNREAD = object()
+
+
+def update_blocked_message(reason: str) -> str:
+    return f"{UPDATE_BLOCKED.get(reason, '有任务正在运行')}，未安装更新。请等待完成后重新更新。"
+
+
+def restart_blocked_message(reason: str) -> str:
+    if reason == "start_with_studio_launcher":
+        return "训练器不是由项目启动脚本启动的，无法在页面上重启。请用项目启动脚本启动训练器。"
+    if reason == "restart_in_progress":
+        return "训练器正在重启，请稍候。"
+    if reason == "update_in_progress":
+        return "训练器更新正在进行，暂时无法重启。"
+    return f"{UPDATE_BLOCKED.get(reason, '有任务正在运行')}，暂时无法重启。请等它结束后再试。"
 
 
 class RestartRequest(BaseModel):
@@ -99,12 +132,36 @@ class ServiceLifecycle:
         selected = self.torch.current_environment()
         self.context.db.set_kv(self.selected_key, {"id": selected})
 
-    def _blocked(self) -> str | None:
+    def background_reason(self) -> str | None:
+        """Work tracked outside the database that a restart would cut off.
+
+        Read it before taking the database lock: these services write to the database while
+        holding their own locks.
+        """
+        if self.model_downloads and any(d.get("status") in DOWNLOADING for d in self.model_downloads.list()):
+            return "model_download_running"
+        if self.vision_models:
+            with self.vision_models.lock:
+                if any(task.get("status") in DOWNLOADING for task in self.vision_models.tasks.values()):
+                    return "model_download_running"
+        tasks = getattr(self.context, "background_tasks", None)
+        for task in tasks.list() if tasks is not None else []:
+            if task.state == "running" and task.kind in BACKGROUND_REASONS:
+                return BACKGROUND_REASONS[task.kind]
+        return None
+
+    def _blocked(self, background=_UNREAD, *, updating: bool = False) -> str | None:
+        """Why a restart has to wait, or None.
+
+        ``background`` is ``background_reason()`` read before the caller took the database lock;
+        without it this must not be called while holding that lock. ``updating`` checks the
+        handoff of the update this service is preparing itself.
+        """
         if not self.shutdown or not self.restart_token:
             return "start_with_studio_launcher"
         if self.restarting:
             return "restart_in_progress"
-        if self.updating:
+        if self.updating and not updating:
             return "update_in_progress"
         if self.context._active_imports or self.context.db.fetchone(
             "SELECT id FROM datasets WHERE index_status='indexing' LIMIT 1"
@@ -116,14 +173,10 @@ class ServiceLifecycle:
             return "extension_operation_running"
         if any(op.status in ACTIVE for op in self.torch.list()):
             return "torch_operation_running"
-        if self.model_downloads and any(
-            d.get("status") in ("queued", "downloading", "verifying") for d in self.model_downloads.list()
-        ):
-            return "model_download_running"
-        if self.vision_models:
-            with self.vision_models.lock:
-                if any(task.get("status") in ("queued", "downloading", "verifying") for task in self.vision_models.tasks.values()):
-                    return "model_download_running"
+        if background is _UNREAD:
+            background = self.background_reason()
+        if background:
+            return background
         if self.context.db.fetchone(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='dataset_pipeline_operations'"
         ):
@@ -139,13 +192,14 @@ class ServiceLifecycle:
 
     def status(self):
         settings = self.context.settings()["server"]
+        reason = self._blocked()
         return ServiceRuntime(
             environment_profile=self.profile,
             worker_id=os.getpid(),
             instance_id=self.instance_id,
             managed=self.shutdown is not None and bool(self.restart_token),
-            can_restart=self._blocked() is None,
-            reason=self._blocked(),
+            can_restart=reason is None,
+            reason=reason,
             current_host=self.host,
             current_port=self.port,
             saved_host=settings["host"],
@@ -163,19 +217,20 @@ class ServiceLifecycle:
         )
 
     def restart(self, request: RestartRequest):
+        # Settings and other services' work are read first: their locks are never taken while
+        # holding the database lock.
+        background = self.background_reason()
+        settings = self.context.settings()["server"]
         with self.lock, self.environment.lock, self.torch.lock, self.context.db.lock:
-            reason = self._blocked()
+            reason = self._blocked(background)
             if reason:
-                raise EnvironmentError(409, reason)
+                raise EnvironmentError(409, restart_blocked_message(reason))
             if request.environment_id and request.restore_original_environment:
-                raise EnvironmentError(
-                    422, "Choose a prepared environment or restore the original one, not both"
-                )
+                raise EnvironmentError(422, "切换到准备好的环境和恢复原环境只能选择一项。")
             python = self.torch.resolve(request.environment_id) if request.environment_id else sys.executable
             environment_id = request.environment_id or self.torch.current_environment()
             if request.restore_original_environment:
                 python, environment_id = self.original_python, None
-            settings = self.context.settings()["server"]
             host = settings["host"] if request.apply_saved_address else self.host
             port = settings["port"] if request.apply_saved_address else self.port
             assert host is not None and port is not None and self.control_file and python
@@ -206,9 +261,14 @@ class ServiceLifecycle:
             timer.start()
             return result
 
-    def request_update(self, update_id: str):
+    def request_update(self, update_id: str, background=_UNREAD):
+        """Hand a prepared update to the launcher. Call while holding the database lock, with
+        ``background_reason()`` read before taking it: work that started while the update was
+        being prepared keeps the service running."""
         if not self.updating or not self.control_file or not self.restart_token or not self.shutdown:
-            raise EnvironmentError(409, "Update launcher is unavailable")
+            raise EnvironmentError(409, "训练器不是由项目启动脚本启动的，无法安装更新。")
+        if reason := self._blocked(background, updating=True):
+            raise EnvironmentError(409, update_blocked_message(reason))
         atomic_json(self.control_file, {
             "action": "update", "update_id": update_id, "python": sys.executable,
             "host": self.host, "port": self.port, "environment_id": self.torch.current_environment(),
@@ -240,9 +300,11 @@ def pending_data_root(root: Path) -> Path | None:
 def launch_service(data_root: str, host: str | None, port: int | None) -> int:
     from .trainer_install import (
         UPDATE_ID_ENV,
+        UpdateRecoveryFailed,
         WorkerStartupLog,
         apply_from_launcher,
         launcher_policy,
+        resume_from_launcher,
         rollback_from_launcher,
         wait_for_updated_worker,
     )
@@ -285,6 +347,14 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
     if threading.current_thread() is threading.main_thread():
         previous_sigterm = signal.signal(signal.SIGTERM, stop_owned_child)
     try:
+        # An update a closed window or a power loss interrupted is finished or undone first.
+        try:
+            pending_update = resume_from_launcher(root, python)
+        except UpdateRecoveryFailed as error:
+            print(f"[studio] {error}", flush=True)
+            return 1
+        except KeyboardInterrupt:
+            return 130
         while True:
             if terminated_signal is not None:
                 return 128 + terminated_signal
@@ -305,6 +375,9 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                 str(control),
                 "--original-python",
                 original_python,
+                # The worker stops itself once this launcher is gone.
+                "--launcher-pid",
+                str(os.getpid()),
             ]
             # Windows venv python.exe may redirect to a second Python process: its
             # Popen PID is then different from the HTTP worker's PID. Authenticate
@@ -408,7 +481,10 @@ def launch_service(data_root: str, host: str | None, port: int | None) -> int:
                 fallback = False
                 if request["action"] == "update":
                     pending_update = request.get("update_id")
-                    outcome = apply_from_launcher(root, pending_update, python)
+                    try:
+                        outcome = apply_from_launcher(root, pending_update, python)
+                    except KeyboardInterrupt:
+                        return 130
                     if outcome is None:
                         print("[studio] 更新恢复检查失败，已停止启动。请查看更新日志并重新运行启动脚本修复环境。", flush=True)
                         return 1

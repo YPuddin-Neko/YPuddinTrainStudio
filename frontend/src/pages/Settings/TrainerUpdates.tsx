@@ -10,6 +10,30 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import './trainer-updates.css';
 
 type UpdateTarget = { id: string; target_commit: string; before_instance_id: string };
+type Text = (zh: string, en: string) => string;
+const NODE_DOWNLOAD_URL = 'https://nodejs.org/en/download';
+const NODE_REASONS = new Set(['node_missing', 'node_unsupported']);
+/** Why an update cannot start now, as the update page states it. */
+function blockedReasonText(text: Text, reason: string): string {
+  const reasons: Record<string, string> = {
+    start_with_studio_launcher: text('请用项目启动脚本运行服务后更新。', 'Start the service with the project launcher to update.'),
+    restart_in_progress: text('服务正在重启。', 'The service is restarting.'),
+    training_or_data_worker_running: text('训练或数据任务运行中，完成后可更新。', 'Wait for training or data tasks to finish before updating.'),
+    extension_operation_running: text('等待扩展安装完成。', 'Wait for extension installation to finish.'),
+    torch_operation_running: text('等待 PyTorch 安装完成。', 'Wait for PyTorch installation to finish.'),
+    model_download_running: text('等待模型下载完成或取消下载。', 'Finish or cancel model downloads first.'),
+    data_operation_running: text('等待数据处理完成。', 'Wait for data processing to finish.'),
+    version_operation_running: text('等待版本操作完成。', 'Wait for the version operation to finish.'),
+    update_in_progress: text('更新正在进行。', 'An update is in progress.'),
+    update_unfinished: text('上次更新尚未完成。请关闭训练器，再用启动脚本重新启动，以完成或撤销这次更新。', 'The previous update did not finish. Close the trainer and start it again with the launcher to finish or undo it.'),
+    current_version_unknown: text('无法识别当前源码版本，请先更换为带版本记录的源码包。', 'The current source version is unknown. Use a source package with version information.'),
+    local_changes: text('当前源码有本地改动，请处理后再更新。', 'Resolve local source changes before updating.'),
+    version_changed: text('源码版本已变化，请重新检查更新。', 'The source version changed. Check for updates again.'),
+    node_missing: text('更新需要 Node.js 20.19+ 或 22.12+ 来构建新版界面。安装后关闭训练器，再用启动脚本重新启动。', 'Updating needs Node.js 20.19+ or 22.12+ to build the new interface. After installing it, close the trainer and start it again with the launcher.'),
+    node_unsupported: text('当前 Node.js 版本过旧，更新需要 20.19+ 或 22.12+。升级后关闭训练器，再用启动脚本重新启动。', 'This Node.js version is too old; updating needs 20.19+ or 22.12+. After upgrading, close the trainer and start it again with the launcher.'),
+  };
+  return reasons[reason] || text('当前无法更新，请稍后重试。', 'Updating is unavailable. Try again later.');
+}
 const PENDING_UPDATE_KEY = 'studio.trainer-update.pending';
 const RELOADED_UPDATE_KEY = 'studio.trainer-update.reloaded';
 function createUpdateRequestId(): string | null {
@@ -150,6 +174,7 @@ function useTrainerInstall(onReload: () => void) {
       if (failure instanceof ApiError && (failure.status < 500 || failure.code === 'updates.start_failed')) {
         expected.current = null; rememberPendingUpdate(null); setStartFailed(true); setReconnecting(false);
         const reason = failure.details?.reason;
+        if (failure.code === 'updates.blocked' && typeof reason === 'string') { setError(blockedReasonText(text, reason)); return; }
         const message = formatApiError(failure);
         setError(typeof reason === 'string' && reason.trim() && !message.includes(reason) ? `${message}\n${reason}` : message);
       } else {
@@ -255,21 +280,6 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
     succeeded: install.verified ? text('更新完成', 'Update complete') : text('正在确认新版本…', 'Verifying the new version…'),
     failed: text('更新失败', 'Update failed'),
   };
-  const blockedReasons: Record<string, string> = {
-    start_with_studio_launcher: text('请用项目启动脚本运行服务后更新。', 'Start the service with the project launcher to update.'),
-    restart_in_progress: text('服务正在重启。', 'The service is restarting.'),
-    training_or_data_worker_running: text('训练或数据任务运行中，完成后可更新。', 'Wait for training or data tasks to finish before updating.'),
-    extension_operation_running: text('等待扩展安装完成。', 'Wait for extension installation to finish.'),
-    torch_operation_running: text('等待 PyTorch 安装完成。', 'Wait for PyTorch installation to finish.'),
-    model_download_running: text('等待模型下载完成或取消下载。', 'Finish or cancel model downloads first.'),
-    data_operation_running: text('等待数据处理完成。', 'Wait for data processing to finish.'),
-    version_operation_running: text('等待版本操作完成。', 'Wait for the version operation to finish.'),
-    update_in_progress: text('更新正在进行。', 'An update is in progress.'),
-    current_version_unknown: text('无法识别当前源码版本，请先更换为带版本记录的源码包。', 'The current source version is unknown. Use a source package with version information.'),
-    local_changes: text('当前源码有本地改动，请处理后再更新。', 'Resolve local source changes before updating.'),
-    version_changed: text('源码版本已变化，请重新检查更新。', 'The source version changed. Check for updates again.'),
-    update_check_required: text('请先检查更新。', 'Check for updates first.'),
-  };
   const reason = install.status?.reason;
   const updateComplete = install.verified && op?.target_commit === latest?.commit;
   const mayUpdate = data?.state === 'available' && !!latest && !!install.status?.can_apply && !install.busy && !updateComplete && !install.loading && !install.watching && !install.error && !loading && !error;
@@ -328,7 +338,7 @@ export default function TrainerUpdates({ onReload = () => window.location.reload
           </button>
           {repositoryUrl && <a className="ui-btn" href={repositoryUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>{text('打开 GitHub', 'Open GitHub')}</a>}
         </div>}
-        {latest && reason && !install.busy && <p className="settings-note trainer-install-reason">{blockedReasons[reason] || text('当前无法更新，请稍后重试。', 'Updating is unavailable. Try again later.')}</p>}
+        {(latest || reason === 'update_unfinished') && reason && !install.busy && <p className="settings-note trainer-install-reason" data-reason={reason}>{blockedReasonText(text, reason)}{NODE_REASONS.has(reason) && <a className="ui-link trainer-node-download" href={NODE_DOWNLOAD_URL} target="_blank" rel="noreferrer">{text('下载 Node.js', 'Download Node.js')}<ExternalLink size={12} aria-hidden="true"/></a>}</p>}
         {installPanel}
       </>}
       {!data && installPanel}

@@ -237,7 +237,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         import uvicorn
 
         from ypuddin.server.app import create_app
-        from ypuddin.server.http_server import StudioServer
+        from ypuddin.server.http_server import StudioServer, watch_launcher
         from ypuddin.server.lifecycle import RESTART_TOKEN_ENV, launch_service
     except ImportError as e:
         print(f"server dependencies missing: {e}. Install with: pip install 'ypuddin[server]'")
@@ -252,6 +252,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
         event_bus=app.state.ctx.bus,
     )
     server.on_started = app.state.trainer_installer.ready
+    # A force-quit launcher must not leave this worker holding the port.
+    watch_launcher(getattr(args, "launcher_pid", None), lambda: setattr(server, "should_exit", True))
     if args.control_file and args.original_python:
         import os
 
@@ -367,6 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--service-worker", action="store_true", help=argparse.SUPPRESS)
     sv.add_argument("--control-file", help=argparse.SUPPRESS)
     sv.add_argument("--original-python", help=argparse.SUPPRESS)
+    sv.add_argument("--launcher-pid", type=int, help=argparse.SUPPRESS)
     sv.set_defaults(fn=cmd_serve)
     return p
 

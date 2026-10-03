@@ -60,6 +60,8 @@ from ypuddin.package_sources import (  # noqa: E402
 
 DOWNLOAD_SETTINGS = None
 PACKAGE_CACHE_ROOT = None
+# "update" while a trainer update builds the interface of the version it is about to install.
+FRONTEND_PURPOSE = "start"
 VENV = ROOT / "venv"
 FRONTEND = ROOT / "frontend"
 MARKER = VENV / ".ypuddin-install.json"
@@ -1583,13 +1585,14 @@ def ensure_frontend_dependencies(node: str, npm: str, runtime: list[str]) -> Non
 
 
 def frontend_error(reason: str, *, install: bool = False) -> NoReturn:
+    update = FRONTEND_PURPOSE == "update"
     if install:
         die(
             f"{reason}\n[studio] 下载地址：https://nodejs.org/en/download"
-            "\n[studio] 前端环境检查失败，启动脚本已退出。"
+            + ("\n[studio] 本次更新未安装，训练器继续运行。" if update else "\n[studio] 前端环境检查失败，启动脚本已退出。")
         )
     headline, *details = reason.splitlines()
-    die("\n".join([f"{headline.rstrip('。')}，已停止启动。", *details]))
+    die("\n".join([f"{headline.rstrip('。')}，" + ("本次更新未安装。" if update else "已停止启动。"), *details]))
 
 
 def frontend_command_error(
@@ -1613,7 +1616,8 @@ def prepare_frontend() -> str:
     node = shutil.which("node")
     if not node or not npm:
         frontend_error(
-            "前端环境检查失败 需要安装 Node.js 20.19+（20.x）、22.12+（22.x）或更新版本。",
+            ("构建新版界面" if FRONTEND_PURPOSE == "update" else "前端环境检查失败 ")
+            + "需要安装 Node.js 20.19+（20.x）、22.12+（22.x）或更新版本。",
             install=True,
         )
     try:
@@ -1677,6 +1681,96 @@ def configured_data_root(data_root: str) -> str:
     except (OSError, ValueError, TypeError):
         value = None
     return str(Path(value).expanduser()) if isinstance(value, str) and value.strip() else data_root
+
+
+# --------------------------------------------------------------------------- interrupted updates
+def interrupted_update(data_root: str) -> Path | None:
+    """The folder of a trainer update that stopped while replacing the source files."""
+    root = Path(data_root).expanduser()
+    if not root.is_absolute():
+        root = ROOT / root
+    environment = root / "environment"
+    folder = (environment if PROFILE == "legacy" else environment / PROFILE) / "service" / "trainer-updates"
+    try:
+        identifier = json.loads((folder / "latest.json").read_text(encoding="utf-8"))["id"]
+        if not isinstance(identifier, str) or not re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", identifier):
+            return None
+        work = folder / identifier
+        phase = json.loads((work / "plan.json").read_text(encoding="utf-8")).get("phase")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    return work if phase in ("applying", "rolling_back") else None
+
+
+def update_helper(work: Path) -> Path | None:
+    """The update helper that can finish or undo it: the one saved with the update, or for an
+    update prepared by a release without that step, the verified copy among its staged files."""
+    saved = work / "helper" / "scripts" / "update_prepare.py"
+    try:
+        if '"recover"' in saved.read_text(encoding="utf-8"):
+            return saved
+        plan = json.loads((work / "plan.json").read_text(encoding="utf-8"))
+        staged = Path(plan["staged_root"])
+        for name in ("scripts/update_prepare.py", "ypuddin/server/source_update.py"):
+            if file_sha256(staged / name) != plan["after"].get(name):
+                return None
+        return staged / "scripts" / "update_prepare.py"
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def run_detached(command: list[str], output_path: Path) -> int:
+    """Run a step that must finish even if this window closes, showing its output here meanwhile."""
+    if WIN:
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        # Breaking away from the console's job fails where the job forbids it.
+        options = [{"creationflags": flags | subprocess.CREATE_BREAKAWAY_FROM_JOB}, {"creationflags": flags}]
+    else:
+        options = [{"start_new_session": True}]
+    env = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1")
+    with output_path.open("ab") as output:
+        start = output.tell()
+        for index, extra in enumerate(options):
+            try:
+                process = subprocess.Popen(command, cwd=output_path.parent, env=env, stdin=subprocess.DEVNULL,
+                                           stdout=output, stderr=subprocess.STDOUT, **extra)
+                break
+            except OSError:
+                if index + 1 == len(options):
+                    raise
+    pending = b""
+    with output_path.open("rb") as stream:
+        stream.seek(start)
+        while True:
+            chunk = stream.read(64 * 1024)
+            finished = not chunk and process.poll() is not None
+            if finished:
+                chunk = stream.read()
+            *lines, pending = (pending + chunk).split(b"\n")
+            if finished:
+                lines.append(pending)
+            for line in lines:
+                if line.strip():
+                    print(line.decode("utf-8", errors="replace").rstrip(), flush=True)
+            if finished:
+                return process.returncode
+            if not chunk:
+                time.sleep(0.2)
+
+
+def finish_interrupted_update(data_root: str) -> None:
+    """Finish or undo a trainer update a closed window or a power loss interrupted, before
+    anything uses the half-replaced files."""
+    work = interrupted_update(data_root)
+    if work is None:
+        return
+    log("上次的训练器更新在替换源码时中断，正在完成或撤销")
+    helper = update_helper(work)
+    if helper is not None:
+        command = [sys.executable, str(helper), "recover", "--work-dir", str(work)]
+        if run_detached(command, work / "recover.log") == 0 and interrupted_update(data_root) is None:
+            return
+    die(f"无法完成或撤销上次中断的训练器更新。请查看上方原因，备份与更新日志保存在 {work}；处理后重新运行启动脚本。")
 
 
 # --------------------------------------------------------------------------- service
@@ -1914,6 +2008,9 @@ def main(argv: list[str]) -> int:
         select_environment(opts["profile"], torch_tag, env_root=env_root)
     else:
         select_environment(opts["profile"], torch_tag)
+    if command not in {"doctor", "shell"}:
+        for data_root in dict.fromkeys((opts["data_root"], configured_data_root(opts["data_root"]))):
+            finish_interrupted_update(data_root)
     saved_settings = choose_download_sources(
         settings_file, saved_settings, command=command, explicit=explicit_index
     )

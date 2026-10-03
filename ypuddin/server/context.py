@@ -63,7 +63,9 @@ class ServiceContext:
     versions: Any = field(default=None, init=False, repr=False)
     import_progress: ImportProgressStore = field(default_factory=ImportProgressStore, init=False, repr=False)
     upload_sessions: Any = field(default=None, init=False, repr=False)
+    background_tasks: Any = field(default=None, init=False, repr=False)
     _active_imports: int = field(default=0, init=False, repr=False)
+    _onboarding_completed: bool = field(default=False, init=False, repr=False)
 
     @contextmanager
     def import_admission(self):
@@ -94,6 +96,45 @@ class ServiceContext:
         self.thumbnails = ThumbnailCache(self)
         self.versions = VersionManager(self)
         self.upload_sessions = UploadSessionStore(self.data_root / ".upload-sessions", self.import_progress)
+        self._onboarding_completed = self._decide_onboarding()
+
+    def _decide_onboarding(self) -> bool:
+        """New installs start with onboarding; installs with earlier work skip it.
+
+        Decided once at startup and saved, so reading settings never waits for the database:
+        callers read settings while holding the database lock.
+        """
+        try:
+            saved = json.loads(self.settings_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            saved = {}
+        except (OSError, ValueError):
+            saved = None
+        ui = saved.get("ui") if isinstance(saved, dict) else None
+        if isinstance(ui, dict) and "onboarding_completed" in ui:
+            return bool(ui["onboarding_completed"])
+        existing = self.db.fetchone(
+            "SELECT EXISTS(SELECT 1 FROM projects) OR EXISTS(SELECT 1 FROM jobs) AS established"
+        )
+        completed = bool(ui) or bool(existing["established"])
+        if isinstance(saved, dict) and (ui is None or isinstance(ui, dict)):
+            stored = {**saved, "ui": {**(ui or {}), "onboarding_completed": completed}}
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", dir=self.data_root, suffix=".tmp", delete=False, encoding="utf-8"
+                ) as f:
+                    temporary = Path(f.name)
+                    try:
+                        f.write(json.dumps(stored, indent=2, ensure_ascii=False))
+                        f.flush()
+                        os.fsync(f.fileno())
+                        f.close()
+                        temporary.replace(self.settings_path)
+                    finally:
+                        temporary.unlink(missing_ok=True)
+            except OSError:
+                pass  # The decision still holds for this run and is saved with the next settings change.
+        return completed
 
     @property
     def settings_path(self) -> Path:
@@ -130,10 +171,7 @@ class ServiceContext:
                 else:
                     base[k] = v
         if "onboarding_completed" not in saved.get("ui", {}):
-            existing = self.db.fetchone(
-                "SELECT EXISTS(SELECT 1 FROM projects) OR EXISTS(SELECT 1 FROM jobs) AS established"
-            )
-            base["ui"]["onboarding_completed"] = bool(saved.get("ui")) or bool(existing["established"])
+            base["ui"]["onboarding_completed"] = self._onboarding_completed
         if "output_mode" not in base["paths"]:
             base["paths"]["output_mode"] = (
                 "project"
