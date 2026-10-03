@@ -1,16 +1,16 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import DatasetLink from './DatasetLink';
 import { AlertCircle, ArrowUpRight, Folder, Images, Loader2, RefreshCw } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { DatasetInfo, DatasetImagesPage, DatasetSource } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import { useEventStream } from '../../events/useEventStream';
-import { EVENT_TYPES } from '../../events/eventTypes';
+import { formatApiError } from '../../utils/errors';
 import './project-dataset-cards.css';
 import { LazyImage } from '../Loading';
 
 export type WorkspaceDataset = { source: DatasetSource; stats?: DatasetInfo['stats']; index_status?: string };
-interface Props { datasets: WorkspaceDataset[]; projectId: string; versionId?: string; onRefresh: () => void }
+interface Props { datasets: WorkspaceDataset[]; projectId: string; versionId?: string; onRefresh: () => void | boolean | Promise<void | boolean>; refreshing?: boolean }
 
 function DatasetCard({ dataset, projectId, versionId }: Omit<Props, 'datasets' | 'onRefresh'> & { dataset: WorkspaceDataset }) {
   const text = useWorkspaceText();
@@ -39,15 +39,21 @@ function DatasetCard({ dataset, projectId, versionId }: Omit<Props, 'datasets' |
   </DatasetLink></li>;
 }
 
-export default function ProjectDatasetCards({ datasets, projectId, versionId, onRefresh }: Props) {
+export default function ProjectDatasetCards({ datasets, projectId, versionId, onRefresh, refreshing = false }: Props) {
   const text = useWorkspaceText();
-  const client = useQueryClient();
-  useEventStream(EVENT_TYPES.DATASET_CHANGED, (event: { dataset_id?: string }) => {
-    if (datasets.some(item => item.source.id === event.dataset_id)) void client.invalidateQueries({ queryKey: ['dataset-card-preview', event.dataset_id] });
-  });
-  const refresh = () => { onRefresh(); for (const dataset of datasets) void client.invalidateQueries({ queryKey: ['dataset-card-preview', dataset.source.id] }); };
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  const refresh = async () => {
+    if (pending || refreshing) return;
+    setPending(true); setError('');
+    try { await onRefresh(); }
+    catch (error) { setError(formatApiError(error)); }
+    finally { setPending(false); }
+  };
+  const busy = pending || refreshing;
   return <section className="project-dataset-library" id="version-datasets" aria-label={text('本版本的数据集', 'Version datasets')}>
-    <div className="project-dataset-library-heading"><div><h2>{text('本版本的数据集', 'Version datasets')}</h2><span>{text(`${datasets.length} 个目录`, `${datasets.length} folders`)}</span></div><button type="button" className="ui-btn" onClick={refresh} aria-label={text('刷新索引状态', 'Refresh index status')}><RefreshCw size={16}/>{text('刷新', 'Refresh')}</button></div>
+    <div className="project-dataset-library-heading"><div><h2>{text('本版本的数据集', 'Version datasets')}</h2><span>{text(`${datasets.length} 个目录`, `${datasets.length} folders`)}</span></div><button type="button" className="ui-btn" onClick={() => void refresh()} disabled={busy} aria-busy={busy} aria-label={text('刷新索引状态', 'Refresh index status')}><RefreshCw size={16} className={busy ? 'animate-spin' : undefined}/>{text('刷新', 'Refresh')}</button></div>
+    {error && <p role="alert" className="project-dataset-card-error">{error}</p>}
     {!datasets.length ? <div className="project-dataset-library-empty" data-testid="datasets-empty"><Folder size={28} aria-hidden="true"/><strong>{text('还没有训练图片', 'No training images yet')}</strong></div> : <ul className="project-dataset-card-grid">{datasets.map(dataset => <DatasetCard key={dataset.source.id} dataset={dataset} projectId={projectId} versionId={versionId}/>)}</ul>}
   </section>;
 }

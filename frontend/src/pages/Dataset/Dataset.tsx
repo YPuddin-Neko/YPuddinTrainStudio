@@ -114,17 +114,29 @@ export function DatasetWorkspace({id}: {id?:string}) {
   const changedFields = captionFieldChanges(activeStructure, captionFields);
   const captionDirty = editCaption !== captionBase || changedFields.length > 0;
   const captionLocked = !canEdit || savingCaption || !!activeImg?.caption_error || activeJson && !activeStructure?.editable;
+  const refreshImages = React.useRef(images.refresh);
+  React.useEffect(() => { refreshImages.current = images.refresh; }, [images.refresh]);
+  const infoRequest = React.useRef<Promise<void> | null>(null);
   const fetchInfo = React.useCallback(() => {
-    if (!id) return;
-    apiClient.get<DatasetInfo>(`/datasets/${id}`, {silent:true,params:{include_cache:false}}).then((data) => {
+    if (!id) return Promise.resolve();
+    if (infoRequest.current) return infoRequest.current;
+    const request = apiClient.get<DatasetInfo>(`/datasets/${id}`, {silent:true,params:{include_cache:false}}).then((data) => {
       setInfo(data); setInfoError('');
       if (data.index_status !== 'indexing') setIndexProgress(null);
+      // The metadata request may rebuild the index after images loaded in parallel.
+      if (data.index_status === 'ready') refreshImages.current();
     }).catch(error => {setInfoError(formatApiError(error));setProjectContext(null);});
+    infoRequest.current = request;
+    void request.then(() => { if (infoRequest.current === request) infoRequest.current = null; });
+    return request;
   }, [id]);
 
+  React.useEffect(() => { void fetchInfo(); }, [fetchInfo]);
   React.useEffect(() => {
-    fetchInfo();
-  }, [fetchInfo]);
+    if (info?.index_status !== 'indexing') return;
+    const timer = window.setInterval(() => { void fetchInfo(); }, 2000);
+    return () => window.clearInterval(timer);
+  }, [info?.index_status, fetchInfo]);
   const refreshProjectContext = React.useCallback(async () => {
     const source=info?.source;
     if (!source?.project_id || infoError) return;
@@ -146,8 +158,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
   // 索引完成 / caption 修改 / rescan 完成 → 重新拉取数据集信息
   useEventStream(EVENT_TYPES.DATASET_CHANGED, (data: any) => {
     if (data.dataset_id === id) {
-      fetchInfo();
-      images.refresh();
+      void fetchInfo();
     }
   });
 
@@ -316,7 +327,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
       </div>
       {showAddImages && (canEdit || addingImages) && info?.source.can_append && info.source.project_id && <ProjectDataImport
         projectId={info.source.project_id} versionId={info.source.version_id || undefined} targetDataset={info}
-        onBusyChange={setAddingImages} onImported={()=>{fetchInfo();images.refresh();void queryClient.invalidateQueries({queryKey:['caption-datasets']});}}/>}
+        onBusyChange={setAddingImages} onImported={()=>{void fetchInfo();void queryClient.invalidateQueries({queryKey:['caption-datasets']});}}/>}
       <div className="dataset-library-meta">
         <span className={`dataset-index-state status-${info?.index_status || 'unknown'}`}>{statusLabel(info?.index_status)}</span>
         {stats && <span>{text(`共 ${formatParams(stats.images)} 张 · 已有标签 ${formatParams(stats.captioned ?? 0)} 张 · 遮罩 ${formatParams(stats.masks ?? 0)} 张`, `${formatParams(stats.images)} images · ${formatParams(stats.captioned ?? 0)} captioned · ${formatParams(stats.masks ?? 0)} masks`)}</span>}
@@ -345,7 +356,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
         <DatasetImagePane datasetId={id} images={images} training all count={stats?.images} canEdit={canEdit} busy={!!busyAction} minWidth={thumbnailWidth} onMove={() => {}} onOpen={openEditor}/>
       </div>
 
-      {canEdit && maskImage && id && <MaskEditor datasetId={id} imageId={maskImage.hash} relPath={maskImage.relPath} onClose={() => setMaskImage(null)} onSaved={() => { fetchInfo(); images.refresh(); }} onEnableTraining={enableMaskedTraining} />}
+      {canEdit && maskImage && id && <MaskEditor datasetId={id} imageId={maskImage.hash} relPath={maskImage.relPath} onClose={() => setMaskImage(null)} onSaved={() => { void fetchInfo(); }} onEnableTraining={enableMaskedTraining} />}
 
       {/* 大图 + caption 编辑 */}
       {activeImage && (

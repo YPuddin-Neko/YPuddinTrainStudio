@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import json
 import math
@@ -986,6 +987,48 @@ def _records_path(c: ServiceContext, did: str) -> Path:
     return c.data_root / "datasets" / f"{did}.json"
 
 
+def _dataset_signature(row: dict[str, Any]) -> str:
+    from ypuddin.data.index import caption_for, iter_images, mask_for
+
+    digest = hashlib.blake2b(digest_size=20)
+    digest.update(json.dumps((1, row["path"], row["caption_ext"])).encode())
+    captions = {}
+    try:
+        for image in iter_images(row["path"]):
+            for path in (image, caption_for(image, row["caption_ext"], directory_cache=captions), mask_for(image)):
+                if path is not None:
+                    stat = Path(path).stat()
+                    digest.update(
+                        json.dumps((str(path), stat.st_size, stat.st_mtime_ns,
+                                    stat.st_ctime_ns, stat.st_ino, stat.st_dev)).encode()
+                    )
+    except OSError as exc:
+        # Keep unavailable sources stable between reads and retry when their files return.
+        digest.update(json.dumps((type(exc).__name__, exc.errno, exc.filename)).encode())
+    return digest.hexdigest()
+
+
+def _refresh_dataset(c: ServiceContext, row: dict[str, Any]) -> dict[str, Any]:
+    if row["index_status"] == "indexing":
+        return row
+    signature = _dataset_signature(row)
+    with c.db.lock:
+        current = _get_dataset(c, row["id"])
+        if current["index_status"] == "indexing" or any(
+            current[key] != row[key] for key in ("path", "caption_ext")
+        ):
+            return current
+        stats = json.loads(current["stats_json"] or "{}")
+        if stats.get("_source_signature") == signature and (
+            current["index_status"] == "failed"
+            or (current["index_status"] == "ready" and _records_path(c, row["id"]).is_file())
+        ):
+            return current
+        c.db.update("datasets", row["id"], {"index_status": "indexing"})
+    _index_dataset(c, row["id"])
+    return _get_dataset(c, row["id"])
+
+
 def _index_dataset(c: ServiceContext, did: str) -> None:
     row = c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
     if not row:
@@ -998,6 +1041,8 @@ def _index_dataset(c: ServiceContext, did: str) -> None:
         prior_weight=row["prior_weight"],
         class_prompt=row["class_prompt"],
     )
+    signature = _dataset_signature(row)
+    temporary = None
     try:
         db = IndexDB(c.service_cache_dir("index") / "index.sqlite")
         try:
@@ -1010,32 +1055,48 @@ def _index_dataset(c: ServiceContext, did: str) -> None:
             )
         finally:
             db.close()
+        res: dict[tuple[int, int], int] = {}
+        ars: dict[str, int] = {}
+        for r in records:
+            res[(r.width, r.height)] = res.get((r.width, r.height), 0) + 1
+            ar = round(r.width / r.height, 1)
+            ars[str(ar)] = ars.get(str(ar), 0) + 1
+        stats = {
+            "images": len(records),
+            "captioned": sum(1 for r in records if r.caption_path),
+            "resolutions": [
+                {"w": w, "h": h, "count": n} for (w, h), n in sorted(res.items(), key=lambda x: -x[1])[:50]
+            ],
+            "ar_hist": [{"ar": k, "count": v} for k, v in sorted(ars.items(), key=lambda x: float(x[0]))],
+            "masks": sum(1 for r in records if r.mask_path),
+            # The pre-scan signature leaves concurrent filesystem changes detectable on the next read.
+            "_source_signature": signature,
+        }
+        path = _records_path(c, did)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump([r.to_dict() for r in records], stream)
+        with c.db.lock:
+            current = c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
+            if current is None or any(current[key] != row[key] for key in ("path", "caption_ext")):
+                return
+            temporary.replace(path)
+            c.db.update("datasets", did, {"index_status": "ready", "stats_json": json.dumps(stats)})
     except Exception as e:  # noqa: BLE001
-        c.db.update("datasets", did, {"index_status": "failed", "stats_json": json.dumps({"error": str(e)})})
-        c.bus.publish("dataset.changed", {"dataset_id": did})
-        return
-    res: dict[tuple[int, int], int] = {}
-    ars: dict[str, int] = {}
-    for r in records:
-        res[(r.width, r.height)] = res.get((r.width, r.height), 0) + 1
-        ar = round(r.width / r.height, 1)
-        ars[str(ar)] = ars.get(str(ar), 0) + 1
-    stats = {
-        "images": len(records),
-        "captioned": sum(1 for r in records if r.caption_path),
-        "resolutions": [
-            {"w": w, "h": h, "count": n} for (w, h), n in sorted(res.items(), key=lambda x: -x[1])[:50]
-        ],
-        "ar_hist": [{"ar": k, "count": v} for k, v in sorted(ars.items(), key=lambda x: float(x[0]))],
-        "masks": sum(1 for r in records if r.mask_path),
-    }
-    with c.db.lock:
-        if not c.db.fetchone("SELECT id FROM datasets WHERE id=?", (did,)):
-            return  # A source removed during indexing must not recreate its index file.
-        _records_path(c, did).parent.mkdir(parents=True, exist_ok=True)
-        _records_path(c, did).write_text(json.dumps([r.to_dict() for r in records]), encoding="utf-8")
-        c.db.update("datasets", did, {"index_status": "ready", "stats_json": json.dumps(stats)})
-    c.bus.publish("dataset.changed", {"dataset_id": did})
+        with c.db.lock:
+            current = c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
+            if current is None or any(current[key] != row[key] for key in ("path", "caption_ext")):
+                return
+            stats = json.loads(current["stats_json"] or "{}")
+            stats.update(error=str(e), _source_signature=signature)
+            c.db.update("datasets", did, {"index_status": "failed", "stats_json": json.dumps(stats)})
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    c.bus.publish("dataset.changed", {
+        "dataset_id": did, "project_id": row["project_id"], "version_id": row.get("version_id"),
+    })
 
 
 def _dataset_row(c: ServiceContext, r: dict[str, Any], *, include_cache: bool = True) -> dict[str, Any]:
@@ -1044,6 +1105,7 @@ def _dataset_row(c: ServiceContext, r: dict[str, Any], *, include_cache: bool = 
     states = source_states(c, r)
     exact = next((state[3] for state in states if state[0] == Path(r["path"]).resolve()), None)
     stats = json.loads(r["stats_json"] or "{}")
+    stats.pop("_source_signature", None)
     if r["index_status"] == "ready":
         records = _records(c, r["id"])
         stats["training_images"] = sum(included(record["path"], states) for record in records)
@@ -1168,7 +1230,7 @@ def list_datasets(
 ) -> list[dict[str, Any]]:
     version = c.resolve_version(pid, version_id)
     return [
-        _dataset_row(c, r, include_cache=include_cache)
+        _dataset_row(c, _refresh_dataset(c, r), include_cache=include_cache)
         for r in c.db.fetchall(
             "SELECT * FROM datasets WHERE version_id=? ORDER BY created_at", (version["id"],)
         )
@@ -1393,7 +1455,7 @@ async def append_dataset_images(
 
 @router.get("/datasets/{did}", response_model=m.DatasetInfo, response_model_exclude_unset=True)
 def get_dataset(did: str, c: ServiceContext = Depends(ctx), include_cache: bool = True) -> dict[str, Any]:
-    return _dataset_row(c, _get_dataset(c, did), include_cache=include_cache)
+    return _dataset_row(c, _refresh_dataset(c, _get_dataset(c, did)), include_cache=include_cache)
 
 
 @router.post("/datasets/{did}/rescan", response_model=m.Ok, response_model_exclude_unset=True)

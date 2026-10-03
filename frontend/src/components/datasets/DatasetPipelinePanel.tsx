@@ -86,9 +86,10 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
     if (previousActive.current && previousActive.current !== activeId) {
       void client.invalidateQueries({ queryKey: ['caption-images', projectId, versionId] });
       void client.invalidateQueries({ queryKey: ['caption-datasets', projectId, versionId] });
+      onChanged();
     }
     previousActive.current = activeId;
-  }, [activeId, client, projectId, versionId]);
+  }, [activeId, client, projectId, versionId, onChanged]);
   const locked = readOnly || !!snapshot?.archived || !!snapshot?.busy || !!active || submitting;
   // The newest operation, when it failed, is reported once until dismissed or replaced.
   const failed = snapshot?.operations[0]?.status === 'failed' && snapshot.operations[0].id !== dismissed ? snapshot.operations[0] : undefined;
