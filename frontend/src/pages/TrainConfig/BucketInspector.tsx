@@ -19,14 +19,23 @@ function groupByBase(buckets: PlanBucket[]) {
   for (const bucket of buckets) groups.set(bucket.base ?? 0, [...(groups.get(bucket.base ?? 0) || []), bucket]);
   return [...groups].sort(([a], [b]) => a - b).map(([base, items]) => ({ base, buckets: items, items: items.reduce((sum, bucket) => sum + bucket.items, 0) }));
 }
+/** The image VAE's own memory phases, as the planner reports them. */
+type VaePhase = { mode?: 'cached' | 'online'; peak_mb_estimate: number; width: number; height: number; batch_size: number; tile_pixels?: number | null; attention_backend?: string };
+type VaeMemory = { image_encoding?: VaePhase | null; preview_decoding?: VaePhase | null; vae_setting_peak_mb_estimates?: Record<string, number> };
+const vaeMemory = (memory: Plan['memory'] | undefined) => (memory ?? {}) as VaeMemory;
 /** Memory fixes the planner can name, each linked to the setting it changes and, where known, the peak it leaves. */
 function memoryFixes(memory: Plan['memory'], native: boolean, text: (zh: string, en: string) => string) {
   const suggestions = memory?.suggestions || [];
-  const estimate = (mode: string) => {
-    const peak = memory?.checkpointing_peak_mb_estimates?.[mode];
-    return peak == null ? '' : text(`（预计 ${formatBytesMB(peak)}）`, ` (about ${formatBytesMB(peak)})`);
-  };
+  const about = (peak: number | null | undefined) => peak == null ? '' : text(`（预计 ${formatBytesMB(peak)}）`, ` (about ${formatBytesMB(peak)})`);
+  const estimate = (mode: string) => about(memory?.checkpointing_peak_mb_estimates?.[mode]);
+  const vaeEstimate = (path: string) => about(vaeMemory(memory).vae_setting_peak_mb_estimates?.[path]);
   const known: [RegExp, string, string][] = [
+    [/vae_encode_batch_size/, 'memory.vae_encode_batch_size', text('VAE 编码批量改为 1', 'Set the VAE encode batch to 1') + vaeEstimate('memory.vae_encode_batch_size')],
+    [/vae_attention_chunking/, 'memory.vae_attention_chunking', text('开启 VAE 注意力分块', 'Turn on VAE attention chunking') + vaeEstimate('memory.vae_attention_chunking')],
+    [/memory\.vae_tiling/, 'memory.vae_tiling', text('开启 VAE 分块', 'Turn on VAE tiling') + vaeEstimate('memory.vae_tiling')],
+    [/cache_encode_tiled/, 'memory.cache_encode_tiled', text('开启缓存时分块编码', 'Turn on tiled encoding while caching') + vaeEstimate('memory.cache_encode_tiled')],
+    [/cache_latents/, 'dataset.cache_latents', text('开启训练图像缓存', 'Cache training images before training')],
+    [/sampling\.width/, 'sampling.width', text('降低预览图尺寸', 'Lower the preview size')],
     [/activation_checkpointing = 'block'/, 'memory.activation_checkpointing', text('开启梯度检查点', 'Turn on gradient checkpointing') + estimate('block')],
     [/activation_checkpointing = 'unsloth'/, 'memory.activation_checkpointing', text('梯度检查点改为“开启并卸载到内存”', 'Offload gradient checkpoints to system memory') + estimate('unsloth')],
     [/blocks_to_swap/, 'memory.blocks_to_swap', text('把部分模型块换出到内存', 'Swap model blocks to system memory')],
@@ -127,6 +136,24 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
   const overCapacity = peak != null && !!capacity && peak > capacity * 0.95;
   const tightMemory = !overCapacity && peak != null && !!capacity && peak > capacity * 0.9;
   const memoryBlocked = overCapacity && !!plan?.errors?.some(item => item.loc === 'memory');
+  // The VAE's phases are listed beside the training peak when they set the peak or come close to the card.
+  const trainingPeak = plan?.memory?.training_peak_mb_estimate ?? null;
+  const { image_encoding: encoding, preview_decoding: decoding } = vaeMemory(plan?.memory);
+  const attentionNote = (phase: VaePhase) => phase.attention_backend === 'math'
+    ? text('此设备的 VAE 注意力没有融合实现，整张图的注意力矩阵会一次占用显存，图片越大增长越快。', "This device has no fused VAE attention, so the whole image's attention matrix is held at once and grows quickly with image size.")
+    : phase.attention_backend === 'unknown' ? text('未能确认此设备的 VAE 注意力实现，按整张图的注意力矩阵估算。', "The VAE attention backend on this device could not be confirmed; the estimate assumes the whole image's attention matrix.") : '';
+  const shape = (phase: VaePhase) => `${phase.width} × ${phase.height}`;
+  const vaePhases = peak == null || trainingPeak == null ? [] : [
+    encoding && { key: 'encoding', phase: encoding, label: text('图片编码峰值', 'Image encoding peak'),
+      help: [encoding.mode === 'online'
+        ? text(`关闭训练图像缓存后，每批训练前都用 VAE 编码，VAE 与模型和训练状态同时占用显存。按 ${shape(encoding)} 每次 ${encoding.batch_size} 张计算。`, `With training image caching off, every batch is encoded by the VAE while the model and training state stay in memory. Estimated for ${shape(encoding)}, ${encoding.batch_size} at a time.`)
+        : text(`训练前缓存图像编码时只有 VAE 占用显存。按最大的图片 ${shape(encoding)}（含验证图）每次 ${encoding.batch_size} 张计算。`, `While image encodings are cached before training, only the VAE uses memory. Estimated for the largest image, ${shape(encoding)} (validation images included), ${encoding.batch_size} at a time.`),
+      encoding.tile_pixels ? text(`按 ${encoding.tile_pixels} 像素分块编码。`, `Encoded in ${encoding.tile_pixels}-pixel tiles.`) : '', attentionNote(encoding)] },
+    decoding && { key: 'decoding', phase: decoding, label: text('预览解码峰值', 'Preview decoding peak'),
+      help: [text(`生成预览图后用 VAE 解码，此时模型和训练状态仍在显存中。按最大的预览尺寸 ${shape(decoding)} 计算。`, `Previews are decoded by the VAE while the model and training state stay in memory. Estimated for the largest preview, ${shape(decoding)}.`),
+        decoding.tile_pixels ? text(`按 ${decoding.tile_pixels} 像素分块解码。`, `Decoded in ${decoding.tile_pixels}-pixel tiles.`) : '', attentionNote(decoding)] },
+  ].filter((row): row is { key: string; phase: VaePhase; label: string; help: string[] } => !!row
+    && (row.phase.peak_mb_estimate >= trainingPeak || (!!capacity && row.phase.peak_mb_estimate > capacity * 0.9)));
   const tile = (bucket: PlanBucket) => {
     const key = bucketKey(bucket);
     const route = tileRoute(bucket);
@@ -195,6 +222,10 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
             : <>{formatBytesMB(peak)}{capacity ? <small> / {formatBytesMB(capacity)}</small> : null}</>}</strong></div>
           {capacity && peak != null ? <span className="estimate-meter" aria-hidden="true"><span style={{width: `${Math.min(100, peak / capacity * 100)}%`}}/></span> : null}
         </div>
+        {vaePhases.length > 0 && trainingPeak != null && <dl className="estimate-list" aria-label={text('显存峰值来源', 'Where the peak comes from')}>
+          <div><dt>{text('训练峰值', 'Training peak')}</dt><dd>{formatBytesMB(trainingPeak)}</dd></div>
+          {vaePhases.map(row => <div key={row.key}><dt>{row.label}<ConfigHelp label={text(`${row.label}说明`, `${row.label} help`)}>{row.help.filter(Boolean).join('\n')}</ConfigHelp></dt><dd>{formatBytesMB(row.phase.peak_mb_estimate)}</dd></div>)}
+        </dl>}
         {overCapacity && capacity && peak != null && <div className="estimate-alert" role="alert">
           <strong>{memoryBlocked ? text('超过显卡容量，无法开始训练', 'Exceeds GPU memory; training cannot start') : text('超过显卡容量', 'Exceeds GPU memory')}</strong>
           <p>{memoryBlocked

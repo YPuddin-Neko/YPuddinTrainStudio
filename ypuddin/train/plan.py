@@ -26,6 +26,14 @@ from ypuddin.runtime_profiles import current_profile
 
 from .advice import value_advice
 from .metal_compute import resolve_metal_attention_runtime, validate_metal_attention_resume
+from .vae_memory import (
+    VaeMemory,
+    latent_cache_phase,
+    online_encoding_phase,
+    preview_decoding_phase,
+    preview_shapes,
+    vae_memory,
+)
 
 DTYPE_BYTES = {"bf16": 2, "fp16": 2, "fp32": 4, "fp8_e4m3": 1, "fp8_e5m2": 1, "keep": 2, "auto": 2}
 
@@ -39,53 +47,31 @@ def _frozen_storage_bytes(module: nn.Module) -> int:
     return sum(t.numel() * t.element_size() for t in tensors.values())
 
 
-def _online_latent_memory(cfg: TrainConfig, dtype: torch.dtype, pixels: int) -> tuple[float, float]:
-    """Resident VAE weights and conservative encoder workspace, in MiB per GPU.
+def _plan_vae(cfg: TrainConfig, dtype: torch.dtype, device: str | torch.device | None) -> VaeMemory | None:
+    """The run's image VAE; a geometry that cannot be read leaves the VAE phases out of the estimate."""
+    try:
+        return vae_memory(cfg, dtype, device=device, profile=current_profile())
+    except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+        return None
 
-    Online encoding leaves the entire frozen VAE resident beside the training
-    shards. Construct only its native architecture on meta: checkpoint storage
-    can include temporal weights discarded by the image-only Qwen VAE, so file
-    size is not its actual residency. No model tensor payload is read here.
+
+def _vae_batches(
+    image_shapes: dict[tuple[int, int], dict[str, Any]], ds: DatasetConfig, encode_batch: int
+) -> tuple[dict[tuple[int, int], int], dict[tuple[int, int], int]]:
+    """Images per VAE call by shape: while caching, and while training or validating online.
+
+    Caching groups up to ``encode_batch`` images of one shape, each flip a separate entry. Online
+    encoding splits a training batch, native microbatch group or validation batch into calls of
+    at most ``encode_batch`` images.
     """
-    family = cfg.model.family
-    if family == "toy":
-        # ToyLatent keeps its tiny projection on CPU and copies it per call.
-        return 0.0, 0.0
-    if family in {"anima", "krea2"}:
-        from ypuddin.models.anima.vendor.qwen_image_vae_2d import AutoencoderKLQwenImage2D
-
-        with torch.device("meta"):
-            vae = AutoencoderKLQwenImage2D()
-        channels = 96
-    elif family == "sdxl":
-        from diffusers import AutoencoderKL
-
-        from ypuddin.models.sdxl.loading import component_config, component_path
-
-        path = component_path(cfg.model.dit_path or ".", "vae", cfg.model.vae_path)
-        config = component_config(path, "vae")
-        with torch.device("meta"):
-            vae = AutoencoderKL.from_config(config)
-        channels, dtype = config["block_out_channels"][0], torch.float32
-    elif family == "flux2":
-        from diffusers import AutoencoderKLFlux2
-
-        from ypuddin.models.flux2.loading import component, read_json
-
-        path = component(cfg.model.dit_path or ".", "vae", cfg.model.vae_path)
-        config_path = (path if path.is_dir() else path.parent) / "config.json"
-        config = read_json(config_path) if config_path.is_file() else {}
-        with torch.device("meta"):
-            vae = AutoencoderKLFlux2.from_config(config)
-        channels, dtype = vae.config.block_out_channels[0], torch.float32
-    else:
-        raise ValueError(f"online latent memory planning is unavailable for {family}")
-    vae.to(dtype=dtype).requires_grad_(False)
-    weights = _frozen_storage_bytes(vae)
-    # Match the encoder workspace heuristic used for the Krea cache phase, but
-    # budget the per-device training batch and actual largest bucket here.
-    workspace = pixels * cfg.dataset.batch_size * channels * 8 * torch.empty((), dtype=dtype).element_size()
-    return weights / 2**20, workspace / 2**20
+    native = ds.resolution_mode == "native"
+    cache, online = {}, {}
+    for (width, height), entry in image_shapes.items():
+        entries = len(entry["images"]) * (2 if ds.flip else 1) + len(entry["validation"])
+        cache[width, height] = min(encode_batch, entries)
+        group = min(ds.batch_size, max(1, ds.native_max_pixels // (width * height))) if native else ds.batch_size
+        online[width, height] = min(encode_batch, group, max(entry["items"], len(entry["validation"])))
+    return cache, online
 
 
 def _fsdp_memory(backbone: nn.Module, blocks: list[nn.Module], cfg: TrainConfig) -> dict[str, Any]:
@@ -234,6 +220,7 @@ def _append_data_plan(
     loop: LoopConfig | None,
     seed: int | None,
     index_db_path: str | Path | None,
+    image_shapes: dict[tuple[int, int], dict[str, Any]] | None = None,
 ) -> dict[tuple[int, int], int]:
     """Share exact image selection and geometry between full plans and incomplete drafts."""
     ds = cfg.dataset
@@ -247,6 +234,14 @@ def _append_data_plan(
         layout = prepare_data_layout(cfg, latent, index_db=index)
         records, items = layout.records, layout.items
         validation_images = len(layout.validation_items)
+        if image_shapes is not None:
+            # What the VAE encodes: training items and images per shape, then validation images.
+            for item, validation in [(item, False) for item in items] + [
+                (item, True) for item in layout.validation_items
+            ]:
+                entry = image_shapes.setdefault(item.bucket.key, {"items": 0, "images": set(), "validation": set()})
+                entry["validation" if validation else "images"].add(item.record.path)
+                entry["items"] += not validation
     except DataConfigError as e:
         out["errors"].append({"loc": e.loc, "msg": str(e)})
     except (OSError, ValueError) as e:
@@ -495,7 +490,8 @@ def _append_data_plan(
 
 
 def _preview_invalid_config(
-    raw: dict[str, Any], out: dict[str, Any], *, index_db_path: str | Path | None
+    raw: dict[str, Any], out: dict[str, Any], *, index_db_path: str | Path | None,
+    image_shapes: dict[tuple[int, int], dict[str, Any]] | None = None,
 ) -> None:
     """Add data-only results without repairing the draft or weakening its training errors."""
     model = raw.get("model")
@@ -545,6 +541,7 @@ def _preview_invalid_config(
         loop=loop,
         seed=seed,
         index_db_path=index_db_path,
+        image_shapes=image_shapes,
     )
 
 
@@ -584,6 +581,7 @@ def plan(
     }
     draft = False
     memory_issue = None
+    image_shapes: dict[tuple[int, int], dict[str, Any]] = {}
     try:
         cfg = TrainConfig.model_validate(cfg)
     except ValidationError as e:
@@ -591,7 +589,7 @@ def plan(
         raw = cfg.to_dict() if isinstance(cfg, TrainConfig) else cfg
         if not isinstance(raw, dict):
             return out
-        _preview_invalid_config(raw, out, index_db_path=index_db_path)
+        _preview_invalid_config(raw, out, index_db_path=index_db_path, image_shapes=image_shapes)
         cfg, field_issues = _model_plan_draft(raw)
         draft = True
         for name in ("model", "training", "adapter", "memory", "loop", "dataset"):
@@ -760,6 +758,7 @@ def plan(
             loop=cfg.loop,
             seed=cfg.loop.seed,
             index_db_path=index_db_path,
+            image_shapes=image_shapes,
         )
 
     if native and out.get("native") is not None:
@@ -1025,20 +1024,22 @@ def plan(
                     text_encoder_mb = (
                         sum(_frozen_storage_bytes(module) for module in text_modules.values()) / 2**20
                     )
+                vae = _plan_vae(cfg, compute_dtype, device)
+                cache_batches, online_batches = _vae_batches(image_shapes, ds, cfg.memory.vae_encode_batch_size)
                 latent_encoder_mb = latent_workspace_mb = 0.0
-                if sharding is not None and not ds.cache_latents:
-                    pixels = max((w * h for w, h in counts), default=max(ds.resolutions) ** 2)
-                    latent_encoder_mb, latent_workspace_mb = _online_latent_memory(cfg, compute_dtype, pixels)
-                    estimate_notes.append(
-                        "关闭图像编码缓存后，完整 VAE 在每张卡上与训练状态同时驻留；"
-                        "权重与在线编码工作区均计入单卡估算，不按卡数分摊。"
-                    )
+                if vae is not None and not ds.cache_latents:
+                    # Online encoding loads the VAE with the first batch and keeps it for the run.
+                    latent_encoder_mb = vae.weights_mb
+                    if sharding is not None:
+                        estimate_notes.append(
+                            "关闭图像编码缓存后，完整 VAE 在每张卡上与训练状态同时驻留；"
+                            "权重与在线编码工作区均计入单卡估算，不按卡数分摊。"
+                        )
                 training_peak = (
                     weights_mb
                     - swapped_mb
                     + text_encoder_mb
                     + latent_encoder_mb
-                    + latent_workspace_mb
                     + adapter_mb
                     + optimizer_mb
                     + gradients_mb
@@ -1052,12 +1053,65 @@ def plan(
                     + 512
                 )
                 cache_phases = family.cache_memory_estimate(cfg, compute_dtype)
-                peak = max(training_peak, *cache_phases.values()) if cache_phases else training_peak
+                # The VAE's own phases: caching with nothing else on the device, or encoding and
+                # preview decoding beside the training state (no activations; gradients are
+                # cleared before previews).
+                image_encoding = preview_decoding = None
+                vae_phases = []
+                if vae is not None:
+                    encode_phase = latent_cache_phase if ds.cache_latents else online_encoding_phase
+                    batches = cache_batches if ds.cache_latents else online_batches
+                    image_encoding = encode_phase(vae, batches)
+                    single = encode_phase(vae, dict.fromkeys(batches, 1))
+                    if single is not None and single["workspace_mb_estimate"] < image_encoding["workspace_mb_estimate"]:
+                        image_encoding["workspace_reductions_mb"]["memory.vae_encode_batch_size"] = single[
+                            "workspace_mb_estimate"
+                        ]
+                if image_encoding is not None and ds.cache_latents:
+                    image_encoding["mode"] = "cached"
+                    cache_phases["latent_cache"] = image_encoding["peak_mb_estimate"]
+                elif image_encoding is not None:
+                    image_encoding["mode"] = "online"
+                    image_encoding["peak_mb_estimate"] = round(
+                        training_peak - act_peak + image_encoding["workspace_mb_estimate"]
+                    )
+                    vae_phases.append(image_encoding["peak_mb_estimate"])
+                if vae is not None and (previews := preview_shapes(cfg, family.spec.latent.align)):
+                    preview_decoding = preview_decoding_phase(vae, previews)
+                    preview_decoding["peak_mb_estimate"] = round(
+                        training_peak
+                        - act_peak
+                        - gradients_mb
+                        + (vae.weights_mb if ds.cache_latents else 0.0)
+                        + preview_decoding["workspace_mb_estimate"]
+                    )
+                    vae_phases.append(preview_decoding["peak_mb_estimate"])
+                peak = max([training_peak, *cache_phases.values(), *vae_phases])
                 if initialization_peak is not None:
                     # Text may stay resident through backbone placement when
                     # online encoding is selected without offloading.
                     initialization_peak += text_encoder_mb
                     peak = max(peak, initialization_peak)
+                if image_encoding is not None and image_encoding["mode"] == "online":
+                    latent_workspace_mb = image_encoding["workspace_mb_estimate"]
+                # The overall peak after each VAE setting that lowers one of its phases.
+                vae_setting_peaks = {}
+                for path in dict.fromkeys(
+                    path
+                    for phase in (image_encoding, preview_decoding)
+                    if phase is not None
+                    for path in phase["workspace_reductions_mb"]
+                ):
+                    values = [
+                        training_peak,
+                        initialization_peak or 0,
+                        *(value for key, value in cache_phases.items() if key != "latent_cache"),
+                    ]
+                    for phase in (image_encoding, preview_decoding):
+                        if phase is not None:
+                            reduced = phase["workspace_reductions_mb"].get(path, phase["workspace_mb_estimate"])
+                            values.append(phase["peak_mb_estimate"] - phase["workspace_mb_estimate"] + reduced)
+                    vae_setting_peaks[path] = round(max(values))
                 memory = {
                     "estimate_scope": "per_device",
                     "communication_mb_estimate": round(communication_mb, 1),
@@ -1095,6 +1149,9 @@ def plan(
                     "unestimated_components": ["text_encoder_activations"]
                     if cfg.training.train_text_encoder
                     else [],
+                    "image_encoding": image_encoding,
+                    "preview_decoding": preview_decoding,
+                    "vae_setting_peak_mb_estimates": vae_setting_peaks,
                     "cache_phase_peak_mb_estimates": {
                         key: round(value) for key, value in cache_phases.items()
                     },
@@ -1108,6 +1165,7 @@ def plan(
                             max(
                                 training_peak - act_by_mode[current_mode] + act,
                                 *cache_phases.values(),
+                                *vae_phases,
                                 initialization_peak or 0,
                             )
                         )
@@ -1120,7 +1178,28 @@ def plan(
                     "effective_dtype": effective_dtype,
                     "suggestions": [],
                 }
-                if gpu_total_mb and not cfg.training.train_text_encoder and peak > gpu_total_mb * 0.9:
+                tight = gpu_total_mb * 0.9 if gpu_total_mb and not cfg.training.train_text_encoder else None
+                if tight:
+                    # Each fix only where it lowers the phase that is over the budget.
+                    for phase in (image_encoding, preview_decoding):
+                        if phase is not None and phase["peak_mb_estimate"] > tight:
+                            for path in phase["workspace_reductions_mb"]:
+                                suggestion = (
+                                    "set memory.vae_encode_batch_size = 1"
+                                    if path == "memory.vae_encode_batch_size"
+                                    else f"enable {path}"
+                                )
+                                if suggestion not in memory["suggestions"]:
+                                    memory["suggestions"].append(suggestion)
+                    if (
+                        image_encoding is not None
+                        and image_encoding["mode"] == "online"
+                        and max(training_peak, image_encoding["peak_mb_estimate"]) > tight
+                    ):
+                        memory["suggestions"].append("enable dataset.cache_latents")
+                    if preview_decoding is not None and preview_decoding["peak_mb_estimate"] > tight:
+                        memory["suggestions"].append("lower sampling.width / sampling.height")
+                if tight and training_peak > tight:
                     # Multi-GPU training rejects offloaded checkpoints and block swap.
                     multi_gpu = cfg.loop.gpu_count > 1 or cfg.loop.distributed_strategy == "fsdp"
                     if cfg.memory.activation_checkpointing == "none":
@@ -1156,6 +1235,7 @@ def plan(
                         memory["suggestions"].append(
                             "set dataset.text_encoding = 'cached' (frees the text encoder)"
                         )
+                if tight and peak > tight:
                     out["warnings"].append(
                         {
                             "code": "vram.tight",

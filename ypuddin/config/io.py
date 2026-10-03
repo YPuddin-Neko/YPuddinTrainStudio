@@ -137,12 +137,13 @@ _LEGACY_VALUES: dict[str, dict[str, Any]] = {
     "adapter": {"layer_types": "linear", "conv_rank": None, "conv_alpha": None,
                 "dora_compute_mode": "standard", "dora_merge_dtype": "auto",
                 "tlora_min_rank": None, "tlora_power": 1.0, "tlora_ortho": True},
-    # Optional VAE memory and precision switches, off.
+    # Optional VAE memory and precision switches, off; one image per VAE call.
     "memory": {
         "vae_attention_chunking": False,
         "no_half_vae": False,
         "vae_tiling": False,
         "cache_encode_tiled": False,
+        "vae_encode_batch_size": 1,
     },
     # Default sampling settings added after earlier checkpoints.
     "sampling": {"noise": "comfyui", "adapter_merge_dtype": "auto"},

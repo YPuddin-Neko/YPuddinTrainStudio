@@ -8,6 +8,7 @@ not sufficient to activate it: torchrun's complete rank environment is required.
 
 from __future__ import annotations
 
+import logging
 import os
 import random
 import sys
@@ -34,6 +35,8 @@ from .events import Emitter, NullEmitter
 from .scheduler_contract import read_resume_scheduler_contract, validate_scheduler_recipe
 from .trainer import StopRequested, Trainer
 from .training_modes import FullTrainingSet
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -223,6 +226,7 @@ class DistributedTrainer(Trainer):
                 try:
                     super().prepare_data()
                 except Exception as exc:
+                    log.exception("rank %s data preparation failed", owner)
                     error[0] = f"rank {owner} preparation failed: {type(exc).__name__}: {exc}"
                 finally:
                     self._preparing = False

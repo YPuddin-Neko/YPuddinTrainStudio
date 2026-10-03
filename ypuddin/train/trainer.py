@@ -477,11 +477,18 @@ class Trainer:
         if cfg.dataset.cache_latents:
             self.emit("phase.changed", phase="caching_latents")
             latent_log = self._cache_progress_log("VAE")
+            from .vae_memory import EncodeMonitor
+
+            encode_log = EncodeMonitor(
+                self.loaded.latent, self.device, encode_batch=cfg.memory.vae_encode_batch_size,
+                training_batch=cfg.dataset.batch_size, caching=True,
+            )
             n = cache_latents(
                 self.bundle,
-                getattr(self.loaded.latent, "encode_for_cache", self.loaded.latent.encode),
+                encode_log.wrap(getattr(self.loaded.latent, "encode_for_cache", self.loaded.latent.encode)),
                 device=self.device,
-                batch_size=1 if cfg.dataset.resolution_mode == "native" else max(1, cfg.dataset.batch_size),
+                # Separate from the training batch: one image per VAE call by default.
+                batch_size=cfg.memory.vae_encode_batch_size,
                 dtype=model_dtype,
                 progress=lambda d, t: (
                     self.emit("cache.progress", kind="latents", done=d, total=t),
@@ -494,6 +501,7 @@ class Trainer:
                 log.info("cached %d latents in %.1fs", n, latent_log.elapsed)
             else:
                 log.info("all latents were already cached")
+            encode_log.finish()
             self.loaded.latent.unload()
 
         self.text_mode = self._resolve_text_mode()
@@ -1463,25 +1471,52 @@ class Trainer:
     def _latents(self, batch: dict[str, Any]) -> Tensor:
         if "latents" in batch:
             return batch["latents"].to(self.device, torch.float32)
-        encode = self.loaded.latent.encode
+        latent = self.loaded.latent
+        encode = latent.encode
         cache_enabled = "partial_latents" in batch or (
             getattr(self, "cfg", None) is not None and self.cfg.dataset.cache_latents
         )
         if cache_enabled:
-            encode = getattr(self.loaded.latent, "encode_for_cache", encode)
-        with torch.no_grad():
-            if "partial_latents" in batch:
-                encoded = {
-                    index: encode(pixels[None].to(self.device))[0].float()
-                    for index, pixels in batch["pixels"].items()
-                }
-                return torch.stack(
-                    [
-                        encoded[index] if latents is None else latents.to(self.device, torch.float32)
-                        for index, latents in enumerate(batch["partial_latents"])
-                    ]
-                )
-            return encode(batch["pixels"].to(self.device)).float()
+            encode = getattr(latent, "encode_for_cache", encode)
+        # A cached run released the VAE after caching. Re-encoding a cache entry another run rewrote loads
+        # it beside the backbone, outside the memory plan, so it is released again before the step runs.
+        release = cache_enabled and hasattr(latent, "vae") and latent.vae is None
+        try:
+            with torch.no_grad():
+                if "partial_latents" in batch:
+                    encoded = {
+                        index: encode(pixels[None].to(self.device))[0].float()
+                        for index, pixels in batch["pixels"].items()
+                    }
+                    return torch.stack(
+                        [
+                            encoded[index] if latents is None else latents.to(self.device, torch.float32)
+                            for index, latents in enumerate(batch["partial_latents"])
+                        ]
+                    )
+                # The training batch is encoded in VAE batches of their own size.
+                pixels = batch["pixels"]
+                memory = getattr(getattr(self, "cfg", None), "memory", None)
+                size = getattr(memory, "vae_encode_batch_size", None) or len(pixels)
+                encode_log = None
+                if not getattr(self, "_online_encode_logged", False):
+                    # The first batch logs what the VAE ran; later batches repeat it.
+                    from .vae_memory import EncodeMonitor
+
+                    self._online_encode_logged = True
+                    dataset = getattr(getattr(self, "cfg", None), "dataset", None)
+                    encode_log = EncodeMonitor(
+                        latent, self.device, encode_batch=size, caching=False,
+                        training_batch=getattr(dataset, "batch_size", None) or len(pixels),
+                    )
+                    encode = encode_log.wrap(encode)
+                latents = torch.cat([encode(part.to(self.device)).float() for part in pixels.split(size)])
+                if encode_log is not None:
+                    encode_log.finish()
+                return latents
+        finally:
+            if release:
+                latent.unload()
 
     def _num_tokens(self, latents: Tensor) -> int:
         p = self.family.spec.latent.patch

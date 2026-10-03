@@ -106,6 +106,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'memory.no_half_vae': ['强制 VAE 使用 FP32 编码和解码图像，能减少低精度计算引起的数值异常，但会增加显存占用，并可能降低速度。默认关闭。', 'Forces the VAE to encode and decode images in FP32. This reduces numerical issues from low-precision computation, but uses more VRAM and may be slower. Off by default.'],
   'memory.vae_attention_chunking': ['减少 HIP VAE 数学注意力的临时显存，默认关闭。', 'Reduces temporary memory for HIP VAE math attention; off by default.'],
   'memory.activation_checkpointing': ['大幅减少显存，训练稍慢；显存不够时优先开启。', 'Much less memory, slightly slower; turn on first when memory is short.'],
+  'memory.vae_encode_batch_size': ['每次 VAE 编码的图片数，默认 1；与训练批量分开。', 'Images per VAE encode, 1 by default; separate from the training batch.'],
 
   'objective.timestep_sampling': ['训练时噪声强度的抽样分布。', 'Distribution of training noise levels.'],
   'objective.logit_mean': ['调高偏向高噪声，调低偏向低噪声。', 'Higher favors noisier steps; lower favors cleaner ones.'],
@@ -164,6 +165,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
 };
 
 export const FIELD_HELP: Record<string, Copy> = {
+  'memory.vae_encode_batch_size': ['训练前缓存图像编码和关闭缓存时的每批编码，每次交给 VAE 的图片数，默认 1：每次编码一张完整图片。\n与训练批量分开：训练批量再大，编码也按这里分次进行，所以编码时的显存只随这个数增长。调大可能略快，但更容易在编码时显存不足。\n它只决定一次编码几张图，不把单张图片分块，也不改变 VAE 精度。', 'How many images go to the VAE at once, both while caching image encodings before training and when each batch is encoded with caching off. 1 (default) encodes one whole image at a time.\nIt is separate from the training batch: however large that is, encoding runs in calls of this size, so encoding memory grows only with this number. Larger values can be slightly faster but run out of memory more easily while encoding.\nIt only sets how many images one call takes; it never splits an image into tiles or changes the VAE precision.'],
   'memory.vae_tiling': ['将图像按 512 像素分块进行 VAE 编码和解码，相邻块重叠 128 像素，可减少显存占用，但可能增加耗时。默认关闭。', 'Encodes and decodes images in 512-pixel VAE tiles with 128-pixel overlap. This reduces VRAM use but may take longer. Off by default.'],
   'memory.cache_encode_tiled': ['仅在创建图像缓存时，对面积超过 2048×2048 像素的图片按 1024 像素分块编码，相邻块重叠 128 像素。小图沿用 VAE 分块设置，不影响预览解码。默认关闭。', 'When creating image caches, images larger than 2048×2048 pixels in area are encoded in 1024-pixel tiles with 128-pixel overlap. Smaller images follow the VAE tiling setting. Preview decoding is unchanged. Off by default.'],
   'memory.no_half_vae': ['强制 VAE 使用 FP32 编码和解码图像，能减少低精度计算引起的数值异常，但会增加显存占用，并可能降低速度。默认关闭。', 'Forces the VAE to encode and decode images in FP32. This reduces numerical issues from low-precision computation, but uses more VRAM and may be slower. Off by default.'],

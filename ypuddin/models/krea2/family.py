@@ -594,21 +594,6 @@ class Krea2Family(ModelFamily):
         # allowance, although fused SDPA normally needs less temporary storage.
         scratch += batch * text_cfg.num_attention_heads * tokens * tokens * 4
         phases = {"text_cache": (weights + retained + scratch) / 2**20 + 512}
-        if cfg.model.vae_path and Path(cfg.model.vae_path).expanduser().is_file():
-            from safetensors import safe_open
-
-            with safe_open(str(Path(cfg.model.vae_path).expanduser()), framework="pt") as checkpoint:
-                shapes = [checkpoint.get_slice(key).get_shape() for key in checkpoint.keys()]
-            vae_weights = sum(math.prod(shape) for shape in shapes) * element_size
-            pixels = (
-                cfg.dataset.native_max_pixels
-                if cfg.dataset.resolution_mode == "native"
-                else max(cfg.dataset.resolutions) ** 2
-            )
-            # Qwen-Image's encoder processes one image at a time by default;
-            # feature-map/residual workspaces are heuristic, weights are header based.
-            vae_scratch = pixels * 96 * 8 * element_size
-            phases["latent_cache"] = (vae_weights + vae_scratch) / 2**20 + 512
         return phases
 
     def training_tokens_for_plan(self, image_tokens: int) -> int:

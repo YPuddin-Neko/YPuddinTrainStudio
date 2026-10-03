@@ -61,7 +61,7 @@ const labels: Record<string, string> = {
   'scheduler.type': '学习率调度', 'scheduler.warmup_steps': '预热步数 / 比例', 'scheduler.min_lr_ratio': '最低学习率比例',
   'scheduler.num_cycles': '调度周期数', 'scheduler.power': '多项式幂', 'scheduler.decay_steps': '衰减步数',
   'memory.base_precision': '底模存储精度', 'memory.blocks_to_swap': '换出到 CPU 的层数',
-  'memory.activation_checkpointing': '梯度检查点', 'memory.vae_attention_chunking': 'VAE 注意力分块', 'memory.no_half_vae': 'VAE 保持 FP32', 'memory.vae_tiling': 'VAE 分块', 'memory.cache_encode_tiled': '缓存编码分块', 'memory.offload_text_encoder': '卸载文本编码器',
+  'memory.activation_checkpointing': '梯度检查点', 'memory.vae_attention_chunking': 'VAE 注意力分块', 'memory.no_half_vae': 'VAE 保持 FP32', 'memory.vae_tiling': 'VAE 分块', 'memory.cache_encode_tiled': '缓存编码分块', 'memory.vae_encode_batch_size': 'VAE 编码批量', 'memory.offload_text_encoder': '卸载文本编码器',
   'memory.compile': '编译模型', 'memory.allow_tf32': '允许 TF32', 'loop.max_steps': '最大训练步数',
   'loop.epochs': '训练轮数', 'loop.grad_accum': '梯度累积', 'loop.mixed_precision': '混合精度', 'loop.seed': '随机种子',
   'loop.gpu_count': '训练显卡数量',
@@ -95,6 +95,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path === 'memory.vae_tiling') return 'VAE tiling';
   if (english && path === 'memory.cache_encode_tiled') return 'Tiled cache encoding';
   if (english && path === 'memory.no_half_vae') return 'Keep VAE in FP32';
+  if (english && path === 'memory.vae_encode_batch_size') return 'VAE encode batch';
   if (english && path === 'sampling.adapter_merge_dtype') return 'Adapter merge precision';
   if (english && path === 'adapter.layer_types') return 'Layer types';
   if (english && path === 'adapter.conv_rank') return 'Convolution rank';

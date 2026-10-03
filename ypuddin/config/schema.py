@@ -1113,6 +1113,13 @@ class MemoryConfig(_Strict):
         help="仅在创建图像缓存时，对面积超过 2048×2048 像素的图片按 1024 像素分块编码，相邻块重叠 128 像素。小图沿用 VAE 分块设置，不影响预览解码。默认关闭。",
         ui_=ui("memory", order=28, control="switch", advanced=True, show_when="model.family in ['anima', 'krea2']"),
     )
+    vae_encode_batch_size: int = F(
+        1,
+        ge=1,
+        le=64,
+        help="每次 VAE 编码的图片数，默认 1，即每次编码一张完整图片；与训练批量分开。训练前缓存图像和关闭缓存时的每批编码都按它分次进行。调大可能略快，但编码时的显存占用随之增加。",
+        ui_=ui("memory", order=24),
+    )
     offload_text_encoder: bool = F(
         False,
         help="在线编码标签时，在每次编码后把文本编码器移到 CPU，默认关闭；可减少驻留显存但增加传输。cached 文本模式已预编码并卸载编码器，无需依靠此开关。",
