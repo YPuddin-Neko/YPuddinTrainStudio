@@ -267,7 +267,12 @@ class ModelDownloads:
     def __init__(self, context: ServiceContext):
         self.context = context
         self.credentials = ModelCredentials(context.data_root)
+        # Guards the in-memory tasks only. Saving takes ``_saving`` after letting go of it, so the
+        # polled list never waits for the database (which other work may hold for a while).
         self.lock = threading.RLock()
+        self._saving = threading.Lock()
+        self._revision = 0
+        self._saved = 0
         self.tasks: dict[str, dict[str, Any]] = {
             row["id"]: row for row in context.db.get_kv("model_downloads", [])
         }
@@ -302,7 +307,15 @@ class ModelDownloads:
         self._persist()
 
     def _persist(self) -> None:
-        self.context.db.set_kv("model_downloads", list(self.tasks.values()))
+        """Save the current tasks. Call it without holding ``self.lock``."""
+        with self.lock:
+            self._revision += 1
+            revision = self._revision
+            rows = [dict(row) for row in self.tasks.values()]
+        with self._saving:
+            if revision > self._saved:  # else a newer snapshot is already saved
+                self.context.db.set_kv("model_downloads", rows)
+                self._saved = revision
 
     def list(self) -> list[dict[str, Any]]:
         with self.lock:
@@ -314,8 +327,9 @@ class ModelDownloads:
     def _update(self, id_: str, **updates: Any) -> None:
         with self.lock:
             self.tasks[id_].update(updates)
-            self._persist()
-            self.context.bus.publish("model.download", dict(self.tasks[id_]))
+            row = dict(self.tasks[id_])
+        self._persist()
+        self.context.bus.publish("model.download", row)
 
     def start(self, body: ModelDownloadRequest, *, recommendation=None) -> dict[str, Any]:
         if recommendation is not None:
@@ -385,9 +399,10 @@ class ModelDownloads:
             ).model_dump()
             self.tasks[id_] = row
             self.cancelled[id_] = threading.Event()
-            self._persist()
             self.pool.submit(self._run, id_, root)
-            return dict(row)
+            started = dict(row)
+        self._persist()
+        return started
 
     def catalog(self) -> list[dict[str, Any]]:
         # Kept empty for old clients; automatic tagging is no longer offered.
@@ -402,6 +417,13 @@ class ModelDownloads:
             return dict(self.tasks[id_])
 
     def retry(self, id_: str, *, provider: Provider | None = None) -> dict[str, Any]:
+        # The new attempt starts outside the lock, where it is saved; start() refuses a duplicate.
+        body, recommendation = self._retry_request(id_, provider)
+        return self.start(body, recommendation=recommendation)
+
+    def _retry_request(
+        self, id_: str, provider: Provider | None
+    ) -> tuple[ModelDownloadRequest, DownloadVerification | None]:
         with self.lock:
             row = self.tasks.get(id_)
             if row is None:
@@ -440,7 +462,7 @@ class ModelDownloads:
                         "saved recommendation verification is incomplete; start from the catalog again",
                         code="download.verification",
                     ) from None
-                return self.start(
+                return (
                     ModelDownloadRequest(
                         family=row["family"],
                         kind=row["kind"],
@@ -453,7 +475,7 @@ class ModelDownloads:
                         purpose=entry.purpose,
                         variant=entry.variant,
                     ),
-                    recommendation=verification,
+                    verification,
                 )
             if provider is not None and provider != row["provider"]:
                 raise ApiError("自定义下载不能自动映射到另一平台，请填写新来源。", code="model.source")
@@ -497,7 +519,7 @@ class ModelDownloads:
                         "saved recommendation verification is incomplete; start from the catalog again",
                         code="download.verification",
                     ) from None
-            return self.start(body, recommendation=recommendation)
+            return body, recommendation
 
     def _run(self, id_: str, root: Path) -> None:
         from .network import ProxyPolicy
@@ -626,25 +648,26 @@ class ModelDownloads:
                     raise FileExistsError(f"download destination already exists: {target.parent}")
                 partial.parent.rename(target.parent)
                 published = True
-                if verified:
-                    from .model_recommendations import remember_verified_file
+            # Registration writes the database: outside the lock, so the list never waits for it.
+            if verified:
+                from .model_recommendations import remember_verified_file
 
-                    remember_verified_file(self.context, target, row["sha256"])
-                from .routes_core import ModelBody, add_model
+                remember_verified_file(self.context, target, row["sha256"])
+            from .routes_core import ModelBody, add_model
 
-                asset = add_model(
-                    ModelBody(
-                        family=row["family"],
-                        kind=row["kind"],
-                        path=str(target.parent if bundle else target),
-                        dtype=row["dtype"],
-                        is_default=row["is_default"],
-                        purpose=row.get("purpose", "training"),
-                        variant=row.get("variant"),
-                    ),
-                    self.context,
-                )
-                self._update(id_, status="completed", model_id=asset["id"], finished_at=now())
+            asset = add_model(
+                ModelBody(
+                    family=row["family"],
+                    kind=row["kind"],
+                    path=str(target.parent if bundle else target),
+                    dtype=row["dtype"],
+                    is_default=row["is_default"],
+                    purpose=row.get("purpose", "training"),
+                    variant=row.get("variant"),
+                ),
+                self.context,
+            )
+            self._update(id_, status="completed", model_id=asset["id"], finished_at=now())
         except _Cancelled:
             self._update(id_, status="cancelled", finished_at=now())
         except Exception as error:

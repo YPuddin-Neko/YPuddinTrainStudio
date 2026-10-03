@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -137,39 +138,32 @@ def info() -> dict[str, Any]:
 _FAMILY_INFO: dict[str, dict[str, Any]] = {}
 
 
-def family_info(name: str) -> dict[str, Any]:
+def family_info(name: str, layers: Callable[[str], dict[str, Any]] | None = None) -> dict[str, Any]:
     """Everything a UI needs to render a family: presets (with matched-layer counts on the official geometry),
-    capabilities, valid text modes, sampling defaults, latent alignment and the weight files it expects."""
+    capabilities, valid text modes, sampling defaults, latent alignment and the weight files it expects.
+
+    ``layers`` gives the layer counts; the service measures them in a GPU-free child process
+    (``family_geometry``). Without it they are measured here, which imports the model libraries."""
     if name in _FAMILY_INFO:
         return _FAMILY_INFO[name]
-    from ypuddin.adapters.rules import resolve_targets
-    from ypuddin.config import AdapterConfig
     from ypuddin.config.training_rules import training_capabilities
     from ypuddin.models import get_family
 
+    from .family_geometry import measure
+
     fam = get_family(name)
     spec = fam.spec
-    try:
-        modules = fam.adaptable_modules()
-    except Exception:  # noqa: BLE001
-        modules = {}
-    probe = AdapterConfig(algo="lora", rank=4, alpha=4)
-    probe_conv = AdapterConfig(algo="lora", rank=4, alpha=4, layer_types="linear_conv")
-    presets = []
-    for pname, preset in fam.presets().items():
-        layers = len(resolve_targets(modules, probe, preset))
-        with_conv = resolve_targets(modules, probe_conv, preset) if preset.conv else []
-        presets.append(
-            {
-                "name": pname,
-                "description": preset.description,
-                "include": list(preset.include),
-                "exclude": list(preset.exclude),
-                "layers": layers,
-                "layers_with_conv": len(with_conv),
-                "conv_layers": sum(bool(modules[target.name]) for target in with_conv),
-            }
-        )
+    geometry = (layers or measure)(name)
+    presets = [
+        {
+            "name": pname,
+            "description": preset.description,
+            "include": list(preset.include),
+            "exclude": list(preset.exclude),
+            **geometry["presets"][pname],
+        }
+        for pname, preset in fam.presets().items()
+    ]
     text_modes = ["auto", "cached"] + (["online"] if "online_text" in spec.capabilities else [])
     info = {
         "name": spec.name,
@@ -214,9 +208,10 @@ def family_info(name: str) -> dict[str, Any]:
             }
             for f, lbl, hint in spec.weights
         ],
-        "linear_modules": sum(not kernel for kernel in modules.values()),
+        "linear_modules": geometry["linear_modules"],
     }
-    _FAMILY_INFO[name] = info
+    if not geometry.get("transient"):  # counts missing only until the next measurement
+        _FAMILY_INFO[name] = info
     return info
 
 
@@ -259,7 +254,11 @@ def unavailable_options() -> dict[str, dict[str, str]]:
     }
 
 
-def runtime_family_info(name: str, unavailable: dict[str, dict[str, str]] | None = None) -> dict[str, Any]:
+def runtime_family_info(
+    name: str,
+    unavailable: dict[str, dict[str, str]] | None = None,
+    layers: Callable[[str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     from ypuddin.runtime_profiles import current_profile
 
     profile = current_profile()
@@ -291,7 +290,7 @@ def runtime_family_info(name: str, unavailable: dict[str, dict[str, str]] | None
         if backend == "mps"
         else set()
     )
-    info = family_info(name)
+    info = family_info(name) if layers is None else family_info(name, layers)
     return {
         **info,
         "runtime_backend": runtime_backend,
@@ -301,17 +300,23 @@ def runtime_family_info(name: str, unavailable: dict[str, dict[str, str]] | None
     }
 
 
+def family_layers(request: Request) -> Any:
+    """The service's layer counts, measured outside this process (see ``family_geometry``)."""
+    geometry = getattr(request.app.state, "family_geometry", None)
+    return geometry.layers if geometry is not None else None
+
+
 @router.get("/families", response_model=list[m.FamilyInfo], response_model_exclude_unset=True)
-def list_families() -> list[dict[str, Any]]:
+def list_families(layers: Any = Depends(family_layers)) -> list[dict[str, Any]]:
     unavailable = unavailable_options()
-    return [runtime_family_info(n, unavailable) for n in available_families()]
+    return [runtime_family_info(n, unavailable, layers) for n in available_families()]
 
 
 @router.get("/families/{name}", response_model=m.FamilyInfo, response_model_exclude_unset=True)
-def get_family_info(name: str) -> dict[str, Any]:
+def get_family_info(name: str, layers: Any = Depends(family_layers)) -> dict[str, Any]:
     if name not in available_families():
         raise NotFound(f"unknown model family {name!r}")
-    return runtime_family_info(name)
+    return runtime_family_info(name, layers=layers)
 
 
 # --------------------------------------------------------------------------- settings / fs
@@ -888,17 +893,27 @@ def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext
 
 
 def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
+    # Header inspections are reused while the files are unchanged: the list is polled.
+    from .model_status import remembered
+
     p = Path(r["path"])
+    scope = tuple(map(str, c.allowed_roots))
     projected = {**r, "exists": p.exists(), "is_default": bool(r["is_default"])}
     if r["kind"] == "vae" and p.is_file() and c.is_allowed(p.resolve()):
         from .model_inspection import inspect_model
 
-        try:
-            detected = inspect_model(p, allowed=c.is_allowed)
-            if detected.get("kind") == "vae":
-                projected["compatible_families"] = detected.get("family_candidates", [])
-        except (ValueError, OSError, OverflowError):
-            pass
+        def vae_families() -> tuple[list[str] | None, bool]:
+            try:
+                detected = inspect_model(p, allowed=c.is_allowed)
+            except (ValueError, OverflowError):
+                return None, True
+            except OSError:
+                return None, False  # unreadable right now; read again next time
+            return (detected.get("family_candidates", []) if detected.get("kind") == "vae" else None), True
+
+        families = remembered("vae", p, vae_families, scope=scope)
+        if families is not None:
+            projected["compatible_families"] = list(families)
     if r["family"] == "krea2" and r["kind"] == "dit":
         from ypuddin.models.krea2.variants import verified_variant
 
@@ -909,11 +924,18 @@ def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
         if projected["purpose"] == "inference":
             projected["is_default"] = False
     if r["family"] in {"flux", "flux2"}:
-        try:
-            _check_model_admission(p.expanduser().resolve(), r["family"], r["kind"], c)
-            projected["unsupported_reason"] = None
-        except ApiError as error:
-            projected["unsupported_reason"] = str(error)
+        resolved = p.expanduser().resolve()
+
+        def admission() -> tuple[str | None, bool]:
+            try:
+                _check_model_admission(resolved, r["family"], r["kind"], c)
+            except ApiError as error:
+                return str(error), not isinstance(error.__cause__, OSError)
+            return None, True
+
+        projected["unsupported_reason"] = remembered(
+            f"admission:{r['family']}:{r['kind']}", resolved, admission, scope=scope
+        )
     return projected
 
 
@@ -1200,13 +1222,23 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
 
 
 # --------------------------------------------------------------------------- events (SSE)
+NEW_STREAM_REPLAY_SECONDS = 5.0
+
+
 @router.get("/events")
 async def events(
     request: Request, last_event_id: int | None = None, c: ServiceContext = Depends(ctx)
 ) -> StreamingResponse:
     header = request.headers.get("Last-Event-ID")
-    after = int(header) if header and header.isdigit() else (last_event_id or 0)
     bus = c.bus
+    if header and header.isdigit():
+        after = int(header)
+    elif last_event_id is not None:
+        after = last_event_id
+    else:
+        # A page that just loaded reads the current state itself: replay only what happened while
+        # it connected, not the whole history, whose old events would undo that state.
+        after = bus.recent_after(NEW_STREAM_REPLAY_SECONDS)
     queue = bus.subscribe()
 
     async def gen():

@@ -28,7 +28,7 @@ from .environment import maintenance_blocked, maintenance_reason
 from .gpu_selection import selection_error
 from .hardware import gpu_info
 from .job_logs import SUPERVISOR_SOURCE, append_failure_record, entry_levels, read_log
-from .job_paths import event_file, log_file, state_directory
+from .job_paths import deleting_jobs, event_file, log_file, state_directory
 from .memory_fit import capacity_shortfall, device_label, fits_now, gb, shortfall_reason
 from .process_output import ProcessOutput
 from .sample_events import sample_event_loss
@@ -1182,6 +1182,9 @@ class JobSupervisor:
         if job["type"] == "xyz" and command not in {"cancel", "retry", "force"}:
             raise ValueError("模型测试支持取消、重试和强制开始，不能执行训练任务的暂停、恢复或保存操作。")
         if command in {"resume", "retry", "force"}:
+            # The delete routes add the job under the same lock and remove its folders outside it.
+            if job_id in deleting_jobs:
+                raise ValueError("这个任务的文件正在删除，不能再开始。")
             self._check_job_version(job)
         status = job["status"]
         if command == "pause":

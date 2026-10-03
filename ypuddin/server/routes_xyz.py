@@ -58,12 +58,17 @@ def task(jid: str, context=Depends(ctx)):
 
 @router.delete("/xyz/{jid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete(jid: str, context=Depends(ctx)):
-    from .job_paths import owned_job_directories, removal_problem
+    from .job_paths import deleting_jobs, owned_job_directories, removal_problem
+    from .project_deletion import deleting
 
     with context.db.lock:
         row = xyz._row(context, jid)
+        if jid in deleting_jobs:
+            raise ApiError("这个模型测试正在删除。", code="xyz.deleting", status=409)
         if row["status"] not in {"completed", "failed", "cancelled"} or context.supervisor.is_running(jid):
             raise ApiError("请先取消生成，等待任务结束后再删除。", code="xyz.running", status=409)
+        if row.get("project_id") and deleting(context, row["project_id"]):
+            raise ApiError("这个模型测试所在的项目正在删除。", code="project.deleting", status=409)
         roots = owned_job_directories(row)
         result = xyz.result_root(context, row)
         if not roots or not any(result == root.resolve() or result.is_relative_to(root.resolve()) for root in roots):
@@ -73,12 +78,18 @@ def delete(jid: str, context=Depends(ctx)):
             raise ApiError("模型测试目录不在允许访问的范围内。", code="xyz.path", status=403)
         if problem == "shared":
             raise ApiError("目录中包含其他任务的文件，无法删除。", code="xyz.path", status=409)
-        try:
-            for root in roots:
-                if root.is_dir():
-                    shutil.rmtree(root)
-        except OSError as exc:
-            raise ApiError("部分模型测试文件未能删除，请重试。", code="xyz.delete_failed", status=500) from exc
+        deleting_jobs.add(jid)
+    # Removed outside the lock, so other pages and live updates keep working meanwhile.
+    try:
+        for root in roots:
+            if root.is_dir():
+                shutil.rmtree(root)
+    except OSError as exc:
+        with context.db.lock:
+            deleting_jobs.discard(jid)
+        raise ApiError("部分模型测试文件未能删除，请重试。", code="xyz.delete_failed", status=500) from exc
+    with context.db.lock:
+        deleting_jobs.discard(jid)
         context.db.execute("DELETE FROM artifacts WHERE job_id=?", (jid,))
         context.db.delete("jobs", jid)
     context.bus.publish("queue.changed", {})

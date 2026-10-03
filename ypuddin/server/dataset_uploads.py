@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import re
 import shutil
 import stat
@@ -9,6 +10,7 @@ import tempfile
 import unicodedata
 import warnings
 import zipfile
+import zlib
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
@@ -196,7 +198,7 @@ def relative_upload_path(name: str) -> Path:
     win = PureWindowsPath(name)
     parts = name.split("/")
     if not name or len(name) > 240 or len(parts) > 16 or win.drive or win.root:
-        raise ApiError(f"invalid upload path: {name!r}", code="upload.path")
+        raise ApiError(_path_message(name), code="upload.path")
     for part in parts:
         if (
             not part
@@ -205,13 +207,20 @@ def relative_upload_path(name: str) -> Path:
             or any(ord(char) < 32 or char in '<>:"|?*' for char in part)
             or re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³]", part.split(".")[0].rstrip(" "), re.I)
         ):
-            raise ApiError(f"invalid upload path: {name!r}", code="upload.path")
+            raise ApiError(_path_message(name), code="upload.path")
     path = Path(*parts)
     if path.name.lower().endswith(".mask.png"):
         path = path.with_name(path.name[:-9] + ".mask.png")
     elif path.suffix.lower() in {".txt", ".json", ".mask"}:
         path = path.with_suffix(path.suffix.lower())
     return path
+
+
+def _path_message(name: str) -> str:
+    return (
+        f"文件路径无效：{name}。路径最长 240 个字符、16 层，文件名不能以点或空格结尾，"
+        "不能包含 <>:\"|?* 等字符或使用 CON、NUL 等系统保留名称。"
+    )
 
 
 def _ignored(path: Path) -> bool:
@@ -225,7 +234,9 @@ def _file_limit(path: Path, caption_ext: str = "auto") -> int:
         return MAX_CAPTION_BYTES
     if path.suffix.lower() in IMAGE_EXTS or path.name.endswith(".mask"):
         return MAX_FILE_BYTES
-    raise ApiError(f"unsupported dataset file: {path}", code="upload.file_type")
+    raise ApiError(
+        f"不支持的数据集文件：{path}。只能上传图片、TXT / JSON 标签和遮罩，或一个 ZIP。", code="upload.file_type"
+    )
 
 
 def _copy_file(
@@ -239,7 +250,7 @@ def _copy_file(
             budget[0] += len(chunk)
             if size > limit or budget[0] > MAX_EXPANDED_BYTES:
                 raise ApiError(
-                    "dataset file or expanded upload is too large", code="upload.too_large", status=413
+                    "文件或解压后的内容超过大小限制。", code="upload.too_large", status=413
                 )
             output.write(chunk)
             if progress:
@@ -266,7 +277,7 @@ def _validate_files(
 
                     read_caption(str(path), None)
             except (UnicodeError, ValueError) as exc:
-                raise ApiError(f"invalid caption {path.name}: {exc}", code="upload.caption") from exc
+                raise ApiError(f"标签文件无法读取：{path.name}（{exc}）", code="upload.caption") from exc
             suffix = path.suffix if path.suffix.lower() in {".txt", ".json"} else caption_ext
             sidecars.append((path, path.with_name(path.name[: -len(suffix)])))
             if progress:
@@ -282,7 +293,7 @@ def _validate_files(
                 with Image.open(path) as im:
                     im.load()  # Header-only probes can accept truncated JPEGs that fail in training.
         except Exception as exc:
-            raise ApiError(f"invalid or oversized image: {path.name}", code="upload.image") from exc
+            raise ApiError(f"图片无法读取或超过像素上限：{path.name}", code="upload.image") from exc
         if path.name.endswith(".mask.png"):
             sidecars.append((path, path.with_name(path.name[:-9])))
         elif path.name.endswith(".mask"):
@@ -290,16 +301,16 @@ def _validate_files(
         else:
             stem = path.with_suffix("")
             if stem in images:
-                raise ApiError(f"image names share a caption stem: {path.name}", code="upload.duplicate")
+                raise ApiError(f"多张图片对应同一个标签文件名：{path.name}", code="upload.duplicate")
             images[stem] = path
         if progress:
             progress.advance(files_done=1)
     if not images:
-        raise ApiError("upload contains no training images", code="upload.no_images")
+        raise ApiError("上传的内容中没有训练图片。", code="upload.no_images")
     for path, stem in sidecars:
         if stem not in images:
             raise ApiError(
-                f"caption or mask has no matching image: {path.name}", code="upload.orphan_sidecar"
+                f"标签或遮罩没有对应的图片：{path.name}", code="upload.orphan_sidecar"
             )
 
 
@@ -328,15 +339,15 @@ def _destination_path(
             alias = children[parent].get(name.casefold())
             if alias is not None and alias != name:
                 raise ApiError(
-                    f"upload path conflicts with existing spelling: {relative}",
+                    f"上传路径与已有文件仅大小写不同：{relative}",
                     code="upload.conflict",
                     status=409,
                 )
         if candidate.is_symlink():
-            raise ApiError(f"upload target contains a symbolic link: {relative}", code="upload.path")
+            raise ApiError(f"目标位置包含符号链接：{relative}", code="upload.path")
         if candidate.exists() and candidate.is_dir() != (index < len(relative.parts) - 1 or directory):
             raise ApiError(
-                f"upload file and directory names conflict: {relative}",
+                f"上传的文件与已有的同名目录冲突：{relative}",
                 code="upload.conflict",
                 status=409,
             )
@@ -402,14 +413,14 @@ def merge_dataset_files(
                 matches = caption_stems[destination.parent].get(destination.stem.casefold(), set())
                 if matches - {destination.name}:
                     raise ApiError(
-                        f"an existing image already uses this caption name: {relative}",
+                        f"已有图片使用了同名标签文件：{relative}",
                         code="upload.conflict",
                         status=409,
                     )
             if destination.exists():
                 if not destination.is_file() or not _same_bytes(source, destination):
                     raise ApiError(
-                        f"existing file has different content: {relative}; rename it before importing",
+                        f"已有同名文件且内容不同：{relative}。请重命名后再导入。",
                         code="upload.conflict",
                         status=409,
                     )
@@ -477,7 +488,7 @@ def staged_upload(
     root = dataset_root or project_dir / "datasets"
     root.mkdir(parents=True, exist_ok=True)
     if root.is_symlink() or not root.resolve().is_relative_to(project_dir.resolve()):
-        raise ApiError("managed dataset directory must remain inside its project", code="upload.path")
+        raise ApiError("数据集目录必须位于项目内。", code="upload.path")
     temporary = Path(tempfile.mkdtemp(prefix=".upload-", dir=root))
     staging_root = temporary
     try:
@@ -491,27 +502,27 @@ def staged_upload(
         def target(path: Path) -> Path:
             key = path.as_posix().casefold()
             if key in seen:
-                raise ApiError(f"duplicate upload path: {path}", code="upload.duplicate")
+                raise ApiError(f"上传路径重复：{path}", code="upload.duplicate")
             seen.add(key)
             for count in range(1, len(path.parts) + 1):
                 prefix = Path(*path.parts[:count]).as_posix()
                 previous = spellings.setdefault(prefix.casefold(), prefix)
                 if previous != prefix:
-                    raise ApiError(f"upload paths differ only by case: {path}", code="upload.duplicate")
+                    raise ApiError(f"上传路径仅大小写不同：{path}", code="upload.duplicate")
             result = temporary / path
             paths.append(result)
             return result
 
         if zip_inputs:
             if len(batch.files) != 1:
-                raise ApiError("upload one ZIP or separate files, not both", code="upload.mixed_zip")
+                raise ApiError("请单独上传一个 ZIP，或选择图片及标签文件。", code="upload.mixed_zip")
             batch.files[0].file.seek(0)
             with zipfile.ZipFile(batch.files[0].file) as archive:
                 entries = archive.infolist()
                 if len(entries) > MAX_FILES:
-                    raise ApiError("ZIP contains too many entries", code="upload.too_many", status=413)
+                    raise ApiError("ZIP 内最多包含 5,000 个文件。", code="upload.too_many", status=413)
                 if sum(item.file_size for item in entries) > MAX_EXPANDED_BYTES:
-                    raise ApiError("ZIP expands beyond 4 GiB", code="upload.too_large", status=413)
+                    raise ApiError("ZIP 解压后超过 4 GiB。", code="upload.too_large", status=413)
                 if progress:
                     included = [
                         item
@@ -528,13 +539,13 @@ def staged_upload(
                     mode = (item.external_attr >> 16) & 0xFFFF
                     if stat.S_ISLNK(mode) or (stat.S_IFMT(mode) not in {0, stat.S_IFREG, stat.S_IFDIR}):
                         raise ApiError(
-                            "ZIP links and special files are not supported", code="upload.zip_entry"
+                            "ZIP 中不能包含链接或特殊文件。", code="upload.zip_entry"
                         )
                     if item.flag_bits & 1 or item.compress_type not in {
                         zipfile.ZIP_STORED,
                         zipfile.ZIP_DEFLATED,
                     }:
-                        raise ApiError("encrypted or unsupported ZIP compression", code="upload.zip_entry")
+                        raise ApiError("ZIP 已加密或使用了不支持的压缩方式。", code="upload.zip_entry")
                     if item.is_dir() or _ignored(path):
                         continue
                     limit = _file_limit(path, batch.caption_ext)
@@ -542,7 +553,7 @@ def staged_upload(
                         item.file_size > CHUNK and item.file_size / max(item.compress_size, 1) > MAX_ZIP_RATIO
                     ):
                         raise ApiError(
-                            "ZIP entry exceeds size or compression-ratio limit",
+                            "ZIP 中有文件超过大小或压缩比限制。",
                             code="upload.too_large",
                             status=413,
                         )
@@ -550,7 +561,7 @@ def staged_upload(
                         _copy_file(source, target(path), limit, budget, progress)
         else:
             if len(batch.files) > MAX_FILES:
-                raise ApiError("too many uploaded files", code="upload.too_many", status=413)
+                raise ApiError("单次最多上传 5,000 个文件。", code="upload.too_many", status=413)
             if progress:
                 included_uploads = [
                     upload for upload, path in zip(batch.files, names, strict=True) if not _ignored(path)
@@ -566,7 +577,7 @@ def staged_upload(
                     continue
                 limit = _file_limit(path, batch.caption_ext)
                 if upload.size is not None and upload.size > limit:
-                    raise ApiError(f"uploaded file is too large: {path}", code="upload.too_large", status=413)
+                    raise ApiError(f"文件超过大小限制：{path}", code="upload.too_large", status=413)
                 upload.file.seek(0)
                 _copy_file(upload.file, target(path), limit, budget, progress)
         _validate_files(paths, batch.caption_ext, progress)
@@ -589,7 +600,20 @@ def staged_upload(
             yield directories
     except ApiError:
         raise
-    except (OSError, ValueError, zipfile.BadZipFile, RuntimeError) as exc:
-        raise ApiError(f"could not import upload: {exc}", code="upload.invalid") from exc
+    except OSError as exc:
+        raise storage_error(exc) from exc
+    except (zipfile.BadZipFile, zlib.error, EOFError) as exc:
+        raise ApiError("ZIP 文件已损坏或格式无效。", code="upload.invalid") from exc
+    except (ValueError, RuntimeError) as exc:
+        raise ApiError(f"无法导入上传的文件：{exc}", code="upload.invalid") from exc
     finally:
         shutil.rmtree(staging_root, ignore_errors=True)
+
+
+def storage_error(exc: OSError) -> ApiError:
+    """Disk problems are not the files' fault: the same upload can be imported once they are fixed."""
+    if exc.errno in {errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)}:
+        return ApiError(
+            "磁盘空间不足，无法导入上传的文件。请释放空间后重试。", code="upload.disk_full", status=507
+        )
+    return ApiError(f"导入时写入文件失败：{exc}", code="upload.storage", status=500)

@@ -174,7 +174,9 @@ def edit_version_membership(
             source["excluded_files"] = sorted(excluded - paths if body.included else excluded | paths)
         _write_project_config(c, pid, config, vid)
     for did in grouped:
-        c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "membership"})
+        c.bus.publish(
+            "dataset.changed", {"dataset_id": did, "project_id": pid, "version_id": vid, "reason": "membership"}
+        )
     return {"changed": sum(map(len, grouped.values())), "included": body.included}
 
 
@@ -259,5 +261,7 @@ def edit_dataset(did: str, body: DatasetEdit, c: ServiceContext = Depends(contex
             if written:
                 _write_project_config(c, row["project_id"], previous, row["version_id"])
             raise
-    c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "settings"})
+    c.bus.publish("dataset.changed", {
+        "dataset_id": did, "project_id": row["project_id"], "version_id": row["version_id"], "reason": "settings",
+    })
     return _dataset_row(c, _get_dataset(c, did), include_cache=False)

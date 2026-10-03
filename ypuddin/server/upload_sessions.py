@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import os
 import re
@@ -21,9 +22,11 @@ from starlette.datastructures import UploadFile
 
 from . import dataset_uploads as uploads
 from .errors import ApiError
-from .import_progress import ImportProgress, ImportProgressStore
+from .import_progress import BYTE_PHASES, ImportProgress, ImportProgressStore
 
 CHUNK_BYTES = 8 * 1024**2
+# An empty staging folder older than this has no owner that is still setting it up.
+ORPHAN_GRACE_SECONDS = 300
 
 
 class UploadManifestFile(BaseModel):
@@ -73,7 +76,8 @@ class _StagedReader(io.RawIOBase):
         else:
             raise ValueError("invalid seek origin")
         if position < 0:
-            raise ValueError("negative seek position")
+            # Like a real file, so zipfile reports a short archive as BadZipFile.
+            raise OSError(errno.EINVAL, "Invalid argument")
         self.position = position
         return position
 
@@ -84,6 +88,19 @@ class _StagedReader(io.RawIOBase):
             data = stream.read(size)
         self.position += len(data)
         return data
+
+
+# The uploaded files themselves are unusable, or their target is gone: another attempt cannot succeed.
+_REJECTED = {
+    "upload.image", "upload.caption", "upload.no_images", "upload.orphan_sidecar", "upload.duplicate",
+    "upload.zip_entry", "upload.too_large", "upload.too_many", "upload.path", "upload.file_type",
+    "upload.mixed_zip", "upload.invalid",
+}
+
+
+def rejected_files(error: ApiError) -> bool:
+    """Busy or indexing versions, conflicts, full disks and unexpected errors leave the upload retryable."""
+    return error.code in _REJECTED or error.status == 404
 
 
 def _manifest(body: UploadSessionBody) -> list[tuple[str, int]]:
@@ -136,13 +153,62 @@ class UploadSession:
     received: list[int]
     active: int = 0
     result: dict[str, Any] | None = None
+    # Set only when the files themselves cannot be imported; other failures can be retried.
     failure: ApiError | None = None
+    # The latest failed attempt, kept so a reloaded page can show why the import is waiting.
+    last_error: ApiError | None = None
     cancelled: bool = False
+    finalizing: bool = False
+    finalize_started: float | None = None
     lock: Any = field(default_factory=threading.RLock)
+    # Guards cancelled/finalizing/result together, so a cancel never lands inside a publication.
+    state_lock: Any = field(default_factory=threading.Lock)
+
+    @property
+    def open(self) -> bool:
+        """Still uploading or waiting to be imported: the staged files are kept."""
+        return self.result is None and self.failure is None and not self.cancelled
 
     @property
     def reserved_bytes(self) -> int:
-        return sum(size for _, size in self.manifest) if self.result is None else 0
+        return sum(size for _, size in self.manifest) if self.open else 0
+
+    @property
+    def subject(self) -> str:
+        return self.body.name or self.manifest[0][0].split("/", 1)[0]
+
+    @property
+    def link(self) -> str:
+        if self.body.target_dataset_id:
+            return f"/datasets/{self.body.target_dataset_id}"
+        step = "reg" if self.body.is_reg else "datasets"
+        return f"/projects/{self.pid}/v/{self.vid}?step=data&data_step={step}"
+
+    def state(self) -> str:
+        if self.finalizing:
+            return "finalizing"
+        if self.result is not None:
+            return "completed"
+        if self.failure is not None:
+            return "failed"
+        complete = all(received == size for received, (_, size) in zip(self.received, self.manifest, strict=True))
+        return "ready" if complete else "receiving"
+
+    def status(self, expires_in: float) -> dict[str, Any]:
+        """Read without the session lock, which an import holds until it finishes."""
+        error = self.failure or self.last_error
+        return {
+            "id": self.id,
+            "state": self.state(),
+            "received": list(self.received),
+            "chunk_bytes": CHUNK_BYTES,
+            "progress_id": self.progress.id,
+            "expires_in": expires_in,
+            "result": self.result,
+            "error": {"code": error.code, "message": error.message, "retryable": self.failure is None}
+            if error is not None and self.result is None
+            else None,
+        }
 
     def put(self, index: int, offset: int, data: bytes) -> int:
         with self.lock:
@@ -184,14 +250,16 @@ class UploadSession:
 
     def finish(self, publish: Callable[[uploads.UploadBatch, ImportProgress], dict[str, Any]]) -> dict[str, Any]:
         with self.lock:
-            if self.cancelled:
-                raise ApiError("上传已取消。", code="upload.cancelled", status=409)
-            if self.result is not None:
-                return self.result
-            if self.failure is not None:
-                raise self.failure
-            if any(received != size for received, (_, size) in zip(self.received, self.manifest, strict=True)):
-                raise ApiError("文件尚未上传完成。", code="upload.incomplete", status=409)
+            with self.state_lock:
+                if self.cancelled:
+                    raise ApiError("上传已取消。", code="upload.cancelled", status=409)
+                if self.result is not None:
+                    return self.result
+                if self.failure is not None:
+                    raise self.failure
+                if self.state() != "ready":
+                    raise ApiError("文件尚未上传完成。", code="upload.incomplete", status=409)
+                self.finalizing, self.finalize_started, self.last_error = True, time.time(), None
             try:
                 with ExitStack() as stack:
                     files = []
@@ -205,17 +273,43 @@ class UploadSession:
                         files=files,
                         **self.body.model_dump(exclude={"version_id", "target_dataset_id", "progress_id", "files"}),
                     )
-                    self.result = publish(batch, self.progress)
+                    result = publish(batch, self.progress)
             except BaseException as exc:
-                self.failure = exc if isinstance(exc, ApiError) else ApiError(
+                error = exc if isinstance(exc, ApiError) else ApiError(
                     f"导入失败：{exc}", code="upload.failed", status=500
                 )
-                self.progress.fail(self.failure.code)
+                permanent = rejected_files(error)
+                with self.state_lock:
+                    self.finalizing, self.last_error = False, error
+                    if permanent:
+                        self.failure = error
+                if permanent:
+                    self.progress.fail(error.code)
+                    # These files can never be imported; only the reason is kept for retries.
+                    shutil.rmtree(self.directory, ignore_errors=True)
+                else:
+                    # Nothing was published: the same staged files wait for another attempt.
+                    total = sum(size for _, size in self.manifest)
+                    self.progress.set_phase("receiving", bytes_total=total, files_total=len(self.manifest))
+                    self.progress.advance(bytes_done=total, files_done=len(self.manifest))
                 raise
+            with self.state_lock:
+                self.result, self.finalizing = result, False
             self.progress.complete()
             # Keep the result for lost-response retries, not another copy of all images.
             shutil.rmtree(self.directory, ignore_errors=True)
             return self.result
+
+
+def assert_receivable(c: Any, session: UploadSession) -> None:
+    """Staging bytes changes no version data: a busy or indexing version only delays the import."""
+    version = c.resolve_version(session.pid, session.vid)
+    project = c.db.fetchone("SELECT archived FROM projects WHERE id=?", (session.pid,))
+    if project is None or project["archived"] or version["archived"]:
+        raise ApiError("项目或版本已归档，上传已停止。", code="upload.archived", status=409)
+    target = session.body.target_dataset_id
+    if target and not c.db.fetchone("SELECT id FROM datasets WHERE id=? AND version_id=?", (target, session.vid)):
+        raise ApiError("上传目标不存在。", code="dataset.not_found", status=404)
 
 
 class UploadSessionStore:
@@ -252,6 +346,23 @@ class UploadSessionStore:
             return False
         return True
 
+    @staticmethod
+    def _unlock_owner(stream: Any) -> None:
+        # Windows frees a lock left at close only some time later, and until then the marker
+        # cannot be deleted: the folder would stay behind, emptied, after the lock finally goes.
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+        except (OSError, ValueError):  # ValueError: the stream is already closed
+            pass
+
     def _ensure_worker(self) -> Path:
         if self.worker is not None:
             return self.worker
@@ -272,6 +383,7 @@ class UploadSessionStore:
             stream.truncate()
             stream.flush()
         except BaseException:
+            self._unlock_owner(stream)
             stream.close()
             shutil.rmtree(worker, ignore_errors=True)
             raise
@@ -289,9 +401,16 @@ class UploadSessionStore:
             if marker.is_symlink():
                 continue
             try:
+                if not marker.exists():
+                    # Left empty by a removal that finished late. An owner creates its marker right
+                    # after the folder, so only folders that stayed empty for a while are removed.
+                    if time.time() - directory.stat().st_mtime > ORPHAN_GRACE_SECONDS:
+                        directory.rmdir()
+                    continue
                 with marker.open("r+b") as stream:
                     if stream.read(256) != self._owner_bytes(directory) or not self._lock_owner(stream):
                         continue
+                    self._unlock_owner(stream)
                 # Owners only create fresh UUID directories. After this lock is released,
                 # another cleaner may race with removal, but no live owner can adopt it.
                 shutil.rmtree(directory, ignore_errors=True)
@@ -300,6 +419,7 @@ class UploadSessionStore:
 
     def _close_worker(self) -> None:
         if self.closed and not self.entries and self.worker is not None:
+            self._unlock_owner(self.owner)
             self.owner.close()
             shutil.rmtree(self.worker, ignore_errors=True)
             self.worker = self.owner = None
@@ -324,7 +444,7 @@ class UploadSessionStore:
             self.prune()
             if self.closed:
                 raise ApiError("服务正在关闭，请稍后重试。", code="service.restarting", status=409)
-            active = [entry for entry in self.entries.values() if entry.result is None]
+            active = [entry for entry in self.entries.values() if entry.open]
             if len(active) >= self.capacity or len(self.entries) >= self.progress.capacity:
                 raise ApiError("同时上传的任务过多，请稍后重试。", code="upload.capacity", status=503)
             if sum(entry.reserved_bytes for entry in active) + sum(size for _, size in manifest) > self.max_bytes:
@@ -368,10 +488,53 @@ class UploadSessionStore:
             entry = self.entries.get(sid)
             if entry is None or entry.pid != pid:
                 raise ApiError("上传会话不存在或已过期。", code="upload.session_not_found", status=404)
-            entry.cancelled = True
+            with entry.state_lock:
+                if entry.finalizing:
+                    raise ApiError("文件正在导入，无法取消。", code="upload.finalizing", status=409)
+                entry.cancelled = True
+            # Completed progress stays completed: deleting a confirmed import only drops its receipt.
             entry.progress.fail("upload.cancelled")
             if not entry.active:
                 self._remove(entry, "upload.cancelled")
+
+    def status(self, pid: str, sid: str) -> dict[str, Any]:
+        """What a reloaded page needs to resume; reading it does not keep the session alive."""
+        with self.lock:
+            self.prune()
+            entry = self.entries.get(sid)
+            if entry is None or entry.pid != pid or entry.cancelled:
+                raise ApiError("上传会话不存在或已过期。", code="upload.session_not_found", status=404)
+            idle = 0.0 if entry.active else self.clock() - entry.touched
+            return entry.status(max(0.0, self.ttl_seconds - idle))
+
+    def background_tasks(self) -> list[dict[str, Any]]:
+        """Imports of uploaded files, listed by the task center while they run on the server."""
+        with self.lock:
+            entries = [entry for entry in self.entries.values() if entry.finalizing]
+        tasks = []
+        for entry in entries:
+            snapshot = entry.progress.snapshot()
+            phase = snapshot["phase"]
+            unit = (
+                "bytes" if phase in BYTE_PHASES and snapshot["bytes_total"]
+                else "files" if snapshot["files_total"]
+                else None
+            )
+            tasks.append({
+                "id": f"upload-{entry.id}",
+                "kind": "dataset_upload",
+                "subject": entry.subject,
+                "state": "running",
+                "done": snapshot[f"{unit}_done"] if unit else None,
+                "total": snapshot[f"{unit}_total"] if unit else None,
+                "unit": unit,
+                "detail": phase,
+                "link": entry.link,
+                "started_at": entry.finalize_started or time.time(),
+                "session_id": entry.id,
+                "project_id": entry.pid,
+            })
+        return tasks
 
     def close(self) -> None:
         with self.lock:

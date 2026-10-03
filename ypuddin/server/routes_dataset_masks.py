@@ -199,6 +199,12 @@ def _save(c: ServiceContext, did: str, h: str, rel_path: str | None, data: bytes
             )
         if gray.size != (previous.width, previous.height):
             raise ApiError(f"mask dimensions must be {previous.width}×{previous.height}", code="mask.size")
+        from .dataset_refresh import image_entry, note_own_edit
+
+        records = _records(c, did)
+        # The image as the index lists it; a newly created mask changes its part of the folder signature.
+        listed = next((Path(record["path"]) for record in records if Path(record["path"]).resolve() == image), None)
+        before = image_entry(row, listed) if listed else None
         temporary: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".tmp", delete=False) as stream:
@@ -211,7 +217,6 @@ def _save(c: ServiceContext, did: str, h: str, rel_path: str | None, data: bytes
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
         # Masks are read fresh by Dataset.current_mask, including when latents are cached.
-        records = _records(c, did)
         for record in records:
             if Path(record["path"]).resolve() == image:
                 record["mask_path"] = str(target)
@@ -229,7 +234,12 @@ def _save(c: ServiceContext, did: str, h: str, rel_path: str | None, data: bytes
         stats = json.loads(row["stats_json"] or "{}")
         stats["masks"] = sum(bool(record["mask_path"]) for record in records)
         c.db.update("datasets", did, {"stats_json": json.dumps(stats)})
-    c.bus.publish("dataset.changed", {"dataset_id": did, "project_id": row["project_id"], "reason": "mask"})
+        # The records are current again, so the next check of the folder finds nothing to re-index.
+        if listed:
+            note_own_edit(c, did, [before], [image_entry(row, listed)])
+    c.bus.publish("dataset.changed", {
+        "dataset_id": did, "project_id": row["project_id"], "version_id": row["version_id"], "reason": "mask",
+    })
     return _load(image, target)[1]
 
 

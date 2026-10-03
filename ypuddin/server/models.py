@@ -1102,3 +1102,45 @@ class Artifact(_Out):
 
 class Ok(_Out):
     ok: bool = True
+
+
+class ProjectStorageLocation(_Out):
+    path: str
+    # project, cache, products, records, resume, logs or samples.
+    kinds: list[str]
+    # Outside the data folder: a custom folder from settings or the project's configuration.
+    custom: bool
+    exists: bool
+    bytes: int
+    files: int
+    # Why the folder cannot be removed safely; the user may keep it and delete the rest.
+    problem: Literal["unavailable", "linked", "outside"] | None = None
+
+
+class ProjectStorageBlock(_Out):
+    code: str
+    message: str
+    jobs: list[str] = Field(default_factory=list)
+
+
+class ProjectDeletionState(_Out):
+    state: Literal["deleting", "failed"]
+    error: str | None = None
+    task_id: str | None = None
+
+
+class ProjectStorage(_Out):
+    """Everything deleting the project removes from disk, and what stops it now."""
+
+    locations: list[ProjectStorageLocation]
+    total_bytes: int
+    jobs: int
+    artifacts: int
+    blocked: ProjectStorageBlock | None = None
+    deletion: ProjectDeletionState | None = None
+
+
+class ProjectDeletionStarted(_Out):
+    ok: bool = True
+    # Files are removed in the background; the task center follows this task.
+    task_id: str | None = None

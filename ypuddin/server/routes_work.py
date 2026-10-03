@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import io
 import json
 import math
@@ -145,6 +144,7 @@ def _latest_training(c: ServiceContext, project_id: str) -> dict[str, Any] | Non
 def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     from .artifact_inventory import artifact_count
     from .family_config import version_family
+    from .project_deletion import public_state
 
     ds = c.db.fetchall(
         "SELECT id,is_reg,stats_json,index_status FROM datasets WHERE version_id=?", (r["active_version_id"],)
@@ -171,6 +171,8 @@ def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         )["n"],
         "stats": {"jobs": jobs, "artifacts": arts},
         "latest_job": _latest_training(c, r["id"]),
+        # A deletion running in the background, or one that stopped and can be retried.
+        "deletion": public_state(c, r["id"]),
     }
 
 
@@ -310,6 +312,13 @@ def _get_project(c: ServiceContext, pid: str) -> dict[str, Any]:
     return r
 
 
+def _assert_not_deleting(c: ServiceContext, pid: str) -> None:
+    from .project_deletion import deleting
+
+    if deleting(c, pid):
+        raise ApiError("这个项目正在删除。", code="project.deleting", status=409)
+
+
 @router.get("/projects/{pid}", response_model=m.Project, response_model_exclude_unset=True)
 def get_project(pid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return _project_row(c, _get_project(c, pid))
@@ -319,6 +328,7 @@ def get_project(pid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     with c.db.lock:
         _get_project(c, pid)
+        _assert_not_deleting(c, pid)
         fields = {
             k: (int(v) if isinstance(v, bool) else v) for k, v in body.model_dump().items() if v is not None
         }
@@ -367,6 +377,7 @@ async def upload_project_cover(pid: str, request: Request, c: ServiceContext = D
     def save():
         with c.db.lock:
             row = _get_project(c, pid)
+            _assert_not_deleting(c, pid)
             if row["created_at"] != original["created_at"]:
                 raise ApiError(
                     "project was replaced during upload; retry", code="project.cover_conflict", status=409
@@ -405,72 +416,46 @@ def get_project_cover(pid: str, c: ServiceContext = Depends(ctx)) -> Response:
 @router.delete("/projects/{pid}/cover", response_model=m.Project)
 def delete_project_cover(pid: str, c: ServiceContext = Depends(ctx)) -> dict:
     with c.db.lock:
+        _assert_not_deleting(c, pid)
         remove_cover(c, _get_project(c, pid))
         return _project_row(c, _get_project(c, pid))
 
 
-@router.delete("/projects/{pid}", response_model=m.Ok, response_model_exclude_unset=True)
-def delete_project(pid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    from .job_paths import job_directories, removal_problem
+@router.get("/projects/{pid}/storage", response_model=m.ProjectStorage, response_model_exclude_unset=True)
+def project_storage(pid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    """Every folder deleting the project removes, with sizes and what keeps any of them."""
+    from .project_deletion import deletions
 
+    return deletions(c).storage(pid)
+
+
+@router.delete(
+    "/projects/{pid}", response_model=m.ProjectDeletionStarted, response_model_exclude_unset=True
+)
+def delete_project(
+    pid: str,
+    delete_files: bool = False,
+    skip: list[str] = Query([], description="Listed folders the user chose to keep, such as an unplugged drive."),
+    c: ServiceContext = Depends(ctx),
+) -> dict[str, Any]:
+    from .project_deletion import _project_busy, deletions
+
+    service = deletions(c)
+    if delete_files:
+        # Files go in the background; the project is marked as deleting until its records go too.
+        return {"ok": True, "task_id": service.start(pid, skip)}
     with c.db.lock:
         project = _get_project(c, pid)
-        project_root = c.project_dir(pid)
-        if c.db.fetchone(f"SELECT id FROM jobs WHERE project_id=? AND status IN {ACTIVE_JOBS}", (pid,)):
-            raise ApiError("project has running jobs", code="project.busy", status=409)
-        if c.db.fetchone(
-            "SELECT id FROM project_versions WHERE project_id=? AND (status='copying' OR busy IS NOT NULL)",
-            (pid,),
-        ):
-            raise ApiError("project has an active data copy", code="project.busy", status=409)
-        if any(
-            c.supervisor.is_running(row["id"])
-            for row in c.db.fetchall("SELECT id FROM jobs WHERE project_id=?", (pid,))
-        ):
-            raise ApiError("wait for the project's worker processes to exit", code="project.busy", status=409)
-        if not project["archived"]:
-            raise ApiError(
-                "archive the project before permanently deleting it",
-                code="project.archive_required",
-                status=409,
-            )
-        if delete_files:
-            # Include links in the preflight so no earlier directory is removed before rejecting one.
-            folders = list(dict.fromkeys([
-                *(
-                    directory
-                    for job in c.db.fetchall("SELECT * FROM jobs WHERE project_id=?", (pid,))
-                    for directory in job_directories(job)
-                    if directory.name == job["id"]
-                ),
-                project_root,
-            ]))
-            problem = removal_problem(c, pid, folders, owner_type="project")
-            if problem == "outside":
-                raise ApiError("项目目录不在允许访问的范围内或经过符号链接，无法删除。", code="project.path", status=403)
-            if problem == "shared":
-                raise ApiError("目录中包含其他任务的文件，无法删除。", code="project.files_in_use", status=409)
-            if users := _jobs_using(c, pid, folders, owner_type="project"):
-                raise ApiError(
-                    f"任务“{users[0]['name']}”还要用到这个项目的文件，请等它结束或取消后再删除。",
-                    code="project.files_in_use",
-                    status=409,
-                    details={"jobs": [row["id"] for row in users]},
-                )
-            try:
-                for directory in folders:
-                    if directory.exists():
-                        shutil.rmtree(directory)
-            except OSError as exc:
-                raise ApiError(
-                    "could not remove all project files; the archived project is retained so you can retry",
-                    code="project.delete_files_failed",
-                    status=500,
-                ) from exc
+        if error := _project_busy(c, pid, project):
+            raise error
+        records = [_records_path(c, row["id"]) for row in c.db.fetchall("SELECT id FROM datasets WHERE project_id=?", (pid,))]
         c.db.execute("DELETE FROM jobs WHERE project_id=?", (pid,))
         c.db.execute("DELETE FROM artifacts WHERE project_id=?", (pid,))
+        c.db.execute("DELETE FROM project_deletions WHERE project_id=?", (pid,))
         c.db.delete("projects", pid)
-        return {"ok": True}
+    for record in records:
+        record.unlink(missing_ok=True)
+    return {"ok": True}
 
 
 @router.get("/projects/{pid}/config")
@@ -831,7 +816,9 @@ def _register_dataset(
             if written:
                 _write_project_config(c, pid, previous, version["id"])
             raise
-    c.bus.publish("dataset.changed", {"dataset_id": did, "project_id": pid, "reason": "added"})
+    c.bus.publish(
+        "dataset.changed", {"dataset_id": did, "project_id": pid, "version_id": version["id"], "reason": "added"}
+    )
     return did
 
 
@@ -979,7 +966,10 @@ def _register_upload(
                         _write_project_config(c, pid, previous, version["id"])
                     raise
     for did in selected:
-        c.bus.publish("dataset.changed", {"dataset_id": did, "project_id": pid, "reason": "imported"})
+        c.bus.publish(
+            "dataset.changed",
+            {"dataset_id": did, "project_id": pid, "version_id": version["id"], "reason": "imported"},
+        )
     return list(selected)
 
 
@@ -987,115 +977,121 @@ def _records_path(c: ServiceContext, did: str) -> Path:
     return c.data_root / "datasets" / f"{did}.json"
 
 
-def _dataset_signature(row: dict[str, Any]) -> str:
-    from ypuddin.data.index import caption_for, iter_images, mask_for
+def _refresh_dataset(c: ServiceContext, row: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
+    """Return the dataset as indexed now; files changed elsewhere are re-indexed in the background."""
+    from .dataset_refresh import refresher
 
-    digest = hashlib.blake2b(digest_size=20)
-    digest.update(json.dumps((1, row["path"], row["caption_ext"])).encode())
-    captions = {}
-    try:
-        for image in iter_images(row["path"]):
-            for path in (image, caption_for(image, row["caption_ext"], directory_cache=captions), mask_for(image)):
-                if path is not None:
-                    stat = Path(path).stat()
-                    digest.update(
-                        json.dumps((str(path), stat.st_size, stat.st_mtime_ns,
-                                    stat.st_ctime_ns, stat.st_ino, stat.st_dev)).encode()
-                    )
-    except OSError as exc:
-        # Keep unavailable sources stable between reads and retry when their files return.
-        digest.update(json.dumps((type(exc).__name__, exc.errno, exc.filename)).encode())
-    return digest.hexdigest()
+    refresher(c).request(row, force=force)
+    return row
 
 
-def _refresh_dataset(c: ServiceContext, row: dict[str, Any]) -> dict[str, Any]:
-    if row["index_status"] == "indexing":
-        return row
-    signature = _dataset_signature(row)
-    with c.db.lock:
-        current = _get_dataset(c, row["id"])
-        if current["index_status"] == "indexing" or any(
-            current[key] != row[key] for key in ("path", "caption_ext")
-        ):
-            return current
-        stats = json.loads(current["stats_json"] or "{}")
-        if stats.get("_source_signature") == signature and (
-            current["index_status"] == "failed"
-            or (current["index_status"] == "ready" and _records_path(c, row["id"]).is_file())
-        ):
-            return current
-        c.db.update("datasets", row["id"], {"index_status": "indexing"})
-    _index_dataset(c, row["id"])
-    return _get_dataset(c, row["id"])
+def _index_error(error: Exception) -> str:
+    if isinstance(error, (FileNotFoundError, NotADirectoryError)):
+        return "数据集目录不存在或无法访问。"
+    if isinstance(error, PermissionError):
+        return "没有权限读取数据集目录。"
+    return str(error)
 
 
-def _index_dataset(c: ServiceContext, did: str) -> None:
-    row = c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
-    if not row:
-        return
-    src = DatasetSourceConfig(
-        path=row["path"],
-        repeats=row["repeats"],
-        caption_ext=row["caption_ext"],
-        is_reg=bool(row["is_reg"]),
-        prior_weight=row["prior_weight"],
-        class_prompt=row["class_prompt"],
-    )
-    signature = _dataset_signature(row)
-    temporary = None
-    try:
-        db = IndexDB(c.service_cache_dir("index") / "index.sqlite")
-        try:
-            records = scan_sources(
-                [src],
-                index_db=db,
-                progress=lambda d, t: c.bus.publish(
-                    "job.cache_progress", {"job_id": did, "kind": "index", "done": d, "total": t}
-                ),
+def _index_dataset(
+    c: ServiceContext,
+    did: str,
+    *,
+    listing: Any = None,
+    signature: str | None = None,
+    refresh: bool = False,
+    task: str | None = None,
+) -> None:
+    """Rebuild a dataset's index records.
+
+    ``refresh`` marks a re-index started by a read: it leaves the dataset editable and gives way to
+    an index someone requested meanwhile. ``listing`` and ``signature`` reuse the walk that found the
+    change, so the folder is listed once.
+    """
+    from .dataset_refresh import dataset_signature, refresher
+
+    service = refresher(c)
+    with service.index_lock(did):
+        row = c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
+        if not row or refresh and row["index_status"] == "indexing":
+            return
+        src = DatasetSourceConfig(
+            path=row["path"],
+            repeats=row["repeats"],
+            caption_ext=row["caption_ext"],
+            is_reg=bool(row["is_reg"]),
+            prior_weight=row["prior_weight"],
+            class_prompt=row["class_prompt"],
+        )
+        if signature is None:
+            signature, listing = dataset_signature(row)
+        service.checked(did)
+
+        def progress(done: int, total: int) -> None:
+            c.bus.publish("job.cache_progress", {"job_id": did, "kind": "index", "done": done, "total": total})
+            if task is not None and c.background_tasks is not None:
+                c.background_tasks.update(task, done=done, total=total)
+
+        def superseded(current: dict[str, Any] | None) -> bool:
+            return (
+                current is None
+                or any(current[key] != row[key] for key in ("path", "caption_ext"))
+                or refresh and current["index_status"] == "indexing"
             )
+
+        temporary = None
+        try:
+            db = IndexDB(c.service_cache_dir("index") / "index.sqlite")
+            try:
+                records = scan_sources(
+                    [src],
+                    index_db=db,
+                    progress=progress,
+                    listings={row["path"]: listing} if listing is not None else None,
+                )
+            finally:
+                db.close()
+            res: dict[tuple[int, int], int] = {}
+            ars: dict[str, int] = {}
+            for r in records:
+                res[(r.width, r.height)] = res.get((r.width, r.height), 0) + 1
+                ar = round(r.width / r.height, 1)
+                ars[str(ar)] = ars.get(str(ar), 0) + 1
+            stats = {
+                "images": len(records),
+                "captioned": sum(1 for r in records if r.caption_path),
+                "resolutions": [
+                    {"w": w, "h": h, "count": n} for (w, h), n in sorted(res.items(), key=lambda x: -x[1])[:50]
+                ],
+                "ar_hist": [{"ar": k, "count": v} for k, v in sorted(ars.items(), key=lambda x: float(x[0]))],
+                "masks": sum(1 for r in records if r.mask_path),
+                # The pre-scan signature leaves concurrent filesystem changes detectable on the next check.
+                "_source_signature": signature,
+            }
+            path = _records_path(c, did)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump([r.to_dict() for r in records], stream)
+            with c.db.lock:
+                if superseded(c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))):
+                    return
+                temporary.replace(path)
+                c.db.update("datasets", did, {"index_status": "ready", "stats_json": json.dumps(stats)})
+        except Exception as e:  # noqa: BLE001
+            with c.db.lock:
+                current = c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
+                if superseded(current):
+                    return
+                stats = json.loads(current["stats_json"] or "{}")
+                stats.update(error=_index_error(e), _source_signature=signature)
+                c.db.update("datasets", did, {"index_status": "failed", "stats_json": json.dumps(stats)})
         finally:
-            db.close()
-        res: dict[tuple[int, int], int] = {}
-        ars: dict[str, int] = {}
-        for r in records:
-            res[(r.width, r.height)] = res.get((r.width, r.height), 0) + 1
-            ar = round(r.width / r.height, 1)
-            ars[str(ar)] = ars.get(str(ar), 0) + 1
-        stats = {
-            "images": len(records),
-            "captioned": sum(1 for r in records if r.caption_path),
-            "resolutions": [
-                {"w": w, "h": h, "count": n} for (w, h), n in sorted(res.items(), key=lambda x: -x[1])[:50]
-            ],
-            "ar_hist": [{"ar": k, "count": v} for k, v in sorted(ars.items(), key=lambda x: float(x[0]))],
-            "masks": sum(1 for r in records if r.mask_path),
-            # The pre-scan signature leaves concurrent filesystem changes detectable on the next read.
-            "_source_signature": signature,
-        }
-        path = _records_path(c, did)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
-            temporary = Path(stream.name)
-            json.dump([r.to_dict() for r in records], stream)
-        with c.db.lock:
-            current = c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
-            if current is None or any(current[key] != row[key] for key in ("path", "caption_ext")):
-                return
-            temporary.replace(path)
-            c.db.update("datasets", did, {"index_status": "ready", "stats_json": json.dumps(stats)})
-    except Exception as e:  # noqa: BLE001
-        with c.db.lock:
-            current = c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
-            if current is None or any(current[key] != row[key] for key in ("path", "caption_ext")):
-                return
-            stats = json.loads(current["stats_json"] or "{}")
-            stats.update(error=str(e), _source_signature=signature)
-            c.db.update("datasets", did, {"index_status": "failed", "stats_json": json.dumps(stats)})
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
     c.bus.publish("dataset.changed", {
         "dataset_id": did, "project_id": row["project_id"], "version_id": row.get("version_id"),
+        "reason": "indexed",
     })
 
 
@@ -1125,11 +1121,15 @@ def _dataset_row(c: ServiceContext, r: dict[str, Any], *, include_cache: bool = 
         "class_prompt": r["class_prompt"],
         "created_at": r["created_at"],
     }
+    from .dataset_refresh import refresher
+
     return {
         "source": source,
         "masked_loss": bool(get_project_config(r["project_id"], c, r.get("version_id")).get("dataset", {}).get("masked_loss", False)) if r.get("project_id") else False,
         "stats": stats,
         "index_status": r["index_status"],
+        # Files changed outside the studio are being indexed; the dataset stays editable meanwhile.
+        "refreshing": refresher(c).refreshing(r["id"]),
         "cache": _cache_stats(c, r) if include_cache else {},
     }
 
@@ -1226,11 +1226,15 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/projects/{pid}/datasets", response_model=list[m.DatasetInfo], response_model_exclude_unset=True)
 def list_datasets(
-    pid: str, c: ServiceContext = Depends(ctx), version_id: str | None = None, include_cache: bool = True
+    pid: str,
+    c: ServiceContext = Depends(ctx),
+    version_id: str | None = None,
+    include_cache: bool = True,
+    refresh: bool = Query(False, description="Check the folders for changes now instead of when next due."),
 ) -> list[dict[str, Any]]:
     version = c.resolve_version(pid, version_id)
     return [
-        _dataset_row(c, _refresh_dataset(c, r), include_cache=include_cache)
+        _dataset_row(c, _refresh_dataset(c, r, force=refresh), include_cache=include_cache)
         for r in c.db.fetchall(
             "SELECT * FROM datasets WHERE version_id=? ORDER BY created_at", (version["id"],)
         )
@@ -1352,8 +1356,11 @@ async def put_upload_chunk(
     pid: str, sid: str, index: int, request: Request, offset: int = Query(ge=0),
     c: ServiceContext = Depends(ctx),
 ) -> dict:
+    from .upload_sessions import assert_receivable
+
     with c.import_admission(), c.upload_sessions.use(pid, sid) as session:
-        await run_in_threadpool(_assert_upload_session_target, c, session)
+        # Other imports and index runs may hold the version meanwhile; only "complete" needs it.
+        await run_in_threadpool(assert_receivable, c, session)
         if not 0 <= index < len(session.manifest):
             raise ApiError("上传文件编号无效。", code="upload.file_index", status=404)
         if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/octet-stream":
@@ -1504,7 +1511,10 @@ def delete_dataset(did: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]
                 _write_project_config(c, pid, previous, row["version_id"])
             raise
     _records_path(c, did).unlink(missing_ok=True)
-    c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "deleted"})
+    c.bus.publish(
+        "dataset.changed",
+        {"dataset_id": did, "project_id": pid, "version_id": row["version_id"], "reason": "deleted"},
+    )
     return {"ok": True}
 
 
@@ -1728,6 +1738,8 @@ def put_caption(
     from ypuddin.data.caption_json import CaptionConflictError, load_caption_structure
     from ypuddin.data.captions import read_caption, write_caption
 
+    from .dataset_refresh import image_entry, note_own_edit
+
     row = _get_dataset(c, did)
     if body.caption is None and body.description is None and body.caption_fields is None:
         raise ApiError(
@@ -1741,6 +1753,9 @@ def put_caption(
             raise ApiError(
                 "separate descriptions require a JSON caption", code="dataset.caption_format", status=422
             )
+        # Only a newly selected caption file changes what the index records about the image.
+        selected = r["caption_path"] != str(cap_path)
+        before = image_entry(row, Path(r["path"])) if selected else None
         try:
             write_caption(
                 cap_path,
@@ -1755,13 +1770,16 @@ def put_caption(
             raise ApiError(str(exc), code="dataset.caption_conflict", status=409) from exc
         except (ValueError, OSError) as exc:
             raise ApiError(str(exc), code="dataset.caption_invalid", status=422) from exc
-        if r["caption_path"] != str(cap_path):
+        if selected:
             recs = _records(c, did)
             for rec in recs:
                 if rec["path"] == r["path"]:
                     rec["caption_path"] = str(cap_path)
             _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
-        c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "caption"})
+            note_own_edit(c, did, [before], [image_entry(row, Path(r["path"]))])
+        c.bus.publish("dataset.changed", {
+            "dataset_id": did, "project_id": row["project_id"], "version_id": row["version_id"], "reason": "caption",
+        })
         return {"caption": read_caption(cap_path), "caption_structure": load_caption_structure(cap_path)}
 
 
@@ -1779,11 +1797,15 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
     from ypuddin.data.captions import caption_content, read_editable_caption
     from ypuddin.data.index import caption_target
 
+    from .dataset_refresh import image_entry, note_own_edit
+
     row = _get_dataset(c, did)
     with c.versions.mutation(row["project_id"], row["version_id"]):
         row = _get_dataset(c, did)
         changed = 0
         created = 0
+        # Images whose record gains a caption file; the stored folder signature follows them.
+        selected: list[Path] = []
         wanted = set(body.hashes)
         recs = _records(c, did)
         updates: dict[Path, dict[str, Any]] = {}
@@ -1835,7 +1857,10 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
                 if not r["caption_path"]:
                     r["caption_path"] = str(cap_path)
                     created += 1
+                    selected.append(Path(r["path"]))
                 changed += 1
+            before_folders: dict = {}
+            before = [image_entry(row, image, before_folders) for image in selected]
             if created:
                 index_path = _records_path(c, did)
                 updates[index_path] = {
@@ -1898,8 +1923,13 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
                     temporary.unlink(missing_ok=True)
                 except OSError:
                     pass  # Cleanup must not hide the original error; these are isolated temp files.
+        if selected:
+            after_folders: dict = {}
+            note_own_edit(c, did, before, [image_entry(row, image, after_folders) for image in selected])
         if changed:
-            c.bus.publish("dataset.changed", {"dataset_id": did, "reason": "tags"})
+            c.bus.publish("dataset.changed", {
+                "dataset_id": did, "project_id": row["project_id"], "version_id": row["version_id"], "reason": "tags",
+            })
         return {"changed": changed}
 
 
@@ -2255,8 +2285,12 @@ def get_job(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 @router.patch("/jobs/{jid}", response_model=m.Job, response_model_exclude_unset=True)
 def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    from .job_paths import deleting_jobs
+
     with c.db.lock:
         job = _get_job(c, jid)
+        if jid in deleting_jobs:
+            raise ApiError("这个任务正在删除。", code="job.deleting", status=409)
         patch = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
         if "gpu_devices" in patch:
             if job["status"] not in {
@@ -2359,25 +2393,35 @@ def job_storage(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
 
 @router.delete("/jobs/{jid}", response_model=m.Ok, response_model_exclude_unset=True)
 def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    from .job_paths import removal_problem
+    from .job_paths import deleting_jobs, removal_problem
+    from .project_deletion import deleting
     from .xyz import dependent_tests, preserve_source
 
+    folders: list[Path] = []
+    if delete_files:
+        # The disk is checked before taking the lock; the folders a job records never change.
+        folders = owned_job_directories(_get_job(c, jid))
+        problem = removal_problem(c, jid, folders)
+        if problem == "outside":
+            raise ApiError("任务目录不在允许访问的范围内。", code="job.path", status=403)
+        if problem == "shared":
+            raise ApiError("目录中包含其他任务的文件，无法删除。", code="job.files_in_use", status=409)
     with c.db.lock:
         r = _get_job(c, jid)
+        if jid in deleting_jobs:
+            raise ApiError("这个任务正在删除。", code="job.deleting", status=409)
         if r["status"] in ("running", "pausing", "cancelling") or c.supervisor.is_running(jid):
-            raise ApiError("cancel the job first", code="job.running", status=409)
+            raise ApiError("请先取消任务，再删除。", code="job.running", status=409)
         if not r.get("archived_at"):
-            raise ApiError(
-                "archive the job before permanently deleting it", code="job.archive_required", status=409
-            )
+            raise ApiError("请先归档任务，再永久删除。", code="job.archive_required", status=409)
+        if r.get("project_id") and deleting(c, r["project_id"]):
+            raise ApiError("这个任务所在的项目正在删除。", code="project.deleting", status=409)
         tests = dependent_tests(c, r)
-        if delete_files:
-            folders = owned_job_directories(r)
-            problem = removal_problem(c, jid, folders)
-            if problem == "outside":
-                raise ApiError("任务目录不在允许访问的范围内。", code="job.path", status=403)
-            if problem == "shared":
-                raise ApiError("目录中包含其他任务的文件，无法删除。", code="job.files_in_use", status=409)
+        if not delete_files:
+            # Written only once nothing can refuse the deletion.
+            preserve_source(c, r, tests)
+            c.db.delete("jobs", jid)
+        else:
             if users := _jobs_using(c, jid, folders):
                 raise ApiError(
                     f"任务“{users[0]['name']}”还要用到这个任务的文件，请等它结束或取消后再删除。",
@@ -2385,23 +2429,36 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
                     status=409,
                     details={"jobs": [row["id"] for row in users]},
                 )
-            try:
-                for directory in folders:
-                    if directory.is_dir():
-                        shutil.rmtree(directory)
-            except OSError as exc:
-                raise ApiError(
-                    "could not remove all of the job's files; the archived job is kept so you can retry",
-                    code="job.delete_files_failed",
-                    status=500,
-                ) from exc
-            # Its products are gone with its folders.
+            # Its products go with its folders; a comparison started from now on no longer finds them.
             c.db.execute("DELETE FROM artifacts WHERE job_id=?", (jid,))
-        # Written only once nothing can refuse the deletion.
-        preserve_source(c, r, tests)
-        c.db.delete("jobs", jid)
-        c.bus.publish("queue.changed", {})
-        return {"ok": True}
+            deleting_jobs.add(jid)
+    if delete_files:
+        # Removed outside the lock, so other pages and live updates keep working meanwhile.
+        try:
+            for directory in folders:
+                if directory.is_dir():
+                    shutil.rmtree(directory)
+        except OSError as exc:
+            with c.db.lock:
+                deleting_jobs.discard(jid)
+            raise ApiError(
+                "无法删除这个任务的全部文件，已保留归档的任务，可以重试。",
+                code="job.delete_files_failed",
+                status=500,
+            ) from exc
+        with c.db.lock:
+            deleting_jobs.discard(jid)
+            current = c.db.fetchone("SELECT * FROM jobs WHERE id=?", (jid,))
+            if current is not None:
+                if current["status"] not in FINISHED or c.supervisor.is_running(jid):
+                    raise ApiError(
+                        "删除文件时任务又开始运行了，请取消任务后再删除它的记录。", code="job.running", status=409
+                    )
+                # Written only once nothing can refuse the deletion.
+                preserve_source(c, current, tests)
+                c.db.delete("jobs", jid)
+    c.bus.publish("queue.changed", {})
+    return {"ok": True}
 
 
 @router.post("/jobs/{jid}/{command}", response_model=m.Job, response_model_exclude_unset=True)

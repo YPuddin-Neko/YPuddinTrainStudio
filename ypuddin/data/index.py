@@ -89,11 +89,87 @@ def _caption_for(path: Path, ext: str, siblings: dict[str, dict[str, Path]] | No
 def _caption_siblings(directory: Path) -> dict[str, dict[str, Path]]:
     # One directory enumeration per scan, including the common auto+TXT-only case.
     entries: dict[str, dict[str, Path]] = {}
-    if directory.is_dir():
-        for entry in directory.iterdir():
-            if entry.is_file():
-                entries.setdefault(entry.stem + entry.suffix.lower(), {})[entry.name] = entry
+    try:
+        with os.scandir(directory) as listing:
+            for item in listing:
+                # The listing's file type answers this without a stat for ordinary files.
+                if item.is_file():
+                    entry = Path(directory) / item.name
+                    entries.setdefault(entry.stem + entry.suffix.lower(), {})[entry.name] = entry
+    except (FileNotFoundError, NotADirectoryError):
+        pass
     return entries
+
+
+class FolderFiles:
+    """One listing of a folder: its files by caption key, and every name for exact lookups."""
+
+    __slots__ = ("folded", "siblings")
+
+    def __init__(self, siblings: dict[str, dict[str, Path]]):
+        self.siblings = siblings
+        self.folded = {name.casefold() for group in siblings.values() for name in group}
+
+    def has(self, path: Path) -> bool:
+        """``path.is_file()`` as of the listing; only a name differing in case is checked on disk."""
+        group = self.siblings.get(path.stem + path.suffix.lower())
+        if group and path.name in group:
+            return True
+        return path.name.casefold() in self.folded and path.is_file()
+
+    def caption(self, image: Path, ext: str = "auto") -> str | None:
+        """``caption_for`` of an image in this folder."""
+        for suffix in (".json", ".txt") if ext.lower() == "auto" else (ext,):
+            candidate = (
+                image.with_suffix(suffix) if suffix.startswith(".") else image.with_name(image.stem + suffix)
+            )
+            matches = self.siblings.get(image.stem + suffix.lower())
+            if matches:
+                return str(matches.get(candidate.name) or matches[min(matches)])
+            if self.has(candidate):
+                return str(candidate)
+        return None
+
+    def caption_target(self, image: Path, ext: str = "auto") -> Path:
+        """``caption_target`` of an image in this folder."""
+        existing = self.caption(image, ext)
+        if existing:
+            return Path(existing)
+        suffix = ".txt" if ext.lower() == "auto" else ext
+        return image.with_suffix(suffix) if suffix.startswith(".") else image.with_name(image.stem + suffix)
+
+    def mask(self, image: Path) -> str | None:
+        """``mask_for`` of an image in this folder."""
+        for suffix in MASK_SUFFIXES:
+            candidate = image.with_name(image.stem + suffix)
+            if self.has(candidate):
+                return str(candidate)
+        return None
+
+
+@dataclass
+class SourceListing:
+    """One walk of a source folder, shared by its change signature, its scan and its inspection."""
+
+    root: Path
+    images: list[Path]
+    folders: dict[Path, FolderFiles]
+
+    def folder(self, image: Path) -> FolderFiles:
+        return self.folders[image.parent]
+
+
+def list_source(root: str | Path, folders: dict[Path, FolderFiles] | None = None) -> SourceListing:
+    """Images in ``iter_images`` order with one listing of each folder that holds them.
+
+    ``folders`` shares listings between sources of one pass, so a folder is listed once.
+    """
+    images = list(iter_images(root))
+    shared = {} if folders is None else folders
+    for image in images:
+        if image.parent not in shared:
+            shared[image.parent] = FolderFiles(_caption_siblings(image.parent))
+    return SourceListing(Path(root).expanduser(), images, shared)
 
 
 def caption_target(
@@ -144,6 +220,31 @@ class IndexDB:
         # Rows from before carry NULL and are measured on their next scan, without rehashing the file.
         if "transparent" not in {row[1] for row in self.conn.execute("PRAGMA table_info(files_v2)")}:
             self.conn.execute("ALTER TABLE files_v2 ADD COLUMN transparent INTEGER")
+        # Whole-file digests of images and sidecars, kept across restarts and keyed by file identity.
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS file_digests (path TEXT PRIMARY KEY, signature TEXT NOT NULL,"
+            " digest TEXT NOT NULL)"
+        )
+        self.conn.commit()
+
+    def digests(self, files: dict[str, str]) -> dict[str, str]:
+        """Stored digests of ``{path: stat signature}`` whose file is unchanged since it was read."""
+        found: dict[str, str] = {}
+        paths = list(files)
+        for start in range(0, len(paths), 500):
+            chunk = paths[start : start + 500]
+            marks = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"SELECT path, signature, digest FROM file_digests WHERE path IN ({marks})", chunk
+            )
+            found.update({path: digest for path, signature, digest in rows if files[path] == signature})
+        return found
+
+    def store_digests(self, rows: list[tuple[str, str, str]]) -> None:
+        """Remember ``(path, stat signature, digest)`` rows."""
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO file_digests (path, signature, digest) VALUES (?,?,?)", rows
+        )
         self.conn.commit()
 
     def lookup(
@@ -212,28 +313,34 @@ def probe_image(path: Path) -> tuple[int, int, bool]:
         )
 
 
+def stat_signature(st: os.stat_result) -> str:
+    """The file identity that ``IndexDB`` keys a stored probe with."""
+    return json.dumps(("exif-size-alpha-v2", st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino, st.st_dev))
+
+
 def scan_sources(
     sources: list[DatasetSourceConfig],
     *,
     index_db: IndexDB | None = None,
     progress: Callable[[int, int], None] | None = None,
+    listings: dict[str, SourceListing] | None = None,
 ) -> list[ImageRecord]:
+    """``listings`` holds walks already made of these source paths, such as for a change signature."""
     records: list[ImageRecord] = []
-    paths: list[tuple[int, Path, DatasetSourceConfig]] = []
+    paths: list[tuple[int, Path, DatasetSourceConfig, FolderFiles]] = []
+    folders: dict[Path, FolderFiles] = {}
     for si, src in enumerate(sources):
         excluded = set(src.excluded_files)
         prefixes = tuple(directory + "/" for directory in src.excluded_dirs)
-        for p in iter_images(src.path):
+        listing = (listings or {}).get(src.path) or list_source(src.path, folders)
+        for p in listing.images:
             relative = p.relative_to(Path(src.path).expanduser()).as_posix()
             if relative not in excluded and not relative.startswith(prefixes):
-                paths.append((si, p, src))
+                paths.append((si, p, src, listing.folder(p)))
     total = len(paths)
-    caption_directories: dict[Path, dict[str, dict[str, Path]]] = {}
-    for i, (si, p, src) in enumerate(paths):
+    for i, (si, p, src, folder) in enumerate(paths):
         st = p.stat()
-        signature = json.dumps(
-            ("exif-size-alpha-v2", st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino, st.st_dev)
-        )
+        signature = stat_signature(st)
         cached = (
             index_db.lookup(str(p), st.st_mtime, st.st_size, stat_signature=signature) if index_db else None
         )
@@ -267,8 +374,6 @@ def scan_sources(
         if alpha:
             with Image.open(p) as image:
                 color_key = has_color_key(image)
-        if p.parent not in caption_directories:
-            caption_directories[p.parent] = _caption_siblings(p.parent)
         records.append(
             ImageRecord(
                 path=str(p),
@@ -276,8 +381,8 @@ def scan_sources(
                 content_hash=digest,
                 width=w,
                 height=h,
-                caption_path=_caption_for(p, src.caption_ext, caption_directories[p.parent]),
-                mask_path=mask_for(p),
+                caption_path=folder.caption(p, src.caption_ext),
+                mask_path=folder.mask(p),
                 has_alpha=alpha,
                 color_key_transparency=color_key,
                 has_transparency=transparent,

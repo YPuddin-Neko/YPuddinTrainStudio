@@ -35,12 +35,14 @@ def assert_version_writable(c: Any, pid: str, vid: str | None, *, data: bool = F
     if data and c.db.fetchone(
         f"SELECT id FROM jobs WHERE version_id=? AND status IN {ACTIVE_JOBS}", (row["id"],)
     ):
-        raise ApiError("version data is used by queued or running jobs", code="version.jobs_busy", status=409)
+        raise ApiError(
+            "版本数据正被排队或运行中的任务使用，请等任务结束或取消后再修改。", code="version.jobs_busy", status=409
+        )
     if data and c.db.fetchone(
         "SELECT id FROM datasets WHERE version_id=? AND index_status='indexing'", (row["id"],)
     ):
         raise ApiError(
-            "wait for dataset indexing before editing version data", code="version.indexing", status=409
+            "数据集正在建立索引，请等索引完成后再修改版本数据。", code="version.indexing", status=409
         )
     return row
 
@@ -156,9 +158,9 @@ class VersionManager:
             )
         c.db.execute("UPDATE project_versions SET busy=NULL WHERE busy IS NOT NULL")
         for row in c.db.fetchall("SELECT id,stats_json FROM datasets WHERE index_status='indexing'"):
-            stats = json.loads(row["stats_json"] or "{}") | {
-                "error": "Service stopped while indexing; rescan this dataset"
-            }
+            stats = json.loads(row["stats_json"] or "{}") | {"error": "服务停止时索引还没有完成。"}
+            # Without a signature the next read finds the folder changed and indexes it again.
+            stats.pop("_source_signature", None)
             c.db.update("datasets", row["id"], {"index_status": "failed", "stats_json": json.dumps(stats)})
 
     def close(self) -> None:
@@ -233,7 +235,7 @@ class VersionManager:
                     dataset["is_reg"] = role[0]
             if any(row["index_status"] == "indexing" for row in datasets):
                 raise ApiError(
-                    "wait for dataset indexing before creating a snapshot", code="version.busy", status=409
+                    "数据集正在建立索引，请等索引完成后再创建版本。", code="version.busy", status=409
                 )
             vid = new_id("v")
             number = c.db.fetchone(

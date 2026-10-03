@@ -52,19 +52,96 @@ def owned_job_directories(job: dict) -> list[Path]:
     )
 
 
+# Jobs and model tests whose folders are being removed outside the database lock; their records go last.
+deleting_jobs: set[str] = set()
+
+
+def deletion_roots(context: Any, extra: list[Path] | tuple[Path, ...] = ()) -> list[Path]:
+    """Folders in which deletions may remove the subfolders the studio made for a project or job:
+    the data folder, the custom folders set in settings, explicitly allowed roots and ``extra``."""
+    paths = context.settings()["paths"]
+    configured = [paths.get(key) for key in ("cache_dir", "output_dir", "state_dir", "samples_dir", "logs_dir")]
+    roots = []
+    for root in (context.data_root, *context.allowed_roots, *(Path(value) for value in configured if value), *extra):
+        try:
+            roots.append(Path(root).expanduser().resolve())
+        except (OSError, RuntimeError):
+            continue
+    return list(dict.fromkeys(roots))
+
+
+def studio_root(context: Any, job: dict, folder: Path) -> Path | None:
+    """The folder a job folder was made in: ``<root>/<project>/<version>/<job>``, or ``<root>/<job>`` for a
+    job outside any project. Settings may have changed since, so the folder's own shape says where it is."""
+    if folder.name != job["id"]:
+        return None
+    if not job.get("project_id"):
+        return folder.parent
+    try:
+        label = context.version_label(job["project_id"], job.get("version_id"))
+    except Exception:  # noqa: BLE001 - a missing version leaves only the known roots
+        return None
+    if folder.parent.name == label and folder.parent.parent.name == job["project_id"]:
+        return folder.parent.parent.parent
+    return None
+
+
+def owning_root(folder: Path, roots: list[Path]) -> Path | None:
+    """The innermost root that holds the resolved folder."""
+    resolved = folder.resolve()
+    return max((root for root in roots if resolved.is_relative_to(root)), key=lambda root: len(root.parts), default=None)
+
+
+def linked_below(folder: Path, root: Path) -> bool:
+    """Whether reaching ``folder`` passes a symbolic link at or below ``root``.
+
+    Links above the root, such as macOS's /tmp, only lead to where the root itself is.
+    """
+    path = Path(folder).absolute()
+    while path.resolve() != root:
+        if path.is_symlink() or path.parent == path:
+            return True
+        path = path.parent
+    return False
+
+
+def folder_problem(folder: Path, roots: list[Path]) -> Literal["outside", "linked", "unavailable"] | None:
+    """Why a folder cannot be removed safely: it lies outside every root or is a root itself, it is
+    reached through a link below its root, or its root cannot be reached (an unplugged drive)."""
+    root = owning_root(folder, roots)
+    if root is None or folder.resolve() == root:
+        return "outside"
+    try:
+        if not root.is_dir():
+            return "unavailable"
+    except OSError:
+        return "unavailable"
+    return "linked" if linked_below(folder, root) else None
+
+
 def removal_problem(
     context: Any,
     owner_id: str,
     folders: list[Path],
     *,
     owner_type: Literal["job", "project"] = "job",
+    roots: list[Path] | None = None,
 ) -> Literal["outside", "shared"] | None:
-    """Reject linked/out-of-bounds folders and files owned by jobs outside this deletion."""
+    """Reject linked/out-of-bounds folders and files owned by jobs outside this deletion.
+
+    A folder whose root cannot be reached is left for the caller to skip.
+    """
+    if roots is None:
+        job = context.db.fetchone("SELECT * FROM jobs WHERE id=?", (owner_id,)) if owner_type == "job" else None
+        extra = [root for folder in folders if job and (root := studio_root(context, job, folder))]
+        roots = deletion_roots(context, extra)
     targets = []
     for folder in folders:
-        if any(part.is_symlink() for part in (folder, *folder.parents)) or not context.is_allowed(folder.resolve()):
+        problem = folder_problem(folder, roots)
+        if problem in ("outside", "linked"):
             return "outside"
-        targets.append(folder.resolve())
+        if problem is None:
+            targets.append(folder.resolve())
     if not targets:
         return None
     column = "project_id" if owner_type == "project" else "id"

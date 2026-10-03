@@ -20,7 +20,7 @@ from PIL import Image, ImageOps
 
 from ypuddin.config import TrainConfig
 from ypuddin.data.image_metadata import alpha_channel, transparency_source
-from ypuddin.data.index import IMAGE_EXTS, content_hash, iter_images, mask_for
+from ypuddin.data.index import IMAGE_EXTS, IndexDB, content_hash, list_source, mask_for, stat_signature
 
 from .caption_output import destination, json_layout
 from .db import new_id, now
@@ -102,8 +102,9 @@ class DatasetPipeline:
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="dataset-pipeline")
         self.stopping = threading.Event()
         self.cancel_events: dict[str, threading.Event] = {}
-        self._inspection_digests: OrderedDict[str, tuple[list[int], str]] = OrderedDict()
-        self._inspection_digest_lock = threading.Lock()
+        # Per version, the digest of each input file with the identity it was read at.
+        self._digests: OrderedDict[str, dict[str, tuple[list[int], str]]] = OrderedDict()
+        self._digest_lock = threading.Lock()
         self.vision = None  # VisionModels, attached by the app
         self.credentials = None  # ModelCredentials, attached by the app
         self.c.db.execute("""CREATE TABLE IF NOT EXISTS dataset_pipeline_operations (
@@ -194,40 +195,80 @@ class DatasetPipeline:
                 sources[path] = {**row, "dataset_id": row["id"], "roles": ["registered"]}
         return list(sources.values())
 
-    def _inspection_digest(self, path: Path) -> str | None:
-        """Re-read changed files; touching or replacing identical bytes keeps the report valid."""
-        key = str(path)
+    @staticmethod
+    def _stable_digest(path: Path) -> tuple[list[int] | None, str | dict | None]:
+        """Read a file whose identity holds still while it is read; touching it keeps the result."""
         for _ in range(2):
             before = _stat(path)
             if before is None:
-                return None
-            with self._inspection_digest_lock:
-                cached = self._inspection_digests.get(key)
-                if cached and cached[0] == before:
-                    self._inspection_digests.move_to_end(key)
-                    return cached[1]
-            digest = _digest(path)
+                return None, None
+            try:
+                digest = _digest(path)
+            except OSError as exc:
+                return before, {"unreadable": exc.errno}
             if _stat(path) == before:
-                with self._inspection_digest_lock:
-                    self._inspection_digests[key] = (before, digest)
-                    self._inspection_digests.move_to_end(key)
-                    while len(self._inspection_digests) > 100_000:
-                        self._inspection_digests.popitem(last=False)
-                return digest
+                return before, digest
         raise ApiError(
-            "dataset changed while checking its files; retry with stable source files",
-            code="pipeline.source_changed", status=409,
+            "检查文件时数据集发生了变化，请等文件不再变动后重试。", code="pipeline.source_changed", status=409
         )
 
-    def signature(
-        self, pid: str, vid: str, *, recipe: bool = False, components: dict | None = None,
-    ) -> str:
+    def _file_digests(self, vid: str, paths: list[Path], walk: dict) -> dict[str, Any]:
+        """Content digests of a version's input files; only files whose identity changed are read.
+
+        Digests are remembered per version and in the shared index database, so a restart or a
+        larger version does not make every poll read whole datasets again.
+        """
+        stats: dict[str, list[int]] = {}
+        result: dict[str, Any] = {}
+        for path in paths:
+            if (value := _stat(path)) is None:
+                result[str(path)] = None
+            else:
+                stats[str(path)] = value
+        with self._digest_lock:
+            known = self._digests.get(vid, {})
+        missing = {key: _dump(value) for key, value in stats.items() if key not in known or known[key][0] != value}
+        found: dict[str, Any] = {}
+        if missing:
+            index = IndexDB(self.c.service_cache_dir("index") / "index.sqlite")
+            try:
+                found = index.digests(missing)
+                fresh = []
+                for key in missing:
+                    if key in found:
+                        continue
+                    value, digest = self._stable_digest(Path(key))
+                    if value is None:
+                        stats.pop(key)
+                        result[key] = None
+                        continue
+                    stats[key], found[key] = value, digest
+                    if isinstance(digest, str):
+                        fresh.append((key, _dump(value), digest))
+                if fresh:
+                    index.store_digests(fresh)
+            finally:
+                index.close()
+        memo = {}
+        for key, value in stats.items():
+            digest = found[key] if key in missing else known[key][1]
+            result[key] = digest
+            if isinstance(digest, str):
+                memo[key] = (value, digest)
+        with self._digest_lock:
+            self._digests[vid] = memo
+            self._digests.move_to_end(vid)
+            while len(self._digests) > 8:
+                self._digests.popitem(last=False)
+        walk["stats"] = stats
+        return result
+
+    def _fingerprints(self, pid: str, vid: str, config: dict, walk: dict) -> dict[str, str]:
+        """Digests of the inspection's inputs by kind; ``walk`` keeps the files for the inspection."""
+        if "fingerprints" in walk:
+            return walk["fingerprints"]
         from ypuddin.data.caption_formats import effective_caption_extension, family_caption_formats
-        from ypuddin.data.index import caption_target
 
-        from .routes_work import get_project_config
-
-        config = get_project_config(pid, self.c, vid)
         family = config.get("model", {}).get("family", "anima")
         formats = family_caption_formats(family)
         settings: list[Any] = [{
@@ -236,16 +277,9 @@ class DatasetPipeline:
             "transparency_inspection_version": 4,
             "model_family": family,
         }]
-        inputs: dict[str, dict] = {"images": {}, "captions": {}, "masks": {}}
-        caption_directories = {}
-
-        def add_file(kind: str, path: Path) -> None:
-            try:
-                digest = self._inspection_digest(path)
-            except OSError as exc:
-                digest = {"unreadable": exc.errno}
-            inputs[kind][str(path)] = digest
-
+        files: dict[str, list[Path]] = {"images": [], "captions": [], "masks": []}
+        sources = walk.setdefault("sources", {})
+        folders = walk.setdefault("folders", {})
         for source in sorted(self._sources(pid, vid), key=lambda item: item["path"]):
             root = Path(source["path"])
             cap_cfg = source.get("caption")
@@ -260,29 +294,49 @@ class DatasetPipeline:
                         "separator": cap_cfg.get("separator", ","),
                         "keep_tokens": cap_cfg.get("keep_tokens", 0),
                     })
+            extension = effective_caption_extension(source.get("caption_ext", "auto"), formats)
             settings.append({
                 "path": str(root), "dataset_id": source["dataset_id"],
                 "roles": sorted(source["roles"]), "class_prompt": bool(source.get("class_prompt")),
-                "caption_ext": effective_caption_extension(source.get("caption_ext", "auto"), formats).lower(),
-                "available": root.is_dir(), "caption_advice": advice,
+                "caption_ext": extension.lower(), "available": root.is_dir(), "caption_advice": advice,
             })
             if not root.is_dir():
                 continue
-            for path in iter_images(root):
-                caption = caption_target(
-                    path, effective_caption_extension(source.get("caption_ext", "auto"), formats),
-                    directory_cache=caption_directories,
-                )
-                mask = mask_for(path)
-                add_file("images", path)
-                if caption.is_file():
-                    add_file("captions", caption)
+            listing = list_source(root, folders)
+            entries = []
+            for path in listing.images:
+                folder = listing.folder(path)
+                caption = folder.caption_target(path, extension)
+                mask = folder.mask(path)
+                entries.append((path, caption, Path(mask) if mask else None))
+                files["images"].append(path)
+                if folder.has(caption):
+                    files["captions"].append(caption)
                 if mask:
-                    add_file("masks", Path(mask))
-        fingerprints = {
+                    files["masks"].append(Path(mask))
+            sources[str(root)] = entries
+        digests = self._file_digests(vid, [path for paths in files.values() for path in paths], walk)
+        walk["digests"] = digests
+        inputs = {kind: {str(path): digests[str(path)] for path in paths} for kind, paths in files.items()}
+        walk["fingerprints"] = {
             key: hashlib.sha256(_dump(value).encode()).hexdigest()
             for key, value in {**inputs, "settings": settings}.items()
         }
+        return walk["fingerprints"]
+
+    def _changed_since(self, walk: dict) -> bool:
+        """Whether a file the walk read was changed or removed since; reads no folder again."""
+        return any(_stat(Path(key)) != value for key, value in walk.get("stats", {}).items())
+
+    def signature(
+        self, pid: str, vid: str, *, recipe: bool = False, components: dict | None = None,
+        walk: dict | None = None,
+    ) -> str:
+        """``walk`` shares one listing and one round of file reads between calls of one request."""
+        from .routes_work import get_project_config
+
+        config = get_project_config(pid, self.c, vid)
+        fingerprints = self._fingerprints(pid, vid, config, {} if walk is None else walk)
         if components is not None:
             components.update(fingerprints)
         payload: list[Any] = [fingerprints]
@@ -386,9 +440,13 @@ class DatasetPipeline:
         )
         inspection = json.loads(report_row["result_json"])["inspection"] if report_row else None
         components: dict[str, str] = {}
-        signature = self.signature(pid, vid, components=components) if inspection and version["status"] == "ready" else ""
+        walk: dict = {}
+        signature = (
+            self.signature(pid, vid, components=components, walk=walk)
+            if inspection and version["status"] == "ready" else ""
+        )
         has_plan = any(op["result"].get("recipe_signature") for op in operations)
-        recipe = self.signature(pid, vid, recipe=True) if has_plan and version["status"] == "ready" else ""
+        recipe = self.signature(pid, vid, recipe=True, walk=walk) if has_plan and version["status"] == "ready" else ""
         stale = bool(inspection and inspection.get("signature") != signature)
         if inspection:
             inspection.setdefault("checked_at", report_row["finished_at"] or report_row["created_at"])
@@ -668,6 +726,23 @@ class DatasetPipeline:
             raise ApiError("select at least one image", code="pipeline.empty_selection")
         return resolved
 
+    def _indexed_hashes(self, paths: list[Path]) -> dict[str, str]:
+        """Image hashes the dataset index already read, for files unchanged since then."""
+        hashes = {}
+        index = IndexDB(self.c.service_cache_dir("index") / "index.sqlite")
+        try:
+            for path in paths:
+                try:
+                    st = path.stat()
+                except OSError:
+                    continue
+                found = index.lookup(str(path), st.st_mtime, st.st_size, stat_signature=stat_signature(st))
+                if found:
+                    hashes[str(path)] = found[0]
+        finally:
+            index.close()
+        return hashes
+
     def _inspect(self, oid: str, pid: str, vid: str) -> dict:
         from ypuddin.data.anima_caption_inspection import inspect_anima_caption
         from ypuddin.data.caption_formats import (
@@ -677,17 +752,17 @@ class DatasetPipeline:
         )
         from ypuddin.data.caption_json import StructuredCaption
         from ypuddin.data.captions import read_training_caption
-        from ypuddin.data.index import caption_target
 
         from .routes_work import get_project_config
 
         components: dict[str, str] = {}
-        signature = self.signature(pid, vid, components=components)
+        # The signature's walk lists each folder once; the checks below reuse it and its digests.
+        walk: dict = {}
+        signature = self.signature(pid, vid, components=components, walk=walk)
         config = get_project_config(pid, self.c, vid)
         family_name = config.get("model", {}).get("family", "anima")
         caption_formats = family_caption_formats(family_name)
         caption_profile = "anima" if config.get("model", {}).get("family") == "anima" else None
-        caption_directories = {}
         files, global_issues = [], []
         for source in self._sources(pid, vid):
             root = Path(source["path"])
@@ -701,16 +776,21 @@ class DatasetPipeline:
                     }
                 )
                 continue
-            files.extend((source, path) for path in iter_images(root))
+            entries = walk["sources"].get(str(root))
+            if entries is None:  # added to the configuration since the signature was taken
+                extension = effective_caption_extension(source.get("caption_ext", "auto"), caption_formats)
+                listing = list_source(root, walk["folders"])
+                entries = [
+                    (path, listing.folder(path).caption_target(path, extension), listing.folder(path).mask(path))
+                    for path in listing.images
+                ]
+            files.extend((source, path, caption, mask) for path, caption, mask in entries)
+        indexed = self._indexed_hashes([path for _, path, _, _ in files])
         records, groups = [], {}
-        for index, (source, path) in enumerate(files):
+        for index, (source, path, caption, mask) in enumerate(files):
             self._cancelled(oid)
             relative = path.relative_to(source["path"]).as_posix()
-            caption = caption_target(
-                path, effective_caption_extension(source.get("caption_ext", "auto"), caption_formats),
-                directory_cache=caption_directories,
-            )
-            mask = mask_for(path)
+            caption = Path(caption)
             record = {
                 "dataset_id": source["dataset_id"],
                 "rel_path": relative,
@@ -736,7 +816,7 @@ class DatasetPipeline:
                 ),
             }
             try:
-                digest = self._inspection_digest(path)
+                digest = walk["digests"].get(str(path))
                 with Image.open(path) as image:
                     image.load()
                     record["width"], record["height"] = ImageOps.exif_transpose(image).size
@@ -750,8 +830,9 @@ class DatasetPipeline:
                     record["has_transparency"] = transparent_pixels > 0
                     record["transparent_pixels"] = transparent_pixels
                     record["min_alpha"] = alpha.getextrema()[0] if alpha is not None else 255
-                record["hash"] = content_hash(path)
-                groups.setdefault(digest, []).append(len(records))
+                record["hash"] = indexed.get(str(path)) or content_hash(path)
+                if isinstance(digest, str):
+                    groups.setdefault(digest, []).append(len(records))
                 if record["has_transparency"]:
                     record["issues"].append(
                         {
@@ -861,9 +942,10 @@ class DatasetPipeline:
                     }
                 )
         issues = global_issues + [issue for record in records for issue in record["issues"]]
-        if self.signature(pid, vid) != signature:
+        # Files added meanwhile are not in this report; the next look at it marks it out of date.
+        if self._changed_since(walk):
             raise ApiError(
-                "dataset changed during inspection; retry with stable source files",
+                "检查过程中数据集发生了变化，请等文件不再变动后重试。",
                 code="pipeline.source_changed",
                 status=409,
             )

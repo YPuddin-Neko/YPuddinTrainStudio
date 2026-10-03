@@ -70,6 +70,12 @@ class EventBus:
         with self._lock:
             return [e for e in self._history if e["id"] > after_id]
 
+    def recent_after(self, seconds: float) -> int:
+        """The event ID before the last ``seconds`` of history."""
+        cutoff = time.time() - seconds
+        with self._lock:
+            return next((e["id"] - 1 for e in self._history if e["ts"] >= cutoff), self._seq)
+
     @staticmethod
     def format_sse(event: dict[str, Any]) -> str:
         return f"id: {event['id']}\nevent: {event['type']}\ndata: {json.dumps(event['data'], ensure_ascii=False, default=str)}\n\n"

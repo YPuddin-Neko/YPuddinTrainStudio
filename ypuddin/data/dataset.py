@@ -527,7 +527,7 @@ def prepare_data_layout(
     ds = cfg.dataset
     caption_formats = family_caption_formats(cfg.model.family)
     if not ds.sources:
-        raise DataConfigError("dataset.sources", "at least one training dataset source is required")
+        raise DataConfigError("dataset.sources", "请先添加训练图片或导入已有数据集。")
     extra_sources = list(cfg.validation.sources) if cfg.validation.enabled else []
     sources = list(ds.sources) + extra_sources
     resolutions = set(ds.resolutions)
@@ -594,7 +594,7 @@ def prepare_data_layout(
 
     records = scan(ds.sources, "dataset.sources")
     if not records:
-        raise DataConfigError("dataset.sources", "no readable images found in dataset sources")
+        raise DataConfigError("dataset.sources", "数据集目录中没有可读取的图片。")
     val_records: list[ImageRecord] = []
     if cfg.validation.enabled:
         priors = [record for record in records if sources[record.source_index].is_reg]
@@ -607,7 +607,7 @@ def prepare_data_layout(
         validation_hashes = {record.content_hash for record in val_records}
         records = [record for record in records if record.content_hash not in validation_hashes]
     if not records:
-        raise DataConfigError("dataset.sources", "no training images remain after validation exclusion/split")
+        raise DataConfigError("dataset.sources", "划出验证图片后没有剩下训练图片。")
     auto_pixels = None
     resolved_pixels = None
     if ds.resolution_mode == "native":
@@ -619,7 +619,7 @@ def prepare_data_layout(
         resolved_pixels = auto_pixels if ds.native_max_pixels_mode == "auto" else ds.native_max_pixels
     items = expand_items(records, sources, ds, bm, native_max_pixels=resolved_pixels)
     if not items:
-        raise DataConfigError("dataset.sources", "training dataset has no items")
+        raise DataConfigError("dataset.sources", "没有生成任何训练样本，请检查训练尺寸和重复次数。")
     validation_items: list[Item] = []
     seen: set[str] = set()
     for item in expand_items(val_records, sources, ds, bm, native_max_pixels=resolved_pixels):

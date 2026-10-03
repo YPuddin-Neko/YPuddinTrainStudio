@@ -251,7 +251,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
         uvicorn.Config(app, host=host, port=port, log_level="info", timeout_graceful_shutdown=5),
         event_bus=app.state.ctx.bus,
     )
-    server.on_started = app.state.trainer_installer.ready
+    def started() -> None:
+        app.state.trainer_installer.ready()
+        # Measure the families' layer counts now, so the first page listing families need not wait.
+        app.state.family_geometry.start()
+
+    server.on_started = started
     # A force-quit launcher must not leave this worker holding the port.
     watch_launcher(getattr(args, "launcher_pid", None), lambda: setattr(server, "should_exit", True))
     if args.control_file and args.original_python:
