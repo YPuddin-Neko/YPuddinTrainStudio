@@ -16,6 +16,7 @@ import torch
 from torch.nn import functional as F
 from torch.overrides import TorchFunctionMode
 
+from ypuddin.models import attention_check
 from ypuddin.runtime_profiles import current_profile
 
 METAL_FLASH_IMPLEMENTATION_ID = "mtlattn-fp32-v1"
@@ -107,6 +108,12 @@ def metal_flash_sdpa(
     query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, *, scale=None, enable_gqa=False
 ):
     if not metal_flash_eligible(query, key, value, attn_mask, dropout_p, is_causal):
+        if attention_check.is_checking():
+            raise NotImplementedError(
+                "Metal FlashAttention 只处理 MPS 上无 mask、无 dropout、非因果、FP32、head dim 64 或 128 的输入；"
+                f"当前为 {query.device.type}、{attention_check.dtype_label(query.dtype)}、"
+                f"{'有' if attn_mask is not None else '无'} mask、head dim {query.shape[-1]}"
+            )
         return F.scaled_dot_product_attention(
             query,
             key,

@@ -560,6 +560,7 @@ class Trainer:
     def _prepare_training(self) -> None:
         cfg = self.cfg
         self.family.materialize_backbone(self.loaded)
+        self._prepare_attention()
         self.emit("phase.changed", phase="injecting")
         if cfg.training.mode == "full":
             from ypuddin.adapters.frozen import FrozenLinear
@@ -753,6 +754,30 @@ class Trainer:
             text_mode=self.text_mode,
             deterministic=cfg.loop.deterministic,
             compute_policy=self.compute_policy,
+        )
+
+    def _prepare_attention(self) -> None:
+        """One check of the selected attention backend on this rank's device before any step."""
+        from ypuddin.models.attention_check import backend_label
+
+        cfg = self.cfg
+        policy = getattr(self, "compute_policy", None)
+        if policy is not None:
+            pinned = f"可复现训练的计算策略固定使用 {backend_label(policy['attention'])}"
+        elif cfg.loop.deterministic:
+            pinned = "已开启可复现训练，不自动更换注意力实现"
+        elif getattr(self, "metal_attention_runtime", None) is not None:
+            pinned = "Metal FlashAttention 会记入训练状态以便严格续训"
+        else:
+            pinned = None
+        autocast = self.device.type == "cuda" and cfg.loop.mixed_precision != "no"
+        self.family.prepare_attention(
+            self.loaded,
+            cfg.model.attention,
+            device=self.device,
+            dtype=self.compute_dtype if autocast else self.loaded.dtype,
+            training=True,
+            pinned=pinned,
         )
 
     def _kept_dora_layers(self) -> dict[str, set[str]]:

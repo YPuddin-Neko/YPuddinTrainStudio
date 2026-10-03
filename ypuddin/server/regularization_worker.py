@@ -60,6 +60,7 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
         conditions[prompt] = loaded.text.encode([prompt], device=device).to("cpu")
     loaded.text.unload()
     family.materialize_backbone(loaded)
+    family.prepare_attention(loaded, model.attention, device=device, dtype=dtype, training=False)
     loaded.backbone.eval().requires_grad_(False)
     loaded.backbone.to(device=device, dtype=dtype)
     loaded.device = device

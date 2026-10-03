@@ -175,14 +175,7 @@ class SDXLFamily(ModelFamily):
         unet = load_diffusers_component(unet_path, "unet", device=backbone_device or device, dtype=dtype)
         if memory.activation_checkpointing == "block":
             unet.enable_gradient_checkpointing()
-        if cfg.attention == "xformers":
-            if torch.device(device).type != "cuda":
-                raise ValueError("SDXL xFormers attention requires CUDA")
-            unet.enable_xformers_memory_efficient_attention()
-        elif cfg.attention == "metal_flash":
-            from ypuddin.models.metal_attention import install_metal_flash_processors
-
-            install_metal_flash_processors(unet, "sdxl")
+        # xFormers / Metal processors are installed by prepare_attention once a real-dtype check passes.
         text = SDXLText(
             component_path(path, "text_encoder", cfg.text_encoder_path),
             component_path(path, "text_encoder_2", cfg.text_encoder_2_path),
@@ -218,6 +211,74 @@ class SDXLFamily(ModelFamily):
                 "num_train_timesteps": 1000,
             },
         )
+
+    def prepare_attention(self, loaded, configured, *, device, dtype, training, pinned=None):
+        """Check the UNet's own processor on tiny self/cross layers, then switch every layer at once.
+
+        Diffusers' ``enable_xformers_memory_efficient_attention`` probes with FP32 inputs,
+        which FlashAttention-only xFormers builds reject (SM120); this check uses the
+        UNet's real attention dtype and head dims instead. A failed check leaves the
+        loaded SDPA processors untouched.
+        """
+        from diffusers.models.attention_processor import Attention, AttnProcessor2_0, XFormersAttnProcessor
+
+        from ypuddin.models.attention_check import check_attention, grad_mode
+
+        unet = loaded.backbone
+        shapes = sorted(
+            {
+                (module.inner_dim // module.heads, module.cross_attention_dim if module.is_cross_attention else None)
+                for module in unet.modules()
+                if isinstance(module, Attention)
+            },
+            key=lambda shape: (shape[0], shape[1] or 0),
+        )
+        selected = "sdpa" if configured == "auto" else configured
+
+        def processor(backend):
+            if backend == "xformers":
+                import importlib
+
+                importlib.import_module("xformers.ops")
+                if any(type(p) is not AttnProcessor2_0 for p in unet.attn_processors.values()):
+                    raise ValueError("SDXL UNet 含有非默认的注意力处理器，不能整体切换到 xFormers")
+                return XFormersAttnProcessor()
+            if backend == "metal_flash":
+                from ypuddin.models.metal_attention import _SDXLMetalProcessor
+
+                return _SDXLMetalProcessor(AttnProcessor2_0())
+            return AttnProcessor2_0()
+
+        def run(backend):
+            with torch.autocast(torch.device(device).type, enabled=False), grad_mode(training):
+                for head_dim, cross_dim in shapes:
+                    layer = Attention(
+                        query_dim=2 * head_dim,
+                        heads=2,
+                        dim_head=head_dim,
+                        cross_attention_dim=cross_dim,
+                        processor=processor(backend),
+                    ).to(device=device, dtype=dtype)
+                    hidden = torch.randn(1, 16, 2 * head_dim, device=device, dtype=dtype, requires_grad=training)
+                    context = (
+                        None
+                        if cross_dim is None
+                        else torch.randn(1, 8, cross_dim, device=device, dtype=dtype, requires_grad=training)
+                    )
+                    out = layer(hidden, encoder_hidden_states=context)
+                    if training:
+                        out.float().square().mean().backward()
+
+        actual = check_attention(
+            configured=configured, selected=selected, run=run, device=device, dtype=dtype,
+            training=training, pinned=pinned,
+        )
+        if actual == "xformers":
+            unet.set_attn_processor(XFormersAttnProcessor())
+        elif actual == "metal_flash":
+            from ypuddin.models.metal_attention import install_metal_flash_processors
+
+            install_metal_flash_processors(unet, "sdxl")
 
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:
         if extra.get("inference", False):

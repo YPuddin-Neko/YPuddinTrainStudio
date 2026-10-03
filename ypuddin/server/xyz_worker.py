@@ -415,6 +415,8 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
         check()
         if not reused:
             family.materialize_backbone(loaded)
+            # Sampling runs the backbone in the load precision (autocast on CUDA).
+            family.prepare_attention(loaded, model.attention, device=device, dtype=dtype, training=False)
         loaded.backbone.eval().requires_grad_(False)
 
     clean = False

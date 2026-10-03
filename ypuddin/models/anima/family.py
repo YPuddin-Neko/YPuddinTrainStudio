@@ -12,6 +12,7 @@ Conventions verified against sd-scripts / diffusion-pipe / AnimaLoraStudio:
 from __future__ import annotations
 
 import logging
+import math
 import time
 from pathlib import Path
 from typing import Any
@@ -397,13 +398,17 @@ class AnimaFamily(ModelFamily):
 
     @staticmethod
     def resolve_attention(requested: str, device: torch.device | str) -> str:
-        """Map the config value onto the vendored backend names; ``auto`` never picks an optional package."""
+        """Map the config value onto the vendored backend names; ``auto`` never picks an optional package.
+
+        xFormers and FlashAttention are verified by :meth:`prepare_attention`, which keeps
+        SDPA when the selected package cannot run on this device.
+        """
         if requested == "metal_flash":
             from ypuddin.models.metal_attention import require_metal_flash
 
             require_metal_flash(device)
             return requested
-        if requested in ("sage", "xformers", "flash_attn"):
+        if requested == "sage":
             from .vendor.attention import backend_available
 
             if torch.device(device).type != "cuda":
@@ -413,7 +418,17 @@ class AnimaFamily(ModelFamily):
                     f"model.attention={requested!r} requires a compatible installed attention package; check Environment settings"
                 )
             return requested
+        if requested in ("xformers", "flash_attn"):
+            return requested
         return "torch"
+
+    def prepare_attention(self, loaded, configured, *, device, dtype, training, pinned=None):
+        config = loaded.extra["dit_config"]
+        heads = config["num_heads"]
+        check_dit_attention(
+            loaded, configured, [(heads, heads, config["model_channels"] // heads)],
+            device=device, dtype=dtype, training=training, pinned=pinned,
+        )
 
     # ----------------------------------------------------------------- forward
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:
@@ -523,6 +538,56 @@ class AnimaFamily(ModelFamily):
 def _infer_from_shapes(shapes: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
     """Use the loading geometry contract for planning, including the LLM adapter."""
     return {**base, **infer_config(shapes)}
+
+
+def check_dit_attention(
+    loaded: LoadedModel,
+    configured: str,
+    heads: list[tuple[int, int, int]],
+    *,
+    device: torch.device | str,
+    dtype: torch.dtype,
+    training: bool,
+    pinned: str | None = None,
+) -> None:
+    """Run the shared DiT attention once per ``(query heads, key/value heads, head dim)`` and keep what passes.
+
+    Head counts shrink to the grouped-query ratio; the head dimension, dtype and
+    unmasked layout are the model's own. Anima and Krea 2 share this path.
+    """
+    from ypuddin.models.attention_check import check_attention, grad_mode
+
+    from .vendor.attention import AttentionParams, attention
+
+    selected = AnimaFamily.resolve_attention(configured, device)
+    # Two key/value heads keep a multi-head layout; the query side keeps the grouped-query ratio.
+    shapes = sorted({(2 * q // math.gcd(q, kv), 2 * kv // math.gcd(q, kv), dim) for q, kv, dim in heads})
+
+    def run(backend: str) -> None:
+        params = AttentionParams.create_attention_params("torch" if backend == "sdpa" else backend, False)
+        with torch.autocast(torch.device(device).type, enabled=False), grad_mode(training):
+            for q_heads, kv_heads, dim in shapes:
+                q, k, v = (
+                    torch.randn(1, 16, count, dim, device=device, dtype=dtype, requires_grad=training)
+                    for count in (q_heads, kv_heads, kv_heads)
+                )
+                out = attention([q, k, v], attn_params=params)
+                if training:
+                    out.float().square().mean().backward()
+
+    actual = check_attention(
+        configured=configured,
+        selected="sdpa" if selected == "torch" else selected,
+        run=run,
+        device=device,
+        dtype=dtype,
+        training=training,
+        pinned=pinned,
+    )
+    mode = "torch" if actual == "sdpa" else actual
+    loaded.backbone.attn_mode = mode
+    # Krea 2 applies this again when it materializes a deferred backbone.
+    loaded.extra["attention"] = mode
 
 
 register("anima", AnimaFamily)

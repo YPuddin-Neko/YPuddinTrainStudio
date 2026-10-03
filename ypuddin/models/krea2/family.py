@@ -429,6 +429,18 @@ class Krea2Family(ModelFamily):
 
         return AnimaFamily.resolve_attention(requested, device)
 
+    def prepare_attention(self, loaded, configured, *, device, dtype, training, pinned=None):
+        from ypuddin.models.anima.family import check_dit_attention
+
+        config = loaded.extra["dit_config"]
+        heads = [
+            (config["heads"], config.get("kvheads") or config["heads"], config["features"] // config["heads"]),
+            (config["txtheads"], config["txtkvheads"], config["txtdim"] // config["txtheads"]),
+        ]
+        check_dit_attention(
+            loaded, configured, heads, device=device, dtype=dtype, training=training, pinned=pinned
+        )
+
     # ----------------------------------------------------------------- forward
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:
         from ypuddin.models.anima.vendor.attention import sampling_attention

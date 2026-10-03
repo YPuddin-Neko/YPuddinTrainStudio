@@ -5,6 +5,7 @@ stride 16). The transformer packs only the spatial axes and receives unit flow
 time. Editing/reference images and distilled Klein/KV models are not supported.
 """
 
+import logging
 from pathlib import Path
 
 import torch
@@ -52,36 +53,20 @@ def _set_attention_backend(model, attention, device):
         return
     restore_metal_flash_processors(model)
     backend = {"auto": "native", "sdpa": "native", "flash_attn": "flash", "xformers": "xformers"}[attention]
-    external = attention in {"flash_attn", "xformers"}
-    label = "FlashAttention" if attention == "flash_attn" else "xFormers"
-    if external and torch.device(device).type != "cuda":
-        raise ValueError(f"FLUX.2 Klein {label} requires a CUDA / HIP GPU. Select SDPA for this device.")
-    try:
-        if attention == "flash_attn" and getattr(torch.version, "hip", None):
-            from .attention import install_dtk_flash
+    if attention in {"flash_attn", "xformers"} and torch.device(device).type != "cuda":
+        label = "FlashAttention" if attention == "flash_attn" else "xFormers"
+        raise ValueError(f"FLUX.2 Klein {label} 需要 CUDA / HIP 显卡，当前设备为 {torch.device(device).type}")
+    # Errors keep their original type and message: the load-time attention check
+    # reports them and keeps SDPA (see Flux2Family.prepare_attention).
+    if attention == "flash_attn" and getattr(torch.version, "hip", None):
+        from .attention import install_dtk_flash
 
-            install_dtk_flash(model)
-            return
-        from .attention import restore_native_processors
+        install_dtk_flash(model)
+        return
+    from .attention import restore_native_processors
 
-        restore_native_processors(model)
-        model.set_attention_backend(backend)
-    except (ImportError, OSError, RuntimeError) as error:
-        if not external:
-            raise
-        if getattr(torch.version, "hip", None):
-            message = (
-                f"FLUX.2 Klein 无法启用当前 DTK / HIP {label} 扩展：未满足接口或运行时要求。"
-                "请将“注意力后端”改为“SDPA”；如需使用该扩展，请选择与当前 DTK、PyTorch 和 Diffusers "
-                "版本配套的厂商构建。"
-            )
-        else:
-            message = (
-                f"FLUX.2 Klein cannot enable {label} in the current environment. "
-                "Select SDPA in Attention backend, or use an extension compatible with the current "
-                "PyTorch and Diffusers versions. See the original exception for details."
-            )
-        raise RuntimeError(message) from error
+    restore_native_processors(model)
+    model.set_attention_backend(backend)
 
 
 def image_ids(x):
@@ -222,9 +207,6 @@ class Flux2Family(ModelFamily):
 
         with torch.device("meta"):
             backbone = Flux2Transformer2DModel.from_config(config)
-        # Reject an unavailable explicit backend before building text/latent
-        # caches or allocating the full transformer weights on the GPU.
-        _set_attention_backend(backbone, cfg.attention, device)
         return LoadedModel(
             backbone,
             text,
@@ -237,7 +219,8 @@ class Flux2Family(ModelFamily):
                 "dit_path": dit,
                 "backbone_device": backbone_device or device,
                 "checkpointing": memory.activation_checkpointing == "block",
-                "attention": cfg.attention,
+                # The backbone runs SDPA until prepare_attention checks the selected backend.
+                "attention": "sdpa",
                 "text_encoder_weight_elements": text.weight_elements,
                 "materialized": False,
             },
@@ -279,6 +262,59 @@ class Flux2Family(ModelFamily):
         _set_attention_backend(model, loaded.extra["attention"], loaded.device)
         loaded.backbone = model
         loaded.extra["materialized"] = True
+
+    def prepare_attention(self, loaded, configured, *, device, dtype, training, pinned=None):
+        """Check the selected backend on a one-block Klein with the real head dim, then apply it."""
+        from diffusers import Flux2Transformer2DModel
+
+        from ypuddin.models.attention_check import check_attention, grad_mode
+
+        config = loaded.extra["dit_config"]
+        head_dim = config.get("attention_head_dim", 128)
+        tiny = dict(
+            in_channels=config.get("in_channels", 128),
+            num_layers=1,
+            num_single_layers=1,
+            attention_head_dim=head_dim,
+            num_attention_heads=2,
+            joint_attention_dim=32,
+            timestep_guidance_channels=16,
+            axes_dims_rope=tuple(config.get("axes_dims_rope", (32, 32, 32, 32))),
+            mlp_ratio=2.0,
+            guidance_embeds=False,
+        )
+        selected = "sdpa" if configured == "auto" else configured
+
+        def run(backend):
+            # The throwaway model would repeat Diffusers' cast and experimental-API notices in the job log.
+            notices = logging.getLogger("diffusers.models.modeling_utils")
+            level = notices.level
+            notices.setLevel(logging.ERROR)
+            try:
+                with torch.autocast(torch.device(device).type, enabled=False), grad_mode(training):
+                    model = torch.nn.Module.to(Flux2Transformer2DModel(**tiny), device=device, dtype=dtype)
+                    _set_attention_backend(model.train(training), backend, device)
+                    _run_tiny(model)
+            finally:
+                notices.setLevel(level)
+
+        def _run_tiny(model):
+            hidden, text = (
+                torch.randn(1, length, 2 * head_dim, device=device, dtype=dtype, requires_grad=training)
+                for length in (16, 8)
+            )
+            image, context = model.transformer_blocks[0].attn(hidden, encoder_hidden_states=text)
+            single = model.single_transformer_blocks[0].attn(hidden)
+            if training:
+                sum(x.float().square().mean() for x in (image, context, single)).backward()
+
+        actual = check_attention(
+            configured=configured, selected=selected, run=run, device=device, dtype=dtype,
+            training=training, pinned=pinned,
+        )
+        loaded.extra["attention"] = actual
+        if loaded.extra.get("materialized", True):
+            _set_attention_backend(loaded.backbone, actual, device)
 
     def forward(self, loaded, x_t, t, cond, **extra):
         reject_dev_config(loaded.extra["dit_config"], loaded.extra.get("variant", "auto"))

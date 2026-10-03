@@ -252,6 +252,23 @@ class ModelFamily(ABC):
     def materialize_backbone(self, loaded: LoadedModel) -> None:
         """Finish deferred weight loading after VAE/text caches have released their encoders."""
 
+    def prepare_attention(
+        self,
+        loaded: LoadedModel,
+        configured: str,
+        *,
+        device: torch.device | str,
+        dtype: torch.dtype,
+        training: bool,
+        pinned: str | None = None,
+    ) -> None:
+        """Check the selected attention backend once, after loading and before the backbone computes.
+
+        ``dtype`` is the precision of the backbone's attention inputs. Families with a
+        selectable backend run one tiny call through their own attention path and keep
+        SDPA when it fails (see :mod:`ypuddin.models.attention_check`).
+        """
+
     def prepare_backbone_for_plan(self, backbone: nn.Module, cfg: ModelConfig, dtype: torch.dtype) -> None:
         """Match loaded storage on meta, without reading checkpoint tensor payloads."""
         backbone.to(dtype=dtype)

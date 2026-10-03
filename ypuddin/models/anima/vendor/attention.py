@@ -17,6 +17,8 @@
 #     carrying calls use SDPA so quantized kernels cannot silently detach training gradients.
 #   * Explicit Metal Flash dispatch is model-local and delegates unsupported
 #     semantics to SDPA before selecting a portable mtlattn kernel.
+#   * During the load-time attention check (``ypuddin.models.attention_check``) an explicitly
+#     selected external backend raises instead of quietly using SDPA, so the check sees it run.
 """Minimal SDPA attention helper used by :mod:`ypuddin.models.anima.vendor.cosmos_dit`.
 
 Call pattern (identical to sd-scripts ``library.attention``)::
@@ -35,6 +37,8 @@ import importlib
 from typing import Optional, Union
 
 import torch
+
+from ypuddin.models import attention_check
 
 _TORCH_MODES = ("torch", "sdpa", None)
 _SAGE_MODES = ("sage", "sageattn")
@@ -117,13 +121,22 @@ def _sdpa(
         if _sageattn is None:
             raise RuntimeError("attn_mode='sage' requires the sageattention package (pip install sageattention)")
         return _sageattn(q, k, v, tensor_layout="HND", is_causal=False)
-    if attn_mode in _EXTERNAL_MODES and compatible and q.shape[-1] <= 256 and q.shape[-1] % 8 == 0:
-        try:
-            return _external_attention(attn_mode, q, k, v, dropout_p)
-        except NotImplementedError:
-            # xFormers uses this to report no kernel for a particular shape/device. Do not
-            # catch RuntimeError: OOM, broken installs and other CUDA errors must surface.
-            pass
+    if attn_mode in _EXTERNAL_MODES:
+        if compatible and q.shape[-1] <= 256 and q.shape[-1] % 8 == 0:
+            try:
+                return _external_attention(attn_mode, q, k, v, dropout_p)
+            except NotImplementedError:
+                # xFormers uses this to report no kernel for a particular shape/device. Do not
+                # catch RuntimeError: OOM, broken installs and other CUDA errors must surface.
+                if attention_check.is_checking():
+                    raise
+        elif attention_check.is_checking():
+            raise NotImplementedError(
+                f"{attention_check.backend_label(attn_mode)} 只处理 CUDA 上无 mask、FP16/BF16 且三者一致、"
+                f"head dim 不超过 256 且为 8 的倍数的输入；当前为 {q.device.type}、"
+                f"{'/'.join(attention_check.dtype_label(t.dtype) for t in (q, k, v))}、"
+                f"{'有' if attn_mask is not None else '无'} mask、head dim {q.shape[-1]}"
+            )
     try:
         return torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
     except RuntimeError as exc:
