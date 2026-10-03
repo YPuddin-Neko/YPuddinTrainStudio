@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ArrowRight, Check, Cpu, Download, FolderOpen, Globe2, KeyRound, Languages, Loader2 } from 'lucide-react';
-import { apiClient } from '../../api/client';
+import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { Settings } from '../../api/types';
 import BrandMark from '../../components/BrandMark';
 import { DownloadSourceFields, type DownloadSources } from '../Settings/DownloadPreferences';
@@ -35,7 +35,7 @@ export default function Setup() {
   React.useEffect(() => {
     const controller = new AbortController();
     setError('');
-    void apiClient.get<Settings>('/settings', { silent: true, signal: controller.signal }).then(value => {
+    void apiClient.get<Settings>('/settings', { silent: true, signal: controller.signal, timeout: READ_TIMEOUT_MS }).then(value => {
       if (controller.signal.aborted) return;
       setSettings(value); setLanguage(value.ui.language); setSources(value.downloads ?? DOWNLOAD_SOURCE_DEFAULTS);
       void i18n.changeLanguage(value.ui.language);

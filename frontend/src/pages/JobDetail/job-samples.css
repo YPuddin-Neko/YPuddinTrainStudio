@@ -9,7 +9,8 @@
 .epoch-search-error { font-size:11px; color:#b91c1c; }
 .dark .epoch-search-error { color:#fca5a5; }
 
-.sample-viewer { --sample-stage-height:clamp(720px, 64vh, 820px); display:grid; grid-template-columns:minmax(0, 1fr) 320px; gap:12px; min-width:0; outline:none; }
+/* Image and thumbnails fit the window below the top bar and the job's sticky header once scrolled to. */
+.sample-viewer { --sample-stage-height:clamp(360px, calc(100vh - 260px), 820px); display:grid; grid-template-columns:minmax(0, 1fr) 320px; gap:12px; min-width:0; outline:none; }
 .sample-main { display:grid; align-content:start; gap:10px; min-width:0; }
 .sample-stage-wrap { position:relative; min-width:0; }
 .sample-stage { position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:var(--sample-stage-height); padding:0; overflow:hidden; border:1px solid var(--studio-line); border-radius:8px; background:var(--studio-canvas); user-select:none; -webkit-user-select:none; }
@@ -133,7 +134,7 @@
 
 .checkpoint-toolbar-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px 12px; margin-left:auto; min-width:0; }
 .checkpoint-toolbar-controls .sample-toolbar-count { margin-left:0; flex-basis:auto; line-height:var(--control-h); }
-.checkpoint-pagination { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:7px; min-width:0; }
+.checkpoint-pagination,.checkpoint-pager { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:7px; min-width:0; }
 .checkpoint-pagination .studio-select { width:106px; }
 .checkpoint-page-number { min-width:38px; text-align:center; color:var(--studio-dim); font-size:12px; font-variant-numeric:tabular-nums; }
 .checkpoint-selection { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; font-size:12px; color:var(--studio-dim); }
@@ -143,4 +144,5 @@
 .artifact-select { position:absolute; z-index:2; right:7px; top:7px; display:flex; align-items:center; justify-content:center; width:28px; height:28px; border:1px solid var(--studio-line); border-radius:5px; background:var(--studio-panel); cursor:pointer; }
 .checkpoint-delete-list { max-height:200px; overflow:auto; margin:12px 0 0; padding-left:20px; font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
 .checkpoint-delete .studio-error { white-space:pre-wrap; }
-@container (max-width:640px) { .checkpoint-toolbar-controls { width:100%; } .checkpoint-pagination { flex:1; } }
+/* Narrow: the count and batch management share a line, the pager takes the next. */
+@container (max-width:640px) { .checkpoint-toolbar-controls { width:100%; } .checkpoint-toolbar-controls .sample-toolbar-count { margin-right:auto; } .checkpoint-pagination { display:contents; } .checkpoint-pager { order:1; flex-basis:100%; justify-content:flex-start; } }

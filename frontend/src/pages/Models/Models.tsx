@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Check, Download, ExternalLink, FolderSearch, KeyRound, Loader2, Plus, RefreshCw, Search, Star, Trash2, X } from 'lucide-react';
-import { apiClient } from '../../api/client';
+import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { ModelAsset, ModelDownload as BaseDownload, ModelDownloadRequest, Settings } from '../../api/types';
 import { useFamilies } from '../../api/hooks/useFamilies';
 import LocalModelRegistration from './LocalModelRegistration';
@@ -27,6 +27,10 @@ type Recommendation = {
 };
 const isActive = (task: ModelDownload) => ['queued', 'downloading'].includes(task.status);
 const basename = (path: string) => path.split(/[\\/]/).pop() || path;
+// Each list arrives on its own, so one slow or failed read holds back only the part that shows it.
+type Resource = 'library' | 'downloads' | 'settings' | 'prepare';
+const resources: Record<Resource, string> = { library: '/models', downloads: '/models/downloads', settings: '/settings', prepare: '/models/recommendations' };
+const resourceKeys = Object.keys(resources) as Resource[];
 const primary = 'ui-btn ui-btn-primary';
 const secondary = 'ui-btn';
 
@@ -52,9 +56,9 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
   }, [transferring]);
   const [catalog, setCatalog] = React.useState<Recommendation[]>([]);
   const [settings, setSettings] = React.useState<Settings | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  const [loaded, setLoaded] = React.useState<Partial<Record<Resource, true>>>({});
   const [error, setError] = React.useState('');
-  const [loadErrors, setLoadErrors] = React.useState<Record<string, string>>({});
+  const [loadErrors, setLoadErrors] = React.useState<Partial<Record<Resource, string>>>({});
   const [notice, setNotice] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [provider, setProvider] = React.useState<Provider>(() => {
@@ -86,22 +90,48 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
     const next = new URLSearchParams(params); Object.entries(values).forEach(([key, value]) => next.set(key, value));
     setParams(next, { replace: true, state: location.state }); setPage(1); setQuery('');
   };
-  const refresh = React.useCallback(async (silent = false) => {
-      const [assets, tasks, config, recommendations] = await Promise.allSettled([
-        apiClient.get<ModelAsset[]>('/models', { silent }), apiClient.get<ModelDownload[]>('/models/downloads', { silent }),
-        apiClient.get<Settings>('/settings', { silent }), apiClient.get<Recommendation[]>('/models/recommendations', { silent }),
-      ]);
-      if (assets.status === 'fulfilled') setModels(assets.value);
-      if (tasks.status === 'fulfilled') setDownloads(tasks.value);
-      if (config.status === 'fulfilled') setSettings(config.value);
-      if (recommendations.status === 'fulfilled') setCatalog(recommendations.value);
-      const failures: Record<string, string> = {};
-      for (const [key, result] of [['library', assets], ['downloads', tasks], ['settings', config], ['prepare', recommendations]] as const) {
-        if (result.status === 'rejected') failures[key] = formatApiError(result.reason);
-      }
-      setLoadErrors(failures); setLoading(false);
+  // The newest read of each list, the newest one shown, and the page's lifetime (aborted on leaving).
+  const reading = React.useRef<Partial<Record<Resource, number>>>({});
+  const shown = React.useRef<Partial<Record<Resource, number>>>({});
+  const reads = React.useRef(0);
+  const lifetime = React.useRef<AbortController | null>(null);
+  const read = React.useCallback(async (resource: Resource, poll = false) => {
+    // A poll waits for the previous read of the same list instead of queueing behind it.
+    if (poll && reading.current[resource] !== undefined) return;
+    const id = ++reads.current;
+    const signal = lifetime.current?.signal;
+    reading.current[resource] = id;
+    const show = (apply: () => void) => {
+      if (signal?.aborted || (shown.current[resource] ?? 0) > id) return; // a newer answer is already shown
+      shown.current[resource] = id; apply();
+    };
+    try {
+      const value = await apiClient.get<unknown>(resources[resource], { silent: true, signal, timeout: READ_TIMEOUT_MS });
+      show(() => {
+        if (resource === 'library') setModels(value as ModelAsset[]);
+        else if (resource === 'downloads') setDownloads(value as ModelDownload[]);
+        else if (resource === 'settings') setSettings(value as Settings);
+        else setCatalog(value as Recommendation[]);
+        setLoaded(current => current[resource] ? current : { ...current, [resource]: true });
+        setLoadErrors(current => {
+          if (!(resource in current)) return current;
+          const next = { ...current }; delete next[resource]; return next;
+        });
+      });
+    } catch (failure) {
+      show(() => setLoadErrors(current => ({ ...current, [resource]: formatApiError(failure) })));
+    } finally {
+      if (reading.current[resource] === id) delete reading.current[resource];
+    }
   }, []);
-  React.useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(true), 2500); return () => clearInterval(timer); }, [refresh]);
+  const refresh = React.useCallback(async () => { await Promise.all(resourceKeys.map(resource => read(resource))); }, [read]);
+  React.useEffect(() => {
+    lifetime.current = new AbortController();
+    const current = lifetime.current;
+    void refresh();
+    const timer = window.setInterval(() => resourceKeys.forEach(resource => void read(resource, true)), 2500);
+    return () => { current.abort(); clearInterval(timer); };
+  }, [read, refresh]);
   const action = async (operation: () => Promise<void>, inForm = false) => {
     setBusy(true); setError(''); setFormError(''); setNotice('');
     try { await operation(); await refresh(); window.dispatchEvent(new Event('studio-models-changed')); }
@@ -156,8 +186,12 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
   const currentPage = Math.min(page, pages);
   const slice = <T,>(items: T[]) => items.slice((currentPage - 1) * 12, currentPage * 12);
   const settingsLink = (tab: string) => `/settings/environment?tab=${tab}&family=${family}`;
-  const tabs = [{ key: 'prepare', label: text('准备模型', 'Prepare models') }, { key: 'library', label: `${text('本地模型', 'Local models')} · ${selected.length}` }];
+  const tabs = [{ key: 'prepare', label: text('准备模型', 'Prepare models') }, { key: 'library', label: `${text('本地模型', 'Local models')}${loaded.library ? ` · ${selected.length}` : ''}` }];
   const statusLabel = (task: ModelDownload) => ({ queued: text('排队中', 'Queued'), downloading: text('下载中', 'Downloading'), completed: text('已就绪', 'Ready'), failed: text('下载失败', 'Failed'), cancelled: text('已取消', 'Cancelled') }[task.status]);
+  // A view shows once its own list has arrived; actions wait for the lists they depend on.
+  const viewReady = !!loaded[view];
+  // Downloads join their catalog rows once both lists are known (or the catalog cannot be read).
+  const listsSettled = !!loaded.downloads && (!!loaded.prepare || !!loadErrors.prepare);
   const linkedTaskIds = new Set(entries.map(taskFor).filter((task): task is ModelDownload => Boolean(task)).map(task => task.id));
   const standaloneTasks = tasks.filter(task => !linkedTaskIds.has(task.id));
   const downloadTaskRow = (task: ModelDownload) => <div className="model-download-inline-row" key={task.id}>
@@ -176,21 +210,21 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
       </div>
     </div>
     {error && <div role="alert" className="settings-alert">{error}<button className={secondary} onClick={() => void refresh()}>{text('重试', 'Retry')}</button></div>}
-    {Object.keys(loadErrors).length > 0 && <div role="alert" className="settings-alert"><div>{Object.entries(loadErrors).map(([key, message]) => <p key={key}>{({ library: text('本地模型', 'Local models'), downloads: text('下载记录', 'Downloads'), settings: text('存储设置', 'Storage settings'), prepare: text('推荐模型', 'Recommended models') })[key]}：{message}</p>)}</div><button className={secondary} onClick={() => void refresh()}>{text('重新读取', 'Reload')}</button></div>}
+    {Object.keys(loadErrors).length > 0 && <div role="alert" className="settings-alert"><div>{Object.entries(loadErrors).map(([key, message]) => <p key={key}>{({ library: text('本地模型', 'Local models'), downloads: text('下载记录', 'Downloads'), settings: text('存储设置', 'Storage settings'), prepare: text('推荐模型', 'Recommended models') })[key as Resource]}：{message}</p>)}</div><button className={secondary} onClick={() => void refresh()}>{text('重新读取', 'Reload')}</button></div>}
     {notice && <p className="model-notice" role="status">{notice}</p>}
-    {standaloneTasks.length > 0 && <section className="model-download-inline" aria-label={text('下载状态', 'Download status')}><h3>{text('下载状态', 'Download status')}</h3>{standaloneTasks.map(downloadTaskRow)}</section>}
+    {listsSettled && standaloneTasks.length > 0 && <section className="model-download-inline" aria-label={text('下载状态', 'Download status')}><h3>{text('下载状态', 'Download status')}</h3>{standaloneTasks.map(downloadTaskRow)}</section>}
     {familiesError && <div role="alert" className="settings-alert">{text('无法读取支持的模型系列。', 'Could not load supported model families.')}<button className={secondary} onClick={() => void refreshFamilies()}>{text('重试', 'Retry')}</button></div>}
     {family === 'flux' && <p role="alert" className="settings-alert">{text('FLUX.1 已停用。已有模型文件保持原样，请选择受支持的模型系列。', 'FLUX.1 is retired. Existing model files are preserved; choose a supported model family.')}</p>}
-    {loading || familiesLoading ? <LoadingNote block className="model-empty" label={text('正在读取模型…', 'Loading models…')}/> : !selectedFamily ? <p className="model-empty">{text('请选择训练服务支持的模型系列。', 'Choose a model family supported by the training service.')}</p> : loadErrors[view] ? <p className="model-empty">{text('此列表暂时无法读取，请重试。其他视图仍可查看。', 'This list is unavailable. Retry or open another view.')}</p> : view === 'prepare' ? <>
+    {familiesLoading ? <LoadingNote block className="model-empty" label={text('正在读取模型系列…', 'Loading model families…')}/> : !selectedFamily ? <p className="model-empty">{text('请选择训练服务支持的模型系列。', 'Choose a model family supported by the training service.')}</p> : loadErrors[view] ? <p className="model-empty">{text('此列表暂时无法读取，请重试。其他视图仍可查看。', 'This list is unavailable. Retry or open another view.')}</p> : !viewReady ? <LoadingNote block className="model-empty" label={view === 'prepare' ? text('正在读取推荐模型…', 'Loading recommended models…') : text('正在读取本地模型…', 'Loading local models…')}/> : view === 'prepare' ? <>
       {family === 'toy' ? <p className="model-empty">{text('Toy 测试模型已内置，无需下载权重。', 'The Toy test model is built in; no weights required.')}</p> : <>
-        <div className="models-source-bar"><label>{text('下载来源', 'Download source')}<StudioSelect value={catalogProvider} aria-label={text('下载来源', 'Download source')} data-testid="model-provider" options={(catalogProviders.length ? catalogProviders : ['huggingface', 'modelscope']).map(value => ({ value, label: value === 'huggingface' ? 'Hugging Face' : '魔搭 ModelScope' }))} onValueChange={value => setProvider(value as Provider)}/></label><span>{text('必需组件', 'Required components')} {readyRequired.length} / {required.length}</span><button className={primary} disabled={busy || !!loadErrors.library || !!loadErrors.downloads || missing.length === 0 || missing.every(entry => taskFor(entry) || (!entry.available_path && !entry.sources.some(source => source.provider === catalogProvider)))} onClick={() => void action(async () => { for (const entry of missing) if (!taskFor(entry) && (entry.available_path || entry.sources.some(source => source.provider === catalogProvider))) await startEntry(entry); })}><Download size={14}/>{text('准备缺失组件', 'Prepare missing components')}</button></div>
+        <div className="models-source-bar"><label>{text('下载来源', 'Download source')}<StudioSelect value={catalogProvider} aria-label={text('下载来源', 'Download source')} data-testid="model-provider" options={(catalogProviders.length ? catalogProviders : ['huggingface', 'modelscope']).map(value => ({ value, label: value === 'huggingface' ? 'Hugging Face' : '魔搭 ModelScope' }))} onValueChange={value => setProvider(value as Provider)}/></label>{loaded.library && <span>{text('必需组件', 'Required components')} {readyRequired.length} / {required.length}</span>}<button className={primary} disabled={busy || !loaded.downloads || !loaded.library || !!loadErrors.library || !!loadErrors.downloads || missing.length === 0 || missing.every(entry => taskFor(entry) || (!entry.available_path && !entry.sources.some(source => source.provider === catalogProvider)))} onClick={() => void action(async () => { for (const entry of missing) if (!taskFor(entry) && (entry.available_path || entry.sources.some(source => source.provider === catalogProvider))) await startEntry(entry); })}><Download size={14}/>{text('准备缺失组件', 'Prepare missing components')}</button></div>
         {entries.length === 0 && <p className="model-help-text">{text('添加已有模型，或通过自定义下载填写模型的来源。', 'Add an existing model or enter its source in Custom download.')}</p>}
         {kinds.map(kind => <section className="model-component" key={kind} data-testid={`model-component-${kind}`}>
           <header><h3>{label(kind)}{!required.includes(kind) && <span className="model-tag">{text('可选', 'Optional')}</span>}</h3><button className={secondary} onClick={() => openForm('local', kind)}><Plus size={13}/>{text('已有文件', 'Local file')}</button></header>
           {entries.filter(entry => entry.kind === kind).map(entry => {
             const task = taskFor(entry); const source = entry.sources.find(source => source.provider === catalogProvider);
             return <div className="model-catalog-row" key={entry.id}><div className="model-catalog-description"><strong>{entry.name}</strong><div><span>{formatBytes(entry.size)}</span>{entry.recommended && <span className="model-tag">{text('推荐', 'Recommended')}</span>}<a className="ui-link" href={(source || entry.sources[0])?.url} target="_blank" rel="noreferrer">{text('发布页', 'Source')}<ExternalLink size={11}/></a></div>{task && (isActive(task) ? <><p className="model-transfer-status">{transfer(task)}</p><ProgressBar className="model-download-progress" label={`${entry.name} ${text('下载进度', 'download progress')}`} max={task.total_bytes || undefined} value={task.total_bytes ? task.downloaded_bytes : undefined}/></> : task.status === 'failed' ? <p role="alert" className="model-download-error">{text('下载失败', 'Download failed')}：{task.error || text('未返回详细错误，请重试。', 'No detailed error was returned. Retry the download.')}</p> : <p role="status" className="model-transfer-status">{text('下载已取消，可以重新下载。', 'Download cancelled. You can retry it.')}</p>)}</div>
-              <div className="model-catalog-action">{entry.is_default && entry.available_path ? <span className="model-ready"><Check size={14}/>{text('当前默认', 'Current default')}</span> : task ? isActive(task) ? cancelButton(task) : <button className={secondary} disabled={busy} onClick={() => retryTask(task)}>{text('重试', 'Retry')}</button> : <button className={entry.available_path ? secondary : primary} disabled={busy || (!source && !entry.available_path) || !!loadErrors.library || !!loadErrors.downloads} onClick={() => void action(async () => { await startEntry(entry); setNotice(entry.available_path ? entry.purpose === 'inference' ? text('已登记为仅采样模型。', 'Registered for sampling only.') : text('已设为默认组件。', 'Default component selected.') : ''); })}>{entry.available_path ? <Check size={14}/> : <Download size={14}/>} {entry.available_path ? entry.purpose === 'inference' ? text('仅采样 · 已就绪', 'Sampling only · ready') : text('设为默认', 'Use as default') : text('下载', 'Download')}</button>}</div>
+              <div className="model-catalog-action">{entry.is_default && entry.available_path ? <span className="model-ready"><Check size={14}/>{text('当前默认', 'Current default')}</span> : task ? isActive(task) ? cancelButton(task) : <button className={secondary} disabled={busy} onClick={() => retryTask(task)}>{text('重试', 'Retry')}</button> : <button className={entry.available_path ? secondary : primary} disabled={busy || !loaded.downloads || !loaded.library || (!source && !entry.available_path) || !!loadErrors.library || !!loadErrors.downloads} onClick={() => void action(async () => { await startEntry(entry); setNotice(entry.available_path ? entry.purpose === 'inference' ? text('已登记为仅采样模型。', 'Registered for sampling only.') : text('已设为默认组件。', 'Default component selected.') : ''); })}>{entry.available_path ? <Check size={14}/> : <Download size={14}/>} {entry.available_path ? entry.purpose === 'inference' ? text('仅采样 · 已就绪', 'Sampling only · ready') : text('设为默认', 'Use as default') : text('下载', 'Download')}</button>}</div>
             </div>;
           })}
           {supportedSelected.some(model => model.kind === kind) && <div className="model-default-row"><label>{text('本地默认', 'Local default')}</label><StudioSelect aria-label={`${label(kind)} ${text('默认模型', 'default model')}`} value={supportedSelected.find(model => model.kind === kind && model.is_default)?.id || ''} options={[{ value: '', label: text('清除默认模型', 'Clear default model'), displayLabel: text('未设置默认模型', 'No default model') }, ...supportedSelected.filter(model => model.kind === kind).map(model => ({ value: model.id, label: `${basename(model.path)}${!model.exists ? text('（文件缺失）', ' (missing)') : ''}`, disabled: !model.exists }))]} disabled={busy} onValueChange={id => void action(async () => { const previous = selected.find(model => model.kind === kind && model.is_default); if (id) await apiClient.patch(`/models/${id}`, { is_default: true }); else if (previous) await apiClient.patch(`/models/${previous.id}`, { is_default: false }); })}/></div>}

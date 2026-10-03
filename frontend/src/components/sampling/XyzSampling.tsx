@@ -2,12 +2,14 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowRight, ChevronDown, Download, Grid2X2, Layers, Loader2, Play, X } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
+import type { FamilyInfo } from '../../api/types';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { useEventStream } from '../../events/useEventStream';
 import { formatApiError } from '../../utils/errors';
 import { formatTime } from '../../utils/format';
 import { configOptionLabel } from '../../utils/configPresentation';
 import { FIELD_HELP } from '../../utils/fieldCopy';
+import { contextHelp } from '../../utils/fieldContext';
 import ConfigHelp from '../ConfigHelp';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../StudioSelect';
@@ -131,6 +133,18 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
     }).catch(err => { if (!controller.signal.aborted) setError(formatApiError(err)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [source, revision]);
+
+  // The source model and this machine decide what the compatibility help says, as on the training page.
+  const [family, setFamily] = React.useState<FamilyInfo>();
+  const familyName = options?.family;
+  React.useEffect(() => {
+    if (!familyName) return;
+    const controller = new AbortController();
+    void apiClient.get<FamilyInfo[]>('/families', { signal: controller.signal, silent: true })
+      .then(rows => { if (!controller.signal.aborted) setFamily(rows.find(row => row.name === familyName)); })
+      .catch(() => { /* The general help stays. */ });
+    return () => controller.abort();
+  }, [familyName]);
 
   const activeIds = history.filter(isActive).map(item => item.id).sort().join(',');
   const [kick, setKick] = React.useState(0);
@@ -268,6 +282,10 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
     setError('');
   };
 
+  const english = text('zh', 'en') === 'en';
+  const noiseOptions = options?.axes.find(axis => axis.key === 'noise')?.values?.map(String);
+  const noiseHelp = (family && contextHelp('sampling.noise', { family, config: {}, english }, noiseOptions)) || text(...FIELD_HELP['sampling.noise']);
+
   if (!options || !values) return <div className="xyz-loading">{loading ? <><Loader2 size={20} className="animate-spin"/>{text('读取采样配置…', 'Loading sampling setup…')}</> : <><p role="alert">{error}</p><button type="button" className="ui-btn ui-btn-sm" onClick={() => setRevision(value => value + 1)}>{text('重试', 'Retry')}</button></>}</div>;
   return <section className="xyz-workspace" aria-label={text('模型测试', 'Model testing')}>
     {error && <div className="results-error" role="alert">{error}<button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" onClick={() => setError('')} aria-label={text('关闭错误提示', 'Dismiss error')}><X size={14}/></button></div>}
@@ -300,7 +318,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
           <div className="xyz-axes">{(['X', 'Y', 'Z'] as const).map((position, index) => <AxisEditor key={position} position={position} draft={drafts[index]} options={options} disabled={locked} weights={weights} used={drafts.filter((_, other) => other !== index).flatMap(draft => draft ? [draft.key] : [])} onChange={draft => changeAxis(index, draft)}/>)}</div>
           <details className="xyz-settings"><summary>{text('固定参数', 'Fixed parameters')}<span>{values.width} × {values.height} · Seed {values.seed}</span></summary><fieldset className="xyz-fields" disabled={locked}>
             {(['width', 'height', 'seed', 'steps', 'cfg', 'adapter_scale'] as const).filter(key => !fullModel || key !== 'adapter_scale').map(key => <label key={key}><span>{key === 'width' ? text('宽度', 'Width') : key === 'height' ? text('高度', 'Height') : name(key)}</span><input aria-label={`${text('固定', 'Fixed')} ${key}`} type="number" min={key === 'adapter_scale' ? -4 : key === 'cfg' || key === 'seed' ? 0 : 1} step={key === 'cfg' || key === 'adapter_scale' ? 0.1 : 1} required disabled={axes.some(axis => axis?.key === key)} value={values[key]} onChange={event => update(key, Number(event.target.value))}/></label>)}
-            {(['sampler', 'scheduler', 'noise'] as const).map(key => <label key={key}><span>{name(key)}{key === 'noise' && <ConfigHelp label={text('采样兼容模式说明', 'Sampling compatibility help')}>{text(...FIELD_HELP['sampling.noise'])}</ConfigHelp>}</span><StudioSelect aria-label={`${text('固定', 'Fixed')} ${name(key)}`} disabled={locked || axes.some(axis => axis?.key === key)} value={values[key]} options={(options.axes.find(axis => axis.key === key)?.values || [values[key]]).map(value => ({ value: String(value), label: choiceLabel(key, value) }))} onValueChange={value => update(key, value)}/></label>)}
+            {(['sampler', 'scheduler', 'noise'] as const).map(key => <label key={key}><span>{name(key)}{key === 'noise' && <ConfigHelp label={text('采样兼容模式说明', 'Sampling compatibility help')}>{noiseHelp}</ConfigHelp>}</span><StudioSelect aria-label={`${text('固定', 'Fixed')} ${name(key)}`} disabled={locked || axes.some(axis => axis?.key === key)} value={values[key]} options={(options.axes.find(axis => axis.key === key)?.values || [values[key]]).map(value => ({ value: String(value), label: choiceLabel(key, value) }))} onValueChange={value => update(key, value)}/></label>)}
             {!fullModel && (values.noise === 'comfyui' || axes.some(axis => axis?.key === 'noise' && axis.values.includes('comfyui'))) && <label><span>{text('适配器融合精度', 'Adapter merge precision')}<ConfigHelp label={text('适配器融合精度说明', 'Adapter merge precision help')}>{text(...FIELD_HELP['sampling.adapter_merge_dtype'])}</ConfigHelp></span><StudioSelect aria-label={text('固定 适配器融合精度', 'Fixed Adapter merge precision')} disabled={locked} value={values.adapter_merge_dtype || 'auto'} options={['auto', 'bf16', 'fp16', 'fp32'].map(value => ({ value, label: text(configOptionLabel('sampling.adapter_merge_dtype', value), configOptionLabel('sampling.adapter_merge_dtype', value, true)) }))} onValueChange={value => update('adapter_merge_dtype', value as SamplingValues['adapter_merge_dtype'])}/></label>}
             <label className="xyz-span"><span>{text('负面提示词', 'Negative prompt')}</span><textarea rows={2} value={values.negative} onChange={event => update('negative', event.target.value)}/></label>
           </fieldset></details>
@@ -323,7 +341,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
           {task.error && <p role="alert" className="xyz-task-error">{task.error}</p>}
           {request?.z && <OverflowStrip className="xyz-pages ui-tabs" containerClassName="xyz-pages-strip" role="navigation" label={text('Z 轴分页', 'Z axis pages')} activeKey={page}>{zValues.map((value, index) => <button key={index} type="button" aria-current={page === index ? 'page' : undefined} onClick={() => setPage(index)}>{name(request.z!.key)} · {displayValue(request.z, value)}</button>)}<SlidingIndicator className="ui-tabs-indicator"/></OverflowStrip>}
           <div ref={gridViewport} className="xyz-grid-scroll" style={{ '--xyz-image-ratio': (request?.width || 1) / (request?.height || 1) } as React.CSSProperties} tabIndex={0} aria-label={text('对比网格，可横向滚动查看所有列', 'Comparison grid, scroll horizontally for all columns')}>
-            <table className="xyz-grid" data-single={xValues.length * yValues.length === 1 || undefined} style={{ minWidth: (rowHeads ? 88 : 0) + xValues.length * 150 }}>
+            <table className="xyz-grid" style={{ minWidth: (rowHeads ? 88 : 0) + xValues.length * 150 }}>
               {request && columnHeads !== rowHeads && <caption>{columnHeads ? `${name(request.x.key)} →` : `${name(request.y!.key)} ↓`}</caption>}
               {request && columnHeads && <thead><tr>{rowHeads && <th className="xyz-corner">{`${name(request.y!.key)} ↓`}<br/>{`${name(request.x.key)} →`}</th>}{xValues.map((value, x) => <th key={x} title={displayValue(request.x, value)}>{displayValue(request.x, value)}</th>)}</tr></thead>}
               <tbody>{yValues.map((value, y) => <tr key={y}>{rowHeads && <th className="xyz-row-head" title={displayValue(request?.y, value)}>{displayValue(request?.y, value)}</th>}{xValues.map((_, x) => { const cell = cells.get(`${x}:${y}`); return <td key={x}>{cell ? <button type="button" className="xyz-cell" onClick={() => setPreview(cell)} aria-label={text(`查看第 ${x + 1} 列第 ${y + 1} 行`, `View column ${x + 1}, row ${y + 1}`)}><LazyImage src={imageUrl(cell.url)} loading="lazy" alt={`${name(request!.x.key)} ${displayValue(request?.x, cell.x_value)}${request?.y ? `, ${name(request.y.key)} ${displayValue(request.y, cell.y_value)}` : ''}`} width={request?.width} height={request?.height}/></button> : <PendingCell task={task} drawing={isActive(task) && !isWaiting(task) && (page * yValues.length + y) * xValues.length + x === task.done}/>}</td>; })}</tr>)}</tbody>

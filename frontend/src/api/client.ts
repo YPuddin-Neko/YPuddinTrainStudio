@@ -4,6 +4,32 @@ import { formatApiError } from '../utils/errors';
 interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>;
   silent?: boolean;
+  /** Milliseconds to wait for the answer; then the request fails with a RequestTimeout. */
+  timeout?: number;
+}
+
+/** How long a page section waits for its data before it offers a retry instead of loading on. */
+export const READ_TIMEOUT_MS = 60_000;
+
+export class RequestTimeout extends Error {
+  constructor() {
+    super('The service did not answer in time');
+    this.name = 'TimeoutError';
+  }
+}
+
+/** The caller's signal, plus an abort when the time is up. */
+function deadline(signal: AbortSignal | null | undefined, timeout: number) {
+  const controller = new AbortController();
+  let expired = false;
+  const timer = window.setTimeout(() => { expired = true; controller.abort(); }, timeout);
+  const forward = () => controller.abort();
+  if (signal?.aborted) controller.abort(); else signal?.addEventListener('abort', forward, { once: true });
+  return {
+    signal: controller.signal,
+    expired: () => expired,
+    clear: () => { window.clearTimeout(timer); signal?.removeEventListener('abort', forward); },
+  };
 }
 
 export function apiUrl(endpoint: string): string {
@@ -12,15 +38,17 @@ export function apiUrl(endpoint: string): string {
 }
 
 async function request<T>(method: string, endpoint: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
-  const { params, silent, ...init } = options;
+  const { params, silent, timeout, ...init } = options;
   const url = new URL(apiUrl(endpoint));
   Object.entries(params || {}).forEach(([key, value]) => {
     if (value !== undefined) url.searchParams.set(key, String(value));
   });
   const isFormData = body instanceof FormData;
+  const limit = timeout ? deadline(init.signal, timeout) : null;
   try {
     const response = await fetch(url, {
       ...init,
+      ...(limit ? { signal: limit.signal } : {}),
       method,
       headers: { ...(isFormData ? {} : { 'Content-Type': 'application/json' }), ...init.headers },
       ...(body === undefined ? {} : { body: isFormData ? body : JSON.stringify(body) }),
@@ -33,11 +61,14 @@ async function request<T>(method: string, endpoint: string, body?: unknown, opti
       });
     }
     return response.status === 204 ? undefined as T : await response.json() as T;
-  } catch (error) {
+  } catch (caught) {
+    const error = limit?.expired() ? new RequestTimeout() : caught;
     if (!silent && !(error instanceof Error && error.name === 'AbortError')) {
       window.dispatchEvent(new CustomEvent('api.error', { detail: formatApiError(error) }));
     }
     throw error;
+  } finally {
+    limit?.clear();
   }
 }
 

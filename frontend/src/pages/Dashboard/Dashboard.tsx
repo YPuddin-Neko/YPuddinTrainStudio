@@ -16,6 +16,8 @@ import './dashboard.css';
 import PageLocation from '../../components/PageLocation';
 
 const PAGE_SIZE = 5;
+/** Steps can arrive many times a second; the job cards take them at most this often. */
+const PROGRESS_INTERVAL = 500;
 
 function DashboardPagination({ label, page, pages, disabled, onChange }: { label: string; page: number; pages: number; disabled?: boolean; onChange: (page: number) => void }) {
   const text = useWorkspaceText();
@@ -82,12 +84,32 @@ export default function Dashboard() {
     } catch (failure) { if (!controller.signal.aborted) setError(formatApiError(failure)); }
     finally { if (!controller.signal.aborted) setLoading(false); }
   }, []);
-  React.useEffect(() => { void fetchOverview(); return () => { request.current?.abort(); if (refreshTimer.current) clearTimeout(refreshTimer.current); }; }, [fetchOverview]);
+  const currentRef = React.useRef(current); currentRef.current = current;
+  const pendingEvents = React.useRef<Record<string, unknown>[]>([]);
+  const progressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastProgress = React.useRef(0);
+  const applyProgress = React.useCallback(() => {
+    progressTimer.current = null; lastProgress.current = Date.now();
+    const events = pendingEvents.current; pendingEvents.current = [];
+    setCurrent(jobs => {
+      const next = jobs.map(job => events.reduce<ContextJob>((merged, event) => mergeJobEvent(merged, event), job));
+      return next.some((job, index) => job !== jobs[index]) ? next : jobs;
+    });
+  }, []);
+  React.useEffect(() => { void fetchOverview(); return () => { request.current?.abort(); if (refreshTimer.current) clearTimeout(refreshTimer.current); if (progressTimer.current) clearTimeout(progressTimer.current); }; }, [fetchOverview]);
   const queueRefresh = () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); refreshTimer.current = setTimeout(() => void fetchOverview(), 200); };
+  // Only jobs on this page are updated, and a burst of steps renders once: the first at once, the rest together.
+  const liveProgress = (event: Record<string, unknown>) => {
+    if (!currentRef.current.some(job => job.id === event.job_id)) return;
+    pendingEvents.current.push(event);
+    if (progressTimer.current) return;
+    const wait = PROGRESS_INTERVAL - (Date.now() - lastProgress.current);
+    if (wait <= 0) applyProgress(); else progressTimer.current = setTimeout(applyProgress, wait);
+  };
   useEventStream(EVENT_TYPES.JOB_STATE, queueRefresh);
   useEventStream(EVENT_TYPES.QUEUE_CHANGED, queueRefresh);
-  useEventStream(EVENT_TYPES.JOB_STEP, event => setCurrent(jobs => jobs.map(job => mergeJobEvent(job, event))));
-  useEventStream(EVENT_TYPES.JOB_PHASE, event => setCurrent(jobs => jobs.map(job => mergeJobEvent(job, event))));
+  useEventStream(EVENT_TYPES.JOB_STEP, liveProgress);
+  useEventStream(EVENT_TYPES.JOB_PHASE, liveProgress);
   const last = projects[0];
   const activePages = Math.max(1, Math.ceil((counts.active ?? 0) / PAGE_SIZE));
   const projectPages = Math.max(1, Math.ceil(projects.length / PAGE_SIZE));

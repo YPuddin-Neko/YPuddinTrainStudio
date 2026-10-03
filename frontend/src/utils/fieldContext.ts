@@ -195,15 +195,19 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         }),
         text('LoKr 参数形式里的 Full（完整因子矩阵）只对 LoKr 生效：保留完整的 Kronecker 因子，仍然是 LoKr，与 LyCORIS Full 不同。', 'Full in the LoKr parameter mode applies to LoKr only: it keeps the whole Kronecker factors and is still a LoKr adapter, unlike LyCORIS Full.'),
       ]);
+    case 'adapter.dora':
+      return join([
+        configFieldHelp(path, undefined, english),
+        family.name === 'krea2' && text('Krea 2 的 txtfusion.projector 只有一个输出通道，不使用 DoRA。', 'Krea 2’s txtfusion.projector has a single output channel and trains without DoRA.'),
+      ]);
     case 'adapter.dora_axis': {
       return join([
         text('幅度归一化使用的通道：', 'Channels used for magnitude normalization:'),
         ...optionLines({
-          input: ['每个输入通道一个幅度；默认方向。LyCORIS 自带的工具不支持。', 'one magnitude per input channel; the default. LyCORIS’s own tools do not support it.'],
-          output: ['每个输出通道一个幅度；LyCORIS 的默认方向。', 'one magnitude per output channel; the LyCORIS default.'],
+          input: ['每个输入通道一个幅度，默认方向。ComfyUI、Forge 和 A1111 都能加载；LyCORIS 自带的工具不支持。', 'one magnitude per input channel; the default. ComfyUI, Forge and A1111 load it; LyCORIS’s own tools do not support it.'],
+          output: ['每个输出通道一个幅度，LyCORIS 的默认方向。ComfyUI 和 Forge 能加载，A1111 不支持。', 'one magnitude per output channel; the LyCORIS default. ComfyUI and Forge load it; A1111 does not support it.'],
         }),
-        text('继续训练时须与原权重方向一致。方向本身不保证外部出图与训练预览一致，融合算法和精度也会影响结果。', 'Keep the original axis when resuming. The axis alone does not guarantee images match training previews; merging algorithms and precision also affect the result.'),
-        context.config.adapter?.dora_compute_mode !== 'comfyui' && text('外部工具低精度融合 LoKr/DoRA 时可能偏色，可使用 FP32 融合；这不要求使用 FP32 推理。', 'Low-precision LoKr/DoRA merging in external tools can cause color shifts; use FP32 merging in that case. This does not require FP32 inference.'),
+        text('继续训练时须与原权重方向一致。', 'Keep the original axis when resuming.'),
       ]);
     }
     case 'sampling.scheduler':

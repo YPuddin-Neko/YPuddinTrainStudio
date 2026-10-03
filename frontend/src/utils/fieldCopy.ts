@@ -1,6 +1,6 @@
 /**
  * Parameter copy shown in the training and preset editors.
- * FIELD_HINTS: one short line under every non-switch field.
+ * FIELD_HINTS: one short line under every non-switch field; switches have none.
  * FIELD_HELP: the detailed text behind the help button, where the schema text is too terse.
  */
 type Copy = [string, string];
@@ -101,10 +101,6 @@ export const FIELD_HINTS: Record<string, Copy> = {
 
   'memory.base_precision': ['降低冻结底模精度可省显存，可能影响质量。', 'Lower frozen-weight precision saves memory; may cost quality.'],
   'memory.blocks_to_swap': ['暂放到内存的模型块数，省显存但更慢。', 'Blocks parked in system memory; saves VRAM, runs slower.'],
-  'memory.vae_tiling': ['将图像按 512 像素分块进行 VAE 编码和解码，相邻块重叠 128 像素，可减少显存占用，但可能增加耗时。默认关闭。', 'Encodes and decodes images in 512-pixel VAE tiles with 128-pixel overlap. This reduces VRAM use but may take longer. Off by default.'],
-  'memory.cache_encode_tiled': ['仅在创建图像缓存时，对面积超过 2048×2048 像素的图片按 1024 像素分块编码，相邻块重叠 128 像素。小图沿用 VAE 分块设置，不影响预览解码。默认关闭。', 'When creating image caches, images larger than 2048×2048 pixels in area are encoded in 1024-pixel tiles with 128-pixel overlap. Smaller images follow the VAE tiling setting. Preview decoding is unchanged. Off by default.'],
-  'memory.no_half_vae': ['强制 VAE 使用 FP32 编码和解码图像，能减少低精度计算引起的数值异常，但会增加显存占用，并可能降低速度。默认关闭。', 'Forces the VAE to encode and decode images in FP32. This reduces numerical issues from low-precision computation, but uses more VRAM and may be slower. Off by default.'],
-  'memory.vae_attention_chunking': ['减少 HIP VAE 数学注意力的临时显存，默认关闭。', 'Reduces temporary memory for HIP VAE math attention; off by default.'],
   'memory.activation_checkpointing': ['大幅减少显存，训练稍慢；显存不够时优先开启。', 'Much less memory, slightly slower; turn on first when memory is short.'],
   'memory.vae_encode_batch_size': ['每次 VAE 编码的图片数，默认 1；与训练批量分开。', 'Images per VAE encode, 1 by default; separate from the training batch.'],
 

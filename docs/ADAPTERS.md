@@ -124,7 +124,3 @@ Loss 曲线还受数据顺序、噪声与时间步采样、损失加权、有效
 LyCORIS 4.x 的实验性加速使用 Triton / TileLang 融合内核，并提供 `torch.compile` 和普通 PyTorch 回退。覆盖 LoRA、LoKr、LoHa、DoRA、Full 等算法的部分路径；具体约束随形状、精度和计算模式变化。[官方后端说明](https://github.com/KohakuBlueleaf/LyCORIS/blob/main/docs/kernels/backends.md)
 
 本项目不使用这些内核，`LYCORIS_KERNEL_BACKEND` 不会改变内置适配器的执行方式。
-
-收益应按完整训练步测量，而不是只看某个内核。官方 RTX 4090 / FP16 表中，LoRA 合并路径前向加反向墙钟比值为 1.46，LoKr 分开计算为 1.47，但 LoKr 合并路径为 0.73（小于 1 代表更慢）。这不能直接换算为本训练器的速度。[官方基准](https://github.com/KohakuBlueleaf/LyCORIS/blob/main/docs/kernels/benchmarks.md)
-
-融合会改变浮点运算顺序、临时显存与首次编译时间，即使数学公式相同也不保证逐位一致。训练效果、完整步耗时及不同平台的支持需要分别比较；不能把 NVIDIA 的结果直接套到 Apple MPS 或海光 DTK。

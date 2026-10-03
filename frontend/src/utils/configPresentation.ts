@@ -366,7 +366,6 @@ export function presentConfigIssues(errors: ValidationIssue[], english = false):
       : `预计显存峰值 ${memory[1]}，超过 ${memory[2]} 的 ${memory[3]} 容量，无法开始训练。开启梯度检查点、减小批大小或降低训练尺寸都能减少显存占用。`;
     else if (message === detail && !english) {
       if (/is required for/i.test(detail)) message = `请填写或选择${label}`;
-      else if (/at least one training dataset source is required/i.test(detail)) message = '请先添加训练图片或导入已有数据集';
       else if (/not found|does not exist|file is missing/i.test(detail)) message = '找不到指定文件，请检查训练机上的路径';
       else if (/outside allowed/i.test(detail)) message = '该路径不在允许使用的目录内';
       else if (/bucket step (\d+) must be a multiple of align (\d+)/.test(detail)) { const [, step, align] = detail.match(/bucket step (\d+) must be a multiple of align (\d+)/)!; message = `分桶步长 ${step} 不是 ${align} 的倍数；当前模型要求 ${align} 的倍数，如 ${Math.max(Number(align), Math.round(Number(step) / Number(align)) * Number(align))}`; }

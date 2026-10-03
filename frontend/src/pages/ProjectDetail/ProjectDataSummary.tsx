@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import OverflowStrip from '../../components/OverflowStrip';
 import type { WorkspaceDataset } from '../../components/datasets/ProjectDatasetCards';
 import { useWorkspaceText } from '../../utils/workspaceText';
 
@@ -23,12 +24,14 @@ export default function ProjectDataSummary({ datasets }: { datasets: WorkspaceDa
     { key: 'masks', label: text('遮罩', 'Masks'), accessibleLabel: text('训练图片遮罩', 'Training masks'), value: count(training, 'masks') },
     { key: 'regularization', label: text('正则', 'Regularization'), accessibleLabel: text('正则图片', 'Regularization images'), value: count(regularization, 'images') },
   ];
+  // One line of counts that pages sideways when the heading is narrow.
   return <div className="project-data-summary">
-    <dl className="project-data-summary-counts" aria-label={text('本版本数据统计', 'Version data summary')}>
-      {items.map(({ key, label, accessibleLabel, value }) => <div key={key}>
+    <OverflowStrip snap role="group" label={text('本版本数据统计', 'Version data summary')} containerClassName="project-data-summary-strip" className="project-data-summary-counts"
+      pageLabels={{ previous: text('上一组统计', 'Previous counts'), next: text('下一组统计', 'Next counts') }}>
+      {items.map(({ key, label, accessibleLabel, value }) => <dl key={key}>
         <dt aria-label={accessibleLabel} title={accessibleLabel}>{label}</dt><dd>{value === null ? '—' : value.toLocaleString()}</dd>
-      </div>)}
-    </dl>
+      </dl>)}
+    </OverflowStrip>
     {indexing && <Loader2 size={14} className="animate-spin" aria-label={text('索引中', 'Indexing')}/>}
   </div>;
 }

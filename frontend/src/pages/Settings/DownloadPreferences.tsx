@@ -2,6 +2,7 @@ import React from 'react';
 import { RefreshCw } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { components } from '../../api/generated';
+import ConfigHelp from '../../components/ConfigHelp';
 import StudioSelect, { type StudioSelectOption } from '../../components/StudioSelect';
 import Switch from '../../components/Switch';
 import { formatApiError } from '../../utils/errors';
@@ -29,6 +30,7 @@ export function DownloadSourceFields({ value, onChange, disabled = false }: Down
   const text = useWorkspaceText();
   const id = React.useId();
   const [platform, setPlatform] = React.useState('');
+  const [hip, setHip] = React.useState(false);
   const [probe, setProbe] = React.useState<SourcesProbe | null>(null);
   const [probing, setProbing] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -36,8 +38,8 @@ export function DownloadSourceFields({ value, onChange, disabled = false }: Down
 
   React.useEffect(() => {
     const controller = new AbortController();
-    void apiClient.get<{ platform?: string }>('/system/info', { signal: controller.signal, silent: true })
-      .then(info => { if (!controller.signal.aborted) setPlatform(info.platform || ''); }).catch(() => {});
+    void apiClient.get<{ platform?: string; hip?: string | null }>('/system/info', { signal: controller.signal, silent: true })
+      .then(info => { if (!controller.signal.aborted) { setPlatform(info.platform || ''); setHip(!!info.hip); } }).catch(() => {});
     return () => { controller.abort(); probeRequest.current?.abort(); };
   }, []);
 
@@ -90,7 +92,9 @@ export function DownloadSourceFields({ value, onChange, disabled = false }: Down
     return selected === 'auto' && !results.some(result => result.available)
       ? <p className="settings-note download-source-result" data-unavailable>{text('没有可连接的下载源。', 'No download sources are reachable.')}</p> : null;
   };
+  // Apple silicon installs PyTorch from the Python package source; DTK uses the vendor's PyTorch.
   const mac = /macOS|Darwin/i.test(platform);
+  const pytorchSource = !mac && !hip;
 
   return <div className="download-source-fields">
     <div className="download-source-probe">
@@ -102,17 +106,29 @@ export function DownloadSourceFields({ value, onChange, disabled = false }: Down
     </div>
     {error && <p role="alert" className="download-source-error">{error}</p>}
     <div className="settings-field">
-      <label htmlFor={`${id}-pypi`}>{text('Python 依赖包', 'Python packages')}</label>
+      <span className="settings-field-label download-source-label"><label htmlFor={`${id}-pypi`}>{text('Python 依赖包', 'Python packages')}</label>
+        <ConfigHelp label={text('Python 依赖包来源说明', 'Python package source help')}>{text(
+          '训练器依赖、运行环境页的扩展和网页更新的依赖从这里下载。\n自动选择会检测各来源的响应速度，从最快的开始尝试；指定来源时先使用它。开启“下载失败时”自动换源后，失败会继续尝试其他镜像和 PyPI 官方。中科大、清华和阿里云是国内镜像。'
+          + (mac ? '\nApple 芯片的 PyTorch 也从这里安装。' : ''),
+          'Trainer dependencies, extensions from the runtime page and the dependencies of web updates are downloaded from here.\nAutomatic tests the response of each source and tries the fastest first; a chosen source is tried first. With fallback on, failures move on to the other mirrors and official PyPI. USTC, Tsinghua and Aliyun are mirrors in mainland China.'
+          + (mac ? '\nPyTorch for Apple silicon is installed from here as well.' : ''),
+        )}</ConfigHelp></span>
       <div className="settings-field-control">
         <StudioSelect id={`${id}-pypi`} disabled={disabled} value={value.pypi} onValueChange={pypi => onChange({ ...value, pypi: pypi as DownloadSources['pypi'] })} options={measuredOptions(pypiOptions, probe?.pypi)} />
+        <p className="settings-note">{text('安装训练器依赖和扩展时使用。', 'Used for trainer dependencies and extensions.')}</p>
         {value.pypi !== 'auto' && <p className="settings-note break-all font-mono">{pypiUrls[value.pypi]}</p>}
         <div aria-live="polite">{resultNote(value.pypi, pypiOptions, probe?.pypi)}</div>
       </div>
     </div>
-    {!mac && <div className="settings-field">
-      <label htmlFor={`${id}-pytorch`}>PyTorch</label>
+    {pytorchSource && <div className="settings-field">
+      <span className="settings-field-label download-source-label"><label htmlFor={`${id}-pytorch`}>PyTorch</label>
+        <ConfigHelp label={text('PyTorch 来源说明', 'PyTorch source help')}>{text(
+          'CUDA 和 CPU 版 PyTorch 来自单独的仓库，用于在运行环境页准备其他 PyTorch 版本和安装 xFormers。\n上海交通大学和阿里云是国内镜像，官方为 download.pytorch.org。自动选择会检测响应速度；开启自动换源后，失败会继续尝试其他来源。',
+          'CUDA and CPU builds of PyTorch come from separate repositories. They are used to prepare other PyTorch versions on the runtime page and to install xFormers.\nShanghai Jiao Tong University and Aliyun are mirrors in mainland China; the official source is download.pytorch.org. Automatic tests their response; with fallback on, failures move on to the other sources.',
+        )}</ConfigHelp></span>
       <div className="settings-field-control">
         <StudioSelect id={`${id}-pytorch`} disabled={disabled} value={value.pytorch} onValueChange={pytorch => onChange({ ...value, pytorch: pytorch as DownloadSources['pytorch'] })} options={measuredOptions(pytorchOptions, probe?.pytorch)} />
+        <p className="settings-note">{text('安装 PyTorch 和 xFormers 时使用。', 'Used for PyTorch and xFormers.')}</p>
         <div aria-live="polite">{resultNote(value.pytorch, pytorchOptions, probe?.pytorch)}</div>
       </div>
     </div>}

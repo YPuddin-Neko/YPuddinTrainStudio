@@ -62,7 +62,7 @@ function learningRateHelp(groups: string[], algo: unknown, optimizer: unknown, t
     ? text('w1、w2：LoHa 的两组低秩矩阵。', 'w1, w2: the two low-rank pairs of LoHa.')
     : text('w1、w2：LoKr 把权重拆成的两个矩阵，w1 较小，w2 较大。', 'w1, w2: the two matrices LoKr splits a weight into; w1 is the smaller one.'));
   if (has('scalar')) lines.push(text('scalar：LoKr 的整体缩放系数。', 'scalar: the overall LoKr scale.'));
-  if (has('dora')) lines.push(text('DoRA：单独训练的幅度参数，决定每个输出通道的强度。', 'DoRA: magnitudes trained on their own, the strength of each output channel.'));
+  if (has('dora')) lines.push(text('DoRA：单独训练的幅度参数，按计算方向决定每个输入或输出通道的强度。', 'DoRA: magnitudes trained on their own, the strength of each input or output channel along the DoRA axis.'));
   if (has('weight')) lines.push(text('weight：Full 方式直接训练的权重。', 'weight: the weights Full trains directly.'));
   if (has('backbone')) lines.push(text('backbone：主模型。', 'backbone: the main model.'));
   if (has('text_encoder')) lines.push(text('text_encoder：文本编码器。', 'text_encoder: the text encoder.'));
@@ -454,7 +454,7 @@ export default function JobDetail() {
 
       {/* 3. 详细内容区域 */}
       <div ref={tabPanel} role="tabpanel" id={`job-panel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`}>
-      {activeTab === 'metrics' && <JobMetricsPanel metrics={metrics} stepsPerEpoch={stepsPerEpoch} vramMetric={job?.progress?.vram_metric} device={job?.progress?.device}/>}
+      {activeTab === 'metrics' && <JobMetricsPanel metrics={metrics} stepsPerEpoch={stepsPerEpoch} vramMetric={job?.progress?.vram_metric} device={job?.progress?.device} status={job?.status}/>}
 
       {activeTab === 'samples' && <SampleViewer samples={samples} stepsPerEpoch={stepsPerEpoch} loaded={samplesLoaded} selected={selectedSample} onSelect={setSelectedSample}/>}
 

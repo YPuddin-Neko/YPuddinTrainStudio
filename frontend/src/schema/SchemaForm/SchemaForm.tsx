@@ -680,8 +680,11 @@ function NativePixelLimit({value, mode, estimate, english, label, onChange, onMo
   return <div ref={box} className="config-native-limit">
     {mode === 'custom' && <input ref={input} id="config-dataset.native_max_pixels" aria-label={label}
       aria-describedby="config-dataset.native_max_pixels-hint" aria-invalid={invalid} type="number" min={32} max={8192} step="any" value={side}
+      placeholder={english ? 'Custom, e.g. 1024' : '自定义，例如：1024'}
       onChange={event=>onChange(event.target.value === '' ? '' : Math.round(Number(event.target.value) ** 2))}/>}
-    <StudioSelect id={`config-dataset.native_max_pixels${mode === 'custom' ? '-mode' : ''}`} aria-label={label} aria-invalid={invalid}
+    {/* Beside a custom value the list only switches the mode, so it is named for the mode. */}
+    <StudioSelect id={`config-dataset.native_max_pixels${mode === 'custom' ? '-mode' : ''}`} aria-invalid={invalid}
+      aria-label={mode === 'custom' ? configFieldLabel('dataset.native_max_pixels_mode', english ? 'Image area limit mode' : '图像面积上限模式', english) : label}
       className={mode === 'custom' ? 'config-native-limit-toggle' : undefined} anchorRef={box}
       aria-describedby="config-dataset.native_max_pixels-hint" value={mode}
       options={[{value: 'auto', label: english ? `Auto (${amount})` : `自动（${amount}）`}, {value: 'custom', label: english ? 'Custom' : '自定义'}]}
@@ -1306,8 +1309,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         : (english ? 'Trains LoRA weights while keeping the base model frozen.' : '只训练 LoRA 权重，底模保持不变。')
       : fullPathKey === 'model.dtype' ? modelPrecisionHint
       : fullPathKey === 'adapter.dora_axis' ? fieldValue === 'input'
-        ? (english ? 'One magnitude per input channel; the default. Keep the original axis when resuming.' : '每个输入通道一个幅度，默认方向；继续训练时须与原权重一致。')
-        : (english ? 'One magnitude per output channel; the LyCORIS default. Keep the original axis when resuming.' : '每个输出通道一个幅度，LyCORIS 默认方向；继续训练时须与原权重一致。')
+        ? (english ? 'One magnitude per input channel; loads in ComfyUI, Forge and A1111.' : '每个输入通道一个幅度；ComfyUI、Forge 和 A1111 都能加载。')
+        : (english ? 'One magnitude per output channel; loads in ComfyUI and Forge, not A1111.' : '每个输出通道一个幅度；ComfyUI 和 Forge 能加载，A1111 不支持。')
       : fullPathKey === 'adapter.dora_compute_mode' ? fieldValue === 'comfyui'
         ? (english ? 'Reduces computation differences before and after weight export.' : '减少权重导出前后的计算差异。')
         : (english ? 'Computes DoRA in FP32.' : '使用 FP32 计算 DoRA。')

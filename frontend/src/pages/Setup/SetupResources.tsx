@@ -1,6 +1,6 @@
 import React from 'react';
 import { Check, Download, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
-import { apiClient } from '../../api/client';
+import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { Settings } from '../../api/types';
 import StudioSelect from '../../components/StudioSelect';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -17,17 +17,17 @@ function useResource<T>(path: string) {
   React.useEffect(() => {
     const controller = new AbortController();
     setError('');
-    void apiClient.get<T>(path, { silent: true, signal: controller.signal }).then(value => {
+    void apiClient.get<T>(path, { silent: true, signal: controller.signal, timeout: READ_TIMEOUT_MS }).then(value => {
       if (!controller.signal.aborted) setData(value);
     }).catch(failure => { if (!controller.signal.aborted) setError(formatApiError(failure)); });
     return () => controller.abort();
   }, [path, attempt]);
   return { data, error, reload };
 }
-function ResourceState({ error, retry }: { error: string; retry: () => void }) {
+function ResourceState({ error, retry, label }: { error: string; retry: () => void; label?: string }) {
   const text = useWorkspaceText();
   return error ? <div role="alert" className="setup-error">{error}<button className="ui-link" onClick={retry}>{text('重试', 'Retry')}</button></div>
-    : <div className="setup-resource-loading" role="status"><Loader2 size={18} className="animate-spin"/>{text('正在读取…', 'Loading…')}</div>;
+    : <div className="setup-resource-loading" role="status"><Loader2 size={18} className="animate-spin"/>{label ?? text('正在读取…', 'Loading…')}</div>;
 }
 export function StorageStep({ settings }: { settings: Settings }) {
   const text = useWorkspaceText();
@@ -63,6 +63,12 @@ type Recommendation = import('../../api/generated').components['schemas']['Recom
 type DownloadTask = import('../../api/types').ModelDownload;
 type ModelAsset = import('../../api/types').ModelAsset;
 type ModelSnapshot = { catalog: Recommendation[]; assets: ModelAsset[]; tasks: DownloadTask[] };
+type ModelList = keyof ModelSnapshot;
+/** A list that could not be read, so the step can say which one. */
+class ListFailure extends Error {
+  constructor(readonly list: ModelList, reason: unknown) { super(formatApiError(reason)); }
+}
+const failureOf = (failure: unknown) => failure instanceof ListFailure ? { list: failure.list, message: failure.message } : { message: formatApiError(failure) };
 const activeDownload = (task: DownloadTask) => ['queued', 'downloading'].includes(task.status);
 const kleinEncoders: Record<string, string> = { 'flux2-klein-base-4b': 'flux2-qwen3-4b', 'flux2-klein-base-9b': 'flux2-qwen3-8b' };
 const matchingAsset = (entry: Recommendation, asset: ModelAsset) => asset.family === entry.family && asset.kind === entry.kind
@@ -91,14 +97,14 @@ export function ModelsStep({ onContinueChange }: { onContinueChange?: (ready: bo
   const busyRef = React.useRef(false);
   const revision = React.useRef(0);
   const [error, setError] = React.useState('');
-  const [loadError, setLoadError] = React.useState('');
+  const [loadError, setLoadError] = React.useState<{ list?: ModelList; message: string } | null>(null);
   const [attempt, reload] = React.useReducer(value => value + 1, 0);
   const [selected, setSelected] = React.useState<string[] | null>(null);
   const read = React.useCallback(async (signal?: AbortSignal): Promise<ModelSnapshot> => {
+    const list = <T,>(name: ModelList, path: string) => apiClient.get<T>(path, { silent: true, signal, timeout: READ_TIMEOUT_MS })
+      .catch((failure: unknown) => { throw failure instanceof Error && failure.name === 'AbortError' ? failure : new ListFailure(name, failure); });
     const [catalog, assets, tasks] = await Promise.all([
-      apiClient.get<Recommendation[]>('/models/recommendations', { silent: true, signal }),
-      apiClient.get<ModelAsset[]>('/models', { silent: true, signal }),
-      apiClient.get<DownloadTask[]>('/models/downloads', { silent: true, signal }),
+      list<Recommendation[]>('catalog', '/models/recommendations'), list<ModelAsset[]>('assets', '/models'), list<DownloadTask[]>('tasks', '/models/downloads'),
     ]);
     return { catalog, assets, tasks };
   }, []);
@@ -111,8 +117,8 @@ export function ModelsStep({ onContinueChange }: { onContinueChange?: (ready: bo
       const current = ++revision.current;
       try {
         const value = await read(controller.signal);
-        if (!controller.signal.aborted && current === revision.current) { setSnapshot(value); setLoadError(''); }
-      } catch (failure) { if (!controller.signal.aborted && current === revision.current) setLoadError(formatApiError(failure)); }
+        if (!controller.signal.aborted && current === revision.current) { setSnapshot(value); setLoadError(null); }
+      } catch (failure) { if (!controller.signal.aborted && current === revision.current) setLoadError(failureOf(failure)); }
       finally { polling = false; }
     };
     void refresh(); const timer = window.setInterval(() => void refresh(), 3000);
@@ -150,7 +156,7 @@ export function ModelsStep({ onContinueChange }: { onContinueChange?: (ready: bo
     try {
       // Re-read before submission: another page may have started a download or changed the defaults.
       let current = await read();
-      setSnapshot(current); setLoadError('');
+      setSnapshot(current); setLoadError(null);
       for (const id of ids) {
         const bundle = modelBundle(current.catalog, currentFamily, currentMain);
         const entry = bundle.find(item => item.id === id);
@@ -169,7 +175,11 @@ export function ModelsStep({ onContinueChange }: { onContinueChange?: (ready: bo
     } catch (failure) { setError(formatApiError(failure)); }
     finally { busyRef.current = false; setBusy(false); }
   };
-  if (!snapshot || !families.data) return <ResourceState error={loadError || families.error} retry={() => { reload(); families.reload(); }}/>;
+  const listNames: Record<ModelList, string> = { catalog: text('推荐模型', 'Recommended models'), assets: text('本地模型', 'Local models'), tasks: text('下载记录', 'Downloads') };
+  const loadMessage = loadError ? `${loadError.list ? `${listNames[loadError.list]}：` : ''}${loadError.message}` : '';
+  const familiesMessage = families.error ? `${text('模型系列', 'Model families')}：${families.error}` : '';
+  if (!snapshot || !families.data) return <ResourceState error={loadMessage || familiesMessage} retry={() => { reload(); families.reload(); }}
+    label={snapshot ? text('正在读取模型系列…', 'Loading model families…') : text('正在读取模型列表…', 'Loading model lists…')}/>;
   return <><div className="setup-model-selects"><label>{text('模型类型', 'Model family')}<StudioSelect aria-label={text('模型类型', 'Model family')} disabled={busy} value={currentFamily} onValueChange={value => { setFamily(value); setMain(''); setSelected(null); setError(''); }} options={availableFamilies}/></label>
     <label>{text('模型下载来源', 'Model source')}<StudioSelect aria-label={text('模型下载来源', 'Model source')} value={provider} disabled={busy} onValueChange={value => setProvider(value as typeof provider)} options={[{ value: 'huggingface', label: 'Hugging Face' }, { value: 'modelscope', label: 'ModelScope' }]}/></label>
     {mains.length > 1 && <label>{text('主模型', 'Main model')}<StudioSelect aria-label={text('主模型', 'Main model')} value={currentMain} disabled={busy || familyDownloading} onValueChange={value => { setMain(value); setSelected(null); setError(''); }} options={mains.map(entry => ({ value: entry.id, label: entry.name }))}/></label>}</div>
@@ -186,7 +196,7 @@ export function ModelsStep({ onContinueChange }: { onContinueChange?: (ready: bo
         </span>
         <span className="setup-model-status">{active ? <><Loader2 size={14} className="animate-spin"/>{text('下载中', 'Downloading')}</> : local ? <><Check size={14}/>{entry.is_default ? text('当前默认', 'Current default') : needs ? text('本地文件待确认', 'Local file to verify') : text('已下载', 'Downloaded')}</> : failed || cancelled ? <><span>{cancelled ? text('已取消', 'Cancelled') : ''}</span><button className="ui-link" disabled={busy || !supported || !!loadError} onClick={() => void prepare([entry.id])}>{text('重试', 'Retry')}</button></> : !supported ? text('此来源不可用', 'Unavailable here') : ''}</span></div>;
     })}{!entries.length && <p className="setup-note">{text('暂无推荐组件，可稍后在模型设置中添加。', 'No recommended components. Add models later in Settings.')}</p>}</div>
-    {loadError && <ResourceState error={loadError} retry={reload}/>}{error && <div role="alert" className="setup-error">{error}</div>}
+    {loadError && <ResourceState error={loadMessage} retry={reload}/>}{error && <div role="alert" className="setup-error">{error}</div>}
     <button className="ui-btn" disabled={busy || !!loadError || !entries.some(entry => chosen.includes(entry.id) && needsPreparation(entry, snapshot, setDefaults) && (entry.available_path || entry.sources.some(source => source.provider === provider)))} onClick={() => void prepare(chosen)}>{busy ? <Loader2 size={15} className="animate-spin"/> : <Download size={15}/>} {text('准备所选组件', 'Prepare selected components')}</button>
     {!setDefaults && entries.length > 0 && <p className="setup-note">{text('保留已有默认模型。新组件下载后可在模型设置中选用。', 'Existing defaults are kept. Select the new components in Model settings after downloading.')}</p>}
     <p className="setup-note">{text('下载会在后台继续，也可稍后在模型设置中导入本地文件。', 'Downloads continue in the background. You can also import local files later in Model settings.')}</p></>;

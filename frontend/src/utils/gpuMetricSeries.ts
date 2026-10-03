@@ -6,11 +6,23 @@ export type GpuReadingKey = typeof GPU_READING_KEYS[number];
 export const GPU_SENSOR_METRICS = ['gpu_power', 'gpu_temp', 'gpu_util', 'gpu_memory'] as const;
 const validReading = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
-/** Legacy steps identify only the primary GPU; keep that identity when a saved layout names a device. */
+/** Whether a job recorded several GPUs, so a chart can choose which of them it shows. */
+export const hasSeveralGpus = (metrics: JobMetrics) => (metrics.gpu_devices?.length ?? 0) > 1;
+
+/**
+ * The GPU a chart reads. A saved choice applies to jobs that recorded several GPUs; a job on one GPU, or from before
+ * per-GPU readings, shows that GPU whatever the layout names.
+ */
 export function resolveGpuMetricSource(metrics: JobMetrics, source: string): string {
-  if (source === 'primary' || metrics.gpu_devices?.length) return source;
-  const hasLegacyReadings = [metrics.gpu_power_w, metrics.gpu_temp_c, metrics.gpu_util_pct].some(values => values?.some(validReading));
-  return hasLegacyReadings && (source === 'average' || /^(cuda:(0|[1-9][0-9]*)|mps)$/.test(source)) ? 'primary' : source;
+  return hasSeveralGpus(metrics) ? source : 'primary';
+}
+
+/** How a GPU source is named when it is not one of the listed devices. */
+export function gpuSourceLabel(source: string, english = false): string {
+  if (source === 'primary') return english ? 'Primary training GPU' : '主训练 GPU';
+  if (source === 'average') return english ? 'Training GPU average' : '训练 GPU 平均';
+  if (source === 'mps') return 'Apple GPU';
+  return source.replace('cuda:', english ? 'Training GPU ' : '训练 GPU ');
 }
 
 /** Each live reading occupies the same step as the training metrics, including missing devices. */

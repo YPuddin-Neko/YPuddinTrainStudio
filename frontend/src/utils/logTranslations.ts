@@ -33,6 +33,20 @@ function adapterKinds(value: string): string {
   return value.split(', ').map(part => part.replace(/^(\w+) (\d+)$/, (_, kind: string, count: string) => `${kind.toUpperCase()} ${count} 层`)).join('，');
 }
 
+/** "fp32, TF32 allowed" → "FP32（允许 TF32）". */
+function vaePrecision(value: string): string {
+  const [dtype, tf32] = value.split(', ');
+  return dtype === 'unknown' ? '未知' : `${dtype.toUpperCase()}${tf32 ? '（允许 TF32）' : ''}`;
+}
+
+/** Spatial tiling splits one image; "512 px tiles, 1024 px tiles above 2048x2048" → readable parts. */
+function vaeTiling(value: string): string {
+  if (value === 'off') return '关闭';
+  return value.split(', ').map(part => part
+    .replace(/^(\d+) px tiles above (\d+)x(\d+)$/, '面积超过 $2×$3 的图片按 $1 像素分块')
+    .replace(/^(\d+) px tiles$/, '按 $1 像素分块')).join('，');
+}
+
 const RULES: Rule[] = [
   // PyTorch launcher and communication diagnostics; keep rank and all option values.
   [/^Setting OMP_NUM_THREADS environment variable for each process to be (\d+) in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed\.\s*$/, m => `为避免系统负载过高，默认将每个进程的 OMP_NUM_THREADS 设为 ${m[1]}；可按应用需要调整线程数以提高性能。`],
@@ -41,6 +55,9 @@ const RULES: Rule[] = [
   [/^(\[PG ID \d+ PG GUID \S+ Rank \d+\]) ProcessGroupNCCL initialization options: ([\s\S]*)$/, m => `${m[1]} ProcessGroupNCCL 初始化选项：${m[2]}`],
   [/^(\[PG ID \d+ PG GUID \S+ Rank \d+\]) ProcessGroupNCCL environments: ([\s\S]*)$/, m => `${m[1]} ProcessGroupNCCL 环境配置：${m[2]}`],
   [/^((?:.*:\d+: UserWarning: )?)(?:1)?Torch was not compiled with memory efficient attention\.(?: \(Triggered internally at (.+)\))?$/, m => `${m[1]}当前 PyTorch 未编译内存高效注意力后端。${m[2] ? `（触发位置：${m[2]}）` : ''}`],
+  // Optional Triton: neither line means attention cannot run.
+  [/^triton not found; flop counting will not work for triton kernels$/, () => '未找到 Triton：PyTorch 的 FLOPs 统计不包含 Triton 内核，只影响这项统计。'],
+  [/^A matching Triton is not available, some optimizations will not be enabled$/, () => 'xFormers 没有可用的匹配 Triton：部分可选的 Triton 内核不可用，xFormers 的其他算子照常使用。'],
 
   // Model loading
   [/^loading (\w+) model components$/, m => `正在加载 ${FAMILIES[m[1]] || m[1]} 模型组件`],
@@ -75,6 +92,10 @@ const RULES: Rule[] = [
   [/^cached (\d+) latents in ([\d.]+)s$/, m => `VAE 编码完成：新缓存 ${m[1]} 张图片的潜空间，用时 ${seconds(m[2])}`],
   [/^cached (\d+) latents$/, m => `VAE 编码完成：新缓存 ${m[1]} 张图片的潜空间`],
   [/^all latents were already cached$/, () => '复用 VAE 缓存：所有图片都已有缓存，无需重新编码'],
+  [/^(online )?VAE encode settings: VAE encode batch (\d+) \(images per VAE call\), training batch (\d+), VAE precision (.+?), spatial tiling (.+)$/, m => `${m[1] ? '在线 ' : ''}VAE 编码设置：VAE 编码批量 ${m[2]}（每次调用编码的图片数），训练批量 ${m[3]}，VAE 精度 ${vaePrecision(m[4])}，单张图片空间分块：${vaeTiling(m[5])}`],
+  [/^VAE encode finished: images (\d+), VAE calls (\d+), at most (\d+) per call$/, m => `VAE 编码调用：${m[1]} 张图片，共 ${m[2]} 次调用，每次最多 ${m[3]} 张`],
+  [/^online VAE encode, first training batch: images (\d+), VAE calls (\d+), at most (\d+) per call$/, m => `在线 VAE 编码（第一个训练批次）：${m[1]} 张图片，共 ${m[2]} 次调用，每次最多 ${m[3]} 张`],
+  [/^VAE encode memory on (\S+): peak allocated ([\d.]+) GiB, peak reserved ([\d.]+) GiB \(this process, (this phase|run so far)\); device in use up to ([\d.]+) of ([\d.]+) GiB \(all processes\)$/, m => `VAE 编码显存（${m[1]}）：本进程已分配峰值 ${m[2]} GiB，本进程保留峰值 ${m[3]} GiB（${m[4] === 'this phase' ? '本阶段' : '训练开始至今'}）；整卡占用最高 ${m[5]} GiB，共 ${m[6]} GiB（含其他程序）`],
   [/^all text encodings were already cached$/, () => '复用文本缓存：所有文本都已有缓存，无需重新编码'],
   [/^cached (\d+) text encodings \((\d+) distinct captions\) in ([\d.]+)s$/, m => `文本编码完成：新缓存 ${m[1]} 条（${m[2]} 条不同的标注），用时 ${seconds(m[3])}`],
   [/^cached (\d+) text encodings \((\d+) captions of images and prompts\) in ([\d.]+)s$/, m => `文本编码完成：新缓存 ${m[1]} 条（共 ${m[2]} 条图片标注和提示词），用时 ${seconds(m[3])}`],

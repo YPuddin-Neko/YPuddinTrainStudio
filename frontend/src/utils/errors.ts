@@ -4,6 +4,9 @@ import { describeValidation, type ValidationIssue } from './validationMessages';
 /** Keep server validation details, while giving connection failures an actionable message. */
 export function formatApiError(error: unknown): string {
   if (!error || typeof error !== 'object') return String(error);
+  if ((error as { name?: unknown }).name === 'TimeoutError') {
+    return i18n.language?.startsWith('en') ? 'The training service did not answer in time. Retry.' : '训练服务长时间没有响应，请重试。';
+  }
   const payload = error as { message?: unknown; details?: { errors?: unknown } };
   const message = typeof payload.message === 'string' ? payload.message : 'API request failed';
   if (/^(Failed to fetch|Load failed|NetworkError when attempting to fetch resource\.?)$/i.test(message)) {

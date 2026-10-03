@@ -18,6 +18,8 @@
 .metric-chart-drag-handle { margin-left:auto; touch-action:none; cursor:grab !important; }
 .metric-chart-drag-handle:active { cursor:grabbing !important; }
 .metric-chart-drag-handle:disabled { cursor:default !important; }
+.metric-chart-body[data-held] { border-color:var(--studio-accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--studio-accent) 30%, transparent); }
+.metric-chart-drag-handle[aria-pressed=true] { color:var(--studio-accent); background:var(--studio-muted); }
 .metric-chart-card[data-placeholder] { border:1px dashed; border-color:var(--studio-accent); background:var(--studio-muted); }
 .metric-chart-body[data-floating] { position:fixed; box-sizing:border-box; padding:12px; border:1px solid var(--studio-accent); border-radius:8px; background:var(--studio-panel); z-index:90; pointer-events:none; transform:translate(var(--metric-drag-x, 0px), var(--metric-drag-y, 0px)); box-shadow:0 8px 22px #0f172a24; }
 .metric-chart-list[data-dragging] { user-select:none; }

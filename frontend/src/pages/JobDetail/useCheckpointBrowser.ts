@@ -1,10 +1,11 @@
 import React from 'react';
 import type { JobCheckpoint } from '../../api/types';
 
-const PAGE_SIZES = [10, 20, 50];
+/** The page sizes long lists of outputs offer, as on the queue and outputs pages; the first is the default. */
+export const PAGE_SIZES = [25, 50, 100];
 export function useCheckpointBrowser(items: JobCheckpoint[], storageKey: string, canSelect: (item: JobCheckpoint) => boolean = () => true) {
   const [pageSize, setPageSize] = React.useState(() => {
-    try { const saved = Number(localStorage.getItem(storageKey)); return PAGE_SIZES.includes(saved) ? saved : 10; } catch { return 10; }
+    try { const saved = Number(localStorage.getItem(storageKey)); return PAGE_SIZES.includes(saved) ? saved : PAGE_SIZES[0]; } catch { return PAGE_SIZES[0]; }
   });
   const [page, setPage] = React.useState(1);
   const [managing, setManaging] = React.useState(false);
@@ -31,7 +32,8 @@ export function useCheckpointBrowser(items: JobCheckpoint[], storageKey: string,
     setPageSize(next); setPage(1);
     try { localStorage.setItem(storageKey, value); } catch { /* Storage may be unavailable. */ }
   };
-  return { pageSize, page: currentPage, pages, setPage, changeSize, visible, managing, selected, selectable, allSelected, someSelected,
+  // A page size matters only for lists longer than the smallest page.
+  return { pageSize, page: currentPage, pages, paged: items.length > PAGE_SIZES[0], setPage, changeSize, visible, managing, selected, selectable, allSelected, someSelected,
     toggle, togglePage, isSelected: (item: JobCheckpoint) => paths.has(item.path) && canSelect(item),
     toggleManaging: () => { setManaging(value => !value); setPaths(new Set()); },
     resetFilter: () => { setPage(1); setPaths(new Set()); }, clear: () => setPaths(new Set()) };

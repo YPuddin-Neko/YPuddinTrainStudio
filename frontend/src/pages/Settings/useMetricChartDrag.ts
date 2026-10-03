@@ -11,19 +11,29 @@ const inside = (point: Point, rect: DOMRect) => point.x >= rect.left && point.x 
 const moveTo = (order: string[], id: string, index: number) => {
   const next = order.filter(key => key !== id); next.splice(index, 0, id); return next;
 };
+/** A chart picked up from the keyboard: the order it started from and where it is now. */
+type Hold = { id: string; handle: HTMLButtonElement; charts: MetricChartSetting[]; order: string[] };
+/** What keyboard sorting reports for screen readers; positions count from 1. */
+export type SortAnnouncement = { kind: 'pick' | 'move' | 'drop' | 'cancel'; id: string; position: number; total: number };
+const STEPS = new Map([['ArrowUp', -1], ['ArrowLeft', -1], ['ArrowDown', 1], ['ArrowRight', 1]]);
 
-/** Keep the card mounted in its grid slot while its body follows the pointer. */
-export function useMetricChartDrag(charts: MetricChartSetting[], onChange: (charts: MetricChartSetting[]) => void) {
+/**
+ * Keep the card mounted in its grid slot while its body follows the pointer. From the keyboard, Space or Enter on the
+ * handle picks a chart up, arrow keys (Home / End) move it, Space or Enter drops it and Escape puts it back.
+ */
+export function useMetricChartDrag(charts: MetricChartSetting[], onChange: (charts: MetricChartSetting[]) => void, announce?: (message: SortAnnouncement) => void) {
   const list = React.useRef<HTMLOListElement>(null);
   const gesture = React.useRef<Gesture | null>(null);
   const previous = React.useRef(new Map<string, DOMRect>());
   const animations = React.useRef<Animation[]>([]);
   const frame = React.useRef(0);
   const settleTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const latest = React.useRef({ charts, onChange });
-  React.useLayoutEffect(() => { latest.current = { charts, onChange }; }, [charts, onChange]);
+  const latest = React.useRef({ charts, onChange, announce });
+  React.useLayoutEffect(() => { latest.current = { charts, onChange, announce }; }, [charts, onChange, announce]);
   const [order, setOrder] = React.useState<string[] | null>(null);
   const [drag, setDrag] = React.useState<{ id: string; rect: DOMRect; settling: boolean } | null>(null);
+  const hold = React.useRef<Hold | null>(null);
+  const [held, setHeld] = React.useState<string | null>(null);
   const items = React.useCallback(() => Array.from(list.current?.querySelectorAll<HTMLElement>(':scope > [data-chart-id]') ?? []), []);
   const record = React.useCallback(() => { previous.current = new Map(items().map(item => [item.dataset.chartId!, item.getBoundingClientRect()])); }, [items]);
   const body = React.useCallback((id: string) => items().find(item => item.dataset.chartId === id)?.querySelector<HTMLElement>('.metric-chart-body'), [items]);
@@ -94,6 +104,18 @@ export function useMetricChartDrag(charts: MetricChartSetting[], onChange: (char
     cancelAnimationFrame(frame.current); clearTimeout(settleTimer.current);
     setOrder(null); setDrag(null);
   }, [body, release]);
+  /** Drops a held chart where it is, or puts every chart back in its original place. */
+  const endHold = React.useCallback((keep: boolean) => {
+    const current = hold.current;
+    if (!current) return;
+    hold.current = null;
+    record();
+    const moved = current.order.some((key, index) => key !== current.charts[index]?.id);
+    if (keep && moved) latest.current.onChange(current.order.map(key => current.charts.find(chart => chart.id === key)!));
+    const final = keep ? current.order : current.charts.map(chart => chart.id);
+    latest.current.announce?.({ kind: keep ? 'drop' : 'cancel', id: current.id, position: final.indexOf(current.id) + 1, total: final.length });
+    setOrder(null); setHeld(null);
+  }, [record]);
   const finish = React.useCallback((cancel: boolean) => {
     const current = gesture.current;
     if (!current || current.settling) return;
@@ -116,6 +138,9 @@ export function useMetricChartDrag(charts: MetricChartSetting[], onChange: (char
       animations.current.push(element.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px)` }, { transform: 'none' }], { duration: 220, easing: EASE_OUT }));
     }
     previous.current.clear();
+    // Reordering moves the held card's element, which takes focus away from its handle.
+    const holding = hold.current;
+    if (holding && document.activeElement !== holding.handle) holding.handle.focus();
     const current = gesture.current;
     if (!current?.active) return;
     const element = body(current.id);
@@ -155,23 +180,54 @@ export function useMetricChartDrag(charts: MetricChartSetting[], onChange: (char
       gesture.current.point = { x: event.clientX, y: event.clientY }; place(); finish(false);
     };
     const cancel = (event: PointerEvent) => { if (gesture.current?.pointer === event.pointerId) finish(true); };
-    const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && gesture.current) { event.preventDefault(); event.stopPropagation(); finish(true); } };
+    // Escape is caught before a surrounding dialog or drawer closes on it.
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !(gesture.current || hold.current)) return;
+      event.preventDefault(); event.stopPropagation();
+      if (hold.current) endHold(false); else finish(true);
+    };
     const blur = () => finish(true);
+    // A held chart goes back when the pointer or focus turns to anything else.
+    const away = (event: Event) => { if (hold.current && event.target !== hold.current.handle) endHold(false); };
     window.addEventListener('pointermove', move, { passive: false }); window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', cancel); window.addEventListener('blur', blur); window.addEventListener('keydown', key, true);
+    window.addEventListener('pointerdown', away, true); document.addEventListener('focusin', away);
     return () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', cancel); window.removeEventListener('blur', blur); window.removeEventListener('keydown', key, true);
+      window.removeEventListener('pointerdown', away, true); document.removeEventListener('focusin', away);
       cancelAnimationFrame(frame.current); clearTimeout(settleTimer.current);
       for (const animation of animations.current) animation.cancel();
       if (gesture.current) { const current = gesture.current; gesture.current = null; release(current); }
     };
-  }, [autoScroll, finish, place, release]);
+  }, [autoScroll, endHold, finish, place, release]);
 
   return {
-    list, drag, charts: order ? order.map(key => charts.find(chart => chart.id === key)!).filter(Boolean) : charts,
+    list, drag, held, active: drag !== null || held !== null,
+    charts: order ? order.map(key => charts.find(chart => chart.id === key)!).filter(Boolean) : charts,
+    keyDown: (event: React.KeyboardEvent<HTMLButtonElement>, id: string) => {
+      const current = hold.current;
+      const toggle = event.key === ' ' || event.key === 'Enter';
+      if (!current) {
+        if (!toggle || gesture.current || charts.length < 2 || event.currentTarget.disabled) return;
+        event.preventDefault();
+        hold.current = { id, handle: event.currentTarget, charts, order: charts.map(chart => chart.id) };
+        setOrder(hold.current.order); setHeld(id);
+        latest.current.announce?.({ kind: 'pick', id, position: hold.current.order.indexOf(id) + 1, total: charts.length });
+        return;
+      }
+      if (current.id !== id) return;
+      if (toggle) { event.preventDefault(); endHold(true); return; }
+      const index = current.order.indexOf(id);
+      const target = event.key === 'Home' ? 0 : event.key === 'End' ? current.order.length - 1 : STEPS.has(event.key) ? index + STEPS.get(event.key)! : null;
+      if (target === null) return;
+      event.preventDefault();
+      if (target < 0 || target >= current.order.length || target === index) return;
+      record(); current.order = moveTo(current.order, id, target); setOrder(current.order);
+      latest.current.announce?.({ kind: 'move', id, position: target + 1, total: current.order.length });
+    },
     begin: (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
-      if (event.button !== 0 || event.isPrimary === false || gesture.current || charts.length < 2 || event.currentTarget.disabled || event.currentTarget.closest('fieldset:disabled')) return;
+      if (event.button !== 0 || event.isPrimary === false || gesture.current || hold.current || charts.length < 2 || event.currentTarget.disabled || event.currentTarget.closest('fieldset:disabled')) return;
       const item = event.currentTarget.closest<HTMLElement>('[data-chart-id]');
       if (!item || !list.current) return;
       event.preventDefault(); event.currentTarget.focus({ preventScroll: true });

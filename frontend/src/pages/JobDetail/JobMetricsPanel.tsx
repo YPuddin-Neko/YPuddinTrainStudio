@@ -6,10 +6,11 @@ import { apiClient } from '../../api/client';
 import { EChart } from '../../components/EChart';
 import { SlidingIndicator } from '../../components/motion';
 import StudioSelect, { type StudioSelectOption } from '../../components/StudioSelect';
+import ConfigHelp from '../../components/ConfigHelp';
 import type { JobMetrics, Settings } from '../../api/types';
 import { chartTitle, DEFAULT_METRIC_CHARTS, METRICS, type MetricChartSetting, type MetricKey } from '../../utils/metricCharts';
 import { shapeValidationSeries, smoothLoss } from '../../utils/metrics';
-import { gpuDeviceValues, gpuMetricDeviceLabel, resolveGpuMetricSource, GPU_SENSOR_METRICS } from '../../utils/gpuMetricSeries';
+import { gpuDeviceValues, gpuMetricDeviceLabel, gpuSourceLabel, hasSeveralGpus, resolveGpuMetricSource, GPU_SENSOR_METRICS } from '../../utils/gpuMetricSeries';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { axisTickLabels, formatMetricValue, formatRateValue, layoutValueAxes, learningRateGroupName, metricChartBase, metricLabels, metricRange } from './metricPresentation';
 import './job-metrics.css';
@@ -17,11 +18,13 @@ import './job-metrics.css';
 const EXTRA_COLORS = ['#f59e0b', '#22d3ee', '#fb7185', '#84cc16', '#e879f9', '#a78bfa'];
 const MIN_PLOT_WIDTH = 240;
 const EMPTY_GPU_SOURCES: Record<string, string> = {};
+/** Jobs that record nothing more; any other job may still record a missing reading. */
+const FINISHED = ['completed', 'failed', 'cancelled'];
 const hasReadings = (values: Array<number | null | undefined> | undefined) => values?.some(value => typeof value === 'number' && Number.isFinite(value)) ?? false;
 
 type Line = { unit: string; name: string; color: string; data: Array<[number, number | null]>; rangeValues?: Array<number | null>; width?: number; symbols?: boolean };
 type SeriesRange = { name: string; color: string; unit: string; min: number; max: number; rate?: boolean };
-type Chart = { key: string; title: string; note?: string; option?: Record<string, unknown>; ranges?: SeriesRange[]; empty?: React.ReactNode; gpu?: { value: string; options: StudioSelectOption[] } };
+type Chart = { key: string; title: string; note?: string; option?: Record<string, unknown>; ranges?: SeriesRange[]; empty?: React.ReactNode; gpu?: { value: string; options: StudioSelectOption[]; help: string } };
 
 /**
  * The largest ratio between parameter groups at one step. Groups 100× apart (a DoRA or w2 group beside w1)
@@ -73,8 +76,8 @@ function useChartLayout(): MetricChartSetting[] | null {
 }
 
 /** Training curves and GPU readings in the configured charts, two per row. */
-export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, device }: {
-  metrics: JobMetrics | null; stepsPerEpoch?: number | null; vramMetric?: string | null; device?: string | null;
+export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, device, status }: {
+  metrics: JobMetrics | null; stepsPerEpoch?: number | null; vramMetric?: string | null; device?: string | null; status?: string | null;
 }) {
   const { t, i18n } = useTranslation();
   const text = useWorkspaceText();
@@ -90,7 +93,9 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
   const xAxisName = useEpoch ? text('训练轮数', 'Epoch') : text('训练步数', 'Training step');
   const xs = React.useMemo(() => useEpoch && stepsPerEpoch ? metrics?.steps.map(step => step / stepsPerEpoch) || [] : metrics?.steps || [], [metrics, useEpoch, stepsPerEpoch]);
   const chartVramMetric = metrics?.vram_metric ?? vramMetric;
-  const apple = device === 'mps';
+  const apple = device === 'mps' || !!metrics?.gpu_devices?.some(item => item.id === 'mps');
+  const cpu = device === 'cpu';
+  const live = !!status && !FINISHED.includes(status);
 
   const charts = React.useMemo<Chart[]>(() => {
     if (!metrics?.steps.length || !layout) return [];
@@ -116,13 +121,20 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
     for (const chart of layout) {
       const source = resolveGpuMetricSource(metrics, gpuSources[chart.id] ?? chart.gpu ?? 'primary');
       const hasGpuSensors = chart.series.some(item => GPU_SENSOR_METRICS.some(key => key === item.metric));
-      const devices = metrics.gpu_devices || [];
+      // On one GPU the primary GPU, the average and that GPU are the same readings, so only several GPUs offer a choice.
       const gpuOptions: StudioSelectOption[] = [
-        { value: 'primary', label: text('主训练 GPU', 'Primary training GPU') },
-        ...(devices.length ? [{ value: 'average', label: text('训练 GPU 平均', 'Training GPU average') }, ...devices.map(device => ({ value: device.id, label: gpuMetricDeviceLabel(device, !chinese) }))] : []),
+        { value: 'primary', label: gpuSourceLabel('primary', !chinese) },
+        { value: 'average', label: gpuSourceLabel('average', !chinese) },
+        ...(metrics.gpu_devices || []).map(item => ({ value: item.id, label: gpuMetricDeviceLabel(item, !chinese) })),
       ];
-      if (!gpuOptions.some(option => option.value === source)) gpuOptions.push({ value: source, label: `${source === 'average' ? text('训练 GPU 平均', 'Training GPU average') : source.replace('cuda:', text('训练 GPU ', 'Training GPU '))} · ${text('未记录', 'Not recorded')}` });
-      const gpu = hasGpuSensors ? { value: source, options: gpuOptions } : undefined;
+      if (!gpuOptions.some(option => option.value === source)) gpuOptions.push({ value: source, label: `${gpuSourceLabel(source, !chinese)} · ${text('未记录', 'Not recorded')}` });
+      const gpuHelp = [
+        text('主训练 GPU：主训练进程所在的显卡。', 'Primary training GPU: the GPU of the main training process.'),
+        text('训练 GPU 平均：每一步有读数的训练 GPU 的平均值，缺失的读数不计入。', 'Training GPU average: the mean of the training GPUs with a reading at that step; missing readings are left out.'),
+        text('训练 GPU 的编号以本次任务为准。', 'Training GPU numbers count within this job.'),
+        chart.series.some(item => item.metric === 'vram') && text('“显存”是主训练进程的分配值，不随显卡来源切换；所选显卡的占用见“设备显存”指标。', '“VRAM” is the main training process allocation and does not follow the GPU source; add “Device memory” for the selected GPU.'),
+      ].filter(Boolean).join('\n');
+      const gpu = hasGpuSensors && hasSeveralGpus(metrics) ? { value: source, options: gpuOptions, help: gpuHelp } : undefined;
       const chartPlain = { ...plain,
         gpu_power: { ...plain.gpu_power!, values: gpuDeviceValues(metrics, source, 'power_w') },
         gpu_temp: { ...plain.gpu_temp!, values: gpuDeviceValues(metrics, source, 'temp_c') },
@@ -157,7 +169,11 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
       const title = chartTitle(chart, !chinese);
       const keys = chart.series.map(item => item.metric);
       if (!lines.length) {
-        if (keys.some(key => METRICS[key].gpu)) list.push({ key: chart.id, title, gpu, empty: text('此任务尚未记录所选的 GPU 指标。', 'This job has no recorded values for the selected GPU metrics.') });
+        const gpuKeys = keys.filter(key => METRICS[key].gpu);
+        if (gpuKeys.length) list.push({ key: chart.id, title, gpu, empty: cpu ? text('CPU 训练不记录 GPU 指标。', 'CPU training records no GPU metrics.')
+          : apple && gpuKeys.every(key => key === 'gpu_memory') ? text('Apple 芯片使用统一内存，不单独记录设备显存。', 'Apple chips use unified memory, so device memory is not recorded separately.')
+            : live ? text('此任务尚未记录所选的 GPU 指标。', 'No values have been recorded yet for the selected GPU metrics.')
+              : text('此任务没有记录所选的 GPU 指标。', 'This job has no recorded values for the selected GPU metrics.') });
         continue;
       }
       const units = [...new Set(lines.map(line => line.unit))];
@@ -197,18 +213,17 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
       };
       const only = keys.length === 1 ? keys[0] : null;
       const sensorKeys = keys.filter(key => GPU_SENSOR_METRICS.some(sensor => sensor === key));
-      const missingSensors = sensorKeys.filter(key => !hasReadings(chartPlain[key]?.values));
+      // CPU runs have no GPU readings and Apple chips no separate device memory; neither is reported as missing.
+      const missingSensors = sensorKeys.filter(key => !cpu && !(apple && key === 'gpu_memory') && !hasReadings(chartPlain[key]?.values));
       const readings = sensorKeys.some(key => hasReadings(chartPlain[key]?.values));
-      const missingNote = missingSensors.length ? text(
-        `此任务尚未记录：${missingSensors.map(key => METRICS[key].label[0]).join('、')}。`,
-        `Not recorded for this job: ${missingSensors.map(key => METRICS[key].label[1]).join(', ')}.`,
-      ) : '';
-      const appleNote = apple && readings ? text('Apple 芯片的功率是系统能耗估算值，温度是 GPU 各温区的平均值，利用率是整块 GPU 的占用。', 'On Apple chips, power is the system’s energy estimate, temperature the mean of the GPU’s thermal zones and utilization the whole GPU’s load.') : '';
-      const deviceNote = !apple && readings ? source === 'average'
-        ? text('按每一步有读数的训练 GPU 计算平均值，缺失值不计入。', 'Averages use training GPUs with readings at each step; missing values are excluded.')
-        : source === 'primary' ? text('设备读数来自主训练进程所在的显卡。', 'Device readings come from the GPU used by the main training process.') : '' : '';
-      const allocationNote = hasGpuSensors && source !== 'primary' && keys.includes('vram')
-        ? text('训练显存仍为主进程分配值；所选 GPU 的设备占用请添加“设备显存已用”指标。', 'Training memory remains the main process allocation; add “Device memory used” for the selected GPU’s device usage.') : '';
+      const missingNames = (english: boolean) => missingSensors.map(key => METRICS[key].label[english ? 1 : 0]).join(english ? ', ' : '、');
+      const missingNote = !missingSensors.length ? '' : live
+        ? text(`此任务尚未记录：${missingNames(false)}。`, `Not recorded yet for this job: ${missingNames(true)}.`)
+        : text(`此任务没有记录：${missingNames(false)}。`, `Not recorded for this job: ${missingNames(true)}.`);
+      const appleNote = [
+        apple && readings && text('Apple 芯片的功率是系统能耗估算值，温度是 GPU 各温区的平均值，利用率是整块 GPU 的占用。', 'On Apple chips, power is the system’s energy estimate, temperature the mean of the GPU’s thermal zones and utilization the whole GPU’s load.'),
+        apple && keys.includes('gpu_memory') && text('Apple 芯片使用统一内存，不单独记录设备显存。', 'Apple chips use unified memory, so device memory is not recorded separately.'),
+      ].filter(Boolean).join(' ');
       const chartNote = keys.every(key => key === 'loss' || key === 'loss_ema')
         ? text('每步 Loss 是每个优化步的训练损失；平滑曲线按上方 EMA 系数计算，只影响显示，不改变训练。', 'Loss per step is the training loss of each optimizer step; the smoothed curve uses the EMA coefficient above and only changes the chart.')
         : only === 'lr' ? (logRates
@@ -218,7 +233,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
             : only === 'it_s' ? text('每秒完成的优化步数。', 'Optimizer steps completed per second.')
               : only === 'vram' ? (chartVramMetric === 'current_allocated' ? text('训练进程当前占用的显存。', 'Memory currently allocated by the training process.') : text('训练进程到这一步为止的显存峰值。', 'Peak memory allocated by the training process so far.'))
                 : units.length > 1 ? text('单位不同的指标各用一条纵轴，颜色与图例一致。', 'Metrics with different units each use their own axis, in the legend’s colors.') : undefined;
-      const note = [chartNote, missingNote, deviceNote, allocationNote, appleNote].filter(Boolean).join(' ') || undefined;
+      const note = [chartNote, missingNote, appleNote].filter(Boolean).join(' ') || undefined;
       const ranges = lines.flatMap(line => {
         const range = metricRange(line.rangeValues ?? line.data.map(([, value]) => value));
         return range ? [{ ...range, name: line.name, color: line.color, unit: ['Loss', 'LR', 'Norm'].includes(line.unit) ? '' : line.unit, rate: line.unit === 'LR' }] : [];
@@ -226,7 +241,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
       list.push({ key: chart.id, title, note, option, ranges, gpu });
     }
     return list;
-  }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, apple, useEpoch, stepsPerEpoch, layout, chinese, t, text, gpuSources]);
+  }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, apple, cpu, live, useEpoch, stepsPerEpoch, layout, chinese, t, text, gpuSources]);
 
   return <div className="job-metrics">
     <div className="job-metrics-toolbar">
@@ -242,7 +257,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
     {!layout && !!metrics?.steps.length ? <div className="job-metrics-grid" aria-busy="true" aria-label={text('读取图表布局', 'Loading the chart layout')}>{Array.from({ length: 4 }, (_, index) => <div key={index} className="job-metrics-chart" aria-hidden="true"><span className="ui-skeleton job-metrics-skeleton-title"/><span className="ui-skeleton job-metrics-skeleton-plot"/></div>)}</div>
       : !charts.length ? <div className="job-metrics-empty"><Activity size={30} aria-hidden="true"/><p>{t('job.noMetrics', '暂无训练指标')}</p><span>{text('等待训练步数记录。', 'Waiting for recorded training steps.')}</span></div>
       : <div className="job-metrics-grid">{charts.map((chart, index) => <section key={chart.key} className={`job-metrics-chart${index === charts.length - 1 && charts.length % 2 ? ' is-wide' : ''}`} aria-label={chart.title}>
-        <div className="job-metrics-chart-heading"><h2>{chart.title}</h2>{chart.gpu && <StudioSelect className="job-metrics-gpu-select" value={chart.gpu.value} options={chart.gpu.options} aria-label={text(`${chart.title}：GPU 数据来源`, `${chart.title}: GPU data source`)} onValueChange={value => setGpuSelection(current => ({ layout, values: { ...(current.layout === layout ? current.values : {}), [chart.key]: value } }))}/>}</div>{chart.note && <p>{chart.note}</p>}
+        <div className="job-metrics-chart-heading"><h2>{chart.title}</h2>{chart.gpu && <div className="job-metrics-gpu-source"><StudioSelect className="job-metrics-gpu-select" value={chart.gpu.value} options={chart.gpu.options} aria-label={text(`${chart.title}：GPU 数据来源`, `${chart.title}: GPU data source`)} onValueChange={value => setGpuSelection(current => ({ layout, values: { ...(current.layout === layout ? current.values : {}), [chart.key]: value } }))}/><ConfigHelp label={text(`${chart.title}：GPU 数据来源说明`, `${chart.title}: GPU data source help`)}>{chart.gpu.help}</ConfigHelp></div>}</div>{chart.note && <p>{chart.note}</p>}
         {chart.option ? <EChart option={chart.option} style={{ height: 280 }}/> : <div className="job-metrics-chart-empty"><Thermometer size={22} aria-hidden="true"/><span>{chart.empty}</span></div>}
         {!!chart.ranges?.length && <ul className="job-metrics-ranges" aria-label={text('已记录指标的最大值和最小值', 'Maximum and minimum of recorded metrics')}>
           {chart.ranges.map(range => <li key={range.name} aria-label={range.name}>

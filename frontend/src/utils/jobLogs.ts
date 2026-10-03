@@ -21,7 +21,10 @@ export interface LogEntry {
 
 const RANK: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 const PROCESS_RANK = /^\[rank(\d+)\]:/;
+const PROCESS_PREFIX = /^\[rank\d+\]:\s?/;
 const WARNING_HEAD = /^(?:\[rank\d+\]:\s*)?(?:[^\n]+:\d+:\s*)?\w*Warning:/;
+// Python prints one of these between an exception and the one raised while handling it.
+const CHAINED = /^(?:During handling of the above exception, another exception occurred:|The above exception was the direct cause of the following exception:)$/;
 
 export function logLevel(value: string | null | undefined): LogLevel {
   const level = (value || '').toLowerCase();
@@ -31,34 +34,43 @@ export function logLevel(value: string | null | undefined): LogLevel {
 }
 
 /**
- * Group parsed lines in file order. A header starts a record; a traceback starts
- * one unless it follows a warning or error record (``log.exception`` output).
- * Grouping runs over every loaded line because a record can span two reads.
+ * Group parsed lines in file order. A header starts a record and its level never
+ * changes: the lines joined to it are details. A warning or error record keeps the
+ * traceback logged with it (``exc_info``), so a warning with a traceback stays a
+ * warning. Any other traceback starts an error entry of its own: one after an
+ * info or debug record, after plain output, or after a warning whose own traceback
+ * has ended. Grouping runs over every loaded line because a record can span two reads.
  */
 export function groupLogLines(lines: JobLogLine[]): LogEntry[] {
   const entries: LogEntry[] = [];
   let current: LogEntry | null = null;
-  let traceback = false;
+  // Inside a traceback's frames every line belongs to it, up to the unindented exception line.
+  let traceback: 'none' | 'frames' | 'done' = 'none';
+  // The last line said the next traceback is chained to the one before.
+  let chained = false;
   for (const line of lines) {
     const kind = line.kind ?? 'text';
     const level = logLevel(line.level);
+    const body = line.msg.replace(PROCESS_PREFIX, '');
     const rank = line.msg.match(PROCESS_RANK)?.[1];
     const previousRank = current?.msg.match(PROCESS_RANK)?.[1];
     const differentRank = rank !== undefined && previousRank !== undefined && rank !== previousRank;
-    const warningHead = kind === 'text' && !traceback && WARNING_HEAD.test(line.msg);
-    const joins = current !== null && !differentRank && !warningHead
-      && ((kind === 'text' && (level === 'info' || RANK[level] <= RANK[current.level]))
-      || (kind === 'traceback' && RANK[current.level] >= RANK.warn));
+    const warningHead = kind === 'text' && traceback !== 'frames' && WARNING_HEAD.test(line.msg);
+    const joins = current !== null && !differentRank && (kind === 'traceback'
+      ? current.kind === 'traceback' || current.level === 'error'
+        || (current.kind === 'record' && current.level === 'warn' && (traceback === 'none' || chained))
+      : kind === 'text' && !warningHead
+        && (traceback === 'frames' || level === 'info' || RANK[level] <= RANK[current.level]));
     if (joins && current) {
       current.detail.push(line.msg);
-      // Continuation text reads as info and keeps the record's level; an attached traceback raises a warning to an error.
-      if (level !== 'info' && RANK[level] > RANK[current.level]) current.level = level;
-      if (kind === 'traceback') traceback = true;
-      continue;
+    } else {
+      current = { id: line.offset, kind, ts: line.ts ?? null, level, source: line.source ?? null, msg: line.msg, detail: [] };
+      entries.push(current);
+      traceback = 'none';
     }
-    current = { id: line.offset, kind, ts: line.ts ?? null, level, source: line.source ?? null, msg: line.msg, detail: [] };
-    traceback = kind === 'traceback';
-    entries.push(current);
+    if (kind === 'traceback') traceback = 'frames';
+    else if (traceback === 'frames' && body.trim() && !/^\s/.test(body)) traceback = 'done';
+    if (body.trim()) chained = CHAINED.test(body.trim());
   }
   return entries;
 }

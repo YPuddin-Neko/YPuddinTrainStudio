@@ -4,8 +4,9 @@ import StudioSelect from '../../components/StudioSelect';
 import { apiClient } from '../../api/client';
 import type { SystemStats } from '../../api/types';
 import { chartTitle, cloneCharts, DEFAULT_METRIC_CHARTS, isDefaultLayout, MAX_CHARTS, MAX_SERIES, METRIC_KEYS, METRICS, metricLabel, newChartId, type MetricChartSetting, type MetricKey } from '../../utils/metricCharts';
+import { gpuSourceLabel, GPU_SENSOR_METRICS } from '../../utils/gpuMetricSeries';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import { useMetricChartDrag } from './useMetricChartDrag';
+import { useMetricChartDrag, type SortAnnouncement } from './useMetricChartDrag';
 import './metric-chart-settings.css';
 
 /**
@@ -14,10 +15,20 @@ import './metric-chart-settings.css';
  */
 export default function MetricChartEditor({ id, charts, onChange, onSortingChange }: { id: string; charts: MetricChartSetting[]; onChange: (charts: MetricChartSetting[]) => void; onSortingChange?: (sorting: boolean) => void }) {
   const text = useWorkspaceText();
-  const sorting = useMetricChartDrag(charts, onChange);
-  const sortingActive = sorting.drag !== null;
-  React.useEffect(() => { onSortingChange?.(sortingActive); }, [sortingActive, onSortingChange]);
   const english = text('zh', 'en') === 'en';
+  // Keyboard sorting is read out as it happens.
+  const [announcement, setAnnouncement] = React.useState('');
+  const announce = ({ kind, id: chartId, position, total }: SortAnnouncement) => {
+    const chart = charts.find(item => item.id === chartId);
+    const name = chart ? chartTitle(chart, english) : '';
+    setAnnouncement(kind === 'pick' ? text(`已拿起“${name}”，第 ${position} 张，共 ${total} 张。用方向键移动，按空格或回车放下，按 Esc 取消。`, `Picked up “${name}”, chart ${position} of ${total}. Use the arrow keys to move it, Space or Enter to drop it, Escape to cancel.`)
+      : kind === 'move' ? text(`“${name}”移到第 ${position} 张，共 ${total} 张。`, `“${name}” moved to position ${position} of ${total}.`)
+        : kind === 'drop' ? text(`“${name}”已放在第 ${position} 张。`, `“${name}” dropped at position ${position}.`)
+          : text(`已取消移动，“${name}”回到第 ${position} 张。`, `Move cancelled; “${name}” is back at position ${position}.`));
+  };
+  const sorting = useMetricChartDrag(charts, onChange, announce);
+  const sortingActive = sorting.active;
+  React.useEffect(() => { onSortingChange?.(sortingActive); }, [sortingActive, onSortingChange]);
   const [gpus, setGpus] = React.useState<SystemStats['gpus']>([]);
   React.useEffect(() => {
     const controller = new AbortController();
@@ -26,10 +37,12 @@ export default function MetricChartEditor({ id, charts, onChange, onSortingChang
       .catch(() => { /* Saved device IDs remain selectable when telemetry is unavailable. */ });
     return () => controller.abort();
   }, []);
+  // With one GPU every source reads the same card, so the choice appears only for several (or a saved non-default one).
+  const multiGpu = gpus.length > 1;
   const gpuOptions = [
-    { value: 'primary', label: text('主训练 GPU', 'Primary training GPU') },
-    { value: 'average', label: text('训练 GPU 平均', 'Average of training GPUs') },
-    ...gpus.map((gpu, index) => ({ value: gpu.kind === 'mps' ? 'mps' : `cuda:${index}`, label: gpu.kind === 'mps' ? 'Apple GPU' : text(`训练 GPU ${index}`, `Training GPU ${index}`) })),
+    { value: 'primary', label: gpuSourceLabel('primary', english) },
+    ...(multiGpu ? [{ value: 'average', label: gpuSourceLabel('average', english) },
+      ...gpus.map((gpu, index) => ({ value: gpu.kind === 'mps' ? 'mps' : `cuda:${index}`, label: gpu.kind === 'mps' ? 'Apple GPU' : text(`训练 GPU ${index}`, `Training GPU ${index}`) }))] : []),
   ];
 
   const updateChart = (index: number, patch: Partial<MetricChartSetting>) => { if (sortingActive) return; onChange(charts.map((chart, other) => other === index ? { ...chart, ...patch } : chart)); };
@@ -46,7 +59,7 @@ export default function MetricChartEditor({ id, charts, onChange, onSortingChang
     </div></div>
     <ol ref={sorting.list} onLostPointerCapture={sorting.lostCapture} className="metric-chart-list" data-dragging={sorting.drag ? 'true' : undefined}>
       {sorting.charts.map((chart, index) => <li key={chart.id} className="metric-chart-card" data-chart-id={chart.id} data-placeholder={sorting.drag?.id === chart.id ? 'true' : undefined} aria-label={chartTitle(chart, english)} style={sorting.drag?.id === chart.id ? { height: sorting.drag.rect.height } : undefined}>
-        <div className="metric-chart-body" data-floating={sorting.drag?.id === chart.id ? 'true' : undefined} data-settling={sorting.drag?.id === chart.id && sorting.drag.settling ? 'true' : undefined} style={sorting.drag?.id === chart.id ? { left: sorting.drag.rect.left, top: sorting.drag.rect.top, width: sorting.drag.rect.width, height: sorting.drag.rect.height } : undefined}>
+        <div className="metric-chart-body" data-held={sorting.held === chart.id ? 'true' : undefined} data-floating={sorting.drag?.id === chart.id ? 'true' : undefined} data-settling={sorting.drag?.id === chart.id && sorting.drag.settling ? 'true' : undefined} style={sorting.drag?.id === chart.id ? { left: sorting.drag.rect.left, top: sorting.drag.rect.top, width: sorting.drag.rect.width, height: sorting.drag.rect.height } : undefined}>
         <div className="metric-chart-card-head">
           <span className="metric-chart-order">{index + 1}</span>
           <label className="metric-chart-title"><span className="sr-only">{text('图表标题', 'Chart title')}</span>
@@ -69,17 +82,19 @@ export default function MetricChartEditor({ id, charts, onChange, onSortingChang
               aria-label={text(`移除${metricLabel(item.metric, false)}`, `Remove ${metricLabel(item.metric, true)}`)} title={text('移除', 'Remove')}><Trash2 size={14}/></button>
           </li>)}
         </ul>
-        {chart.series.some(item => ['gpu_memory', 'gpu_power', 'gpu_temp', 'gpu_util'].includes(item.metric)) && <label className="metric-chart-gpu-source" title={text('GPU 编号以本次训练任务为准。', 'GPU indices refer to the current training job.')}><span>{text('显卡', 'GPU')}</span>
+        {chart.series.some(item => GPU_SENSOR_METRICS.some(key => key === item.metric)) && (multiGpu || (chart.gpu ?? 'primary') !== 'primary') && <label className="metric-chart-gpu-source" title={text('GPU 编号以本次训练任务为准。', 'GPU indices refer to the current training job.')}><span>{text('显卡', 'GPU')}</span>
           <StudioSelect disabled={sortingActive} aria-label={text(`第 ${index + 1} 张图的显卡`, `GPU for chart ${index + 1}`)} value={chart.gpu ?? 'primary'}
-            options={gpuOptions.some(option => option.value === (chart.gpu ?? 'primary')) ? gpuOptions : [...gpuOptions, { value: chart.gpu!, label: chart.gpu === 'mps' ? 'Apple GPU' : chart.gpu!.replace('cuda:', text('训练 GPU ', 'Training GPU ')) }]}
+            options={gpuOptions.some(option => option.value === (chart.gpu ?? 'primary')) ? gpuOptions : [...gpuOptions, { value: chart.gpu!, label: gpuSourceLabel(chart.gpu!, english) }]}
             onValueChange={value => updateChart(index, { gpu: value })}/>
         </label>}
         <div className="metric-chart-card-footer"><button type="button" className="ui-btn ui-btn-sm metric-series-add" disabled={sortingActive || chart.series.length >= MAX_SERIES || !unused(chart).length}
           onClick={() => { const metric = unused(chart)[0]; updateChart(index, { series: [...chart.series, { metric, color: METRICS[metric].color }] }); }}><Plus size={14}/>{text('添加指标', 'Add metric')}</button>
-          <button type="button" className="ui-btn ui-btn-icon ui-btn-sm ui-btn-quiet metric-chart-drag-handle" disabled={charts.length < 2} aria-label={text(`拖动排序：${chartTitle(chart, false)}`, `Drag to reorder: ${chartTitle(chart, true)}`)} title={text('拖动排序', 'Drag to reorder')} onPointerDown={event => sorting.begin(event, chart.id)}><GripVertical size={16}/></button>
+          <button type="button" className="ui-btn ui-btn-icon ui-btn-sm ui-btn-quiet metric-chart-drag-handle" disabled={charts.length < 2} aria-label={text(`拖动排序：${chartTitle(chart, false)}`, `Drag to reorder: ${chartTitle(chart, true)}`)} title={text('拖动排序', 'Drag to reorder')} aria-describedby={`${id}-sort-help`} aria-pressed={sorting.held === chart.id} onPointerDown={event => sorting.begin(event, chart.id)} onKeyDown={event => sorting.keyDown(event, chart.id)}><GripVertical size={16}/></button>
         </div></div>
       </li>)}
     </ol>
+    <span id={`${id}-sort-help`} className="sr-only">{text('按空格或回车拿起图表，用方向键移动，再按空格或回车放下，按 Esc 取消。', 'Press Space or Enter to pick up the chart, use the arrow keys to move it, press Space or Enter again to drop it, or Escape to cancel.')}</span>
+    <div className="sr-only" role="status" aria-live="assertive" aria-atomic="true">{announcement}</div>
     <div className="metric-chart-footer">
       <button type="button" className="ui-btn" disabled={sortingActive || charts.length >= MAX_CHARTS} onClick={() => onChange([...charts, { id: newChartId(charts), title: '', series: [{ metric: 'loss', color: METRICS.loss.color }] }])}><Plus size={14}/>{text('添加图表', 'Add chart')}</button>
       <button type="button" className="ui-btn ui-btn-quiet" disabled={sortingActive || isDefaultLayout(charts)} onClick={() => onChange(cloneCharts(DEFAULT_METRIC_CHARTS))}
