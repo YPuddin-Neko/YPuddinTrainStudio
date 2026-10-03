@@ -510,6 +510,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/background-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tasks */
+        get: operations["tasks_api_background_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/background-tasks/{tid}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_background_tasks__tid__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/background-tasks/{tid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Dismiss */
+        delete: operations["dismiss_api_background_tasks__tid__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/xyz/sources": {
         parameters: {
             query?: never;
@@ -741,6 +792,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{pid}/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project Storage
+         * @description Every folder deleting the project removes, with sizes and what keeps any of them.
+         */
+        get: operations["project_storage_api_projects__pid__storage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{pid}/config": {
         parameters: {
             query?: never;
@@ -939,7 +1010,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Upload Session Status */
+        get: operations["upload_session_status_api_projects__pid__datasets_upload_sessions__sid__get"];
         put?: never;
         post?: never;
         /** Delete Upload Session */
@@ -2730,13 +2802,13 @@ export interface components {
             rs_lora: boolean;
             /**
              * Dora
-             * @description DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。计算模式与融合精度需匹配目标加载方式。
+             * @description DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。只有一个输出通道的层（如 Krea 2 的 txtfusion.projector）不使用 DoRA，按所选算法训练；继续训练时沿用原任务的设置。
              * @default false
              */
             dora: boolean;
             /**
              * Dora Axis
-             * @description input 每个输入通道一个幅度，是默认方向；LyCORIS 自带的工具不支持。output 每个输出通道一个幅度，是 LyCORIS 的默认方向。继续训练时须与原权重方向一致。方向本身不保证外部出图与训练预览一致，融合算法和精度也会影响结果。
+             * @description input 每个输入通道一个幅度，是默认方向；ComfyUI、Forge 和 A1111 都能加载，LyCORIS 自带的工具不支持。output 每个输出通道一个幅度，是 LyCORIS 的默认方向；ComfyUI 和 Forge 能加载，A1111 不支持。继续训练时须与原权重方向一致。
              * @default input
              * @enum {string}
              */
@@ -2962,6 +3034,53 @@ export interface components {
             proposal_id?: string | null;
             /** Selections */
             selections?: components["schemas"]["HeadSelection"][];
+        };
+        /** BackgroundTask */
+        BackgroundTask: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Subject */
+            subject?: string | null;
+            /**
+             * State
+             * @default running
+             * @enum {string}
+             */
+            state: "running" | "completed" | "failed" | "cancelled";
+            /** Done */
+            done?: number | null;
+            /** Total */
+            total?: number | null;
+            /** Unit */
+            unit?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Link */
+            link?: string | null;
+            /**
+             * Cancellable
+             * @default false
+             */
+            cancellable: boolean;
+            /** Started At */
+            started_at: number;
+            /** Finished At */
+            finished_at?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Rate */
+            rate?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** BackgroundTaskList */
+        BackgroundTaskList: {
+            /** Tasks */
+            tasks: components["schemas"]["BackgroundTask"][];
+            /** Now */
+            now: number;
         };
         /** Body_wheel_api_environment_wheels_post */
         Body_wheel_api_environment_wheels_post: {
@@ -3193,7 +3312,7 @@ export interface components {
             save_dtype: "bf16" | "fp16" | "fp32";
             /**
              * Save Training Metadata
-             * @description 默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。
+             * @description 默认关闭，只写入出图软件识别底模的键、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入标题、步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。
              * @default false
              */
             save_training_metadata: boolean;
@@ -3778,6 +3897,26 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** DatasetUploadSessionStatus */
+        DatasetUploadSessionStatus: {
+            /** Id */
+            id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "receiving" | "ready" | "finalizing" | "completed" | "failed";
+            /** Received */
+            received: number[];
+            /** Chunk Bytes */
+            chunk_bytes: number;
+            /** Progress Id */
+            progress_id: string;
+            /** Expires In */
+            expires_in: number;
+            result?: components["schemas"]["DatasetUploadInfo"] | null;
+            error?: components["schemas"]["UploadSessionError"] | null;
+        };
         /** DiskStats */
         DiskStats: {
             /** Path */
@@ -4057,7 +4196,7 @@ export interface components {
              * Package
              * @enum {string}
              */
-            package: "xformers" | "flash-attn" | "sageattention" | "mtlattn" | "nvidia-ml-py" | "tensorboard" | "schedulefree" | "bitsandbytes" | "onnxruntime" | "onnxruntime-gpu";
+            package: "xformers" | "flash-attn" | "sageattention" | "mtlattn" | "nvidia-ml-py" | "tensorboard" | "schedulefree" | "bitsandbytes" | "onnxruntime" | "onnxruntime-gpu" | "triton-windows";
             /**
              * Action
              * @default install
@@ -5341,6 +5480,12 @@ export interface components {
              * @default false
              */
             cache_encode_tiled: boolean;
+            /**
+             * Vae Encode Batch Size
+             * @description 每次 VAE 编码的图片数，默认 1，即每次编码一张完整图片；与训练批量分开。训练前缓存图像和关闭缓存时的每批编码都按它分次进行。调大可能略快，但编码时的显存占用随之增加。
+             * @default 1
+             */
+            vae_encode_batch_size: number;
             /**
              * Offload Text Encoder
              * @description 在线编码标签时，在每次编码后把文本编码器移到 CPU，默认关闭；可减少驻留显存但增加传输。cached 文本模式已预编码并卸载编码器，无需依靠此开关。
@@ -6826,6 +6971,32 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** ProjectDeletionStarted */
+        ProjectDeletionStarted: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+            /** Task Id */
+            task_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ProjectDeletionState */
+        ProjectDeletionState: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "deleting" | "failed";
+            /** Error */
+            error?: string | null;
+            /** Task Id */
+            task_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** ProjectPage */
         ProjectPage: {
             /** Items */
@@ -6858,6 +7029,54 @@ export interface components {
             jobs: number;
             /** Artifacts */
             artifacts: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * ProjectStorage
+         * @description Everything deleting the project removes from disk, and what stops it now.
+         */
+        ProjectStorage: {
+            /** Locations */
+            locations: components["schemas"]["ProjectStorageLocation"][];
+            /** Total Bytes */
+            total_bytes: number;
+            /** Jobs */
+            jobs: number;
+            /** Artifacts */
+            artifacts: number;
+            blocked?: components["schemas"]["ProjectStorageBlock"] | null;
+            deletion?: components["schemas"]["ProjectDeletionState"] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ProjectStorageBlock */
+        ProjectStorageBlock: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Jobs */
+            jobs?: string[];
+        } & {
+            [key: string]: unknown;
+        };
+        /** ProjectStorageLocation */
+        ProjectStorageLocation: {
+            /** Path */
+            path: string;
+            /** Kinds */
+            kinds: string[];
+            /** Custom */
+            custom: boolean;
+            /** Exists */
+            exists: boolean;
+            /** Bytes */
+            bytes: number;
+            /** Files */
+            files: number;
+            /** Problem */
+            problem?: ("unavailable" | "linked" | "outside") | null;
         } & {
             [key: string]: unknown;
         };
@@ -8549,6 +8768,15 @@ export interface components {
              * @default auto
              */
             caption_ext: string;
+        };
+        /** UploadSessionError */
+        UploadSessionError: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Retryable */
+            retryable: boolean;
         };
         /** ValidateResult */
         ValidateResult: {
@@ -10354,6 +10582,88 @@ export interface operations {
             };
         };
     };
+    tasks_api_background_tasks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackgroundTaskList"];
+                };
+            };
+        };
+    };
+    cancel_api_background_tasks__tid__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackgroundTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_api_background_tasks__tid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     sources_api_xyz_sources_get: {
         parameters: {
             query?: {
@@ -10808,6 +11118,8 @@ export interface operations {
         parameters: {
             query?: {
                 delete_files?: boolean;
+                /** @description Listed folders the user chose to keep, such as an unplugged drive. */
+                skip?: string[];
             };
             header?: never;
             path: {
@@ -10823,7 +11135,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Ok"];
+                    "application/json": components["schemas"]["ProjectDeletionStarted"];
                 };
             };
             /** @description Validation Error */
@@ -10964,6 +11276,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_storage_api_projects__pid__storage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectStorage"];
                 };
             };
             /** @description Validation Error */
@@ -11268,6 +11611,8 @@ export interface operations {
             query?: {
                 version_id?: string | null;
                 include_cache?: boolean;
+                /** @description Check the folders for changes now instead of when next due. */
+                refresh?: boolean;
             };
             header?: never;
             path: {
@@ -11510,6 +11855,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatasetUploadInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_session_status_api_projects__pid__datasets_upload_sessions__sid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetUploadSessionStatus"];
                 };
             };
             /** @description Validation Error */

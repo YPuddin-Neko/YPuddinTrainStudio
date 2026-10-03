@@ -91,7 +91,7 @@
         },
         "dora": {
           "default": false,
-          "description": "DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。计算模式与融合精度需匹配目标加载方式。",
+          "description": "DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。只有一个输出通道的层（如 Krea 2 的 txtfusion.projector）不使用 DoRA，按所选算法训练；继续训练时沿用原任务的设置。",
           "title": "Dora",
           "type": "boolean",
           "x-ui": {
@@ -102,7 +102,7 @@
         },
         "dora_axis": {
           "default": "input",
-          "description": "input 每个输入通道一个幅度，是默认方向；LyCORIS 自带的工具不支持。output 每个输出通道一个幅度，是 LyCORIS 的默认方向。继续训练时须与原权重方向一致。方向本身不保证外部出图与训练预览一致，融合算法和精度也会影响结果。",
+          "description": "input 每个输入通道一个幅度，是默认方向；ComfyUI、Forge 和 A1111 都能加载，LyCORIS 自带的工具不支持。output 每个输出通道一个幅度，是 LyCORIS 的默认方向；ComfyUI 和 Forge 能加载，A1111 不支持。继续训练时须与原权重方向一致。",
           "enum": [
             "input",
             "output"
@@ -814,7 +814,7 @@
         },
         "save_training_metadata": {
           "default": false,
-          "description": "默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
+          "description": "默认关闭，只写入出图软件识别底模的键、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入标题、步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
           "title": "Save Training Metadata",
           "type": "boolean",
           "x-ui": {
@@ -1622,6 +1622,18 @@
             "group": "memory",
             "order": 28,
             "show_when": "model.family in ['anima', 'krea2']"
+          }
+        },
+        "vae_encode_batch_size": {
+          "default": 1,
+          "description": "每次 VAE 编码的图片数，默认 1，即每次编码一张完整图片；与训练批量分开。训练前缓存图像和关闭缓存时的每批编码都按它分次进行。调大可能略快，但编码时的显存占用随之增加。",
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Vae Encode Batch Size",
+          "type": "integer",
+          "x-ui": {
+            "group": "memory",
+            "order": 24
           }
         },
         "offload_text_encoder": {

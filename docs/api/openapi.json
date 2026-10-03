@@ -1349,6 +1349,102 @@
         }
       }
     },
+    "/api/background-tasks": {
+      "get": {
+        "summary": "Tasks",
+        "operationId": "tasks_api_background_tasks_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackgroundTaskList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/background-tasks/{tid}/cancel": {
+      "post": {
+        "summary": "Cancel",
+        "operationId": "cancel_api_background_tasks__tid__cancel_post",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackgroundTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/background-tasks/{tid}": {
+      "delete": {
+        "summary": "Dismiss",
+        "operationId": "dismiss_api_background_tasks__tid__delete",
+        "parameters": [
+          {
+            "name": "tid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/xyz/sources": {
       "get": {
         "summary": "Sources",
@@ -2105,6 +2201,21 @@
               "default": false,
               "title": "Delete Files"
             }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Listed folders the user chose to keep, such as an unplugged drive.",
+              "default": [],
+              "title": "Skip"
+            },
+            "description": "Listed folders the user chose to keep, such as an unplugged drive."
           }
         ],
         "responses": {
@@ -2113,7 +2224,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Ok"
+                  "$ref": "#/components/schemas/ProjectDeletionStarted"
                 }
               }
             }
@@ -2252,6 +2363,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/storage": {
+      "get": {
+        "summary": "Project Storage",
+        "description": "Every folder deleting the project removes, with sizes and what keeps any of them.",
+        "operationId": "project_storage_api_projects__pid__storage_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStorage"
                 }
               }
             }
@@ -2770,6 +2921,18 @@
               "default": true,
               "title": "Include Cache"
             }
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Check the folders for changes now instead of when next due.",
+              "default": false,
+              "title": "Refresh"
+            },
+            "description": "Check the folders for changes now instead of when next due."
           }
         ],
         "responses": {
@@ -3252,6 +3415,52 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Upload Session Status",
+        "operationId": "upload_session_status_api_projects__pid__datasets_upload_sessions__sid__get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetUploadSessionStatus"
                 }
               }
             }
@@ -8844,7 +9053,7 @@
           "dora": {
             "type": "boolean",
             "title": "Dora",
-            "description": "DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。计算模式与融合精度需匹配目标加载方式。",
+            "description": "DoRA 分别学习权重的幅度和方向，默认关闭；作用于 LoRA、LoHa、LoKr 和 OrthoLoRA 层，按规则使用 LyCORIS Full 或 T-LoRA 的层不启用。只有一个输出通道的层（如 Krea 2 的 txtfusion.projector）不使用 DoRA，按所选算法训练；继续训练时沿用原任务的设置。",
             "default": false,
             "x-ui": {
               "control": "switch",
@@ -8859,7 +9068,7 @@
               "output"
             ],
             "title": "Dora Axis",
-            "description": "input 每个输入通道一个幅度，是默认方向；LyCORIS 自带的工具不支持。output 每个输出通道一个幅度，是 LyCORIS 的默认方向。继续训练时须与原权重方向一致。方向本身不保证外部出图与训练预览一致，融合算法和精度也会影响结果。",
+            "description": "input 每个输入通道一个幅度，是默认方向；ComfyUI、Forge 和 A1111 都能加载，LyCORIS 自带的工具不支持。output 每个输出通道一个幅度，是 LyCORIS 的默认方向；ComfyUI 和 Forge 能加载，A1111 不支持。继续训练时须与原权重方向一致。",
             "default": "input",
             "x-ui": {
               "advanced": true,
@@ -9512,6 +9721,166 @@
         "type": "object",
         "title": "AutoMaskOptions"
       },
+      "BackgroundTask": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "State",
+            "default": "running"
+          },
+          "done": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link"
+          },
+          "cancellable": {
+            "type": "boolean",
+            "title": "Cancellable",
+            "default": false
+          },
+          "started_at": {
+            "type": "number",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "started_at"
+        ],
+        "title": "BackgroundTask"
+      },
+      "BackgroundTaskList": {
+        "properties": {
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/BackgroundTask"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "now": {
+            "type": "number",
+            "title": "Now"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tasks",
+          "now"
+        ],
+        "title": "BackgroundTaskList"
+      },
       "Body_wheel_api_environment_wheels_post": {
         "properties": {
           "file": {
@@ -10113,7 +10482,7 @@
           "save_training_metadata": {
             "type": "boolean",
             "title": "Save Training Metadata",
-            "description": "默认关闭，只保留加载所需的模型类型、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
+            "description": "默认关闭，只写入出图软件识别底模的键、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入标题、步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
             "default": false,
             "x-ui": {
               "advanced": true,
@@ -11682,6 +12051,74 @@
         ],
         "title": "DatasetUploadSession"
       },
+      "DatasetUploadSessionStatus": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "receiving",
+              "ready",
+              "finalizing",
+              "completed",
+              "failed"
+            ],
+            "title": "State"
+          },
+          "received": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Received"
+          },
+          "chunk_bytes": {
+            "type": "integer",
+            "title": "Chunk Bytes"
+          },
+          "progress_id": {
+            "type": "string",
+            "title": "Progress Id"
+          },
+          "expires_in": {
+            "type": "number",
+            "title": "Expires In"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetUploadInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UploadSessionError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "state",
+          "received",
+          "chunk_bytes",
+          "progress_id",
+          "expires_in"
+        ],
+        "title": "DatasetUploadSessionStatus"
+      },
       "DiskStats": {
         "properties": {
           "path": {
@@ -12398,7 +12835,8 @@
               "schedulefree",
               "bitsandbytes",
               "onnxruntime",
-              "onnxruntime-gpu"
+              "onnxruntime-gpu",
+              "triton-windows"
             ],
             "title": "Package"
           },
@@ -16242,6 +16680,18 @@
               "show_when": "model.family in ['anima', 'krea2']"
             }
           },
+          "vae_encode_batch_size": {
+            "type": "integer",
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Vae Encode Batch Size",
+            "description": "每次 VAE 编码的图片数，默认 1，即每次编码一张完整图片；与训练批量分开。训练前缓存图像和关闭缓存时的每批编码都按它分次进行。调大可能略快，但编码时的显存占用随之增加。",
+            "default": 1,
+            "x-ui": {
+              "group": "memory",
+              "order": 24
+            }
+          },
           "offload_text_encoder": {
             "type": "boolean",
             "title": "Offload Text Encoder",
@@ -20006,6 +20456,69 @@
         ],
         "title": "ProjectCategory"
       },
+      "ProjectDeletionStarted": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "ProjectDeletionStarted"
+      },
+      "ProjectDeletionState": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "deleting",
+              "failed"
+            ],
+            "title": "State"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "ProjectDeletionState"
+      },
       "ProjectPage": {
         "properties": {
           "items": {
@@ -20118,6 +20631,143 @@
           "artifacts"
         ],
         "title": "ProjectStats"
+      },
+      "ProjectStorage": {
+        "properties": {
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectStorageLocation"
+            },
+            "type": "array",
+            "title": "Locations"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          },
+          "jobs": {
+            "type": "integer",
+            "title": "Jobs"
+          },
+          "artifacts": {
+            "type": "integer",
+            "title": "Artifacts"
+          },
+          "blocked": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectStorageBlock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deletion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectDeletionState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "locations",
+          "total_bytes",
+          "jobs",
+          "artifacts"
+        ],
+        "title": "ProjectStorage",
+        "description": "Everything deleting the project removes from disk, and what stops it now."
+      },
+      "ProjectStorageBlock": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "jobs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Jobs"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ProjectStorageBlock"
+      },
+      "ProjectStorageLocation": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Kinds"
+          },
+          "custom": {
+            "type": "boolean",
+            "title": "Custom"
+          },
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "bytes": {
+            "type": "integer",
+            "title": "Bytes"
+          },
+          "files": {
+            "type": "integer",
+            "title": "Files"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "unavailable",
+                  "linked",
+                  "outside"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path",
+          "kinds",
+          "custom",
+          "exists",
+          "bytes",
+          "files"
+        ],
+        "title": "ProjectStorageLocation"
       },
       "ProjectVersion": {
         "properties": {
@@ -24523,6 +25173,29 @@
           "files"
         ],
         "title": "UploadSessionBody"
+      },
+      "UploadSessionError": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "retryable": {
+            "type": "boolean",
+            "title": "Retryable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "title": "UploadSessionError"
       },
       "ValidateResult": {
         "properties": {
