@@ -51,7 +51,7 @@ _NCCL_CONFIGURATION = re.compile(
 _NCCL_INITIALIZATION = re.compile(
     r"(?:\[rank\d+\]:\s*)?\[PG ID \d+ PG GUID \S+ Rank \d+\] "
     r"(?:ProcessGroupNCCL broadcast unique ID through store took \d+(?:\.\d+)?(?:[eE][+-]?\d+)? ms"
-    r"|ProcessGroupNCCL created ncclComm_ 0x[\da-fA-F]+ on CUDA device: \d+"
+    r"|ProcessGroupNCCL created ncclComm_ 0x[\da-fA-F]+ on CUDA device: (?:\d+|[\x00\x01])"
     r"|NCCL_DEBUG: N/A)\s*"
 )
 
