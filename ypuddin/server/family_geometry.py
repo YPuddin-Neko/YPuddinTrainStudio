@@ -31,6 +31,17 @@ RETRY_SECONDS = 300.0  # after a failed measurement, requests answer at once unt
 # The child builds models on the meta device only; no GPU is needed or touched.
 HIDDEN_GPUS = {"CUDA_VISIBLE_DEVICES": "-1", "HIP_VISIBLE_DEVICES": "-1", "HF_HUB_OFFLINE": "1"}
 _PACKAGE = Path(__file__).resolve().parents[1]
+_MODULE_SOURCE = Path(__file__).resolve()
+# Some GPU extensions query the current device when imported, even for meta models.
+_GPU_EXTENSIONS = (
+    "flash_attn",
+    "flash_attn_interface",
+    "flash_attn_3",
+    "flash_attn_2_cuda",
+    "flash_attn_3_cuda",
+    "sageattention",
+    "xformers",
+)
 # The code that decides the layers: model definitions and their configs, the adapter rules, the config
 # defaults, plus the libraries whose model classes the families build.
 _SOURCES = ("models", "adapters", "config")
@@ -87,6 +98,7 @@ def unmeasured(name: str, reason: str) -> dict[str, Any]:
 def fingerprint() -> str:
     """Changes whenever the code or a library that decides the layer counts changes."""
     digest = hashlib.sha256()
+    digest.update(_MODULE_SOURCE.read_bytes() + b"\0")
     for folder in _SOURCES:
         for path in sorted((_PACKAGE / folder).rglob("*")):
             if path.suffix not in {".py", ".json"} or "__pycache__" in path.parts or not path.is_file():
@@ -107,6 +119,7 @@ def fingerprint() -> str:
 def _valid(geometry: Any) -> bool:
     return (
         isinstance(geometry, dict)
+        and "failure" not in geometry
         and isinstance(geometry.get("linear_modules"), int)
         and isinstance(geometry.get("presets"), dict)
         and all(
@@ -170,6 +183,8 @@ class FamilyGeometry:
 
     # ----------------------------------------------------------------------------------- internals
     def _measure(self, done: threading.Event) -> None:
+        from ypuddin.models import available
+
         try:
             key = fingerprint()
             if self._load(key):
@@ -180,21 +195,28 @@ class FamilyGeometry:
                 "Measured model family layers in a separate process in %.1f s", time.monotonic() - started
             )
             stored = {}
+            failures = []
             with _lock:
-                for name, geometry in families.items():
+                for name in available():
+                    geometry = families.get(name)
                     if not _valid(geometry):
+                        reason = (
+                            geometry.get("failure") or geometry.get("error") or "invalid layer counts"
+                            if isinstance(geometry, dict)
+                            else "missing layer counts"
+                        )
+                        failures.append(f"{name}: {reason}")
+                        log.warning("Model family %s has no layer counts: %s", name, reason)
                         continue
                     _measured[name] = geometry
-                    if "failure" in geometry:
-                        log.warning("Model family %s has no layer counts: %s", name, geometry["failure"])
-                    else:
-                        stored[name] = geometry
+                    stored[name] = geometry
             with self._lock:
                 if self._closed:
                     return
             self.db.set_kv(KV_KEY, {"fingerprint": key, "families": stored})
             with self._lock:
-                self._failed_at = None
+                self._failed_at = time.monotonic() if failures else None
+                self._failure = "; ".join(failures)
         except Exception as error:  # noqa: BLE001
             with self._lock:
                 closed = self._closed
@@ -224,8 +246,12 @@ class FamilyGeometry:
     def _run_child(self) -> dict[str, Any]:
         root = _PACKAGE.parent
         code = (
-            "import sys; sys.path.insert(0, sys.argv[1]); "
-            "from ypuddin.server.family_geometry import child_main; child_main()"
+            "import sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            f"for name in {_GPU_EXTENSIONS!r}:\n"
+            "    sys.modules[name] = None\n"
+            "from ypuddin.server.family_geometry import child_main\n"
+            "child_main()\n"
         )
         options: dict[str, Any] = {}
         if os.name == "nt":  # pragma: no cover - Windows only
