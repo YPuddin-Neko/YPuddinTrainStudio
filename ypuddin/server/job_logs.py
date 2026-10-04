@@ -44,6 +44,10 @@ _ORDER = {"debug": 10, "info": 20, "warn": 30, "error": 40}
 _LEVELS = {"warning": "warn", "critical": "error", "fatal": "error"}
 _GLOG_LEVELS = {"I": "info", "W": "warn", "E": "error", "F": "error"}
 _CAPTURED = re.compile(r"^\[captured (?P<time>[^\]]+)\] (?P<message>.*)$")
+_NCCL_CONFIGURATION = re.compile(
+    r"^(?:\[rank\d+\]:\s*)?\[PG ID \d+ PG GUID \S+ Rank \d+\] "
+    r"ProcessGroupNCCL (?:initialization options|environments):(?:\s|$)"
+)
 
 MAX_READ = 512 * 1024
 SUPERVISOR_SOURCE = "ypuddin.server.supervisor"
@@ -152,6 +156,11 @@ def parse_log_lines(lines: list[str], *, now: datetime | None = None) -> list[di
                 out.append(line)
                 continue
         out.extend(_parse_plain_lines([raw], now=now))
+    for line in out:
+        # Native configuration dumps bypass Python logging; keep their raw file and source intact.
+        if line["level"] == "info" and _NCCL_CONFIGURATION.match(line["msg"]):
+            line["kind"] = "record"
+            line["level"] = "debug"
     return out
 
 
