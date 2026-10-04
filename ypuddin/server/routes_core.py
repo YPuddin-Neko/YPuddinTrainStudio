@@ -154,15 +154,22 @@ def family_info(name: str, layers: Callable[[str], dict[str, Any]] | None = None
     fam = get_family(name)
     spec = fam.spec
     geometry = (layers or measure)(name)
+    family_presets = fam.presets()
+    # Explain Krea2's wildcard in the help response without changing the training preset.
     presets = [
         {
             "name": pname,
             "description": preset.description,
-            "include": list(preset.include),
+            "include": (
+                list(family_presets["attn-mlp-text"].include)
+                + ["first", "last.linear", "tmlp.*", "tproj.1"]
+                if name == "krea2" and pname == "all-linear"
+                else list(preset.include)
+            ),
             "exclude": list(preset.exclude),
             **geometry["presets"][pname],
         }
-        for pname, preset in fam.presets().items()
+        for pname, preset in family_presets.items()
     ]
     text_modes = ["auto", "cached"] + (["online"] if "online_text" in spec.capabilities else [])
     info = {

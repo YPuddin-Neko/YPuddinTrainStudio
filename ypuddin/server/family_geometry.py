@@ -18,8 +18,6 @@ import subprocess
 import sys
 import threading
 import time
-from collections import defaultdict
-from collections.abc import Iterable
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -54,22 +52,6 @@ _lock = threading.Lock()
 _measured: dict[str, dict[str, Any]] = {}  # family -> geometry; the same for every service in a process
 
 
-def _layer_groups(names: Iterable[str]) -> list[dict[str, Any]]:
-    """Count selected layers by container, folding repeated block indices into one row."""
-    containers: dict[str, list[str]] = defaultdict(list)
-    for name in names:
-        parts = ["*" if part.isdecimal() else part for part in name.split(".")]
-        container = ".".join(parts[:-1] or parts)
-        containers[container].append(name)
-    return sorted(
-        (
-            {"name": members[0] if len(members) == 1 else container, "layers": len(members)}
-            for container, members in containers.items()
-        ),
-        key=lambda group: group["name"],
-    )
-
-
 def measure(name: str) -> dict[str, Any]:
     """Layer counts of one family's presets on its official geometry, built on the meta device here.
 
@@ -89,14 +71,11 @@ def measure(name: str) -> dict[str, Any]:
     probe_conv = AdapterConfig(algo="lora", rank=4, alpha=4, layer_types="linear_conv")
     presets = {}
     for preset_name, preset in family.presets().items():
-        linear = resolve_targets(modules, probe, preset)
         with_conv = resolve_targets(modules, probe_conv, preset) if preset.conv else []
         presets[preset_name] = {
-            "layers": len(linear),
+            "layers": len(resolve_targets(modules, probe, preset)),
             "layers_with_conv": len(with_conv),
             "conv_layers": sum(bool(modules[target.name]) for target in with_conv),
-            "layer_groups": _layer_groups(target.name for target in linear),
-            "layer_groups_with_conv": _layer_groups(target.name for target in with_conv),
         }
     result: dict[str, Any] = {
         "presets": presets,
