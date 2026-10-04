@@ -22,6 +22,7 @@ from ypuddin.data.dataset import DataConfigError, item_geometry, prepare_data_la
 from ypuddin.data.native import NativeBatchSampler, microbatch_indices, native_size
 from ypuddin.models import get_family
 from ypuddin.models.base import LatentSpec
+from ypuddin.runtime_compile import CompileEnvironmentError, validate_compile_environment
 from ypuddin.runtime_profiles import current_profile
 
 from .advice import value_advice
@@ -565,11 +566,13 @@ def plan(
     gpu_total_mb: float | None = None,
     index_db_path: str | Path | None = None,
     device: str | torch.device | None = None,
+    check_compile: bool = True,
 ) -> dict[str, Any]:
     """Plan without loading weights. None is an offline target-hardware estimate.
 
     Pass the execution device from CLI/service to enforce hardware constraints and account
     for CPU/MPS fp32 execution. This does not require target CUDA hardware to be locally present.
+    Cache-only workers set check_compile=False because they never compile the model.
     """
     out: dict[str, Any] = {
         "ok": True,
@@ -629,6 +632,11 @@ def plan(
         out.update(ok=False, memory={"unavailable_issue": issue})
         return out
     out["compute_policy"] = compute_policy
+    if check_compile:
+        try:
+            validate_compile_environment(cfg.memory.compile, device_type)
+        except CompileEnvironmentError as error:
+            out["errors"].append({"loc": "memory.compile", "msg": str(error)})
     metal_runtime = None
     if cfg.model.attention == "metal_flash" and device_type is not None:
         try:

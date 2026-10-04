@@ -79,6 +79,7 @@ from ypuddin.optim import (
     optimizer_rate_snapshot,
     validate_optimizer_runtime,
 )
+from ypuddin.runtime_compile import validate_compile_environment
 from ypuddin.runtime_profiles import current_profile
 
 from .events import Emitter, NullEmitter
@@ -375,6 +376,7 @@ class Trainer:
 
     def prepare(self) -> None:
         try:
+            validate_compile_environment(self.cfg.memory.compile, self.device.type)
             self.prepare_data()
             self._prepare_training()
         finally:

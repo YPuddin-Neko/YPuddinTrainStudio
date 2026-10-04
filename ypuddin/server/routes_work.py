@@ -2185,6 +2185,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     # as the parameter check's plan already does.
     preflight = plan(
         cfg,
+        check_compile=body.type == "train",
         index_db_path=c.service_cache_dir("index") / "index.sqlite",
         gpu_total_mb=min((g["mem_total_mb"] for g in selected), default=None)
         if selected

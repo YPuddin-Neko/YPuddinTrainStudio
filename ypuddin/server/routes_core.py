@@ -230,6 +230,7 @@ def unavailable_options() -> dict[str, dict[str, str]]:
     from importlib import metadata
 
     from ypuddin.optim.factory import optimizer_packages
+    from ypuddin.runtime_compile import triton_installed
 
     from .metal_attention_catalog import VERSION as METAL_ATTENTION_VERSION
 
@@ -248,7 +249,7 @@ def unavailable_options() -> dict[str, dict[str, str]]:
         if importlib.util.find_spec(package) is None
     }
     # Compiling the model needs Triton; triton-windows and the DTK build import as triton too.
-    compiling = {} if importlib.util.find_spec("triton") is not None else {"true": "not_installed"}
+    compiling = {} if triton_installed() else {"true": "not_installed"}
     return {
         field: options
         for field, options in (("model.attention", attention), ("optimizer.type", optimizers), ("memory.compile", compiling))
