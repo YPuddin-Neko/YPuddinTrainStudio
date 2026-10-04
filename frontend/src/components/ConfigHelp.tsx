@@ -7,6 +7,7 @@ import './config-help.css';
 const OPEN_EVENT = 'studio:config-help-open';
 const INSET = 8;
 const GAP = 6;
+const MAX_HEIGHT = 480;
 
 function RouteDismiss({ close }: { close: () => void }) {
   const location = useLocation();
@@ -19,16 +20,29 @@ export default function ConfigHelp({ label, children }: { label: string; childre
   const id = React.useId();
   const trigger = React.useRef<HTMLButtonElement>(null);
   const panel = React.useRef<HTMLDivElement>(null);
+  const content = React.useRef<HTMLDivElement>(null);
   const [open, setOpen] = React.useState(false);
   const [position, setPosition] = React.useState<React.CSSProperties>({ visibility: 'hidden' });
+  const [scrollEdges, setScrollEdges] = React.useState({ above: false, below: false });
   const inRouter = useInRouterContext();
   const close = React.useCallback(() => setOpen(false), []);
+  const updateScrollEdges = React.useCallback(() => {
+    const body = content.current;
+    if (!body) return;
+    const above = body.scrollTop > 1;
+    const below = body.scrollTop + body.clientHeight < body.scrollHeight - 1;
+    setScrollEdges(previous => previous.above === above && previous.below === below ? previous : { above, below });
+  }, []);
+
+  React.useLayoutEffect(updateScrollEdges, [open, position, children, updateScrollEdges]);
 
   React.useLayoutEffect(() => {
     if (!open) return;
     const button = trigger.current;
     const popup = panel.current;
-    if (!button || !popup) return;
+    const body = content.current;
+    if (!button || !popup || !body) return;
+    const surfaces = new Set<HTMLElement>();
 
     const place = () => {
       const viewport = window.visualViewport;
@@ -49,6 +63,7 @@ export default function ConfigHelp({ label, children }: { label: string; childre
         if (!surface && parent.scrollHeight <= parent.clientHeight + 1) continue;
         const rect = parent.getBoundingClientRect();
         if (!rect.width || !rect.height) continue;
+        surfaces.add(parent);
         bounds.left = Math.max(bounds.left, rect.left + parent.clientLeft);
         bounds.right = Math.min(bounds.right, parent.clientWidth ? rect.left + parent.clientLeft + parent.clientWidth : rect.right);
         bounds.top = Math.max(bounds.top, rect.top + parent.clientTop);
@@ -63,11 +78,14 @@ export default function ConfigHelp({ label, children }: { label: string; childre
       // Set the constrained width before measuring wrapped text, then publish both
       // coordinates together in layout effect so no unpositioned frame is painted.
       popup.style.width = `${width}px`;
-      const wantedHeight = Math.min(320, popup.scrollHeight || popup.getBoundingClientRect().height);
+      const style = window.getComputedStyle(popup);
+      const frameHeight = ['padding-top', 'padding-bottom', 'border-top-width', 'border-bottom-width']
+        .reduce((sum, key) => sum + (Number.parseFloat(style.getPropertyValue(key)) || 0), 0);
+      const wantedHeight = Math.min(MAX_HEIGHT, body.scrollHeight + frameHeight || popup.getBoundingClientRect().height);
       const below = Math.max(0, bounds.bottom - INSET - anchor.bottom - GAP);
       const above = Math.max(0, anchor.top - GAP - bounds.top - INSET);
       const upwards = below < wantedHeight && above > below;
-      const maxHeight = Math.max(1, Math.min(320, upwards ? above : below));
+      const maxHeight = Math.max(1, Math.min(MAX_HEIGHT, upwards ? above : below));
       const height = Math.min(wantedHeight, maxHeight);
       const top = upwards ? anchor.top - GAP - height : anchor.bottom + GAP;
       setPosition({
@@ -94,6 +112,8 @@ export default function ConfigHelp({ label, children }: { label: string; childre
       if (popup.contains(document.activeElement)) button.focus({ preventScroll: true });
     };
     place();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
+    surfaces.forEach(surface => observer?.observe(surface));
     document.addEventListener(OPEN_EVENT, close);
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('focusin', outside, true);
@@ -103,6 +123,7 @@ export default function ConfigHelp({ label, children }: { label: string; childre
     window.visualViewport?.addEventListener('resize', place);
     window.visualViewport?.addEventListener('scroll', scrolled);
     return () => {
+      observer?.disconnect();
       document.removeEventListener(OPEN_EVENT, close);
       document.removeEventListener('pointerdown', outside, true);
       document.removeEventListener('focusin', outside, true);
@@ -126,8 +147,10 @@ export default function ConfigHelp({ label, children }: { label: string; childre
       }}>
       <HelpCircle size={14} aria-hidden="true" />
     </button>
-    {open && createPortal(<div ref={panel} id={id} role="tooltip" className="config-help-popover" style={position}>
-      {children}
+    {open && createPortal(<div ref={panel} id={id} role="tooltip" className="config-help-popover" style={position}
+      data-scroll-above={scrollEdges.above || undefined} data-scroll-below={scrollEdges.below || undefined}>
+      <div ref={content} className="config-help-content" onScroll={updateScrollEdges}
+        tabIndex={scrollEdges.above || scrollEdges.below ? 0 : undefined}>{children}</div>
     </div>, document.body)}
   </>;
 }
