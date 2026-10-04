@@ -319,11 +319,21 @@ def _running(pid: int, started_at: float) -> bool:
     return True
 
 
+def _boot_time() -> float | None:
+    try:
+        import psutil
+
+        return float(psutil.boot_time())
+    except Exception:  # noqa: BLE001 - without it, every lock is treated as possibly in use
+        return None
+
+
 def _wait_for_index_lock(root: Path, plan: dict, *, required: bool = True, wait: float = 15) -> None:
     """Wait for Git before restoring files or changing the index.
 
-    index.lock has no owner field. Its timestamp cannot distinguish a stopped update's lock
-    from one created later by another Git process, so recovery never removes it.
+    index.lock has no owner field. A lock written before this machine last started (a power
+    loss or restart during the update's Git step) cannot belong to a running process, so it is
+    removed. A newer one may be another Git process's and is never removed.
     """
     lock = root / ".git" / "index.lock"
     record = plan.get("git_command")
@@ -332,16 +342,28 @@ def _wait_for_index_lock(root: Path, plan: dict, *, required: bool = True, wait:
     deadline = time.monotonic() + wait
     while True:
         try:
-            lock.stat()
+            written = lock.stat().st_mtime
         except FileNotFoundError:
             return
+        boot = _boot_time()
+        # The margin covers the boot time's rounding, not clock changes.
+        if boot is not None and written < boot - 2:
+            try:
+                lock.unlink(missing_ok=True)
+                continue
+            except OSError:
+                pass  # e.g. a read-only file: kept, and the message below names it
         running = isinstance(started_at, (int, float)) and isinstance(pid, int) and _running(pid, started_at)
         if not running and not required:
             return
         if time.monotonic() > deadline:
             if running:
                 _fail("git_busy", "上次更新启动的 Git 仍在运行，请稍后重新启动训练器。")
-            _fail("git_locked", "Git 索引锁仍存在（.git/index.lock），无法确认归属，已保留该文件。请确认没有 Git 操作运行后处理遗留锁，再重新启动训练器。")
+            _fail(
+                "git_locked",
+                f"Git 索引锁 {lock} 仍存在，可能有其他 Git 命令正在使用，已保留。"
+                "请确认没有 Git 命令在运行（例如 git pull），删除这个文件后重新启动训练器。",
+            )
         time.sleep(0.2)
 
 
