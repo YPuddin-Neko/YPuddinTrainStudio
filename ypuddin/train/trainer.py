@@ -207,6 +207,11 @@ class Trainer:
         self.cfg, self.compute_policy = resolve_training_compute_config(
             cfg, self.device.type, current_profile()
         )
+        from .native_resolution import resolve_native_vram_config
+
+        # DistributedTrainer already resolved or restored the area collectively.
+        if not hasattr(self, "distributed"):
+            self.cfg = resolve_native_vram_config(self.cfg, device=self.device)
         cfg = self.cfg
         self.compute_runtime: dict[str, Any] | None = None
         self.metal_attention_runtime: dict[str, str] | None = None

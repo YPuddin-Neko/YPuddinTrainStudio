@@ -178,6 +178,11 @@ def _needs_unused_parameter_detection(trainer, graph: _TrainingGraph) -> bool:
 
 class DistributedTrainer(Trainer):
     def __init__(self, cfg, *, context: DistributedContext, emitter=None):
+        from .native_resolution import resolve_distributed_native_vram_config
+
+        cfg = resolve_distributed_native_vram_config(
+            cfg, device=context.device, rank=context.rank, world_size=context.world_size,
+        )
         self.distributed = context
         self.is_primary = context.rank == 0
         self._checkpoint_rng = None

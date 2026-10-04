@@ -947,9 +947,10 @@
         },
         "native_max_pixels_mode": {
           "default": "custom",
-          "description": "自动按实际训练图片、最长边限制和模型对齐要求计算面积上限；自定义使用填写的像素上限。",
+          "description": "分辨率优先按实际训练图片、最长边限制和模型对齐要求计算面积上限；显存优先在该上限内按显存估算选择面积；手动使用填写的像素上限。",
           "enum": [
             "auto",
+            "auto_vram",
             "custom"
           ],
           "title": "Native Max Pixels Mode",
@@ -959,6 +960,24 @@
             "group": "dataset",
             "order": 10,
             "show_when": "dataset.resolution_mode == 'native'"
+          }
+        },
+        "native_max_pixels_resolved": {
+          "anyOf": [
+            {
+              "maximum": 67108864,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "显存优先任务已确定的图像面积上限；恢复训练沿用此值。",
+          "title": "Native Max Pixels Resolved",
+          "x-ui": {
+            "hidden": true
           }
         },
         "native_max_pixels": {

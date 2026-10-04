@@ -10529,6 +10529,15 @@
       },
       "ConfigBody": {
         "properties": {
+          "gpu_devices": {
+            "items": {
+              "type": "string",
+              "pattern": "^(cuda:[0-9]+|mps)$"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Gpu Devices"
+          },
           "config": {
             "additionalProperties": true,
             "type": "object",
@@ -11130,16 +11139,34 @@
             "type": "string",
             "enum": [
               "auto",
+              "auto_vram",
               "custom"
             ],
             "title": "Native Max Pixels Mode",
-            "description": "自动按实际训练图片、最长边限制和模型对齐要求计算面积上限；自定义使用填写的像素上限。",
+            "description": "分辨率优先按实际训练图片、最长边限制和模型对齐要求计算面积上限；显存优先在该上限内按显存估算选择面积；手动使用填写的像素上限。",
             "default": "custom",
             "x-ui": {
               "control": "select",
               "group": "dataset",
               "order": 10,
               "show_when": "dataset.resolution_mode == 'native'"
+            }
+          },
+          "native_max_pixels_resolved": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 67108864.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Max Pixels Resolved",
+            "description": "显存优先任务已确定的图像面积上限；恢复训练沿用此值。",
+            "x-ui": {
+              "hidden": true
             }
           },
           "native_max_pixels": {
@@ -17871,6 +17898,7 @@
             "type": "string",
             "enum": [
               "auto",
+              "auto_vram",
               "custom"
             ],
             "title": "Max Pixels Mode",
@@ -17886,6 +17914,28 @@
               }
             ],
             "title": "Auto Max Pixels"
+          },
+          "auto_vram_max_pixels": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Vram Max Pixels"
+          },
+          "auto_vram_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Vram Error"
           },
           "alignment": {
             "type": "integer",

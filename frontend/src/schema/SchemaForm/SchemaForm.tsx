@@ -97,6 +97,8 @@ export interface OutputBindingInfo {
 export interface NativeAreaEstimate {
   state: 'loading' | 'ready' | 'unavailable' | 'error';
   maxPixels?: number | null;
+  vramMaxPixels?: number | null;
+  vramError?: string | null;
 }
 
 interface SchemaFormProps {
@@ -654,7 +656,7 @@ const PAIR_NAMES: Record<string, { names: [[string, string], [string, string]]; 
 };
 
 function NativePixelLimit({value, mode, estimate, english, label, onChange, onModeChange, invalid}: {
-  value: number | string; mode: 'auto' | 'custom'; estimate?: NativeAreaEstimate; english: boolean; label: string;
+  value: number | string; mode: 'auto' | 'auto_vram' | 'custom'; estimate?: NativeAreaEstimate; english: boolean; label: string;
   onChange: (next: number | string) => void; onModeChange: (next: string, custom: number) => void; invalid: boolean;
 }) {
   const box = React.useRef<HTMLDivElement>(null);
@@ -671,12 +673,14 @@ function NativePixelLimit({value, mode, estimate, english, label, onChange, onMo
     }
   }, [mode]);
   const side = typeof value === 'number' && value > 0 ? Number(Math.sqrt(value).toFixed(2)) : '';
-  const amount = estimate?.state === 'ready' && typeof estimate.maxPixels === 'number' && estimate.maxPixels > 0
-    ? String(Number(Math.sqrt(estimate.maxPixels).toFixed(2)))
-    : estimate?.state === 'loading' ? (english ? 'calculating…' : '计算中…')
-    : estimate?.state === 'error' ? (english ? 'calculation failed' : '计算失败')
-    : estimate?.state === 'unavailable' ? (english ? 'unavailable' : '暂不可用')
-    : english ? 'from training images' : '随训练图片计算';
+  const amount = (vram: boolean) => {
+    const pixels = vram ? estimate?.vramMaxPixels : estimate?.maxPixels;
+    if (estimate?.state === 'ready' && typeof pixels === 'number' && pixels > 0) return String(Number(Math.sqrt(pixels).toFixed(2)));
+    if (estimate?.state === 'loading') return english ? 'calculating…' : '计算中…';
+    if (estimate?.state === 'error') return english ? 'calculation failed' : '计算失败';
+    if (estimate) return english ? 'unavailable' : '暂不可用';
+    return english ? 'not calculated' : '待计算';
+  };
   return <div ref={box} className="config-native-limit">
     {mode === 'custom' && <input ref={input} id="config-dataset.native_max_pixels" aria-label={label}
       aria-describedby="config-dataset.native_max_pixels-hint" aria-invalid={invalid} type="number" min={32} max={8192} step="any" value={side}
@@ -687,7 +691,11 @@ function NativePixelLimit({value, mode, estimate, english, label, onChange, onMo
       aria-label={mode === 'custom' ? configFieldLabel('dataset.native_max_pixels_mode', english ? 'Image area limit mode' : '图像面积上限模式', english) : label}
       className={mode === 'custom' ? 'config-native-limit-toggle' : undefined} anchorRef={box}
       aria-describedby="config-dataset.native_max_pixels-hint" value={mode}
-      options={[{value: 'auto', label: english ? `Auto (${amount})` : `自动（${amount}）`}, {value: 'custom', label: english ? 'Custom' : '自定义'}]}
+      options={[
+        {value: 'auto', label: english ? `Auto, resolution first (${amount(false)})` : `自动分辨率优先（${amount(false)}）`},
+        {value: 'auto_vram', label: english ? `Auto, VRAM first (${amount(true)})` : `自动显存优先（${amount(true)}）`},
+        {value: 'custom', label: english ? 'Custom' : '自定义'},
+      ]}
       onValueChange={next => {
         focusCustom.current = next === 'custom' && mode !== 'custom';
         onModeChange(next, validCustom ? value as number : lastCustom.current);
@@ -701,6 +709,23 @@ const nativePixelsHint = (value: unknown, english: boolean) => {
     ? `Up to ${(value / 1e6).toLocaleString('en', {maximumFractionDigits:2})} megapixels; keeps the image aspect ratio.`
     : `最多约 ${(value / 1e4).toLocaleString('zh-CN', {maximumFractionDigits:value < 1e4 ? 2 : 0})} 万像素，保持原图比例。`;
 };
+
+function nativeAreaHint(mode: unknown, estimate: NativeAreaEstimate | undefined, english: boolean) {
+  const vram = mode === 'auto_vram';
+  if (estimate?.state === 'error') return english ? 'Could not calculate the area limit. Recalculate the training plan.' : '面积上限计算失败，请重新计算训练计划。';
+  if (estimate?.state === 'loading') return english ? 'Calculating the area limit…' : '正在计算面积上限…';
+  if (vram && estimate?.vramError) return estimate.vramError;
+  if (estimate?.state === 'ready') {
+    const hint = nativePixelsHint(vram ? estimate.vramMaxPixels : estimate.maxPixels, english);
+    if (hint) return hint;
+  }
+  if (estimate) return vram
+    ? (english ? 'No VRAM-based area limit is available.' : '暂时无法按显存计算面积上限。')
+    : (english ? 'No area limit is available. Check the training images.' : '暂时无法计算面积上限，请检查训练图片。');
+  return vram
+    ? (english ? 'Adjusts the area limit for the selected GPUs and training settings.' : '按所选显卡和训练参数调整面积上限。')
+    : (english ? 'Calculated from training images, including longest-side limits and model alignment.' : '根据训练图片计算，已计入最长边限制与模型对齐。');
+}
 
 /** Nullable values keep their type; an empty numeric draft becomes null on blur. */
 const SchemaValueInput: React.FC<{
@@ -933,7 +958,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup) && !(compact && parentPath[0] === 'training' && groupFilter.includes('training'))) return null;
-    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto custom 自动 自定义' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
+    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto auto_vram custom 自动 分辨率优先 显存优先 resolution first VRAM first 自定义' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
     const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || fullPathKey === 'checkpoint.save_state_every_steps' && e.loc === 'checkpoint.save_state_every_epochs' || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode');
     const revealOutputName = versionSources && fullPathKey === 'checkpoint.name' && (editOutput === 'name' || !!errorItem || !!search.trim());
@@ -1006,7 +1031,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         onValueChange={next=>onChange(setNestedValue(value,path,next))}/>;
     } else if (fullPathKey === 'dataset.native_max_pixels') {
       control = <NativePixelLimit value={fieldValue} label={fieldLabel} english={english} invalid={!!errorItem}
-        mode={value.dataset?.native_max_pixels_mode === 'auto' ? 'auto' : 'custom'} estimate={nativeAreaEstimate}
+        mode={value.dataset?.native_max_pixels_mode === 'auto_vram' ? 'auto_vram' : value.dataset?.native_max_pixels_mode === 'auto' ? 'auto' : 'custom'} estimate={nativeAreaEstimate}
         onModeChange={(next, custom) => onChange(setNestedValue(value, ['dataset'], {...value.dataset, native_max_pixels_mode: next, native_max_pixels: custom}))}
         onChange={next => onChange(setNestedValue(value, path, next))}/>;
     } else if (compact && fullPathKey === 'dataset.resolutions') {
@@ -1319,11 +1344,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : fullPathKey === 'adapter.dora_compute_mode' ? fieldValue === 'comfyui'
         ? (english ? 'Reduces computation differences before and after weight export.' : '减少权重导出前后的计算差异。')
         : (english ? 'Computes DoRA in FP32.' : '使用 FP32 计算 DoRA。')
-      : fullPathKey === 'dataset.native_max_pixels' ? value.dataset?.native_max_pixels_mode === 'auto'
-        ? nativeAreaEstimate?.state === 'error' ? (english ? 'Could not calculate the area limit. Recalculate the training plan.' : '面积上限计算失败，请重新计算训练计划。')
-          : nativeAreaEstimate?.state === 'unavailable' ? (english ? 'No area limit is available. Check the training images.' : '暂时无法计算面积上限，请检查训练图片。')
-          : nativeAreaEstimate?.state === 'ready' ? nativePixelsHint(nativeAreaEstimate.maxPixels, english)
-          : (english ? 'Calculated from training images, including longest-side limits and model alignment.' : '根据训练图片计算，已计入最长边限制与模型对齐。')
+      : fullPathKey === 'dataset.native_max_pixels' ? ['auto', 'auto_vram'].includes(value.dataset?.native_max_pixels_mode)
+        ? nativeAreaHint(value.dataset?.native_max_pixels_mode, nativeAreaEstimate, english)
         : nativePixelsHint(fieldValue, english) || configFieldHint(fullPathKey, english)
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')
       : parentPath[0] === 'model' && key in MODEL_PATH_FIELDS ? modelPathHint(family?.name, key, english, preset)
@@ -1383,7 +1405,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       groups[groupName].fields.push(<div key="adapter.parameter_mode" id={fieldValue === 'full' ? 'field-adapter.rank' : 'field-adapter.parameter_mode'} data-testid="field-adapter.parameter_mode" data-field-path="adapter.parameter_mode" className={`config-field${fieldValue === 'full' && errorItem ? ' config-field-invalid' : ''}`}>
         <div className="config-field-heading">
           <label htmlFor={modeId}>{lokrModeLabel}</label>
-          <span className="config-field-reference"><code className="config-field-key" tabIndex={0} title={fullPathKey}>adapter.rank</code><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha. Low rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
+          <span className="config-field-reference"><code className="config-field-key" tabIndex={0} title={fullPathKey}>adapter.rank</code><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha.\nLow rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。\n低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
         </div>
         <div className="config-field-control"><StudioSelect id={modeId} aria-label={lokrModeLabel} disabled={readOnly} value={fieldValue === 'full' ? 'full' : 'low_rank'}
           aria-invalid={fieldValue === 'full' && !!errorItem}

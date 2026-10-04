@@ -28,6 +28,7 @@ from . import models as m
 from .context import ServiceContext
 from .db import new_id, now
 from .errors import ApiError, NotFound
+from .gpu_selection import GpuSelection, planning_devices, selection_error
 from .hardware import gpu_info
 
 router = APIRouter()
@@ -547,7 +548,13 @@ def config_import(body: ConfigImportBody) -> dict[str, Any]:
 
 @router.post("/config/export", response_model=ConfigText)
 def config_export(body: ConfigExportBody) -> dict[str, str]:
-    cfg = _validated_or_error(body.config)
+    from ypuddin.train.native_resolution import clear_native_vram_resolution
+
+    raw = body.config
+    checkpoint = raw.get("checkpoint")
+    if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
+        raw = clear_native_vram_resolution(raw)
+    cfg = _validated_or_error(raw)
     return {
         "text": dump_toml(cfg)
         if body.format == "toml"
@@ -555,7 +562,7 @@ def config_export(body: ConfigExportBody) -> dict[str, str]:
     }
 
 
-class ConfigBody(BaseModel):
+class ConfigBody(GpuSelection):
     config: dict[str, Any]
     dataset_ids: list[str] | None = None
     project_id: str | None = None
@@ -602,6 +609,11 @@ def config_inspect(body: ConfigBody) -> dict[str, Any]:
 def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     # plan keeps full validation errors while previewing independently valid data fields.
     cfg = _scoped_config(body, c)
+    from ypuddin.train.native_resolution import clear_native_vram_resolution
+
+    checkpoint = cfg.get("checkpoint")
+    if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
+        cfg = clear_native_vram_resolution(cfg)
     if body.dataset_ids is not None:
         from .routes_work import _get_dataset
 
@@ -657,12 +669,18 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
             },
         }
     gpus = gpu_info()
-    largest = max(gpus, key=lambda gpu: gpu.get("mem_total_mb") or 0) if gpus else None
+    loop = cfg.get("loop")
+    requested_count = loop.get("gpu_count", 1) if isinstance(loop, dict) else 1
+    requested_count = requested_count if type(requested_count) is int and requested_count > 0 else 1
+    if error := selection_error(body.gpu_devices, requested_count, gpus):
+        raise ApiError(error, code="job.gpu_selection", status=422)
+    selected = planning_devices(gpus, requested_count, body.gpu_devices)
+    target = min(selected, key=lambda gpu: gpu.get("mem_total_mb") or 0) if selected else None
     result = make_plan(
         cfg,
         index_db_path=c.service_cache_dir("index") / "index.sqlite",
-        gpu_total_mb=largest["mem_total_mb"] if largest else None,
-        device=largest["device"] if largest else "cpu",
+        gpu_total_mb=target["mem_total_mb"] if target else None,
+        device=target["device"] if target else "cpu",
     )
     from .memory_fit import capacity_shortfall, shortfall_error
     from .supervisor import training_device_error
@@ -673,7 +691,7 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
         result["ok"] = False
     # Starting would only wait forever, so the plan names the shortfall while it can still be fixed.
     if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
-        shortfall := capacity_shortfall((result.get("memory") or {}).get("peak_mb_estimate"), gpus, count)
+        shortfall := capacity_shortfall((result.get("memory") or {}).get("peak_mb_estimate"), selected, count)
     ):
         result["errors"].append(shortfall_error(shortfall))
         # The error supersedes the note that memory may be tight.
@@ -745,7 +763,9 @@ def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: boo
             code="config.invalid",
             details={"errors": [{"loc": "model.family", "msg": "family must be a string"}]},
         )
-    fragment = preserve_legacy_dora(body.config)
+    from ypuddin.train.native_resolution import clear_native_vram_resolution
+
+    fragment = clear_native_vram_resolution(preserve_legacy_dora(body.config))
     validated = _validated_or_error(deep_merge(initial_family_config(c, family), fragment))
     from ypuddin.config.optimizer_rules import canonical_optimizer_fragment
 
@@ -806,8 +826,14 @@ def delete_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]
 @router.post("/presets/{name}/resolve")
 def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     """Overlay ``body.config`` on the preset and return the fully resolved config (+ TOML)."""
+    from ypuddin.train.native_resolution import clear_native_vram_resolution
+
     preset = get_preset(name, c)
-    merged = deep_merge(TrainConfig().to_dict(), deep_merge(preset["config"], body.config))
+    raw = body.config
+    checkpoint = raw.get("checkpoint")
+    if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
+        raw = clear_native_vram_resolution(raw)
+    merged = deep_merge(TrainConfig().to_dict(), deep_merge(clear_native_vram_resolution(preset["config"]), raw))
     cfg, errors = _validate(merged)
     return {
         "ok": cfg is not None,

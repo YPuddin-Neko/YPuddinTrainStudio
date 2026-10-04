@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-HEADROOM = 0.95
+from ypuddin.train.memory_budget import HEADROOM
+
 # Free memory within this share of capacity means nothing else holds the device.
 IDLE_SHARE = 0.97
 

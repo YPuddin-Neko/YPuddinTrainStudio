@@ -405,8 +405,10 @@ class NativePlan(_Out):
     sizes: int
     logical_batches: int
     max_pixels: int
-    max_pixels_mode: Literal["auto", "custom"] = "custom"
+    max_pixels_mode: Literal["auto", "auto_vram", "custom"] = "custom"
     auto_max_pixels: int | None = None
+    auto_vram_max_pixels: int | None = None
+    auto_vram_error: str | None = None
     alignment: int
     batch_size: int
     forward_groups: int | None

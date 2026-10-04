@@ -174,6 +174,8 @@ class DataPlan:
                 "auto_max_pixels": self.native_auto_max_pixels,
                 "max_pixels_mode": self.native_max_pixels_mode,
             }
+            if self.native_max_pixels_mode == "auto_vram":
+                result["native"]["auto_vram_max_pixels"] = self.native_max_pixels
         return result
 
 
@@ -201,10 +203,14 @@ def expand_items(
     *, native_max_pixels: int | None = None,
 ) -> list[Item]:
     if native_max_pixels is None:
+        if ds.resolution_mode == "native" and ds.native_max_pixels_mode == "auto_vram":
+            native_max_pixels = ds.native_max_pixels_resolved
+            if native_max_pixels is None:
+                raise DataConfigError("dataset.native_max_pixels_mode", "显存优先的图像面积尚未确定，请先检查训练配置。")
         native_max_pixels = (
             _automatic_native_budget(records, ds, bm.align)
             if ds.resolution_mode == "native" and ds.native_max_pixels_mode == "auto" and records
-            else ds.native_max_pixels
+            else native_max_pixels if native_max_pixels is not None else ds.native_max_pixels
         )
     items: list[Item] = []
     names = cache_names(records)
@@ -235,7 +241,7 @@ def expand_items(
                         max_side=ds.native_max_side,
                         overflow=ds.native_overflow,
                         image_fit=ds.image_fit,
-                        auto_area=ds.native_max_pixels_mode == "auto",
+                        auto_area=ds.native_max_pixels_mode in {"auto", "auto_vram"},
                     )
                     if ds.resolution_mode == "native"
                     else None
@@ -522,9 +528,15 @@ def prepare_data_layout(
     *,
     index_db: IndexDB | None = None,
     progress: Callable[[str, int, int], None] | None = None,
+    allow_unresolved_native_vram: bool = False,
 ) -> DataLayout:
     """Shared preflight and train data selection; does not load models or create tensor caches."""
     ds = cfg.dataset
+    if (
+        ds.resolution_mode == "native" and ds.native_max_pixels_mode == "auto_vram"
+        and ds.native_max_pixels_resolved is None and not allow_unresolved_native_vram
+    ):
+        raise DataConfigError("dataset.native_max_pixels_mode", "显存优先的图像面积尚未确定，请先检查训练配置。")
     caption_formats = family_caption_formats(cfg.model.family)
     if not ds.sources:
         raise DataConfigError("dataset.sources", "请先添加训练图片或导入已有数据集。")
@@ -614,9 +626,13 @@ def prepare_data_layout(
         try:
             auto_pixels = _automatic_native_budget(records, ds, bm.align)
         except DataConfigError:
-            if ds.native_max_pixels_mode == "auto":
+            if ds.native_max_pixels_mode in {"auto", "auto_vram"}:
                 raise
-        resolved_pixels = auto_pixels if ds.native_max_pixels_mode == "auto" else ds.native_max_pixels
+        resolved_pixels = (
+            ds.native_max_pixels_resolved or auto_pixels
+            if ds.native_max_pixels_mode == "auto_vram"
+            else auto_pixels if ds.native_max_pixels_mode == "auto" else ds.native_max_pixels
+        )
     items = expand_items(records, sources, ds, bm, native_max_pixels=resolved_pixels)
     if not items:
         raise DataConfigError("dataset.sources", "没有生成任何训练样本，请检查训练尺寸和重复次数。")
@@ -691,7 +707,7 @@ def build_data(
                 "dataset": {
                     **ds.model_dump(
                         mode="json",
-                        exclude={"sources", "cache_dir", "num_workers"}
+                        exclude={"sources", "cache_dir", "num_workers", "native_max_pixels_resolved"}
                         | ({"image_fit"} if ds.image_fit == "crop" else set())
                         | ({"crop_anchor"} if ds.crop_anchor == "center" or ds.image_fit == "pad" else set())
                         | ({"native_max_pixels_mode"} if ds.native_max_pixels_mode == "custom" else set())
@@ -703,7 +719,7 @@ def build_data(
                         ),
                     ),
                     **({"native_max_pixels": layout.native_max_pixels}
-                       if ds.resolution_mode == "native" and ds.native_max_pixels_mode == "auto" else {}),
+                       if ds.resolution_mode == "native" and ds.native_max_pixels_mode in {"auto", "auto_vram"} else {}),
                 },
                 "validation": cfg.validation.model_dump(mode="json", exclude={"sources"}),
                 "validation_content": [item.record.content_hash for item in layout.validation_items],

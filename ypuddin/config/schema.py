@@ -218,10 +218,15 @@ class DatasetConfig(_Strict):
         help="选择裁切时保留的位置。上中贴住原图顶部，从下方裁掉多余部分，适合保留头部；左右位置同理。原生尺寸与分桶裁切均生效，图片与遮罩使用相同位置。默认居中。",
         ui_=ui("dataset", order=7, control="select", show_when="dataset.image_fit == 'crop'"),
     )
-    native_max_pixels_mode: Literal["auto", "custom"] = F(
+    native_max_pixels_mode: Literal["auto", "auto_vram", "custom"] = F(
         "custom",
-        help="自动按实际训练图片、最长边限制和模型对齐要求计算面积上限；自定义使用填写的像素上限。",
+        help="分辨率优先按实际训练图片、最长边限制和模型对齐要求计算面积上限；显存优先在该上限内按显存估算选择面积；手动使用填写的像素上限。",
         ui_=ui("dataset", order=10, control="select", show_when="dataset.resolution_mode == 'native'"),
+    )
+    native_max_pixels_resolved: int | None = F(
+        None, ge=1, le=67_108_864,
+        help="显存优先任务已确定的图像面积上限；恢复训练沿用此值。",
+        ui_={"x-ui": {"hidden": True}},
     )
     native_max_pixels: int = F(
         1_048_576,

@@ -3330,6 +3330,8 @@ export interface components {
         };
         /** ConfigBody */
         ConfigBody: {
+            /** Gpu Devices */
+            gpu_devices?: string[];
             /** Config */
             config: {
                 [key: string]: unknown;
@@ -3558,11 +3560,16 @@ export interface components {
             crop_anchor: "top_left" | "top" | "top_right" | "left" | "center" | "right" | "bottom_left" | "bottom" | "bottom_right";
             /**
              * Native Max Pixels Mode
-             * @description 自动按实际训练图片、最长边限制和模型对齐要求计算面积上限；自定义使用填写的像素上限。
+             * @description 分辨率优先按实际训练图片、最长边限制和模型对齐要求计算面积上限；显存优先在该上限内按显存估算选择面积；手动使用填写的像素上限。
              * @default custom
              * @enum {string}
              */
-            native_max_pixels_mode: "auto" | "custom";
+            native_max_pixels_mode: "auto" | "auto_vram" | "custom";
+            /**
+             * Native Max Pixels Resolved
+             * @description 显存优先任务已确定的图像面积上限；恢复训练沿用此值。
+             */
+            native_max_pixels_resolved?: number | null;
             /**
              * Native Max Pixels
              * @description 原生模式单图及一次计算的像素上限。最长边限制和模型对齐同时生效，调大通常需要更多显存。
@@ -5906,9 +5913,13 @@ export interface components {
              * @default custom
              * @enum {string}
              */
-            max_pixels_mode: "auto" | "custom";
+            max_pixels_mode: "auto" | "auto_vram" | "custom";
             /** Auto Max Pixels */
             auto_max_pixels?: number | null;
+            /** Auto Vram Max Pixels */
+            auto_vram_max_pixels?: number | null;
+            /** Auto Vram Error */
+            auto_vram_error?: string | null;
             /** Alignment */
             alignment: number;
             /** Batch Size */

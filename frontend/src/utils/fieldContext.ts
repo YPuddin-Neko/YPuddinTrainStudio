@@ -186,8 +186,8 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       ]);
     case 'loop.mixed_precision':
       return runtime === 'cpu'
-        ? text('CPU 上选 BF16 会用 BF16 计算，其他选项都按 FP32 计算。不改变权重本身的精度。', 'On a CPU, BF16 computes in BF16 and the other choices compute in FP32. Weight precision is unchanged.')
-        : text('训练运算的自动混合精度，默认 BF16；FP16 需要显卡和模型支持。关闭只停用自动混合精度，不改变权重本身的精度；底模和导出文件的精度分别设置。可复现训练以参数检查显示的设置为准。', 'Automatic mixed precision for training, BF16 by default; FP16 needs GPU and model support. Turning it off disables only mixed precision, not weight precision; base-model and export precision are set separately. Reproducible training uses the values the parameter check shows.');
+        ? text('CPU 上选 BF16 会用 BF16 计算。\n其他选项都按 FP32 计算。\n不改变权重本身的精度。', 'On a CPU, BF16 computes in BF16.\nThe other choices compute in FP32.\nWeight precision is unchanged.')
+        : text('训练运算的自动混合精度，默认 BF16。\nFP16 需要显卡和模型支持。\n关闭只停用自动混合精度，不改变权重本身的精度；底模和导出文件的精度分别设置。\n可复现训练以参数检查显示的设置为准。', 'Automatic mixed precision for training, BF16 by default.\nFP16 needs GPU and model support.\nTurning it off disables only mixed precision, not weight precision; base-model and export precision are set separately.\nReproducible training uses the values the parameter check shows.');
     case 'loop.distributed_strategy':
       return join([
         text('数据并行（DDP）：每张卡保留完整模型，并行处理不同数据，通常比单卡每秒处理更多图片；每卡仍需容纳完整模型，加速幅度取决于卡间通信和负载。', 'Data parallel (DDP): each GPU holds the whole model and processes different data in parallel, usually handling more images per second than one GPU. Each GPU must still fit the whole model; speedup depends on communication and workload.'),

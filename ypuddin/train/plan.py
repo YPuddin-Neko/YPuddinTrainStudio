@@ -18,7 +18,7 @@ from ypuddin.config import DatasetConfig, LoopConfig, ModelConfig, TrainConfig, 
 from ypuddin.config.compute_policy import resolve_training_compute_config, validate_resume_compute_policy
 from ypuddin.config.issues import validation_issues
 from ypuddin.data import BucketBatchSampler, IndexDB
-from ypuddin.data.dataset import DataConfigError, item_geometry, prepare_data_layout
+from ypuddin.data.dataset import DataConfigError, DataLayout, item_geometry, prepare_data_layout
 from ypuddin.data.native import NativeBatchSampler, microbatch_indices, native_size
 from ypuddin.models import get_family
 from ypuddin.models.base import LatentSpec
@@ -27,7 +27,9 @@ from ypuddin.runtime_profiles import current_profile
 
 from .adapter_memory import adapter_memory
 from .advice import value_advice
+from .memory_budget import HEADROOM
 from .metal_compute import resolve_metal_attention_runtime, validate_metal_attention_resume
+from .native_vram import NativeVramGeometry, maximum_fitting_pixels
 from .optimizer_memory import optimizer_state_bytes
 from .vae_memory import (
     VaeMemory,
@@ -230,6 +232,8 @@ def _append_data_plan(
     seed: int | None,
     index_db_path: str | Path | None,
     image_shapes: dict[tuple[int, int], dict[str, Any]] | None = None,
+    prepared_layout: DataLayout | None = None,
+    layout_result: list[DataLayout] | None = None,
 ) -> dict[tuple[int, int], int]:
     """Share exact image selection and geometry between full plans and incomplete drafts."""
     ds = cfg.dataset
@@ -239,8 +243,12 @@ def _append_data_plan(
     index = None
     layout = None
     try:
-        index = IndexDB(index_db_path) if index_db_path else None
-        layout = prepare_data_layout(cfg, latent, index_db=index)
+        index = IndexDB(index_db_path) if index_db_path and prepared_layout is None else None
+        layout = prepared_layout or prepare_data_layout(
+            cfg, latent, index_db=index, allow_unresolved_native_vram=True,
+        )
+        if layout_result is not None:
+            layout_result.append(layout)
         records, items = layout.records, layout.items
         validation_images = len(layout.validation_items)
         if image_shapes is not None:
@@ -259,7 +267,7 @@ def _append_data_plan(
         if index is not None:
             index.close()
     if layout is None and (isinstance(cfg, _LayoutInputs) or (
-        ds.resolution_mode == "native" and ds.native_max_pixels_mode == "auto"
+        ds.resolution_mode == "native" and ds.native_max_pixels_mode in {"auto", "auto_vram"}
     )):
         return {}
     max_pixels = layout.native_max_pixels if layout and layout.native_max_pixels is not None else ds.native_max_pixels
@@ -453,7 +461,7 @@ def _append_data_plan(
                     max_side=ds.native_max_side,
                     overflow=ds.native_overflow,
                     image_fit=ds.image_fit,
-                    auto_area=ds.native_max_pixels_mode == "auto",
+                    auto_area=ds.native_max_pixels_mode in {"auto", "auto_vram"},
                 ).downscaled
                 for record in records
             )
@@ -468,6 +476,8 @@ def _append_data_plan(
             "max_pixels": max_pixels,
             "max_pixels_mode": ds.native_max_pixels_mode,
             "auto_max_pixels": layout.native_auto_max_pixels if layout else None,
+            "auto_vram_max_pixels": None,
+            "auto_vram_error": "请完善训练参数后计算显存面积上限。",
             "alignment": latent.align,
             "batch_size": ds.batch_size,
             "forward_groups": sum(forward_counts.values()) if seed is not None else None,
@@ -501,6 +511,7 @@ def _append_data_plan(
 def _preview_invalid_config(
     raw: dict[str, Any], out: dict[str, Any], *, index_db_path: str | Path | None,
     image_shapes: dict[tuple[int, int], dict[str, Any]] | None = None,
+    layout_result: list[DataLayout] | None = None,
 ) -> None:
     """Add data-only results without repairing the draft or weakening its training errors."""
     model = raw.get("model")
@@ -551,6 +562,7 @@ def _preview_invalid_config(
         seed=seed,
         index_db_path=index_db_path,
         image_shapes=image_shapes,
+        layout_result=layout_result,
     )
 
 
@@ -593,6 +605,7 @@ def plan(
     draft = False
     memory_issue = None
     image_shapes: dict[tuple[int, int], dict[str, Any]] = {}
+    data_layouts: list[DataLayout] = []
     try:
         cfg = TrainConfig.model_validate(cfg)
     except ValidationError as e:
@@ -600,7 +613,9 @@ def plan(
         raw = cfg.to_dict() if isinstance(cfg, TrainConfig) else cfg
         if not isinstance(raw, dict):
             return out
-        _preview_invalid_config(raw, out, index_db_path=index_db_path, image_shapes=image_shapes)
+        _preview_invalid_config(
+            raw, out, index_db_path=index_db_path, image_shapes=image_shapes, layout_result=data_layouts,
+        )
         cfg, field_issues = _model_plan_draft(raw)
         draft = True
         for name in ("model", "training", "adapter", "memory", "loop", "dataset"):
@@ -613,6 +628,20 @@ def plan(
                 (issue for issue in out["errors"] if issue["loc"].startswith(("dataset", "validation"))),
                 out["errors"][0],
             )
+    try:
+        if (
+            cfg.dataset is not None and cfg.dataset.resolution_mode == "native"
+            and cfg.dataset.native_max_pixels_mode == "auto_vram"
+            and cfg.checkpoint is not None and cfg.checkpoint.resume
+        ):
+            from .native_resolution import resolve_native_vram_config
+
+            cfg = resolve_native_vram_config(cfg, device=device or "cpu")
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        issue = {"loc": "checkpoint.resume", "msg": str(error)}
+        out["errors"].append(issue)
+        out.update(ok=False, memory={"unavailable_issue": issue})
+        return out
     try:
         family = get_family(cfg.model.family)
     except KeyError as e:
@@ -775,6 +804,7 @@ def plan(
             seed=cfg.loop.seed,
             index_db_path=index_db_path,
             image_shapes=image_shapes,
+            layout_result=data_layouts,
         )
 
     if native and out.get("native") is not None:
@@ -876,7 +906,7 @@ def plan(
                     "by_algo": aset.summary()["by_algo"],
                     "training_mode": cfg.training.mode,
                 }
-                if native and ds.native_max_pixels_mode == "auto" and out.get("native") is None:
+                if native and ds.native_max_pixels_mode in {"auto", "auto_vram"} and out.get("native") is None:
                     error_loc = "dataset.native_max_pixels_mode"
                     raise ValueError("无法自动计算图像面积上限，请检查训练图片")
                 if full_training:
@@ -968,9 +998,6 @@ def plan(
                             "msg": f"cannot swap more than {len(layout.blocks)} blocks",
                         }
                     )
-                act_by_bucket = []
-                act_peak = 0.0  # unrounded, so the estimate matches the per-mode estimates exactly
-                auxiliary_act_peak = 0.0
                 # Peak activations of the largest bucket under each checkpointing mode.
                 # Only the modes this family implements are estimated or suggested. A mode it lacks
                 # runs as block checkpointing (Krea 2) or is rejected by the family's own checks.
@@ -978,7 +1005,6 @@ def plan(
                     "none",
                     *(mode for mode in ("block", "unsloth") if mode in family.spec.checkpointing_modes),
                 )
-                act_by_mode = dict.fromkeys(supported_modes, 0.0)
                 current_mode = (
                     cfg.memory.activation_checkpointing
                     if cfg.memory.activation_checkpointing in supported_modes
@@ -1015,31 +1041,6 @@ def plan(
                     mode: (fusion[mode]["retained_bytes"] + fusion[mode]["workspace_bytes"]) / 2**20
                     for mode in supported_modes
                 }
-                for (w, h), _n in sorted(counts.items()) or [((r, r), 0) for r in ds.resolutions]:
-                    tokens = (w // family.spec.latent.align) * (h // family.spec.latent.align)
-                    tokens = family.training_tokens_for_plan(tokens)
-                    hidden = (
-                        getattr(backbone, "dim", None)
-                        or getattr(backbone, "model_channels", None)
-                        or getattr(backbone, "inner_dim", None)
-                        or getattr(getattr(backbone, "config", None), "features", 2048)
-                    )
-                    activation_bytes = torch.empty((), device="meta", dtype=activation_dtype).element_size()
-                    forward_batch = (
-                        min(ds.batch_size, max(1, ds.native_max_pixels // (w * h)))
-                        if native
-                        else ds.batch_size
-                    )
-                    unit_mb = tokens * (1 if whole else hidden) * activation_bytes * forward_batch / 2**20
-                    auxiliary_act_peak = max(
-                        auxiliary_act_peak,
-                        family.auxiliary_activation_bytes_for_plan(backbone, forward_batch, activation_dtype) / 2**20,
-                    )
-                    for mode in act_by_mode:
-                        act_by_mode[mode] = max(act_by_mode[mode], unit_mb * block_units[mode])
-                    act = unit_mb * block_units[current_mode]
-                    act_by_bucket.append({"w": w, "h": h, "mb": round(act)})
-                    act_peak = max(act_peak, act)
                 swapped_mb = 0.0
                 swap_staging_mb = 0.0
                 if layout and cfg.memory.blocks_to_swap and layout.blocks and device_type in (None, "cuda"):
@@ -1073,7 +1074,6 @@ def plan(
                         sum(_frozen_storage_bytes(module) for module in text_modules.values()) / 2**20
                     )
                 vae = _plan_vae(cfg, compute_dtype, device)
-                cache_batches, online_batches = _vae_batches(image_shapes, ds, cfg.memory.vae_encode_batch_size)
                 latent_encoder_mb = latent_workspace_mb = 0.0
                 if vae is not None and not ds.cache_latents:
                     # Online encoding loads the VAE with the first batch and keeps it for the run.
@@ -1098,71 +1098,199 @@ def plan(
                     + communication_mb
                     + optimizer_workspace_mb
                 )
-                training_live = training_base + act_peak + auxiliary_act_peak + fusion_mb[current_mode]
-                training_peak = _training_peak_mb(training_live)
-                cache_phases = family.cache_memory_estimate(cfg, compute_dtype)
-                # The VAE's own phases: caching with nothing else on the device, or encoding and
-                # preview decoding beside the training state (no activations; gradients are
-                # cleared before previews).
-                image_encoding = preview_decoding = None
-                vae_phases = []
-                if vae is not None:
-                    encode_phase = latent_cache_phase if ds.cache_latents else online_encoding_phase
-                    batches = cache_batches if ds.cache_latents else online_batches
-                    image_encoding = encode_phase(vae, batches)
-                    single = encode_phase(vae, dict.fromkeys(batches, 1))
-                    if single is not None and single["workspace_mb_estimate"] < image_encoding["workspace_mb_estimate"]:
-                        image_encoding["workspace_reductions_mb"]["memory.vae_encode_batch_size"] = single[
-                            "workspace_mb_estimate"
-                        ]
-                if image_encoding is not None and ds.cache_latents:
-                    image_encoding["mode"] = "cached"
-                    cache_phases["latent_cache"] = image_encoding["peak_mb_estimate"]
-                elif image_encoding is not None:
-                    image_encoding["mode"] = "online"
-                    image_encoding["peak_mb_estimate"] = round(
-                        training_base - optimizer_workspace_mb - dequant_mb
-                        + image_encoding["workspace_mb_estimate"] + 512
-                    )
-                    vae_phases.append(image_encoding["peak_mb_estimate"])
-                if vae is not None and (previews := preview_shapes(cfg, family.spec.latent.align)):
-                    preview_decoding = preview_decoding_phase(vae, previews)
-                    preview_decoding["peak_mb_estimate"] = round(
-                        training_base
-                        - gradients_mb
-                        - optimizer_workspace_mb
-                        - dequant_mb
-                        + (vae.weights_mb if ds.cache_latents else 0.0)
-                        + preview_decoding["workspace_mb_estimate"]
-                        + 512
-                    )
-                    vae_phases.append(preview_decoding["peak_mb_estimate"])
-                peak = max([training_peak, *cache_phases.values(), *vae_phases])
+                fixed_cache_phases = family.cache_memory_estimate(cfg, compute_dtype)
+                previews = preview_shapes(cfg, family.spec.latent.align)
                 if initialization_peak is not None:
-                    # Text may stay resident through backbone placement when
-                    # online encoding is selected without offloading.
                     initialization_peak += text_encoder_mb
-                    peak = max(peak, initialization_peak)
-                if image_encoding is not None and image_encoding["mode"] == "online":
-                    latent_workspace_mb = image_encoding["workspace_mb_estimate"]
-                # The overall peak after each VAE setting that lowers one of its phases.
-                vae_setting_peaks = {}
-                for path in dict.fromkeys(
-                    path
-                    for phase in (image_encoding, preview_decoding)
-                    if phase is not None
-                    for path in phase["workspace_reductions_mb"]
-                ):
-                    values = [
-                        training_peak,
-                        initialization_peak or 0,
-                        *(value for key, value in cache_phases.items() if key != "latent_cache"),
-                    ]
-                    for phase in (image_encoding, preview_decoding):
-                        if phase is not None:
-                            reduced = phase["workspace_reductions_mb"].get(path, phase["workspace_mb_estimate"])
-                            values.append(phase["peak_mb_estimate"] - phase["workspace_mb_estimate"] + reduced)
-                    vae_setting_peaks[path] = round(max(values))
+                fixed_preview = None
+                if vae is not None and previews:
+                    fixed_preview = preview_decoding_phase(vae, previews)
+                    fixed_preview["peak_mb_estimate"] = round(
+                        training_base - gradients_mb - optimizer_workspace_mb - dequant_mb
+                        + (vae.weights_mb if ds.cache_latents else 0.0)
+                        + fixed_preview["workspace_mb_estimate"] + 512
+                    )
+                auxiliary_by_batch = {}
+
+                def evaluate_sizing(counts, image_shapes, ds):
+                    act_by_bucket = []
+                    act_peak = auxiliary_act_peak = 0.0
+                    act_by_mode = dict.fromkeys(supported_modes, 0.0)
+                    cache_batches, online_batches = _vae_batches(image_shapes, ds, cfg.memory.vae_encode_batch_size)
+                    for (w, h), _n in sorted(counts.items()) or [((r, r), 0) for r in ds.resolutions]:
+                        tokens = (w // family.spec.latent.align) * (h // family.spec.latent.align)
+                        tokens = family.training_tokens_for_plan(tokens)
+                        hidden = (
+                            getattr(backbone, "dim", None)
+                            or getattr(backbone, "model_channels", None)
+                            or getattr(backbone, "inner_dim", None)
+                            or getattr(getattr(backbone, "config", None), "features", 2048)
+                        )
+                        activation_bytes = torch.empty((), device="meta", dtype=activation_dtype).element_size()
+                        forward_batch = (
+                            min(ds.batch_size, max(1, ds.native_max_pixels // (w * h)))
+                            if native
+                            else ds.batch_size
+                        )
+                        unit_mb = tokens * (1 if whole else hidden) * activation_bytes * forward_batch / 2**20
+                        if forward_batch not in auxiliary_by_batch:
+                            auxiliary_by_batch[forward_batch] = family.auxiliary_activation_bytes_for_plan(
+                                backbone, forward_batch, activation_dtype,
+                            ) / 2**20
+                        auxiliary_act_peak = max(auxiliary_act_peak, auxiliary_by_batch[forward_batch])
+                        for mode in act_by_mode:
+                            act_by_mode[mode] = max(act_by_mode[mode], unit_mb * block_units[mode])
+                        act = unit_mb * block_units[current_mode]
+                        act_by_bucket.append({"w": w, "h": h, "mb": round(act)})
+                        act_peak = max(act_peak, act)
+                    training_live = training_base + act_peak + auxiliary_act_peak + fusion_mb[current_mode]
+                    training_peak = _training_peak_mb(training_live)
+                    cache_phases = dict(fixed_cache_phases)
+                    # The VAE's own phases: caching with nothing else on the device, or encoding and
+                    # preview decoding beside the training state (no activations; gradients are
+                    # cleared before previews).
+                    image_encoding = preview_decoding = None
+                    vae_phases = []
+                    if vae is not None:
+                        encode_phase = latent_cache_phase if ds.cache_latents else online_encoding_phase
+                        batches = cache_batches if ds.cache_latents else online_batches
+                        image_encoding = encode_phase(vae, batches)
+                        single = encode_phase(vae, dict.fromkeys(batches, 1))
+                        if single is not None and single["workspace_mb_estimate"] < image_encoding["workspace_mb_estimate"]:
+                            image_encoding["workspace_reductions_mb"]["memory.vae_encode_batch_size"] = single[
+                                "workspace_mb_estimate"
+                            ]
+                    if image_encoding is not None and ds.cache_latents:
+                        image_encoding["mode"] = "cached"
+                        cache_phases["latent_cache"] = image_encoding["peak_mb_estimate"]
+                    elif image_encoding is not None:
+                        image_encoding["mode"] = "online"
+                        image_encoding["peak_mb_estimate"] = round(
+                            training_base - optimizer_workspace_mb - dequant_mb
+                            + image_encoding["workspace_mb_estimate"] + 512
+                        )
+                        vae_phases.append(image_encoding["peak_mb_estimate"])
+                    if fixed_preview is not None:
+                        preview_decoding = fixed_preview
+                        vae_phases.append(preview_decoding["peak_mb_estimate"])
+                    peak = max([training_peak, *cache_phases.values(), *vae_phases])
+                    if initialization_peak is not None:
+                        peak = max(peak, initialization_peak)
+                    latent_workspace_mb = (
+                        image_encoding["workspace_mb_estimate"]
+                        if image_encoding is not None and image_encoding["mode"] == "online" else 0.0
+                    )
+                    # The overall peak after each VAE setting that lowers one of its phases.
+                    vae_setting_peaks = {}
+                    for path in dict.fromkeys(
+                        path
+                        for phase in (image_encoding, preview_decoding)
+                        if phase is not None
+                        for path in phase["workspace_reductions_mb"]
+                    ):
+                        values = [
+                            training_peak,
+                            initialization_peak or 0,
+                            *(value for key, value in cache_phases.items() if key != "latent_cache"),
+                        ]
+                        for phase in (image_encoding, preview_decoding):
+                            if phase is not None:
+                                reduced = phase["workspace_reductions_mb"].get(path, phase["workspace_mb_estimate"])
+                                values.append(phase["peak_mb_estimate"] - phase["workspace_mb_estimate"] + reduced)
+                        vae_setting_peaks[path] = round(max(values))
+                    return {
+                        "act_by_bucket": act_by_bucket,
+                        "auxiliary_act_peak": auxiliary_act_peak,
+                        "act_by_mode": act_by_mode,
+                        "training_live": training_live,
+                        "training_peak": training_peak,
+                        "cache_phases": cache_phases,
+                        "image_encoding": image_encoding,
+                        "preview_decoding": preview_decoding,
+                        "vae_phases": vae_phases,
+                        "peak": peak,
+                        "latent_workspace_mb": latent_workspace_mb,
+                        "vae_setting_peaks": vae_setting_peaks,
+                    }
+
+                if native and out.get("native") is not None:
+                    native_out = out["native"]
+                    resolved = ds.native_max_pixels_resolved if ds.native_max_pixels_mode == "auto_vram" else None
+                    chosen = resolved
+                    selection_error = None
+                    if resolved is None:
+                        if device_type not in {"cuda", "mps"}:
+                            selection_error = "请先选择训练显卡，再计算显存面积上限。"
+                        elif type(gpu_total_mb) not in (int, float) or not math.isfinite(gpu_total_mb) or gpu_total_mb <= 0:
+                            selection_error = "无法读取训练显卡的显存容量。"
+                        elif cfg.training.train_text_encoder:
+                            selection_error = "训练文本编码器时无法计算显存面积上限，请选择按图片尺寸自动计算或自定义。"
+                        elif fusion["unsupported"]:
+                            selection_error = "当前适配器无法估算完整显存占用，请选择按图片尺寸自动计算或自定义。"
+                        elif vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2"}:
+                            selection_error = "无法估算当前 VAE 的显存占用，请检查模型文件或使用自定义面积上限。"
+                        elif not data_layouts or native_out["auto_max_pixels"] is None:
+                            selection_error = "无法读取训练图片尺寸，请检查数据集。"
+                        else:
+                            geometry = NativeVramGeometry(data_layouts[0], ds)
+                            fixed_peak = max(
+                                _training_peak_mb(training_base + fusion_mb[current_mode]),
+                                initialization_peak or 0, *fixed_cache_phases.values(),
+                                fixed_preview["peak_mb_estimate"] if fixed_preview else 0,
+                                vae.weights_mb + 512 if vae is not None and ds.cache_latents else 0,
+                            )
+                            budget = gpu_total_mb * HEADROOM
+
+                            def candidate_peak(pixels, candidate_counts, candidate_images):
+                                candidate_ds = ds.model_copy(update={"native_max_pixels": pixels})
+                                return round(evaluate_sizing(candidate_counts, candidate_images, candidate_ds)["peak"])
+
+                            def training_lower_bound(pixels, candidate_counts, candidate_images):
+                                candidate_ds = ds.model_copy(update={"native_max_pixels": pixels, "batch_size": 1})
+                                return round(evaluate_sizing(candidate_counts, candidate_images, candidate_ds)["training_peak"])
+
+                            if round(fixed_peak) <= budget:
+                                chosen = maximum_fitting_pixels(
+                                    geometry, native_out["auto_max_pixels"], candidate_peak, budget,
+                                    training_lower_bound=training_lower_bound,
+                                )
+                            if chosen is None:
+                                selection_error = (
+                                    "当前配置在显存预算内无法保留训练图片尺寸；请允许超限图片等比缩小，或调整训练参数。"
+                                    if ds.native_overflow == "error"
+                                    else "当前训练配置超出显存预算，降低图像面积仍无法容纳；请调整批大小、适配器或显存设置。"
+                                )
+                    native_out.update(auto_vram_max_pixels=chosen, auto_vram_error=selection_error)
+                    if ds.native_max_pixels_mode == "auto_vram":
+                        if selection_error is not None:
+                            out["errors"].append({"loc": "dataset.native_max_pixels_mode", "msg": selection_error})
+                        elif chosen is not None and data_layouts:
+                            ds = ds.model_copy(update={"native_max_pixels": chosen, "native_max_pixels_resolved": chosen})
+                            cfg = cfg.model_copy(update={"dataset": ds})
+                            geometry = NativeVramGeometry(data_layouts[0], ds)
+                            data_layout = geometry.resolved_layout(chosen)
+                            image_shapes.clear()
+                            out["warnings"] = [w for w in out["warnings"] if w.get("code") not in {
+                                "images.padding", "native.execution", "captions.missing", "buckets.small",
+                            }]
+                            counts = _append_data_plan(
+                                out, cfg, family.spec.latent, loop=cfg.loop, seed=cfg.loop.seed,
+                                index_db_path=None, image_shapes=image_shapes, prepared_layout=data_layout,
+                            )
+                            out["native"].update(auto_vram_max_pixels=chosen, auto_vram_error=None)
+                sized = evaluate_sizing(counts, image_shapes, ds)
+                act_by_bucket = sized["act_by_bucket"]
+                auxiliary_act_peak = sized["auxiliary_act_peak"]
+                act_by_mode = sized["act_by_mode"]
+                training_live = sized["training_live"]
+                training_peak = sized["training_peak"]
+                cache_phases = sized["cache_phases"]
+                image_encoding = sized["image_encoding"]
+                preview_decoding = sized["preview_decoding"]
+                vae_phases = sized["vae_phases"]
+                peak = sized["peak"]
+                latent_workspace_mb = sized["latent_workspace_mb"]
+                vae_setting_peaks = sized["vae_setting_peaks"]
                 memory = {
                     "estimate_scope": "per_device",
                     "communication_mb_estimate": round(communication_mb, 1),
@@ -1318,5 +1446,14 @@ def plan(
         or cfg.training.train_text_encoder
         else "cached"
     )
+    if native and cfg.dataset.native_max_pixels_mode == "auto_vram":
+        native_result = out.get("native") or {}
+        if native_result.get("auto_vram_max_pixels") is None:
+            issue = {
+                "loc": "dataset.native_max_pixels_mode",
+                "msg": native_result.get("auto_vram_error") or "无法计算显存面积上限，请检查训练参数和数据集。",
+            }
+            if not any(error["loc"] == issue["loc"] for error in out["errors"]):
+                out["errors"].append(issue)
     out["ok"] = not out["errors"]
     return out

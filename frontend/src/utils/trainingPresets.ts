@@ -3,6 +3,7 @@ import { mergeConfig } from './config';
 const VERSION_FIELDS = [
   ['dataset', 'sources'],
   ['dataset', 'cache_dir'],
+  ['dataset', 'native_max_pixels_resolved'],
   ['validation', 'sources'],
   ['checkpoint', 'output_dir'],
   ['checkpoint', 'resume'],
@@ -47,6 +48,10 @@ export function applyTrainingPreset(current: Record<string, any>, preset: Record
     for (const field of PRESET_MODEL_FIELDS) delete reusable.model[field];
   }
   const merged = mergeConfig(current, reusable);
+  if (!current.checkpoint?.resume && merged.dataset?.native_max_pixels_resolved != null) {
+    merged.dataset = { ...merged.dataset };
+    delete merged.dataset.native_max_pixels_resolved;
+  }
   if (current.model?.family) merged.model = { ...merged.model, family: current.model.family };
   return merged;
 }

@@ -122,7 +122,7 @@ _LEGACY_VALUES: dict[str, dict[str, Any]] = {
     "checkpoint": {"save_state_every_epochs": None, "save_training_metadata": False, "state_dir": None},
     "logging": {"output_dir": None},
     # Center keeps the pixel geometry of older checkpoints.
-    "dataset": {"crop_anchor": "center", "native_max_pixels_mode": "custom"},
+    "dataset": {"crop_anchor": "center", "native_max_pixels_mode": "custom", "native_max_pixels_resolved": None},
     # SDXL's original single CLIP context and cache behavior.
     "model": {"sdxl_max_token_length": 75},
     # Without the switch, runs used nondeterministic kernels; true stays visible.

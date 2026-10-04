@@ -34,7 +34,7 @@ from .db import new_id, now
 from .environment import maintenance_reason
 from .errors import ApiError, NotFound
 from .gpu_metrics import device_metric_series
-from .gpu_selection import GpuSelection, selection_error
+from .gpu_selection import GpuSelection, planning_devices, selection_error
 from .hardware import gpu_info
 from .import_progress import ImportProgress
 from .job_logs import failure_record_bytes, missing_failure_record, read_log
@@ -487,6 +487,9 @@ def get_project_config(
 def put_project_config(
     pid: str, body: dict[str, Any], c: ServiceContext = Depends(ctx), version_id: str | None = None
 ) -> dict[str, Any]:
+    from ypuddin.train.native_resolution import clear_native_vram_resolution
+
+    body = clear_native_vram_resolution(body)
     reindex = []
     with c.db.lock:
         version = assert_version_writable(c, pid, version_id)
@@ -2081,6 +2084,11 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         config = get_project_config(body.project_id, c, vid)
     if config is None:
         raise ApiError("config is required", code="job.no_config")
+    from ypuddin.train.native_resolution import clear_native_vram_resolution, resolve_native_vram_config
+
+    checkpoint = config.get("checkpoint")
+    if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
+        config = clear_native_vram_resolution(config)
     if body.project_id:
         from .output_binding import bind_output_name
         from .source_roles import normalize_source_roles
@@ -2141,6 +2149,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
             "sampling": {"output_dir": str(samples_dir)},
         },
     )
+    training_loop = config.get("loop", {})
     if body.type == "cache":
         # Cache preparation has its own single-device worker, even when the
         # project's following training run is configured for several GPUs.
@@ -2169,28 +2178,34 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         ) from e
     from ypuddin.train.plan import plan
 
+    planning_cfg = cfg
+    if body.type == "cache" and cfg.dataset.resolution_mode == "native" and cfg.dataset.native_max_pixels_mode == "auto_vram":
+        # Cache the exact canvases the later training run uses, including its multi-GPU budget.
+        try:
+            planning_cfg = TrainConfig.model_validate({**cfg.to_dict(), "loop": training_loop})
+        except ValidationError as e:
+            raise ApiError("invalid config", code="config.invalid", details={"errors": validation_issues(e)}) from e
     devices = gpu_info()
     from .supervisor import training_device_error
 
-    if error := training_device_error(cfg.loop.gpu_count, devices, strategy=cfg.loop.distributed_strategy):
+    if error := training_device_error(planning_cfg.loop.gpu_count, devices, strategy=planning_cfg.loop.distributed_strategy):
         raise ApiError(
             error,
             code="config.invalid",
             details={"errors": [{"loc": "loop.gpu_count", "msg": error}]},
         )
-    if error := selection_error(body.gpu_devices, cfg.loop.gpu_count, devices):
+    if error := selection_error(body.gpu_devices, planning_cfg.loop.gpu_count, devices):
         raise ApiError(error, code="job.gpu_selection", status=422)
-    selected = [gpu for gpu in devices if gpu["device"] in body.gpu_devices]
+    selected = planning_devices(devices, planning_cfg.loop.gpu_count, body.gpu_devices)
+    target = min(selected, key=lambda gpu: gpu.get("mem_total_mb") or 0) if selected else None
     # The shared image index lets an unchanged dataset skip re-reading and hashing every image,
     # as the parameter check's plan already does.
     preflight = plan(
-        cfg,
+        planning_cfg,
         check_compile=body.type == "train",
         index_db_path=c.service_cache_dir("index") / "index.sqlite",
-        gpu_total_mb=min((g["mem_total_mb"] for g in selected), default=None)
-        if selected
-        else max((g["mem_total_mb"] for g in devices), default=None),
-        device=(selected or devices)[0]["device"] if devices else "cpu",
+        gpu_total_mb=target["mem_total_mb"] if target else None,
+        device=target["device"] if target else "cpu",
     )
     memory = preflight.get("memory") or {}
     estimated_peak_mb = memory.get("peak_mb_estimate")
@@ -2217,6 +2232,17 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         raise ApiError(
             "training preflight failed", code="config.invalid", details={"errors": preflight["errors"]}
         )
+    from ypuddin.data.dataset import DataConfigError
+
+    try:
+        cfg = resolve_native_vram_config(
+            cfg, device=target["device"] if target else "cpu", plan_result=preflight,
+        )
+    except DataConfigError as error:
+        raise ApiError(
+            str(error), code="config.invalid",
+            details={"errors": [{"loc": error.loc, "msg": str(error)}]},
+        ) from error
     dora = preflight.get("dora")
     if body.type == "train" and dora and dora["confirmation_required"] and not body.dora_precision_confirmed:
         raise ApiError(
@@ -2247,7 +2273,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
                 "version_id": vid,
                 "status": status,
                 "priority": body.priority,
-                "gpu_devices_json": json.dumps(body.gpu_devices),
+                "gpu_devices_json": json.dumps(body.gpu_devices[:1] if body.type == "cache" else body.gpu_devices),
                 "scheduled_at": body.scheduled_at,
                 "created_at": now(),
                 "run_dir": str(run_dir),

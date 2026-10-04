@@ -27,3 +27,12 @@ def selection_error(devices: list[str], count: int, inventory: list[dict[str, An
     if missing := set(devices) - available:
         return f"所选显卡不可用：{', '.join(sorted(missing))}。请重新选择显卡。"
     return None
+
+
+def planning_devices(
+    inventory: list[dict[str, Any]], count: int, requested: list[str]
+) -> list[dict[str, Any]]:
+    """Use the smallest selected card, or the limiting card of an automatic allocation."""
+    if requested:
+        return [gpu for gpu in inventory if gpu["device"] in requested]
+    return sorted(inventory, key=lambda gpu: gpu.get("mem_total_mb") or 0, reverse=True)[:max(1, count)]

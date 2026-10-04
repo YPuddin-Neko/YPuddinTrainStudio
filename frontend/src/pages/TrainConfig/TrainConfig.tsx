@@ -163,6 +163,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [showAdvanced, setShowAdvanced] = React.useState(false);
   const [presets, setPresets] = React.useState<Preset[]>([]);
   const [validatedConfig, setValidatedConfig] = React.useState('');
+  const [validatedGpuDevices, setValidatedGpuDevices] = React.useState('');
   const [plan, setPlan] = React.useState<Plan | null>(null);
   const [planError, setPlanError] = React.useState('');
   const planErrorRef = React.useRef('');
@@ -539,8 +540,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     });
     const timer = setTimeout(() => {
       Promise.all([
-        apiClient.post<Plan>('/plan', { config, project_id: projectId || undefined, version_id: versionId }, { signal: controller.signal, silent: true }),
-        apiClient.post<{ errors: ValidationError[] }>('/config/validate', { config, project_id: projectId || undefined, version_id: versionId }, { signal: controller.signal, silent: true }),
+        apiClient.post<Plan>('/plan', { config, gpu_devices: gpuDevices, project_id: projectId || undefined, version_id: versionId }, { signal: controller.signal, silent: true }),
+        apiClient.post<{ errors: ValidationError[] }>('/config/validate', { config, gpu_devices: gpuDevices, project_id: projectId || undefined, version_id: versionId }, { signal: controller.signal, silent: true }),
         projectId ? supporting('sources', apiClient.post<SourceRoleInfo[]>(`/projects/${projectId}/source-roles`, { config }, { params: {version_id:versionId}, signal: controller.signal, silent: true }), []) : Promise.resolve([]),
         projectId ? supporting<OutputBindingInfo | null>('output', apiClient.post<OutputBindingInfo>(`/projects/${projectId}/output-binding`, { config }, { params: {version_id:versionId}, signal: controller.signal, silent: true }), null) : Promise.resolve(null),
       ]).then(([nextPlan, validation, roles, binding]) => {
@@ -567,6 +568,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         });
         setPlan(nextPlan);
         setValidatedConfig(JSON.stringify(config));
+        setValidatedGpuDevices(JSON.stringify(gpuDevices));
         setValidationErrors([...validation.errors, ...(nextPlan.errors || [])].filter((item, index, all) => all.findIndex((x) => x.loc === item.loc && x.msg === item.msg) === index));
         setValidating(false);
       }).catch((err) => {
@@ -574,7 +576,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       });
     }, 500);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [config, loaded, projectId, versionId, auxiliaryReload, datasetRefreshing, datasetRefreshError]);
+  }, [config, gpuDevices, loaded, projectId, versionId, auxiliaryReload, datasetRefreshing, datasetRefreshError]);
 
   const handleApplyPreset = (preset: Preset) => {
     if (inactiveTrainingReason(config) || inactiveTrainingReason(preset.config)) return;
@@ -665,13 +667,14 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
   const issues = presentConfigIssues(validationErrors, english);
   const inactiveReason = inactiveTrainingReason(config, english);
-  const checked = loaded && !validating && !datasetRefreshing && !datasetRefreshError && validatedConfig === JSON.stringify(config) && plan !== null;
-  const computePolicy = currentTrainingComputePolicy(plan?.compute_policy, config, validatedConfig, validating || datasetRefreshing || !!datasetRefreshError);
+  const gpuPlanCurrent = validatedGpuDevices === JSON.stringify(gpuDevices);
+  const checked = loaded && !validating && !datasetRefreshing && !datasetRefreshError && gpuPlanCurrent && validatedConfig === JSON.stringify(config) && plan !== null;
+  const computePolicy = currentTrainingComputePolicy(plan?.compute_policy, config, validatedConfig, validating || !gpuPlanCurrent || datasetRefreshing || !!datasetRefreshError);
   const doraPrecision = checked ? readDoraPrecisionReport(plan?.dora) : null;
   const nativeAreaEstimate: NativeAreaEstimate = planError ? {state: 'error'}
     : !checked ? {state: 'loading'}
-    : plan?.native?.auto_max_pixels != null && plan.native.auto_max_pixels > 0
-      ? {state: 'ready', maxPixels: plan.native.auto_max_pixels} : {state: 'unavailable'};
+    : plan?.native ? {state: 'ready', maxPixels: plan.native.auto_max_pixels, vramMaxPixels: plan.native.auto_vram_max_pixels, vramError: plan.native.auto_vram_error}
+      : {state: 'unavailable'};
   const planChecked = checked && (plan?.ok === true || plan?.params != null);
   const ready = !inactiveReason && (!versions.enabled || versions.current?.status === 'ready') && checked && plan?.ok === true && issues.length === 0;
   React.useEffect(() => {
