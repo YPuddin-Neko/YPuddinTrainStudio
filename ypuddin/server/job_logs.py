@@ -48,6 +48,12 @@ _NCCL_CONFIGURATION = re.compile(
     r"^(?:\[rank\d+\]:\s*)?\[PG ID \d+ PG GUID \S+ Rank \d+\] "
     r"ProcessGroupNCCL (?:initialization options|environments):(?:\s|$)"
 )
+_NCCL_INITIALIZATION = re.compile(
+    r"(?:\[rank\d+\]:\s*)?\[PG ID \d+ PG GUID \S+ Rank \d+\] "
+    r"(?:ProcessGroupNCCL broadcast unique ID through store took \d+(?:\.\d+)?(?:[eE][+-]?\d+)? ms"
+    r"|ProcessGroupNCCL created ncclComm_ 0x[\da-fA-F]+ on CUDA device: \d+"
+    r"|NCCL_DEBUG: N/A)\s*"
+)
 
 MAX_READ = 512 * 1024
 SUPERVISOR_SOURCE = "ypuddin.server.supervisor"
@@ -157,8 +163,10 @@ def parse_log_lines(lines: list[str], *, now: datetime | None = None) -> list[di
                 continue
         out.extend(_parse_plain_lines([raw], now=now))
     for line in out:
-        # Native configuration dumps bypass Python logging; keep their raw file and source intact.
-        if line["level"] == "info" and _NCCL_CONFIGURATION.match(line["msg"]):
+        # Native initialization notices bypass Python logging; retain their raw file and source.
+        if line["level"] == "info" and (
+            _NCCL_CONFIGURATION.match(line["msg"]) or _NCCL_INITIALIZATION.fullmatch(line["msg"])
+        ):
             line["kind"] = "record"
             line["level"] = "debug"
     return out
