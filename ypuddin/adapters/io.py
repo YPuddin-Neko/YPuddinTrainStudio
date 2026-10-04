@@ -202,6 +202,10 @@ def save_adapter_file(
     """Atomically write weights in ``dtype``, preserving numeric alpha scalars in fp32."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
+    if metadata.get("ypuddin.family") == "flux2":
+        from ypuddin.models.flux2.adapter_keys import remap_adapter_keys
+
+        tensors = remap_adapter_keys(tensors, to_comfy=True)
     out: dict[str, Tensor] = {}
     target = SAVE_DTYPES[dtype]
     for k, t in tensors.items():
@@ -226,6 +230,10 @@ def load_adapter_file(path: str | Path) -> tuple[dict[str, Tensor], dict[str, st
     tensors = load_file(str(p))
     with safe_open(str(p), framework="pt") as f:
         metadata = dict(f.metadata() or {})
+    if metadata.get("ypuddin.family") == "flux2":
+        from ypuddin.models.flux2.adapter_keys import remap_adapter_keys
+
+        tensors = remap_adapter_keys(tensors, to_comfy=False)
     return tensors, metadata
 
 
@@ -251,6 +259,10 @@ def modules_from_tensors(
 
     ``kernels`` names each target layer's kernel (``()`` for a linear layer) where the caller knows the model.
     """
+    if (metadata or {}).get("ypuddin.family") == "flux2":
+        from ypuddin.models.flux2.adapter_keys import remap_adapter_keys
+
+        tensors = remap_adapter_keys(tensors, to_comfy=False)
     targets_meta = parse_targets_metadata(metadata or {})
     by_underscored = {k.replace(".", "_"): v for k, v in targets_meta.items()}
     out: dict[str, tuple[AdapterModule, Tensor | None]] = {}
