@@ -47,6 +47,14 @@ export function defaultTimestepSampling(family: FamilyInfo): string {
  * Why the selected model or this machine does not use a setting, for the note shown while it is still set;
  * undefined when the setting applies.
  */
+/** The status under a switch whose package this environment lacks: it cannot be turned on, and a saved "on" must be turned off. */
+export function missingSwitchPackage(path: string, on: boolean, english = false): string | undefined {
+  const name = path === 'memory.compile' ? 'Triton' : undefined;
+  if (!name) return undefined;
+  if (on) return english ? `${name} is not installed. Turn this off.` : `未安装 ${name}，请关闭。`;
+  return english ? `Needs ${name} installed.` : `需要先安装 ${name}。`;
+}
+
 export function unusedSettingReason(path: string, { family, config, english }: FieldContext): string | undefined {
   if (!family) return undefined;
   const runtime = runtimeOf(family);
@@ -153,7 +161,11 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
     case 'memory.compile':
       return join([
         text('用 torch.compile 编译模型：第一次启动要多等几分钟编译，之后每步更快。', 'Compiles the model with torch.compile: the first start takes a few extra minutes, later steps are faster.'),
-        onGpu(runtime) && text('编译需要可用的 Triton：Linux 随 PyTorch 安装，Windows 在“设置 → 运行环境”安装。', 'Compiling needs a working Triton: it ships with PyTorch on Linux; on Windows, install it under Settings → Runtime.'),
+        onGpu(runtime) && (runtime === 'hip'
+          ? text('需要安装 Triton，海光环境随厂商 PyTorch 一起提供。', 'Needs Triton, which the DTK vendor PyTorch provides.')
+          : family.runtime_platform === 'windows'
+            ? text('需要先安装 Triton，可在“设置 → 运行环境”中安装。', 'Needs Triton installed first; install it under Settings → Runtime.')
+            : text('需要安装 Triton，Linux 上随 PyTorch 一起安装。', 'Needs Triton, which installs with PyTorch on Linux.')),
         has(family, 'block_swap') && text(`不能与「${configFieldLabel('memory.blocks_to_swap', '')}」同时使用。`, 'Cannot be combined with block swapping.'),
       ]);
     case 'memory.blocks_to_swap':

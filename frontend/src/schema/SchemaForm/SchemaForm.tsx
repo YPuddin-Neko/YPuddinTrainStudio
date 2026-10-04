@@ -1,6 +1,6 @@
 import { adapterLayerTypesLock, applySwitchLocks, selectTrainingComponents, switchLock, trainingManagedReason } from '../../utils/trainingSelection';
 import { confirmedTrainingComputePolicy, trainingComputeManagedField, trainingComputePolicyHint } from '../../utils/trainingComputePolicy';
-import { contextHelp, contextOptions, hideUnusedSetting, presetHasConvolutions, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
+import { contextHelp, contextOptions, hideUnusedSetting, missingSwitchPackage, presetHasConvolutions, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
@@ -1189,7 +1189,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     } else if (prop.type === 'boolean' || ui.control === 'switch') {
       control = (
         <div className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
+          {/* A switch whose package is missing cannot be turned on; one already on can still be turned off. */}
           <Switch id={fieldId} aria-label={fieldLabel} aria-invalid={!!errorItem} checked={!!fieldValue}
+            disabled={!fieldValue && !!unavailableOptions?.true}
             onCheckedChange={checked => onChange(setNestedValue(value, path, checked))}>
           </Switch>
         </div>
@@ -1301,6 +1303,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       || (incompatiblePredictionLoss ? (english ? 'This option is incompatible with the selected prediction type. Turn it off or choose the matching prediction type.' : '此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。') : undefined)
       || managedReason
       || unusedReason
+      || (booleanField && unavailableOptions?.true ? missingSwitchPackage(fullPathKey, !!fieldValue, english) : undefined)
       || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined);
     const recoveryField = fullPathKey === 'checkpoint.save_state_every_steps';
     const describedHint = booleanField || recoveryField ? undefined

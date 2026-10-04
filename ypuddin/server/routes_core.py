@@ -247,9 +247,11 @@ def unavailable_options() -> dict[str, dict[str, str]]:
         for key, package in optimizer_packages().items()
         if importlib.util.find_spec(package) is None
     }
+    # Compiling the model needs Triton; triton-windows and the DTK build import as triton too.
+    compiling = {} if importlib.util.find_spec("triton") is not None else {"true": "not_installed"}
     return {
         field: options
-        for field, options in (("model.attention", attention), ("optimizer.type", optimizers))
+        for field, options in (("model.attention", attention), ("optimizer.type", optimizers), ("memory.compile", compiling))
         if options
     }
 
