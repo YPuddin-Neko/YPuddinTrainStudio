@@ -511,6 +511,11 @@ class Preset(_Out):
     updated_at: float | None
 
 
+class FamilyLayerGroup(_Out):
+    name: str
+    layers: int
+
+
 class FamilyPreset(_Out):
     name: str
     description: str
@@ -520,6 +525,9 @@ class FamilyPreset(_Out):
     # With convolutions trained too: all adapted layers, and how many are convolutions (0 without any).
     layers_with_conv: int = 0
     conv_layers: int = 0
+    # Each list partitions the matching total above; older measurements may have no details.
+    layer_groups: list[FamilyLayerGroup] = Field(default_factory=list)
+    layer_groups_with_conv: list[FamilyLayerGroup] = Field(default_factory=list)
 
 
 class FamilyWeight(_Out):

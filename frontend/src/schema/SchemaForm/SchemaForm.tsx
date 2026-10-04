@@ -1274,6 +1274,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : '决定模型里哪些层参与训练。范围越大，能学到的细节越多，文件也越大；底模本身保持不变。',
     value.adapter?.algo === 'lokr' && (english ? ' The Full option of the LoKr parameter form is a separate setting and does not change the scope.' : 'LoKr 参数形式里的 Full 是另一项设置，不影响这里的范围。')].filter(Boolean).join('') : null;
     const selectedPreset = fullPathKey === 'adapter.preset' ? family?.presets?.find(preset => preset.name === (fieldValue || family.default_preset)) : undefined;
+    const presetWithConv = value.adapter?.layer_types === 'linear_conv' && presetHasConvolutions(selectedPreset);
+    const presetLayers = selectedPreset ? (presetWithConv ? selectedPreset.layers_with_conv : selectedPreset.layers) : 0;
+    const presetGroups = presetWithConv ? selectedPreset?.layer_groups_with_conv : selectedPreset?.layer_groups;
     const modelPrecisionHint = family?.runtime_backend === 'mps'
       ? (english ? 'The current Apple GPU uses FP32 for model loading and computation.' : '当前 Apple GPU 使用 FP32 加载和计算。')
       : family?.runtime_backend === 'cpu'
@@ -1289,12 +1292,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const help = scopeHelp ? [
       scopeHelp,
       selectedPreset?.description,
-      showAdvanced && selectedPreset && `${t('preset.layers', {n: selectedPreset.layers})} · ${selectedPreset.name}`,
-      showAdvanced && presetHasConvolutions(selectedPreset) && (english
-        ? `With convolutions: ${selectedPreset.layers_with_conv} layers, ${selectedPreset.conv_layers} of them convolutions`
-        : `同时训练卷积层时：共 ${selectedPreset.layers_with_conv} 层，其中卷积层 ${selectedPreset.conv_layers} 个`),
-      showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
-      showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
+      showAdvanced && selectedPreset && presetLayers > 0 && `${t('preset.layers', {n: presetLayers})} · ${selectedPreset.name}`,
+      showAdvanced && presetWithConv && (english
+        ? `${selectedPreset?.conv_layers} convolution layers included`
+        : `其中卷积层 ${selectedPreset?.conv_layers} 个`),
+      showAdvanced && (presetGroups?.length
+        ? `${english ? 'Included layers:' : '包含层：'}\n${presetGroups.map(group => english ? `${group.name}: ${group.layers} layers` : `${group.name}：${group.layers} 层`).join('\n')}`
+        : selectedPreset?.include?.length && `${english ? 'Matching rules: ' : '匹配规则：'}${selectedPreset.include.join(', ')}`),
+      showAdvanced && !presetGroups?.length && selectedPreset?.exclude?.length && `${english ? 'Excluded rules: ' : '排除规则：'}${selectedPreset.exclude.join(', ')}`,
     ].filter(Boolean).join('\n\n') : fullPathKey === 'model.tokenizer_path' && family?.name === 'sdxl' ? (english ? 'Optional root containing tokenizer/ and tokenizer_2/. Leave blank to use the model directory’s tokenizers, or the built-in CLIP-L / CLIP-G tokenizers when absent.' : '可选根目录，需同时包含 tokenizer/ 和 tokenizer_2/。留空自动读取模型目录；没有时使用内置 CLIP-L / CLIP-G 双分词器。')
       : [weightMeta?.hint ? [configFieldHelp(fullPathKey, undefined, english), weightMeta.hint].filter(Boolean).join('\n') : contextHelp(fullPathKey, fieldContext, offeredOptions) || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree), dtkReproducibility].filter(Boolean).join('\n\n');
     // Switches carry no standing description; a status or warning still shows beneath them.

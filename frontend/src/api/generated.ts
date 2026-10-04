@@ -4478,6 +4478,15 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** FamilyLayerGroup */
+        FamilyLayerGroup: {
+            /** Name */
+            name: string;
+            /** Layers */
+            layers: number;
+        } & {
+            [key: string]: unknown;
+        };
         /** FamilyPreset */
         FamilyPreset: {
             /** Name */
@@ -4500,6 +4509,10 @@ export interface components {
              * @default 0
              */
             conv_layers: number;
+            /** Layer Groups */
+            layer_groups?: components["schemas"]["FamilyLayerGroup"][];
+            /** Layer Groups With Conv */
+            layer_groups_with_conv?: components["schemas"]["FamilyLayerGroup"][];
         } & {
             [key: string]: unknown;
         };

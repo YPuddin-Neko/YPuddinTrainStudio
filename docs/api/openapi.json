@@ -13566,6 +13566,25 @@
         ],
         "title": "FamilyLatent"
       },
+      "FamilyLayerGroup": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "layers": {
+            "type": "integer",
+            "title": "Layers"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "name",
+          "layers"
+        ],
+        "title": "FamilyLayerGroup"
+      },
       "FamilyPreset": {
         "properties": {
           "name": {
@@ -13603,6 +13622,20 @@
             "type": "integer",
             "title": "Conv Layers",
             "default": 0
+          },
+          "layer_groups": {
+            "items": {
+              "$ref": "#/components/schemas/FamilyLayerGroup"
+            },
+            "type": "array",
+            "title": "Layer Groups"
+          },
+          "layer_groups_with_conv": {
+            "items": {
+              "$ref": "#/components/schemas/FamilyLayerGroup"
+            },
+            "type": "array",
+            "title": "Layer Groups With Conv"
           }
         },
         "additionalProperties": true,
