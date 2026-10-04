@@ -355,10 +355,10 @@ def preview_shapes(cfg: TrainConfig, align: int) -> dict[tuple[int, int], int]:
 
 
 # --------------------------------------------------------------------------- runtime log
-_PRECISIONS = {torch.float32: "fp32", torch.bfloat16: "bf16", torch.float16: "fp16"}
+_PRECISIONS = {torch.float32: "FP32", torch.bfloat16: "BF16", torch.float16: "FP16"}
 
 
-def _precision(latent: Any, device: torch.device) -> str:
+def _precision(latent: Any) -> str:
     """The VAE's precision: its loaded weights' dtype, else the dtype it loads and encodes in."""
     vae = getattr(latent, "vae", None)
     dtype = None
@@ -367,33 +367,19 @@ def _precision(latent: Any, device: torch.device) -> str:
     dtype = dtype or getattr(latent, "dtype", None)
     if not isinstance(dtype, torch.dtype):
         return "unknown"
-    name = _PRECISIONS.get(dtype, str(dtype).removeprefix("torch."))
-    if (
-        dtype == torch.float32
-        and device.type == "cuda"
-        and torch.cuda.is_available()
-        and not getattr(torch.version, "hip", None)
-        and torch.backends.cudnn.allow_tf32
-        and torch.cuda.get_device_capability(device)[0] >= 8
-    ):
-        # memory.allow_tf32 lets cuDNN run these FP32 convolutions on TF32 tensor cores.
-        name += ", TF32 allowed"
-    return name
+    return _PRECISIONS.get(dtype, str(dtype).removeprefix("torch."))
 
 
 def _tiling(latent: Any, *, caching: bool) -> str:
-    """Spatial tiling splits one image; it is separate from how many images one call takes."""
-    tiles = []
     if getattr(latent, "vae_tiling", False):
-        tiles.append(f"{VAE_TILE_PIXELS} px tiles")
+        return "on"
     if caching and getattr(latent, "cache_encode_tiled", False):
-        side = int(CACHE_TILE_THRESHOLD**0.5)
-        tiles.append(f"{CACHE_TILE_PIXELS} px tiles above {side}x{side}")
-    return ", ".join(tiles) or "off"
+        return "large-images"
+    return "off"
 
 
 class EncodeMonitor:
-    """Logs what one VAE encode phase ran: images per call, precision, tiling and the memory it took.
+    """VAE encode settings and debug records of the memory each phase took.
 
     Peak allocated and peak reserved are this process's PyTorch counters. "Device in use" is the whole
     GPU as the driver reports it after each call, other programs included. The three are never mixed.
@@ -409,22 +395,21 @@ class EncodeMonitor:
         self.calls = self.images = self.largest = 0
         self.device_used = self.device_total = 0
         self.cuda = self.device.type == "cuda" and torch.cuda.is_available()
-        if self.cuda and self.device.index is None:
-            self.device = torch.device("cuda", torch.cuda.current_device())
-        if self.cuda and caching:
-            torch.cuda.reset_peak_memory_stats(self.device)
+        # Cold allocators start with zero counters; a cache hit need not initialize CUDA.
+        if self.cuda and torch.cuda.is_initialized():
+            if self.device.index is None:
+                self.device = torch.device("cuda", torch.cuda.current_device())
+            if caching:
+                torch.cuda.reset_peak_memory_stats(self.device)
 
     def wrap(self, encode: Callable[[torch.Tensor], torch.Tensor]) -> Callable[[torch.Tensor], torch.Tensor]:
         def counted(pixels: torch.Tensor) -> torch.Tensor:
             if not self.calls:
-                # Before the first call, so a failing encode still leaves its settings in the log.
                 log.info(
-                    "%sVAE encode settings: VAE encode batch %d (images per VAE call), training batch %d, "
-                    "VAE precision %s, spatial tiling %s",
-                    "" if self.caching else "online ",
+                    "%s: batch %d, precision %s, tiling %s",
+                    "VAE cache encode" if self.caching else "online VAE encode",
                     self.encode_batch,
-                    self.training_batch,
-                    _precision(self.latent, self.device),
+                    _precision(self.latent),
                     _tiling(self.latent, caching=self.caching),
                 )
             latents = encode(pixels)
@@ -432,6 +417,8 @@ class EncodeMonitor:
             self.images += len(pixels)
             self.largest = max(self.largest, len(pixels))
             if self.cuda:
+                if self.device.index is None:
+                    self.device = torch.device("cuda", torch.cuda.current_device())
                 free, total = torch.cuda.mem_get_info(self.device)
                 self.device_used, self.device_total = max(self.device_used, total - free), total
             return latents
@@ -441,7 +428,7 @@ class EncodeMonitor:
     def finish(self) -> None:
         if not self.calls:
             return
-        log.info(
+        log.debug(
             "%s: images %d, VAE calls %d, at most %d per call",
             "VAE encode finished" if self.caching else "online VAE encode, first training batch",
             self.images,
@@ -450,7 +437,7 @@ class EncodeMonitor:
         )
         if not self.cuda:
             return
-        log.info(
+        log.debug(
             "VAE encode memory on %s: peak allocated %.2f GiB, peak reserved %.2f GiB (this process, %s); "
             "device in use up to %.2f of %.2f GiB (all processes)",
             self.device,

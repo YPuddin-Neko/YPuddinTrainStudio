@@ -33,18 +33,16 @@ function adapterKinds(value: string): string {
   return value.split(', ').map(part => part.replace(/^(\w+) (\d+)$/, (_, kind: string, count: string) => `${kind.toUpperCase()} ${count} 层`)).join('，');
 }
 
-/** "fp32, TF32 allowed" → "FP32（允许 TF32）". */
 function vaePrecision(value: string): string {
-  const [dtype, tf32] = value.split(', ');
-  return dtype === 'unknown' ? '未知' : `${dtype.toUpperCase()}${tf32 ? '（允许 TF32）' : ''}`;
+  const [dtype] = value.split(', ');
+  return dtype === 'unknown' ? '未知' : dtype.toUpperCase();
 }
 
-/** Spatial tiling splits one image; "512 px tiles, 1024 px tiles above 2048x2048" → readable parts. */
 function vaeTiling(value: string): string {
-  if (value === 'off') return '关闭';
-  return value.split(', ').map(part => part
-    .replace(/^(\d+) px tiles above (\d+)x(\d+)$/, '面积超过 $2×$3 的图片按 $1 像素分块')
-    .replace(/^(\d+) px tiles$/, '按 $1 像素分块')).join('，');
+  if (value === 'off') return '分块关闭';
+  if (value === 'on' || /(?:^|, )\d+ px tiles(?:,|$)/.test(value)) return '分块开启';
+  if (value === 'large-images' || /^\d+ px tiles above \d+x\d+$/.test(value)) return '大图分块开启';
+  return value;
 }
 
 const RULES: Rule[] = [
@@ -92,7 +90,8 @@ const RULES: Rule[] = [
   [/^cached (\d+) latents in ([\d.]+)s$/, m => `VAE 编码完成：新缓存 ${m[1]} 张图片的潜空间，用时 ${seconds(m[2])}`],
   [/^cached (\d+) latents$/, m => `VAE 编码完成：新缓存 ${m[1]} 张图片的潜空间`],
   [/^all latents were already cached$/, () => '复用 VAE 缓存：所有图片都已有缓存，无需重新编码'],
-  [/^(online )?VAE encode settings: VAE encode batch (\d+) \(images per VAE call\), training batch (\d+), VAE precision (.+?), spatial tiling (.+)$/, m => `${m[1] ? '在线 ' : ''}VAE 编码设置：VAE 编码批量 ${m[2]}（每次调用编码的图片数），训练批量 ${m[3]}，VAE 精度 ${vaePrecision(m[4])}，单张图片空间分块：${vaeTiling(m[5])}`],
+  [/^(VAE cache encode|online VAE encode): batch (\d+), precision (\S+), tiling (off|on|large-images)$/, m => `${m[1] === 'VAE cache encode' ? 'VAE 缓存编码' : 'VAE 在线编码'}：批次 ${m[2]}，精度 ${vaePrecision(m[3])}，${vaeTiling(m[4])}`],
+  [/^(online )?VAE encode settings: VAE encode batch (\d+) \(images per VAE call\), training batch (\d+), VAE precision (.+?), spatial tiling (.+)$/, m => `${m[1] ? 'VAE 在线编码' : 'VAE 缓存编码'}：批次 ${m[2]}，精度 ${vaePrecision(m[4])}，${vaeTiling(m[5])}`],
   [/^VAE encode finished: images (\d+), VAE calls (\d+), at most (\d+) per call$/, m => `VAE 编码调用：${m[1]} 张图片，共 ${m[2]} 次调用，每次最多 ${m[3]} 张`],
   [/^online VAE encode, first training batch: images (\d+), VAE calls (\d+), at most (\d+) per call$/, m => `在线 VAE 编码（第一个训练批次）：${m[1]} 张图片，共 ${m[2]} 次调用，每次最多 ${m[3]} 张`],
   [/^VAE encode memory on (\S+): peak allocated ([\d.]+) GiB, peak reserved ([\d.]+) GiB \(this process, (this phase|run so far)\); device in use up to ([\d.]+) of ([\d.]+) GiB \(all processes\)$/, m => `VAE 编码显存（${m[1]}）：本进程已分配峰值 ${m[2]} GiB，本进程保留峰值 ${m[3]} GiB（${m[4] === 'this phase' ? '本阶段' : '训练开始至今'}）；整卡占用最高 ${m[5]} GiB，共 ${m[6]} GiB（含其他程序）`],
