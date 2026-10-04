@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ArrowUpCircle, Check, Download, FolderOpen, PackagePlus, RefreshCw, RotateCcw, Trash2, Upload, X, type LucideIcon } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { components } from '../../api/generated';
@@ -12,6 +12,7 @@ import { formatApiError } from '../../utils/errors';
 import { formatBytes, formatEta } from '../../utils/format';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import ProgressBar from '../ProgressBar';
+import { useTaskCenterPosition } from './useTaskCenterPosition';
 import './task-center.css';
 
 type ServerTask = components['schemas']['BackgroundTask'] & { session_id?: string };
@@ -133,9 +134,10 @@ function useNow(items: TaskItem[]) {
   return now;
 }
 
-/** Background work outside the job queue: a ball under the hardware status, and the list it opens. */
+/** Background work outside the job queue, with its own movable control. */
 export default function TaskCenter() {
   const text = useWorkspaceText();
+  const location = useLocation();
   const panelId = React.useId();
   const [tasks, setTasks] = React.useState<ServerTask[]>([]);
   const [skew, setSkew] = React.useState(0);
@@ -143,10 +145,14 @@ export default function TaskCenter() {
   const [actionError, setActionError] = React.useState('');
   const ball = React.useRef<HTMLButtonElement>(null);
   const panel = React.useRef<HTMLDivElement>(null);
+  const floating = useTaskCenterPosition(panel, open);
   const folderInput = React.useRef<HTMLInputElement>(null);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const resuming = React.useRef<string | null>(null);
   const uploads = useDatasetUploads();
+  const settingsState = location.pathname.startsWith('/settings')
+    ? location.state?.backgroundLocation ? { backgroundLocation: location.state.backgroundLocation } : undefined
+    : { backgroundLocation: location };
 
   const load = React.useCallback(async () => {
     try {
@@ -266,7 +272,9 @@ export default function TaskCenter() {
           {entry && (item.state === 'interrupted' && !entry.needsFiles || item.state === 'failed' && entry.canRetry) && <button type="button" className="ui-btn ui-btn-sm" onClick={() => datasetUploads.retry(entry.id)}><RotateCcw size={13}/>{item.state === 'interrupted' ? text('导入', 'Import') : entry.error?.problem === 'expired' ? text('重新上传', 'Upload again') : text('重试', 'Retry')}</button>}
           {entry && item.state === 'failed' && canChooseFilesAgain(entry) && <button type="button" className="ui-btn ui-btn-sm" onClick={() => chooseAgain(entry, true)}>{text('重新选择文件夹', 'Choose folder again')}</button>}
           {item.cancellable && <button type="button" className="ui-btn ui-btn-sm" onClick={() => cancel(item)}>{text('取消', 'Cancel')}</button>}
-          {item.link && <Link className="ui-btn ui-btn-sm ui-btn-quiet" to={item.link} onClick={() => close(false)}>{text('查看', 'View')}</Link>}
+          {item.link && <Link className="ui-btn ui-btn-sm ui-btn-quiet" to={item.link}
+            state={/^\/settings(?:[/?#]|$)/.test(item.link) ? settingsState : undefined}
+            onClick={() => close(false)}>{text('查看', 'View')}</Link>}
           {(item.state === 'failed' || item.state === 'interrupted') && !entry?.remote && <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" onClick={() => dismiss(item)}>{entry?.sessionId ? text('放弃', 'Discard') : text('移除', 'Remove')}</button>}
         </div>
       </div>
@@ -275,15 +283,17 @@ export default function TaskCenter() {
 
   return <div className="task-center" data-testid="task-center">
     {visible && <button ref={ball} type="button" className="task-center-ball" data-state={state} data-progress={state === 'running' && percent === null ? 'indeterminate' : undefined}
+      style={floating.ballStyle} data-dragging={floating.dragging || undefined} onPointerDown={floating.onPointerDown} onClickCapture={floating.onClickCapture}
       aria-label={label} title={label} aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => open ? close() : setOpen(true)}>
       <svg className="task-center-ring" viewBox="0 0 36 36" aria-hidden="true">
         <circle className="task-center-track" cx="18" cy="18" r="15.915"/>
         <circle className="task-center-value" cx="18" cy="18" r="15.915" pathLength={100} strokeDasharray={`${state !== 'running' ? 100 : percent ?? 25} 100`}/>
       </svg>
-      <span className="task-center-count">{state === 'running' ? running.length : state === 'failed' ? '!' : <Check size={12} strokeWidth={3}/>}</span>
+      <span className="task-center-count">{state === 'running' ? running.length : state === 'failed' ? '!' : <Check size={18} strokeWidth={3}/>}</span>
       {state === 'running' && attention.length > 0 && <span className="task-center-alert" aria-hidden="true"/>}
     </button>}
     {open && <div id={panelId} ref={panel} className="task-center-panel" role="dialog" aria-label={text('后台任务', 'Background tasks')} tabIndex={-1}
+      style={floating.panelStyle}
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close(); } }}>
       <header><h2>{text('后台任务', 'Background tasks')}</h2><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" aria-label={text('关闭', 'Close')} onClick={() => close()}><X size={15}/></button></header>
       {actionError && <p className="task-center-error task-center-action-error" role="alert">{actionError}</p>}

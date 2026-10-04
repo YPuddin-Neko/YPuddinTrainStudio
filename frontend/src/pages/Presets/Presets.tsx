@@ -1,5 +1,5 @@
 import React from 'react';
-import { useBlocker, useSearchParams } from 'react-router-dom';
+import { useBlocker, useSearchParams, type Location } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Plus, Save, Search, Trash2, X, ChevronRight, ChevronDown, Upload, Download } from 'lucide-react';
 import { apiClient } from '../../api/client';
@@ -62,7 +62,10 @@ export default function Presets() {
   const dirty = !!draft && !draft.builtin && JSON.stringify(presetPayload(draft)) !== saved;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     const background = (nextLocation.state as { backgroundLocation?: { pathname?: string } } | null)?.backgroundLocation;
-    return dirty && nextLocation.pathname !== currentLocation.pathname && !(nextLocation.pathname.startsWith('/settings') && background?.pathname === '/presets');
+    const currentBackground = (currentLocation.state as { backgroundLocation?: Location } | null)?.backgroundLocation;
+    const returningFromSettings = currentLocation.pathname.startsWith('/settings') && currentBackground?.pathname === '/presets'
+      && nextLocation.pathname === currentBackground.pathname && nextLocation.search === currentBackground.search && nextLocation.hash === currentBackground.hash;
+    return dirty && nextLocation.pathname !== currentLocation.pathname && !returningFromSettings && !(nextLocation.pathname.startsWith('/settings') && background?.pathname === '/presets');
   });
   React.useEffect(() => {
     if (!dirty) return;
