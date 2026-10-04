@@ -291,7 +291,7 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
     if (status?.probe_deferred) return copy('任务运行中，检测已延后', 'Probe deferred while a job runs');
     if (pkg.available) return pkg.kernel_tested ? hipBackend ? copy('已通过 DTK / HIP 内核检测', 'DTK / HIP kernel probe passed') : copy('已通过 CUDA 内核检测', 'CUDA kernel probe passed') : copy('可用', 'Available');
     if (!status?.probed_at && !pkg.error) return copy('已安装 · 待验证运行', 'Installed · runtime check pending');
-    return copy('检测失败，展开查看', 'Probe failed; expand for details');
+    return pkg.name === 'triton' ? copy('检测失败', 'Probe failed') : copy('检测失败，展开查看', 'Probe failed; expand for details');
   };
   const onlineVersion = (pkg: PackageStatus) => {
     const release = latest?.packages[pkg.name];
@@ -310,7 +310,10 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
   </>;
   const packageItem = (pkg: PackageStatus) => <div key={pkg.name} className="settings-dependency">
     <div id={`environment-package-${pkg.name}`} className="settings-dependency-row" data-testid={`environment-package-${pkg.name}`}>
-      <div className="settings-dependency-info"><button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{packageLabel(pkg.name)}</button><p className="settings-dependency-purpose">{purpose(pkg.name)}{tritonRow(pkg.name) && <ConfigHelp label={copy('Triton 说明', 'Triton help')}>{tritonHelp()}</ConfigHelp>}</p></div>
+      <div className="settings-dependency-info">{pkg.name === 'triton'
+        ? <span className="settings-dependency-name settings-dependency-name-static">{packageLabel(pkg.name)}</span>
+        : <button type="button" disabled={uploading || busy} className="settings-dependency-name disabled:opacity-50" aria-expanded={selected === pkg.name} aria-controls={`environment-details-${pkg.name}`} onClick={() => { setSelected(selected === pkg.name ? null : pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{selected === pkg.name ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{packageLabel(pkg.name)}</button>
+      }<p className="settings-dependency-purpose">{purpose(pkg.name)}{tritonRow(pkg.name) && <ConfigHelp label={copy('Triton 说明', 'Triton help')}>{tritonHelp()}</ConfigHelp>}</p></div>
       {(!onboardingAttention || pkg.version) && <dl className="settings-dependency-version text-xs">
         <div><dt>{onboardingAttention ? copy('版本：', 'Version:') : copy('本地服务端版本：', 'Local server version:')}</dt><dd>{pkg.version || copy('未安装', 'Not installed')}</dd></div>
         {!onboardingAttention && <div title={latestError || latest?.packages[pkg.name]?.error || (latest?.packages[pkg.name]?.index ? copy(`来自 ${sourceHost(latest.packages[pkg.name].index!)}`, `From ${sourceHost(latest.packages[pkg.name].index!)}`) : tritonRow(pkg.name) ? copy('与当前 PyTorch 配套的版本', 'The version that matches the current PyTorch') : copy('当前环境可用的发布版本', 'Release available for this runtime'))}><dt>{pkg.name === 'mtlattn' ? copy('兼容版本：', 'Compatible version:') : tritonRow(pkg.name) ? copy('配套版本：', 'Matching version:') : copy('云端版本：', 'Online version:')}</dt><dd>{onlineVersion(pkg)}</dd></div>}
@@ -318,7 +321,7 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
       <span title={pkg.version && pkg.supported && !status?.probed_at && !pkg.available && !pkg.error ? checkHint(pkg.name) : undefined} className={`settings-dependency-state text-xs ${pkg.available ? 'text-emerald-700 dark:text-emerald-400' : (pkg.error && pkg.supported) || ['triton_missing', 'triton_version_mismatch'].includes(pkg.reason) ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{reason(pkg)}</span>
       <div className="settings-dependency-actions flex flex-wrap gap-1.5 justify-end">{(!tritonRow(pkg.name) || pkg.name === 'triton-windows' && pkg.supported) && <button className={button} disabled={locked || !pkg.supported && !hipBackend} onClick={() => { setSelected(pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{copy('管理', 'Manage')}</button>}<a className={`${button} ui-btn-icon`} href={pkg.docs_url} target="_blank" rel="noreferrer" aria-label={`${pkg.name} ${copy('文档', 'documentation')}`}><ExternalLink size={12} /></a></div>
     </div>
-    {selected === pkg.name && <div id={`environment-details-${pkg.name}`} className="settings-dependency-detail space-y-3">
+    {(pkg.name === 'triton' ? !!pkg.error : selected === pkg.name) && <div id={`environment-details-${pkg.name}`} className="settings-dependency-detail space-y-3">
       {pkg.error && <p className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-300">{pkg.error}</p>}
       {pkg.name === 'mtlattn' ? <>
         <p className="settings-note">{copy('使用预编译安装包，无需本机编译。', 'Uses a prebuilt package; no local compilation needed.')}</p>
