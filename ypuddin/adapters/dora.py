@@ -101,7 +101,8 @@ class DoRA(nn.Module):
                 magnitude = norm + torch.finfo(self.merge_dtype).eps
         else:
             magnitude = weight_norm(base_weight.detach().to(torch.float32), axis)
-        self.dora_scale = nn.Parameter(magnitude.to(dtype))
+        # Transposed singleton dimensions can be contiguous but still disagree with DDP bucket strides.
+        self.dora_scale = nn.Parameter(magnitude.to(dtype).clone(memory_format=torch.contiguous_format))
 
     def forward(
         self, weight: Tensor, *, base_weight: Tensor | None = None, alpha: float = 1.0,
