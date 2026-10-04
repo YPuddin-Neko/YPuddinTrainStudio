@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from .db import now
+from .download_errors import download_auth_error
 from .errors import ApiError, NotFound
 from .model_catalog import VISION_MODELS
 
@@ -210,6 +211,8 @@ class VisionModels:
         folder = self.directory(model_id)
         stage = folder.with_name(f".{folder.name}.partial")
         policy = ProxyPolicy.from_context(self.context)
+        provider = "modelscope" if task["source"] == "modelscope" else "huggingface"
+        token = None
         done, last, last_bytes, rate = 0, time.monotonic(), 0, 0.0
         try:
             shutil.rmtree(stage, ignore_errors=True)
@@ -218,7 +221,6 @@ class VisionModels:
             verified = {}
             for repo_path, (name, size, sha256) in entry["files"].items():
                 headers = {"User-Agent": "YPuddinTrainStudio", "Accept-Encoding": "identity"}
-                provider = "modelscope" if task["source"] == "modelscope" else "huggingface"
                 token = self.credentials.token(provider) if self.credentials else None
                 if token:
                     headers["Cookie" if provider == "modelscope" else "Authorization"] = (
@@ -264,13 +266,12 @@ class VisionModels:
             self._update(model_id, status="cancelled", bytes_per_second=None, finished_at=now())
         except Exception as error:  # noqa: BLE001 - the task records every failure
             message = policy.redact(error)
+            if token:
+                message = message.replace(token, "[redacted]")
             if isinstance(error, urllib.error.HTTPError):
-                message = (
-                    f"HTTP {error.code}: Hugging Face refused the download; accept the model's terms on its page "
-                    "with the account of the saved access token"
-                    if error.code in (401, 403) and entry.get("token_required")
-                    else f"HTTP {error.code}: the file could not be downloaded from this source"
-                )
+                message = download_auth_error(
+                    error, provider=provider, authenticated=bool(token), gated=bool(entry.get("token_required")),
+                ) or f"HTTP {error.code}: the file could not be downloaded from this source"
             log.warning("vision model download %s failed: %s", model_id, message)
             self._update(model_id, status="failed", error=message, bytes_per_second=None, finished_at=now())
         finally:

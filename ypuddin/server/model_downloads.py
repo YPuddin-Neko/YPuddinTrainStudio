@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from .context import ServiceContext
 from .db import new_id, now
+from .download_errors import download_auth_error
 from .errors import ApiError, Conflict, NotFound
 from .model_catalog import TAGGER_FILES
 from .model_credentials import ModelCredentials, Provider
@@ -681,13 +682,10 @@ class ModelDownloads:
             if token:
                 message = message.replace(token, "[redacted]")
             if isinstance(error, urllib.error.HTTPError):
-                message = f"HTTP {error.code}: check the repository/file and your network access."
-                if error.code in (401, 403):
-                    provider = "ModelScope" if row["provider"] == "modelscope" else "Hugging Face"
-                    message += f" For gated/private files, accept the repository license on {provider}, then save its access token in Settings → Access keys and retry."
-                    if row["mirror"] != "official":
-                        message += " Mirrors are anonymous; switch to the official source for authenticated downloads."
-                elif error.code == 429:
+                message = download_auth_error(
+                    error, provider=row["provider"], authenticated=bool(token), mirror=row["mirror"] != "official",
+                ) or f"HTTP {error.code}: check the repository/file and your network access."
+                if error.code == 429:
                     message += " Rate limited: save the official source token or wait before retrying."
             self._update(
                 id_,
