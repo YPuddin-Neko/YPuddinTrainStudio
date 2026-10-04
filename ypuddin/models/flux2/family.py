@@ -308,10 +308,7 @@ class Flux2Family(ModelFamily):
             if training:
                 sum(x.float().square().mean() for x in (image, context, single)).backward()
 
-        actual = check_attention(
-            configured=configured, selected=selected, run=run, device=device, dtype=dtype,
-            training=training, pinned=pinned,
-        )
+        actual = check_attention(selected=selected, run=run, device=device, dtype=dtype, pinned=pinned)
         loaded.extra["attention"] = actual
         if loaded.extra.get("materialized", True):
             _set_attention_backend(loaded.backbone, actual, device)

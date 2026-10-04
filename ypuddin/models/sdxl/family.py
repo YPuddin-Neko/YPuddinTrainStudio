@@ -269,10 +269,7 @@ class SDXLFamily(ModelFamily):
                     if training:
                         out.float().square().mean().backward()
 
-        actual = check_attention(
-            configured=configured, selected=selected, run=run, device=device, dtype=dtype,
-            training=training, pinned=pinned,
-        )
+        actual = check_attention(selected=selected, run=run, device=device, dtype=dtype, pinned=pinned)
         if actual == "xformers":
             unet.set_attn_processor(XFormersAttnProcessor())
         elif actual == "metal_flash":

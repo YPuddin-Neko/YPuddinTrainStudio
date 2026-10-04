@@ -765,9 +765,9 @@ class Trainer:
         if policy is not None:
             pinned = f"可复现训练的计算策略固定使用 {backend_label(policy['attention'])}"
         elif cfg.loop.deterministic:
-            pinned = "已开启可复现训练，不自动更换注意力实现"
+            pinned = "已开启可复现训练"
         elif getattr(self, "metal_attention_runtime", None) is not None:
-            pinned = "Metal FlashAttention 会记入训练状态以便严格续训"
+            pinned = "严格续训要求保持原注意力后端"
         else:
             pinned = None
         autocast = self.device.type == "cuda" and cfg.loop.mixed_precision != "no"

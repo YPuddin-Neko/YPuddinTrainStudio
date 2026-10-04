@@ -576,12 +576,10 @@ def check_dit_attention(
                     out.float().square().mean().backward()
 
     actual = check_attention(
-        configured=configured,
         selected="sdpa" if selected == "torch" else selected,
         run=run,
         device=device,
         dtype=dtype,
-        training=training,
         pinned=pinned,
     )
     mode = "torch" if actual == "sdpa" else actual

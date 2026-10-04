@@ -64,20 +64,21 @@ def _sdpa_label(device: torch.device) -> str:
         cuda = torch.backends.cuda
         fused = (getattr(cuda, f"{name}_sdp_enabled", lambda: False)() for name in ("flash", "mem_efficient", "cudnn"))
         if not any(fused) and cuda.math_sdp_enabled():
-            return "SDPA（仅启用 Math 内核）"
-    return "SDPA（内部内核由 PyTorch 自动选择）"
+            return "SDPA（数学实现）"
+    return "SDPA"
 
 
 def _where(device: torch.device) -> str:
-    if device.type == "cuda":
-        place = f"GPU {device.index if device.index is not None else torch.cuda.current_device()}"
-    else:
-        place = "Apple GPU" if device.type == "mps" else device.type.upper()
+    """The rank and GPU in a multi-GPU run, where each rank checks on its own; empty otherwise."""
     try:
         rank, world = int(os.environ["RANK"]), int(os.environ["WORLD_SIZE"])
     except (KeyError, ValueError):
-        return place
-    return f"rank {rank}，{place}" if world > 1 else place
+        return ""
+    if world <= 1:
+        return ""
+    if device.type == "cuda":
+        return f"（rank {rank}，GPU {device.index if device.index is not None else torch.cuda.current_device()}）"
+    return f"（rank {rank}）"
 
 
 def _reason(error: BaseException) -> str:
@@ -116,12 +117,10 @@ def _run(run: Callable[[str], None], backend: str, device: torch.device) -> None
 
 def check_attention(
     *,
-    configured: str,
     selected: str,
     run: Callable[[str], None],
     device: torch.device | str,
     dtype: torch.dtype,
-    training: bool,
     pinned: str | None = None,
 ) -> str:
     """Run ``run(selected)``; on failure log it and check SDPA. Returns the backend that passed.
@@ -131,35 +130,33 @@ def check_attention(
     """
     device = torch.device(device)
     where = _where(device)
-    actual = selected
     try:
         _run(run, selected, device)
     except Exception as error:
         if selected == SDPA:
-            raise AttentionCheckError(f"注意力后端检查失败（{where}）：SDPA 无法运行。原因：{_reason(error)}") from error
+            raise AttentionCheckError(f"注意力后端检查失败{where}：SDPA 无法运行。原因：{_reason(error)}") from error
         if pinned:
             raise AttentionCheckError(
-                f"注意力后端检查失败（{where}）：{backend_label(selected)} 无法运行，{pinned}，不会改用 SDPA。"
+                f"注意力后端检查失败{where}：{backend_label(selected)} 无法运行。{pinned}，不会改用 SDPA。"
                 f"原因：{_reason(error)}"
             ) from error
-        log.warning("注意力后端检查失败：%s → SDPA（%s）。原因：%s", backend_label(selected), where, _reason(error))
         try:
             _run(run, SDPA, device)
         except Exception as fallback:
             raise AttentionCheckError(
-                f"注意力后端检查失败（{where}）：{backend_label(selected)} 无法运行（{_reason(error)}）；"
-                f"改用 SDPA 也无法运行（{_reason(fallback)}）。"
+                f"注意力后端检查失败{where}：{backend_label(selected)} 无法运行（{_reason(error)}）；"
+                f"SDPA 也无法运行（{_reason(fallback)}）。"
             ) from fallback
-        actual = SDPA
+        log.warning(
+            "注意力后端：%s 不可用，改用 %s，%s%s。原因：%s",
+            backend_label(selected), _sdpa_label(device), dtype_label(dtype), where, _reason(error),
+        )
+        return SDPA
     log.info(
-        "注意力后端：设置为 %s，实际使用 %s，Q/K/V 精度 %s（%s，%s检查通过）。",
-        backend_label(configured),
-        _sdpa_label(device) if actual == SDPA else backend_label(actual),
-        dtype_label(dtype),
-        where,
-        "前向和反向" if training else "前向",
+        "注意力后端：%s，%s%s。",
+        _sdpa_label(device) if selected == SDPA else backend_label(selected), dtype_label(dtype), where,
     )
-    return actual
+    return selected
 
 
 def grad_mode(training: bool):
