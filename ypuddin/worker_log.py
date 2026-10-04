@@ -18,6 +18,24 @@ FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 log = logging.getLogger("ypuddin.worker")
 
 
+class _EmptyFloat32Notice(logging.Filter):
+    """Diffusers 0.40 warns on every ``to(dtype)``, even when no module must stay in FP32.
+
+    That notice lists the modules it means; an empty list (``[]``) names none, so it moves to
+    the debug log. A list that names modules is still a warning.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if record.levelno == logging.WARNING and "that should be kept in float32: []." in message:
+            log.debug("%s", message)
+            return False
+        return True
+
+
+_EMPTY_FLOAT32_NOTICE = _EmptyFloat32Notice()
+
+
 def _worker_format() -> str:
     try:
         rank, world_size = int(os.environ["RANK"]), int(os.environ["WORLD_SIZE"])
@@ -42,6 +60,7 @@ def configure() -> None:
             handler.setFormatter(logging.Formatter(format_))
     root.setLevel(logging.INFO)
     logging.getLogger("ypuddin").setLevel(logging.DEBUG)
+    logging.getLogger("diffusers.models.modeling_utils").addFilter(_EMPTY_FLOAT32_NOTICE)
     logging.captureWarnings(True)
     sys.excepthook = _log_uncaught
     threading.excepthook = _log_thread_exception
