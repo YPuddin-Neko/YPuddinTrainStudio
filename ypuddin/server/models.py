@@ -379,6 +379,10 @@ class PlanMemory(_Out):
     estimate_scope: Literal["per_device"] = "per_device"
     communication_mb_estimate: float = 0
     optimizer_workspace_mb_estimate: float = 0
+    adapter_graph_mb_estimate: float = 0
+    adapter_workspace_mb_estimate: float = 0
+    auxiliary_activations_mb_estimate: float = 0
+    training_runtime_mb_estimate: float = 0
     initialization_peak_mb_estimate: float | None = None
     estimate_notes: list[str] = Field(default_factory=list)
     sharding: dict[str, Any] | None = None

@@ -6716,6 +6716,26 @@ export interface components {
              * @default 0
              */
             optimizer_workspace_mb_estimate: number;
+            /**
+             * Adapter Graph Mb Estimate
+             * @default 0
+             */
+            adapter_graph_mb_estimate: number;
+            /**
+             * Adapter Workspace Mb Estimate
+             * @default 0
+             */
+            adapter_workspace_mb_estimate: number;
+            /**
+             * Auxiliary Activations Mb Estimate
+             * @default 0
+             */
+            auxiliary_activations_mb_estimate: number;
+            /**
+             * Training Runtime Mb Estimate
+             * @default 0
+             */
+            training_runtime_mb_estimate: number;
             /** Initialization Peak Mb Estimate */
             initialization_peak_mb_estimate?: number | null;
             /** Estimate Notes */

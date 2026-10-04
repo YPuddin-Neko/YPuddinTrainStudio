@@ -25,8 +25,10 @@ from ypuddin.models.base import LatentSpec
 from ypuddin.runtime_compile import CompileEnvironmentError, validate_compile_environment
 from ypuddin.runtime_profiles import current_profile
 
+from .adapter_memory import adapter_memory
 from .advice import value_advice
 from .metal_compute import resolve_metal_attention_runtime, validate_metal_attention_resume
+from .optimizer_memory import optimizer_state_bytes
 from .vae_memory import (
     VaeMemory,
     latent_cache_phase,
@@ -46,6 +48,12 @@ def _count_params(module: nn.Module) -> int:
 def _frozen_storage_bytes(module: nn.Module) -> int:
     tensors = {id(t): t for t in (*module.parameters(), *module.buffers()) if not t.requires_grad}
     return sum(t.numel() * t.element_size() for t in tensors.values())
+
+
+def _training_peak_mb(live_mb: float) -> float:
+    # The allocator keeps reusable blocks in addition to live tensors. This is a
+    # workspace allowance, separate from the device headroom used at admission.
+    return live_mb + max(512.0, live_mb * 0.05)
 
 
 def _plan_vae(cfg: TrainConfig, dtype: torch.dtype, device: str | torch.device | None) -> VaeMemory | None:
@@ -905,6 +913,13 @@ def plan(
                     / 2**20
                 )
                 optimizer_mb = aset.num_params() * 4 * (0.5 if "8bit" in cfg.optimizer.type else 2) / 2**20
+                if not full_training:
+                    optimizer_bytes = optimizer_state_bytes(
+                        cfg.optimizer,
+                        aset.param_groups(cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr),
+                    )
+                    if optimizer_bytes is not None:
+                        optimizer_mb = optimizer_bytes / 2**20
                 gradients_mb = adapter_mb
                 compensation_mb = adapter_mb if cfg.optimizer.kahan else 0.0
                 ema_mb = adapter_mb if cfg.loop.ema else 0.0
@@ -913,6 +928,15 @@ def plan(
                 )
                 sharding = None
                 communication_mb = optimizer_workspace_mb = 0.0
+                if cfg.loop.gpu_count > 1 and cfg.loop.distributed_strategy == "ddp":
+                    # DDP keeps reduction buckets beside the accumulated parameter gradients.
+                    if full_training:
+                        communication_mb = adapter_mb
+                    else:
+                        ddp_parameters = {id(p): p for p in aset.parameters() if p.requires_grad}
+                        communication_mb = sum(
+                            p.numel() * p.element_size() for p in ddp_parameters.values()
+                        ) / 2**20
                 initialization_peak = None
                 estimate_notes = []
                 if cfg.loop.distributed_strategy == "fsdp":
@@ -946,6 +970,7 @@ def plan(
                     )
                 act_by_bucket = []
                 act_peak = 0.0  # unrounded, so the estimate matches the per-mode estimates exactly
+                auxiliary_act_peak = 0.0
                 # Peak activations of the largest bucket under each checkpointing mode.
                 # Only the modes this family implements are estimated or suggested. A mode it lacks
                 # runs as block checkpointing (Krea 2) or is rejected by the family's own checks.
@@ -972,6 +997,24 @@ def plan(
                     # Block inputs wait in system memory, so only the recomputed block stays.
                     "unsloth": min(units * n_blocks, units + 3),
                 }
+                activation_dtype = (
+                    torch.float32
+                    if device_type in ("cpu", "mps")
+                    or (sharding is not None and cfg.loop.mixed_precision == "no")
+                    else compute_dtype if cfg.loop.mixed_precision == "no"
+                    else {"bf16": torch.bfloat16, "fp16": torch.float16}[cfg.loop.mixed_precision]
+                )
+                fusion_blocks = family.adapter_checkpoint_blocks_for_plan(backbone)
+                if fusion_blocks is None:
+                    fusion_blocks = list(layout.blocks) if layout else []
+                fusion = adapter_memory(
+                    backbone, fusion_blocks, activation_dtype,
+                    autocast_enabled=cfg.loop.mixed_precision != "no" and device_type not in ("cpu", "mps"),
+                )
+                fusion_mb = {
+                    mode: (fusion[mode]["retained_bytes"] + fusion[mode]["workspace_bytes"]) / 2**20
+                    for mode in supported_modes
+                }
                 for (w, h), _n in sorted(counts.items()) or [((r, r), 0) for r in ds.resolutions]:
                     tokens = (w // family.spec.latent.align) * (h // family.spec.latent.align)
                     tokens = family.training_tokens_for_plan(tokens)
@@ -981,20 +1024,17 @@ def plan(
                         or getattr(backbone, "inner_dim", None)
                         or getattr(getattr(backbone, "config", None), "features", 2048)
                     )
-                    activation_bytes = (
-                        4
-                        if device_type in ("cpu", "mps")
-                        or (sharding is not None and cfg.loop.mixed_precision == "no")
-                        else DTYPE_BYTES[
-                            effective_dtype if cfg.loop.mixed_precision == "no" else cfg.loop.mixed_precision
-                        ]
-                    )
+                    activation_bytes = torch.empty((), device="meta", dtype=activation_dtype).element_size()
                     forward_batch = (
                         min(ds.batch_size, max(1, ds.native_max_pixels // (w * h)))
                         if native
                         else ds.batch_size
                     )
                     unit_mb = tokens * (1 if whole else hidden) * activation_bytes * forward_batch / 2**20
+                    auxiliary_act_peak = max(
+                        auxiliary_act_peak,
+                        family.auxiliary_activation_bytes_for_plan(backbone, forward_batch, activation_dtype) / 2**20,
+                    )
                     for mode in act_by_mode:
                         act_by_mode[mode] = max(act_by_mode[mode], unit_mb * block_units[mode])
                     act = unit_mb * block_units[current_mode]
@@ -1043,7 +1083,7 @@ def plan(
                             "关闭图像编码缓存后，完整 VAE 在每张卡上与训练状态同时驻留；"
                             "权重与在线编码工作区均计入单卡估算，不按卡数分摊。"
                         )
-                training_peak = (
+                training_base = (
                     weights_mb
                     - swapped_mb
                     + text_encoder_mb
@@ -1057,9 +1097,9 @@ def plan(
                     + dequant_mb
                     + communication_mb
                     + optimizer_workspace_mb
-                    + act_peak
-                    + 512
                 )
+                training_live = training_base + act_peak + auxiliary_act_peak + fusion_mb[current_mode]
+                training_peak = _training_peak_mb(training_live)
                 cache_phases = family.cache_memory_estimate(cfg, compute_dtype)
                 # The VAE's own phases: caching with nothing else on the device, or encoding and
                 # preview decoding beside the training state (no activations; gradients are
@@ -1081,17 +1121,20 @@ def plan(
                 elif image_encoding is not None:
                     image_encoding["mode"] = "online"
                     image_encoding["peak_mb_estimate"] = round(
-                        training_peak - act_peak + image_encoding["workspace_mb_estimate"]
+                        training_base - optimizer_workspace_mb - dequant_mb
+                        + image_encoding["workspace_mb_estimate"] + 512
                     )
                     vae_phases.append(image_encoding["peak_mb_estimate"])
                 if vae is not None and (previews := preview_shapes(cfg, family.spec.latent.align)):
                     preview_decoding = preview_decoding_phase(vae, previews)
                     preview_decoding["peak_mb_estimate"] = round(
-                        training_peak
-                        - act_peak
+                        training_base
                         - gradients_mb
+                        - optimizer_workspace_mb
+                        - dequant_mb
                         + (vae.weights_mb if ds.cache_latents else 0.0)
                         + preview_decoding["workspace_mb_estimate"]
+                        + 512
                     )
                     vae_phases.append(preview_decoding["peak_mb_estimate"])
                 peak = max([training_peak, *cache_phases.values(), *vae_phases])
@@ -1124,6 +1167,10 @@ def plan(
                     "estimate_scope": "per_device",
                     "communication_mb_estimate": round(communication_mb, 1),
                     "optimizer_workspace_mb_estimate": round(optimizer_workspace_mb, 1),
+                    "adapter_graph_mb_estimate": round(fusion[current_mode]["retained_bytes"] / 2**20, 1),
+                    "adapter_workspace_mb_estimate": round(fusion[current_mode]["workspace_bytes"] / 2**20, 1),
+                    "auxiliary_activations_mb_estimate": round(auxiliary_act_peak, 1),
+                    "training_runtime_mb_estimate": round(training_peak - training_live, 1),
                     "initialization_peak_mb_estimate": round(initialization_peak)
                     if initialization_peak is not None
                     else None,
@@ -1153,10 +1200,12 @@ def plan(
                         + gradients_mb
                         + compensation_mb
                         + ema_mb
+                        + communication_mb
                     ),
-                    "unestimated_components": ["text_encoder_activations"]
-                    if cfg.training.train_text_encoder
-                    else [],
+                    "unestimated_components": (
+                        (["text_encoder_activations"] if cfg.training.train_text_encoder else [])
+                        + (["adapter_reconstruction"] if fusion["unsupported"] else [])
+                    ),
                     "image_encoding": image_encoding,
                     "preview_decoding": preview_decoding,
                     "vae_setting_peak_mb_estimates": vae_setting_peaks,
@@ -1171,7 +1220,7 @@ def plan(
                     else {
                         mode: round(
                             max(
-                                training_peak - act_by_mode[current_mode] + act,
+                                _training_peak_mb(training_base + act + auxiliary_act_peak + fusion_mb[mode]),
                                 *cache_phases.values(),
                                 *vae_phases,
                                 initialization_peak or 0,

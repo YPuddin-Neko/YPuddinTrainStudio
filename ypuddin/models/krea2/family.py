@@ -610,8 +610,82 @@ class Krea2Family(ModelFamily):
 
     def training_tokens_for_plan(self, image_tokens: int) -> int:
         # Joint self-attention also processes the cached caption tokens. Their
-        # actual trimmed length varies; planning budgets the supported maximum.
-        return image_tokens + self.spec.text.max_len
+        # supported maximum and the forward's 256-token padding both occupy activations.
+        return ((image_tokens + self.spec.text.max_len + 255) // 256) * 256
+
+    def auxiliary_activation_bytes_for_plan(
+        self, backbone: nn.Module, batch_size: int, dtype: torch.dtype
+    ) -> int:
+        # Text fusion runs before the checkpointed main blocks. Frozen prefixes
+        # need no graph; downstream frozen modules still propagate adapter gradients.
+        fusion = backbone.txtfusion
+        element = torch.empty((), dtype=dtype).element_size()
+        tokens = batch_size * self.spec.text.max_len
+        encoder_layers = fusion.projector.in_features
+        active = False
+        total = 0
+
+        def trainable(module: nn.Module) -> bool:
+            return any(parameter.requires_grad for parameter in module.parameters())
+
+        def bypass_width(module: nn.Module) -> int:
+            if getattr(module, "mode", None) != "bypass":
+                return 0
+            adapter = module.adapter
+            if adapter.kind == "lokr":
+                width = adapter.c * adapter.b
+                if adapter.w2_lowrank:
+                    width += adapter.c * adapter.rank
+                if adapter.w1_lowrank:
+                    width += adapter.b * adapter.rank
+            else:
+                width = adapter.rank * (4 if getattr(adapter, "ortho", False) else 2 if adapter.kind == "ortho" else 1)
+            if adapter.scalar is not None or adapter.dropout_p:
+                width += module.out_features
+            return width
+
+        def block_bytes(block: nn.Module, count: int) -> int:
+            width, mlp_width = block.mlp.gate.in_features, block.mlp.gate.out_features
+            attention = block.attn
+            kv_width = attention.headdim * attention.kvheads
+            # Linear/gate inputs, SwiGLU intermediates, fused Q/K/V/output;
+            # RMSNorm's inputs/statistics and attention LSE stay in FP32.
+            # The shared attention expands grouped K/V to the query-head width.
+            activations = element * (8 * width + 4 * mlp_width)
+            activations += element * sum(bypass_width(module) for module in block.modules())
+            normalization = 4 * (3 * width + kv_width + 2 + 2 * attention.heads + attention.kvheads)
+            scales = 8 * (width + attention.headdim)
+            return count * (activations + normalization) + scales
+
+        for block in fusion.layerwise_blocks:
+            active = active or trainable(block)
+            if active:
+                total += block_bytes(block, tokens * encoder_layers)
+        if trainable(fusion.projector):
+            # The projector applies to each text channel, with encoder layers as its input width.
+            total += tokens * backbone.config.txtdim * element * (
+                fusion.projector.in_features + bypass_width(fusion.projector)
+            )
+            active = True
+        for block in fusion.refiner_blocks:
+            active = active or trainable(block)
+            if active:
+                total += block_bytes(block, tokens)
+        width = backbone.config.txtdim
+        for module in backbone.txtmlp:
+            own_gradient = trainable(module)
+            if isinstance(module, nn.GELU):
+                if active:
+                    total += tokens * width * element
+            elif hasattr(module, "in_features"):
+                if own_gradient:
+                    total += tokens * (module.in_features + bypass_width(module)) * element
+                width = module.out_features
+            elif active or own_gradient:
+                # RMSNorm's FP32 input, inverse RMS and scale.
+                total += 4 * (tokens * width + tokens + width)
+            active = active or own_gradient
+        return total
 
     def linear_module_names(self) -> list[str]:
         from .vendor.krea2_mmdit import KREA2_CONFIG, SingleStreamDiT

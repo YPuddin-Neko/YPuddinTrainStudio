@@ -353,6 +353,29 @@ class SDXLFamily(ModelFamily):
     def memory_layout(self, loaded: LoadedModel) -> MemoryLayout:
         return MemoryLayout()
 
+    def adapter_checkpoint_blocks_for_plan(self, backbone: nn.Module) -> list[nn.Module]:
+        from diffusers.models.transformers.transformer_2d import Transformer2DModel
+        from diffusers.models.unets.unet_2d_blocks import (
+            CrossAttnDownBlock2D,
+            CrossAttnUpBlock2D,
+            DownBlock2D,
+            UNetMidBlock2DCrossAttn,
+            UpBlock2D,
+        )
+
+        blocks = []
+        for block in (*backbone.down_blocks, *backbone.up_blocks):
+            if isinstance(block, (DownBlock2D, CrossAttnDownBlock2D, UpBlock2D, CrossAttnUpBlock2D)):
+                blocks.extend(block.resnets)
+        if isinstance(backbone.mid_block, UNetMidBlock2DCrossAttn):
+            # The first mid-block ResNet runs before its checkpointed attention/ResNet loop.
+            blocks.extend(backbone.mid_block.resnets[1:])
+        for module in backbone.modules():
+            if isinstance(module, Transformer2DModel):
+                # Input/output projections run outside the transformer-block checkpoints.
+                blocks.extend(module.transformer_blocks)
+        return blocks
+
     def latent_fingerprint(self, cfg: ModelConfig, *, dtype: torch.dtype) -> str:
         if not cfg.dit_path and not cfg.vae_path:
             return self.spec.latent.fingerprint

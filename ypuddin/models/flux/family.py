@@ -248,6 +248,9 @@ class FluxFamily(ModelFamily):
             ),
         )
 
+    def adapter_checkpoint_blocks_for_plan(self, backbone: nn.Module) -> list[nn.Module]:
+        return [*backbone.transformer_blocks, *backbone.single_transformer_blocks]
+
     def meta_backbone(self, cfg):
         config = DEFAULTS["transformer"]
         if cfg.dit_path:

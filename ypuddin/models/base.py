@@ -280,6 +280,16 @@ class ModelFamily(ABC):
     def training_tokens_for_plan(self, image_tokens: int) -> int:
         return image_tokens
 
+    def adapter_checkpoint_blocks_for_plan(self, backbone: nn.Module) -> list[nn.Module] | None:
+        """Adapter recomputation boundaries; None uses the family's memory-layout blocks."""
+        return None
+
+    def auxiliary_activation_bytes_for_plan(
+        self, backbone: nn.Module, batch_size: int, dtype: torch.dtype
+    ) -> int:
+        """Saved training activations outside the block layout, excluding weights and adapter fusion."""
+        return 0
+
     def sample_latents(
         self,
         loaded: LoadedModel,
