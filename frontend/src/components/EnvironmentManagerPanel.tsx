@@ -250,11 +250,11 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
     : copy('点击“运行检查”，检查此扩展能否在当前显卡上执行前向与反向计算。', 'Click “Run checks” to check whether this extension can run forward and backward computations on the current GPU.');
   const tritonRow = (name: string) => name === 'triton' || name === 'triton-windows';
   const tritonHelp = () => [
-    copy('Triton 把 GPU 内核编译成显卡代码。编译模型（torch.compile）需要它，xFormers 的部分可选内核和 Triton 内核的 FLOPs 统计也依赖它；没有 Triton 也能正常训练。', 'Triton compiles GPU kernels for the graphics card. Compiling the model (torch.compile) needs it, and so do some optional xFormers kernels and the FLOP counting of Triton kernels; training works without it.'),
-    target === 'cuda' && status?.runtime.platform === 'Windows' ? copy('Windows 安装与当前 PyTorch 配套的固定版本，使用 triton-windows 预编译 wheel，不在本机编译。在线没有合适的构建时，可上传与当前 Python、PyTorch 配套的 triton-windows wheel。', 'Windows installs the fixed version that matches the current PyTorch, as a prebuilt triton-windows wheel; nothing is compiled here. When no online build fits, upload a triton-windows wheel that matches the current Python and PyTorch.')
+    copy('开启「编译模型」时必须安装 Triton；xFormers 有它时可多用一部分加速内核。不编译模型时，不装也能正常训练。', 'Required when compiling the model; with it, xFormers can also use some extra kernels. Without compiling, training works without Triton.'),
+    target === 'cuda' && status?.runtime.platform === 'Windows' ? copy('Windows 上安装与当前 PyTorch 对应的 triton-windows 版本。没有对应版本时，可以上传与当前 Python 和 PyTorch 匹配的 triton-windows 安装包（.whl）。', 'On Windows, the triton-windows version matching the current PyTorch is installed. If none matches, upload a triton-windows wheel (.whl) built for the current Python and PyTorch.')
       : target === 'cuda' ? copy('Linux 的 Triton 随 PyTorch 安装，版本由 PyTorch 决定，这里不单独安装。', 'On Linux, Triton ships with PyTorch, which decides its version; it is not installed separately here.')
         : hipBackend ? copy('海光环境使用随厂商 PyTorch 安装的配套 Triton，海光 FlashAttention 也需要它。', 'DTK uses the matching vendor Triton installed with the vendor PyTorch; the DTK FlashAttention build needs it too.')
-          : copy('Apple 芯片和 CPU 没有 Triton，编译模型在这些设备上直接运行。', 'Apple chips and CPUs have no Triton; the model runs without compiling there.'),
+          : copy('Apple 芯片和 CPU 不使用 Triton，也不会编译模型。', 'Apple chips and CPUs do not use Triton and do not compile the model.'),
   ].join('\n\n');
   const reason = (pkg: PackageStatus) => {
     const tritonState = tritonRow(pkg.name) ? ({
