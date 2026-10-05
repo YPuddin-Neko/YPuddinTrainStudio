@@ -25,7 +25,7 @@ from ypuddin.models.base import (
 )
 from ypuddin.models.registry import register
 
-from .latent import Flux2Latent
+from .latent import Flux2Latent, patchify, unpatchify
 from .loading import (
     DEV_UNSUPPORTED,
     VARIANTS,
@@ -312,6 +312,11 @@ class Flux2Family(ModelFamily):
         loaded.extra["attention"] = actual
         if loaded.extra.get("materialized", True):
             _set_attention_backend(loaded.backbone, actual, device)
+
+    def build_objective(self, loaded, cfg):
+        from ypuddin.objectives.flow import PackedFlowObjective
+
+        return PackedFlowObjective(cfg, pack=patchify, unpack=unpatchify)
 
     def forward(self, loaded, x_t, t, cond, **extra):
         reject_dev_config(loaded.extra["dit_config"], loaded.extra.get("variant", "auto"))

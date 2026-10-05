@@ -8,12 +8,15 @@ Other objectives own their noising schedule and backbone timestep conversion.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
 import torch
 from torch import Tensor
 
 from ypuddin.config import ObjectiveConfig
+
+from .noise import random_normal_like, sample_training_noise
 
 # --------------------------------------------------------------------------- timestep transforms
 
@@ -94,12 +97,6 @@ class TimestepSampler:
 
 
 # --------------------------------------------------------------------------- noising / target
-
-
-def random_normal_like(tensor: Tensor, generator: torch.Generator | None) -> Tensor:
-    """Generate on the RNG's device, then transfer; the trainer's CPU RNG works on CUDA/MPS too."""
-    device = generator.device if generator is not None else tensor.device
-    return torch.randn(tensor.shape, generator=generator, device=device, dtype=tensor.dtype).to(tensor.device)
 
 
 def noisy_input_and_target(
@@ -208,7 +205,7 @@ class Objective:
     def prepare(
         self, x0: Tensor, t: Tensor, *, generator: torch.Generator | None = None
     ) -> tuple[Tensor, Tensor, Tensor]:
-        noise = random_normal_like(x0, generator)
+        noise = sample_training_noise(x0, self.cfg, generator)
         x_t, target = noisy_input_and_target(
             x0, noise, t, ip_noise_gamma=self.cfg.ip_noise_gamma, generator=generator
         )
@@ -228,3 +225,26 @@ class Objective:
 
     def describe(self) -> dict[str, Any]:
         return self.cfg.model_dump()
+
+
+class PackedFlowObjective(Objective):
+    """Apply spatial noise before packing pixel positions into latent channels."""
+
+    def __init__(
+        self,
+        cfg: ObjectiveConfig,
+        *,
+        pack: Callable[[Tensor], Tensor],
+        unpack: Callable[[Tensor], Tensor],
+    ):
+        super().__init__(cfg)
+        self.pack = pack
+        self.unpack = unpack
+
+    def prepare(
+        self, x0: Tensor, t: Tensor, *, generator: torch.Generator | None = None
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        if not (self.cfg.noise_offset or self.cfg.multires_noise_iterations):
+            return super().prepare(x0, t, generator=generator)
+        noisy, target, noise = super().prepare(self.unpack(x0), t, generator=generator)
+        return self.pack(noisy), self.pack(target), self.pack(noise)

@@ -2291,7 +2291,7 @@
             "advanced": true,
             "group": "objective",
             "order": 130,
-            "show_when": "model.family == 'sdxl'"
+            "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2']"
           }
         },
         "multires_noise_iterations": {
@@ -2305,7 +2305,7 @@
             "advanced": true,
             "group": "objective",
             "order": 131,
-            "show_when": "model.family == 'sdxl'"
+            "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2']"
           }
         },
         "multires_noise_discount": {
@@ -2319,7 +2319,7 @@
             "advanced": true,
             "group": "objective",
             "order": 132,
-            "show_when": "model.family == 'sdxl' && objective.multires_noise_iterations > 0"
+            "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2'] && objective.multires_noise_iterations > 0"
           }
         },
         "ip_noise_gamma": {

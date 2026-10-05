@@ -67,9 +67,11 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
     for (const section of ['dataset', 'validation']) {
       if (Array.isArray(next[section]?.sources)) next[section] = {...next[section], sources:next[section].sources.map((source:Record<string,any>) => source.caption ? {...source,caption:{...source.caption,weighted:false}} : source)};
     }
+    next.training.text_encoder_2_lr = null;
+  }
+  if (!['anima', 'krea2', 'sdxl', 'flux2'].includes(family.name)) {
     next.objective.noise_offset = 0;
     next.objective.multires_noise_iterations = 0;
-    next.training.text_encoder_2_lr = null;
   }
   if (family.name !== 'anima') {
     for (const key of ['llm_adapter_lr','self_attn_lr','cross_attn_lr','mlp_lr','modulation_lr']) next.training[key] = null;

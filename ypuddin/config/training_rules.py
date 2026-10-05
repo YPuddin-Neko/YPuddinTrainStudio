@@ -4,6 +4,7 @@ from .optimizer_rules import optimizer_key, optimizer_policy
 
 FULL_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "toy"})
 TEXT_ADAPTER_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2"})
+NOISE_SHAPE_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2"})
 _ANIMA_LR_FIELDS = frozenset({"llm_adapter_lr", "self_attn_lr", "cross_attn_lr", "mlp_lr", "modulation_lr"})
 _FULL_LR_FIELDS = ("backbone_lr", "text_encoder_lr", "text_encoder_2_lr", *sorted(_ANIMA_LR_FIELDS))
 
@@ -44,12 +45,12 @@ def _caption_noise_errors(cfg) -> list[dict[str, str]]:
             "dataset.caption.weighted", "标签权重语法仅适用于 SDXL",
         ),
         (
-            cfg.objective.noise_offset > 0 and cfg.model.family != "sdxl",
-            "objective.noise_offset", "噪声偏移仅适用于 SDXL",
+            cfg.objective.noise_offset > 0 and cfg.model.family not in NOISE_SHAPE_FAMILIES,
+            "objective.noise_offset", "噪声偏移仅适用于 Anima、Krea 2、SDXL 和 Klein",
         ),
         (
-            cfg.objective.multires_noise_iterations > 0 and cfg.model.family != "sdxl",
-            "objective.multires_noise_iterations", "多分辨率噪声仅适用于 SDXL",
+            cfg.objective.multires_noise_iterations > 0 and cfg.model.family not in NOISE_SHAPE_FAMILIES,
+            "objective.multires_noise_iterations", "多分辨率噪声仅适用于 Anima、Krea 2、SDXL 和 Klein",
         ),
         (
             cfg.objective.noise_offset > 0 and cfg.objective.multires_noise_iterations > 0,
