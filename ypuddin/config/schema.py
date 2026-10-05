@@ -839,13 +839,13 @@ class OptimizerConfig(_Strict):
 
     split_groups: bool = F(
         True,
-        help="让不同参数组分别估计步长，默认开启。关闭后共享估计；不会启用手动分组学习率。",
+        help="开启：每个参数组分别估计自适应步长。\n关闭：所有参数组共享一个自适应步长估计。",
         ui_=ui("optimizer", advanced=True, order=210, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     split_groups_mean: bool = F(
         False,
-        help="将各参数组估计的步长取调和平均后使用，默认关闭；需启用分组估计。",
+        help="开启：取各组步长估计的调和平均值作为共同基础步长。\n关闭：各组使用各自的步长估计。",
         ui_=ui("optimizer", advanced=True, order=220, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.split_groups == true"),
     )
 
