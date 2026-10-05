@@ -682,7 +682,7 @@ def plan(
             out["errors"].append({"loc": "model.attention", "msg": str(error)})
     # Offline plans do not know which runtime recipe will apply. The execution
     # plan and trainer perform this check once the device is known.
-    if cfg.checkpoint is not None and cfg.checkpoint.resume and device_type is not None:
+    if cfg.checkpoint is not None and cfg.checkpoint.resume:
         metadata_path = Path(cfg.checkpoint.resume) / "state.json"
         if metadata_path.is_file():
             try:
@@ -692,8 +692,12 @@ def plan(
                 extra = metadata.get("progress", {}).get("extra", {})
                 if not isinstance(extra, dict):
                     raise ValueError("训练状态的附加元数据格式无效")
-                validate_resume_compute_policy(compute_policy, extra.get("compute_policy"))
-                validate_metal_attention_resume(metal_runtime, extra.get("metal_attention_runtime"))
+                from .training_feature_contract import STATE_KEY, validate_training_feature_resume
+
+                validate_training_feature_resume(cfg, extra.get(STATE_KEY))
+                if device_type is not None:
+                    validate_resume_compute_policy(compute_policy, extra.get("compute_policy"))
+                    validate_metal_attention_resume(metal_runtime, extra.get("metal_attention_runtime"))
             except (OSError, UnicodeError, ValueError) as error:
                 out["errors"].append({"loc": "checkpoint.resume", "msg": str(error)})
     caps = family.spec.capabilities
@@ -836,27 +840,19 @@ def plan(
             else:
                 error_loc = "adapter"
                 if full_training:
-                    from types import SimpleNamespace
+                    from ypuddin.models.training_parameters import text_modules_for_plan
 
-                    from ypuddin.models.training_parameters import text_parameter_count
+                    from .training_modes import FullTrainingSet
 
-                    if any(isinstance(layer, FrozenLinear) for layer in backbone.modules()):
-                        raise ValueError("Full fine-tuning requires unquantized base weights")
-                    backbone.to(dtype=torch.float32).requires_grad_(cfg.training.train_backbone)
-                    encoder_params = (
-                        text_parameter_count(family, cfg.model) if cfg.training.train_text_encoder else 0
-                    )
-                    trainable = (base_params if cfg.training.train_backbone else 0) + encoder_params
-                    aset = SimpleNamespace(
-                        num_params=lambda: trainable,
-                        layers={},
-                        summary=lambda: {
-                            "by_algo": {
-                                "full-model": int(cfg.training.train_backbone)
-                                + int(cfg.training.train_text_encoder)
-                            }
-                        },
-                    )
+                    backbone.requires_grad_(False)
+                    modules = {}
+                    if cfg.training.train_backbone:
+                        modules["backbone"] = backbone
+                    text_modules = {}
+                    if cfg.training.train_text_encoder:
+                        text_modules = text_modules_for_plan(family, cfg.model)
+                        modules.update(text_modules)
+                    aset = FullTrainingSet(modules, config=cfg)
                 else:
                     from ypuddin.adapters.components import ComponentAdapterSet, inject_text_adapters
 
@@ -911,16 +907,20 @@ def plan(
                     raise ValueError("无法自动计算图像面积上限，请检查训练图片")
                 if full_training:
                     params["components"] = {
-                        "backbone": base_params if cfg.training.train_backbone else 0,
-                        "text_encoder": encoder_params,
+                        component: sum(p.numel() for p in module.parameters() if p.requires_grad)
+                        for component, module in aset.modules.items()
                     }
+                    params["groups"] = aset.group_report()
+                    unmatched = [key for key in cfg.optimizer.group_lr if not any(key in name for name in aset._names)]
+                    if unmatched:
+                        out["warnings"].append({"loc": "optimizer.group_lr", "msg": "未匹配到参数的学习率规则：" + "、".join(unmatched)})
                 elif cfg.training.train_text_encoder:
                     params["components"] = {
                         component: item.num_params() for component, item in aset.components.items()
                     }
                 if params["trainable"] == 0:
                     out["errors"].append(
-                        {"loc": "adapter", "msg": "adapter rules select no trainable parameters"}
+                        {"loc": "training" if full_training else "adapter", "msg": "所选组件已全部冻结，请至少为一个组件设置非零学习率" if full_training else "adapter rules select no trainable parameters"}
                     )
                 if memory_issue is None and cfg.loop.distributed_strategy == "fsdp":
                     from ypuddin.config.training_rules import distributed_training_errors
@@ -932,27 +932,27 @@ def plan(
                 error_loc = "memory"
                 # A loader may retain native FP8 even when model.dtype is BF16.
                 # Explicit base_precision applies only to selected adapter targets.
-                weights_mb = (
-                    0.0
-                    if full_training and cfg.training.train_backbone
-                    else _frozen_storage_bytes(backbone) / 2**20
-                )
+                weights_mb = _frozen_storage_bytes(backbone) / 2**20
                 adapter_mb = (
                     aset.num_params()
                     * (4 if full_training or cfg.adapter.param_dtype == "fp32" else 2)
                     / 2**20
                 )
                 optimizer_mb = aset.num_params() * 4 * (0.5 if "8bit" in cfg.optimizer.type else 2) / 2**20
-                if not full_training:
-                    optimizer_bytes = optimizer_state_bytes(
-                        cfg.optimizer,
-                        aset.param_groups(cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr),
-                    )
-                    if optimizer_bytes is not None:
-                        optimizer_mb = optimizer_bytes / 2**20
+                from .optimizer_memory import cpu_offload_memory_bytes
+
+                optimizer_groups = aset.param_groups(cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr)
+                optimizer_bytes = optimizer_state_bytes(cfg.optimizer, optimizer_groups)
+                if optimizer_bytes is not None:
+                    optimizer_mb = optimizer_bytes / 2**20
+                cpu_optimizer = cpu_offload_memory_bytes(cfg.optimizer, optimizer_groups)
                 gradients_mb = adapter_mb
                 compensation_mb = adapter_mb if cfg.optimizer.kahan else 0.0
                 ema_mb = adapter_mb if cfg.loop.ema else 0.0
+                cpu_ema_mb = 0.0
+                if full_training and cfg.loop.ema:
+                    cpu_ema_mb = sum(t.numel() * 4 for module in aset.modules.values() for t in module.state_dict().values()) / 2**20
+                    ema_mb = 0.0
                 layout = (
                     family.memory_layout_meta(backbone) if hasattr(family, "memory_layout_meta") else None
                 )
@@ -1073,6 +1073,8 @@ def plan(
                     text_encoder_mb = (
                         sum(_frozen_storage_bytes(module) for module in text_modules.values()) / 2**20
                     )
+                if full_training and cfg.training.train_text_encoder:
+                    text_encoder_mb = sum(_frozen_storage_bytes(module) for module in text_modules.values()) / 2**20
                 vae = _plan_vae(cfg, compute_dtype, device)
                 latent_encoder_mb = latent_workspace_mb = 0.0
                 if vae is not None and not ds.cache_latents:
@@ -1311,6 +1313,8 @@ def plan(
                     "latent_encoding_workspace_mb_estimate": round(latent_workspace_mb, 1),
                     "adapter_mb": round(adapter_mb, 1),
                     "optimizer_mb": round(optimizer_mb, 1),
+                    "cpu_optimizer_mb": round(sum(cpu_optimizer.values()) / 2**20, 1),
+                    "cpu_ema_mb": round(cpu_ema_mb, 1),
                     "gradients_mb": round(gradients_mb, 1),
                     "compensation_mb": round(compensation_mb, 1),
                     "ema_mb": round(ema_mb, 1),

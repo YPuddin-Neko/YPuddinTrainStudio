@@ -102,6 +102,9 @@
 .caption-source-format .caption-format-control{display:grid;gap:5px;min-width:0}
 .caption-override-notice{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:12px;color:var(--studio-dim)}
 
+.bucket-parameter-groups{margin-top:6px;font-size:11px}
+.bucket-parameter-groups>summary{cursor:pointer;color:var(--studio-accent)}
+.bucket-parameter-groups[open]>.bucket-table-wrap{margin-top:5px}
 .output-binding-summary{grid-column:1/-1;display:grid;gap:8px;font-size:12px;min-width:0}
 .output-binding-summary>div:not(.output-binding-heading):not(.output-binding-editor){display:grid;grid-template-columns:65px minmax(0,1fr);gap:10px;align-items:baseline}
 .output-binding-summary code{overflow-wrap:anywhere;white-space:normal;font-size:11px}

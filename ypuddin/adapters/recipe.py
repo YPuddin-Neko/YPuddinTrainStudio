@@ -19,15 +19,15 @@ if TYPE_CHECKING:
 # Keep paths, prompts, caption text and future configuration fields out of shared files.
 _FIELDS = {
     "model": "family dtype attention prediction_type zero_terminal_snr sdxl_max_token_length flux2_variant krea2_variant",
-    "training": "mode train_backbone train_text_encoder",
+    "training": "mode train_backbone train_text_encoder backbone_lr text_encoder_lr text_encoder_2_lr llm_adapter_lr self_attn_lr cross_attn_lr mlp_lr modulation_lr",
     "dataset": "resolutions resolution_mode image_fit crop_anchor native_max_pixels native_max_pixels_mode native_max_side native_overflow aspect_ratio_limit area_tolerance bucket_step bucket_no_upscale batch_size flip masked_loss cache_latents text_encoding",
-    "objective": "timestep_sampling logit_mean logit_std res_shift_tokens res_shift_mu shift mode_scale stratified t_min t_max loss huber_c weighting snr_gamma ip_noise_gamma scale_v_pred_loss_like_noise_pred v_pred_like_loss debiased_estimation_loss",
+    "objective": "timestep_sampling logit_mean logit_std res_shift_tokens res_shift_mu shift mode_scale stratified t_min t_max loss huber_c weighting snr_gamma noise_offset multires_noise_iterations multires_noise_discount ip_noise_gamma scale_v_pred_loss_like_noise_pred v_pred_like_loss debiased_estimation_loss",
     "scheduler": "type warmup_steps min_lr_ratio num_cycles power decay_steps",
     "memory": "base_precision blocks_to_swap activation_checkpointing offload_text_encoder compile allow_tf32",
     "loop": "gpu_count distributed_strategy max_steps epochs grad_accum mixed_precision seed deterministic ema ema_decay nan_skip_limit",
     "checkpoint": "save_dtype",
 }
-_CAPTION_FIELDS = "keep_tokens shuffle tag_dropout caption_dropout wildcard cache_variants"
+_CAPTION_FIELDS = "keep_tokens shuffle tag_dropout caption_dropout wildcard cache_variants weighted"
 _EXTRA_OPTIMIZER_ARGS = set(
     "amsgrad maximize foreach capturable differentiable fused momentum dampening nesterov "
     "scale_parameter relative_step warmup_init clip_threshold decay_rate beta1 eps betas "
@@ -52,7 +52,8 @@ def training_recipe_metadata(
     cfg: TrainConfig, bundle: DataBundle, progress: Progress, *, world_size: int = 1
 ) -> dict[str, str]:
     recipe = {section: _select(getattr(cfg, section), names) for section, names in _FIELDS.items()}
-    recipe["adapter"] = cfg.adapter.model_dump(mode="json", exclude={"resume_weights"})
+    if cfg.training.mode == "adapter":
+        recipe["adapter"] = cfg.adapter.model_dump(mode="json", exclude={"resume_weights"})
     recipe["dataset"]["caption"] = _select(cfg.dataset.caption, _CAPTION_FIELDS)
     if cfg.dataset.resolution_mode == "native":
         recipe["dataset"]["resolved_native_max_pixels"] = bundle.plan.native_max_pixels
@@ -64,7 +65,7 @@ def training_recipe_metadata(
         public["caption"] = _select(
             source.caption
             if source.caption is not None
-            else CaptionConfig()
+            else CaptionConfig(weighted=cfg.dataset.caption.weighted)
             if source.is_reg
             else cfg.dataset.caption,
             _CAPTION_FIELDS,
@@ -72,7 +73,7 @@ def training_recipe_metadata(
         sources.append(public)
     recipe["dataset"]["sources"] = sources
     recipe["loop"]["gpu_count"] = world_size
-    optimizer_fields = "type lr weight_decay betas eps grad_clip_norm kahan group_lr " + " ".join(
+    optimizer_fields = "type lr weight_decay betas eps grad_clip_norm kahan group_lr cpu_offload exclude_bias_norm_from_weight_decay " + " ".join(
         optimizer_specific_fields(cfg.optimizer.type)
     )
     recipe["optimizer"] = _select(cfg.optimizer, optimizer_fields)
@@ -100,7 +101,6 @@ def training_recipe_metadata(
         if cfg.model.dit_path
         else cfg.model.family,
         "ss_learning_rate": str(cfg.optimizer.lr),
-        "ss_network_dropout": str(cfg.adapter.dropout),
         "ss_optimizer": f"{opt['type']}({json.dumps(opt_args, ensure_ascii=False, allow_nan=False)})",
         "ss_lr_scheduler": "optimizer-managed" if managed else cfg.scheduler.type,
         "ss_gradient_accumulation_steps": str(cfg.loop.grad_accum),
@@ -126,6 +126,8 @@ def training_recipe_metadata(
             }
         ),
     }
+    if cfg.training.mode == "adapter":
+        metadata["ss_network_dropout"] = str(cfg.adapter.dropout)
     if not managed:
         warmup = cfg.scheduler.warmup_steps
         metadata["ss_lr_warmup_steps"] = str(

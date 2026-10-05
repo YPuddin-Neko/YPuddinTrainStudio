@@ -394,6 +394,7 @@ def load_sharded_checkpoint(
     expected_total_steps: int | None = None,
     legacy_scheduler_contract: dict[str, Any] | None = None,
     expected_dora_contract: dict[str, Any] | None = None,
+    expected_training_features: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate before mutation, then restore native tensors and optimizer shards.
 
@@ -407,6 +408,13 @@ def load_sharded_checkpoint(
         from ypuddin.adapters.dora_contract import STATE_KEY, validate_resume_contract
 
         meta = read_sharded_checkpoint_metadata(path)
+        if expected_training_features is not None:
+            from .training_feature_contract import STATE_KEY as FEATURE_STATE_KEY
+            from .training_feature_contract import validate_training_feature_contract
+
+            validate_training_feature_contract(
+                expected_training_features, meta["progress"].get("extra", {}).get(FEATURE_STATE_KEY)
+            )
         validate_resume_contract(expected_dora_contract, meta["progress"].get("extra", {}).get(STATE_KEY))
         checks = {
             "training_kind": expected_training_kind,
@@ -521,7 +529,11 @@ def load_sharded_checkpoint(
     }
 
 
-def export_sharded_model_artifact(path: Path, training: FullTrainingSet, cfg, loaded) -> Path:
+def export_sharded_model_artifact(
+    path: Path, training: FullTrainingSet, cfg, loaded, *, metadata: dict[str, str] | None = None,
+) -> Path:
     """All ranks gather; only rank zero invokes the existing native exporter."""
     tensors = gather_full_training_state(training.modules)
-    return Path(_primary_call(lambda: str(save_model_artifact(path, training, cfg, loaded, tensors=tensors))))
+    return Path(_primary_call(lambda: str(save_model_artifact(
+        path, training, cfg, loaded, tensors=tensors, metadata=metadata,
+    ))))

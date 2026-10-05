@@ -54,6 +54,7 @@ from ypuddin.config.compute_policy import (
     resolve_training_compute_config,
     validate_resume_compute_policy,
 )
+from ypuddin.config.export_metadata import user_modelspec_metadata
 from ypuddin.config.io import config_hash_variants
 from ypuddin.data import (
     BucketBatchSampler,
@@ -97,7 +98,14 @@ from .scheduler_contract import (
     validate_scheduler_recipe,
 )
 from .state import Progress, capture_rng, load_checkpoint, restore_rng, save_checkpoint
-from .training_modes import FullTrainingSet, save_model_artifact
+from .training_feature_contract import (
+    STATE_KEY as TRAINING_FEATURE_STATE_KEY,
+)
+from .training_feature_contract import (
+    training_feature_contract,
+    validate_training_feature_resume,
+)
+from .training_modes import FullTrainingSet, full_model_metadata, save_model_artifact
 
 log = logging.getLogger(__name__)
 
@@ -213,6 +221,7 @@ class Trainer:
         if not hasattr(self, "distributed"):
             self.cfg = resolve_native_vram_config(self.cfg, device=self.device)
         cfg = self.cfg
+        self._training_feature_contract = training_feature_contract(cfg)
         self.compute_runtime: dict[str, Any] | None = None
         self.metal_attention_runtime: dict[str, str] | None = None
         self.run_dir = Path(cfg.checkpoint.output_dir)
@@ -452,6 +461,8 @@ class Trainer:
             )
             if (self.compute_policy or {}).get("frozen_text_implementation"):
                 self.loaded.text.configure_compute(self.compute_policy["frozen_text_implementation"])
+            if cfg.model.family == "sdxl":
+                self.loaded.text.configure_weighted_captions(cfg.dataset.caption.weighted)
             self.model_identity = self._model_identity()
         log.info("model components loaded in %.1fs", time.perf_counter() - load_started)
         self.objective = self.family.build_objective(self.loaded, cfg.objective)
@@ -582,7 +593,9 @@ class Trainer:
             if cfg.training.train_text_encoder:
                 self.loaded.text.to(self.device)
                 modules.update(self.loaded.text.enable_training())
-            self.adapters = FullTrainingSet(modules)
+            self.adapters = FullTrainingSet(modules, config=cfg)
+            if not self.adapters.num_params():
+                raise ValueError("所选组件已全部冻结，请至少为一个组件设置非零学习率")
             if cfg.training.resume_weights:
                 self.adapters.load_weights(cfg.training.resume_weights, self.family.spec.name)
         else:
@@ -739,6 +752,7 @@ class Trainer:
             # DDP saves on rank zero but every rank must retain identical progress.
             self.progress.extra["scheduler_contract"] = deepcopy(self._scheduler_contract)
         self.progress.extra[DORA_STATE_KEY] = compute_contract(self.adapters)
+        self.progress.extra[TRAINING_FEATURE_STATE_KEY] = deepcopy(self._training_feature_contract)
         self.progress.extra["deterministic"] = cfg.loop.deterministic
         if cfg.dataset.resolution_mode == "native":
             self.progress.extra["native_max_pixels"] = self.bundle.plan.native_max_pixels
@@ -1086,6 +1100,7 @@ class Trainer:
         path = Path(self.cfg.checkpoint.resume) / "state.json"
         metadata = json.loads(path.read_text(encoding="utf-8"))
         extra = metadata.get("progress", {}).get("extra", {})
+        validate_training_feature_resume(self.cfg, extra.get(TRAINING_FEATURE_STATE_KEY))
         validate_resume_reproducibility(self.cfg.loop.deterministic, extra.get("deterministic"))
         validate_resume_compute_policy(self.compute_policy, extra.get("compute_policy"))
         validate_metal_attention_resume(self.metal_attention_runtime, extra.get("metal_attention_runtime"))
@@ -1131,6 +1146,7 @@ class Trainer:
         validate_scheduler_recipe(captured_scheduler.contract, self.cfg, self.progress.total_steps)
         validate_scheduler_instance(captured_scheduler.contract, self.scheduler)
         ck = load_checkpoint(path)
+        validate_training_feature_resume(self.cfg, ck["progress"].extra.get(TRAINING_FEATURE_STATE_KEY))
         validate_resume_contract(compute_contract(self.adapters), ck["progress"].extra.get(DORA_STATE_KEY))
         from .metal_compute import validate_metal_attention_resume
 
@@ -1219,12 +1235,17 @@ class Trainer:
 
     def _adapter_metadata(self) -> dict[str, str]:
         if self.cfg.training.mode == "full":
-            return {
-                "ypuddin.training_mode": "full",
-                "ypuddin.family": self.family.spec.name,
-                "ypuddin.components": json.dumps(sorted(self.adapters.modules)),
-                "ypuddin.config_hash": self.config_hash,
-            }
+            metadata = full_model_metadata(self.adapters, self.cfg, self.loaded)
+            metadata["ypuddin.config_hash"] = self.config_hash
+            if self.cfg.checkpoint.save_training_metadata:
+                from ypuddin.adapters.recipe import training_recipe_metadata
+
+                metadata.update(training_recipe_metadata(
+                    self.cfg, self.bundle, self.progress,
+                    world_size=getattr(getattr(self, "distributed", None), "world_size", 1),
+                ))
+                metadata.update({"ss_steps": str(self.progress.step), "ss_epoch": str(self.progress.epoch)})
+            return metadata
         # Metadata must not gather or perform arithmetic on sharded parameters.
         targets = {
             name: layer.adapter.extra_metadata() | {"dora": layer.dora is not None, "mode": layer.mode}
@@ -1256,6 +1277,7 @@ class Trainer:
             include_training_metadata=self.cfg.checkpoint.save_training_metadata,
         )
         metadata.update(export_contract_metadata(self.adapters))
+        metadata.update(user_modelspec_metadata(self.cfg.checkpoint))
         if self.cfg.checkpoint.save_training_metadata:
             from ypuddin.adapters.recipe import training_recipe_metadata
 
@@ -1286,7 +1308,8 @@ class Trainer:
         self._validate_dora_contract()
         if isinstance(self.adapters, FullTrainingSet):
             path = save_model_artifact(
-                self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.model", self.adapters, self.cfg, self.loaded
+                self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.model", self.adapters, self.cfg, self.loaded,
+                metadata=self._adapter_metadata(),
             )
             self.emit("checkpoint.saved", kind="model", step=self.progress.step, path=str(path), ema=False)
             if self.ema is not None:
@@ -1296,6 +1319,7 @@ class Trainer:
                     self.cfg,
                     self.loaded,
                     tensors=self.ema,
+                    metadata=self._adapter_metadata(),
                 )
                 self.emit(
                     "checkpoint.saved", kind="model", step=self.progress.step, path=str(ema_path), ema=True
@@ -1354,9 +1378,11 @@ class Trainer:
     def _save_state(self, tag: str | None = None) -> Path:
         self._validate_dora_contract()
         self._validate_training_compute_policy()
+        validate_training_feature_resume(self.cfg, self._training_feature_contract)
         validate_scheduler_recipe(self._scheduler_contract, self.cfg, self.progress.total_steps)
         validate_scheduler_instance(self._scheduler_contract, self.scheduler)
         self.progress.extra["scheduler_contract"] = deepcopy(self._scheduler_contract)
+        self.progress.extra[TRAINING_FEATURE_STATE_KEY] = deepcopy(self._training_feature_contract)
         self.progress.extra[DORA_STATE_KEY] = compute_contract(self.adapters)
         if self.cfg.training.mode == "full":
             # A full-state checkpoint needs the raw optimizer-point weights only.

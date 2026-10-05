@@ -69,7 +69,7 @@ _MODEL_IDENTITIES: dict[str, tuple[str, str, str]] = {
 }
 
 
-def model_identity(family: str, variant: str | None = None) -> dict[str, str]:
+def model_identity(family: str, variant: str | None = None, *, adapter: bool = True) -> dict[str, str]:
     """The base-model keys external tools read; empty for a family or variant without a convention."""
     known = _MODEL_IDENTITIES.get(f"{family}/{variant}") or _MODEL_IDENTITIES.get(family)
     if known is None:
@@ -79,7 +79,7 @@ def model_identity(family: str, variant: str | None = None) -> dict[str, str]:
         "ss_base_model_version": version,
         "modelspec.sai_model_spec": "1.0.1",
         # Every adapter algorithm loads as a LoRA-type network; ss_network_args names the algorithm.
-        "modelspec.architecture": f"{architecture}/lora",
+        "modelspec.architecture": f"{architecture}/lora" if adapter else architecture,
         "modelspec.implementation": implementation,
     }
 

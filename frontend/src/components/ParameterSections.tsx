@@ -11,7 +11,7 @@ export default function ParameterSections({ rootRef, tab, group, onTabChange, is
 }) {
   const text = useWorkspaceText();
   const items = flow.filter(item => item.group !== 'adapter' || !fullTraining);
-  const issueGroup = (issue: ConfigIssue) => issue.path.startsWith('training.') ? 'model' : issue.path === 'model.attention' ? 'memory' : issue.path === 'dataset.batch_size' ? 'loop' : issue.path.startsWith('dataset.caption.') ? 'caption' : issue.path.split('.')[0];
+  const issueGroup = (issue: ConfigIssue) => issue.path.startsWith('training.') ? (issue.path.endsWith('_lr') ? 'optimizer' : 'model') : issue.path === 'model.attention' ? 'memory' : issue.path === 'dataset.batch_size' ? 'loop' : issue.path.startsWith('dataset.caption.') ? 'caption' : issue.path.split('.')[0];
   const hasGlobalIssue = issues.some(issue => !flow.some(item => item.group === issueGroup(issue)));
   const completed = (group: string) => checked && !hasGlobalIssue && !issues.some(issue => issueGroup(issue) === group)
     // A schema failure returns before model paths and cross-group constraints are checked.

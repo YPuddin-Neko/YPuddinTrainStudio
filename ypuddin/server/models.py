@@ -350,6 +350,16 @@ class PlanBucket(_Out):
     source_variants: int = 0
 
 
+class PlanParameterGroup(_Out):
+    name: str
+    lr: float
+    weight_decay: float
+    frozen: bool
+    parameters: int
+    tensors: int
+    source: str
+
+
 class PlanParams(_Out):
     """Empty (all zeros) when the family cannot build a meta backbone for the config."""
 
@@ -359,6 +369,7 @@ class PlanParams(_Out):
     by_algo: dict[str, int] = Field(default_factory=dict)
     training_mode: Literal["adapter", "full"] = "adapter"
     components: dict[str, int] = Field(default_factory=dict)
+    groups: list[PlanParameterGroup] = Field(default_factory=list)
 
 
 class PlanActivation(_Out):
@@ -375,6 +386,8 @@ class PlanMemory(_Out):
     text_encoder_mb: float = 0
     adapter_mb: float = 0
     optimizer_mb: float = 0
+    cpu_optimizer_mb: float = 0
+    cpu_ema_mb: float = 0
     gradients_mb: float = 0
     estimate_scope: Literal["per_device"] = "per_device"
     communication_mb_estimate: float = 0

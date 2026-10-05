@@ -117,7 +117,22 @@ export function selectOptimizer(schema: any, config: Config, type: string): Conf
     next = assign(next, `optimizer.${name}`, property.default);
   }
   for (const [path, value] of Object.entries(profile?.defaults || {})) next = assign(next, path, value);
-  return normalizeOptimizerConfig(schema, next);
+  return normalizeOptimizerConfig(schema, clearIncompatibleOptimizerSettings(schema, next));
+}
+
+function clearIncompatibleOptimizerSettings(schema: any, source: Config): Config {
+  let next = source;
+  if (next.training?.mode !== 'full') {
+    for (const key of ['cpu_offload', 'exclude_bias_norm_from_weight_decay']) {
+      if (next.optimizer?.[key]) next = assign(next, `optimizer.${key}`, false);
+    }
+  }
+  if ('optimizer.group_lr' in optimizerRules(schema, next).fixed) {
+    for (const key of ['backbone_lr', 'text_encoder_lr', 'text_encoder_2_lr', 'llm_adapter_lr', 'self_attn_lr', 'cross_attn_lr', 'mlp_lr', 'modulation_lr']) {
+      if (next.training?.[key] > 0) next = assign(next, `training.${key}`, null);
+    }
+  }
+  return next;
 }
 
 export function restoreOptimizerSelection(schema: any, current: Config, previous: Config): Config {
@@ -128,7 +143,7 @@ export function restoreOptimizerSelection(schema: any, current: Config, previous
     const rates = new Map(previous.adapter.rules.map((rule: Config) => [rule.match, rule.lr]));
     next = assign(next, 'adapter.rules', current.adapter.rules.map((rule: Config) => rates.has(rule.match) ? {...rule, lr: rates.get(rule.match)} : rule));
   }
-  return normalizeOptimizerConfig(schema, next);
+  return normalizeOptimizerConfig(schema, clearIncompatibleOptimizerSettings(schema, next));
 }
 
 export function optimizerManagedReason(schema: any, config: Config, path: string, english = false) {

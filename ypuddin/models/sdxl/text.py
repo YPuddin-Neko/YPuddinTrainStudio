@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import torch
@@ -11,6 +12,7 @@ from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.fingerprints import content_fingerprint
 from ypuddin.models.memory import release_model_memory
 
+from .caption_weights import parse_caption_weights
 from .loading import ASSETS, component_config, config_asset, load_clip
 
 
@@ -35,6 +37,7 @@ class SDXLText(TextPipeline):
         device: torch.device | str,
         dtype: torch.dtype,
         max_token_length: int = 75,
+        weighted_captions: bool = False,
     ):
         self.paths = (clip_l, clip_g)
         self.tokenizer_paths = tokenizers
@@ -69,8 +72,19 @@ class SDXLText(TextPipeline):
                 else f"sdxl-dual-clip-chunks-first-pooled-v1:tokens={max_token_length}:dtype={dtype}"
             ),
         )
+        self._unweighted_fingerprint = self.fingerprint
+        self.configure_weighted_captions(weighted_captions)
 
     components = ("text_encoder", "text_encoder_2")
+
+    def configure_weighted_captions(self, enabled: bool) -> None:
+        self.weighted_captions = enabled
+        self.fingerprint = (
+            hashlib.blake2b(
+                f"sdxl-caption-weights-v1:{self._unweighted_fingerprint}".encode(), digest_size=24
+            ).hexdigest()
+            if enabled else self._unweighted_fingerprint
+        )
 
     def _ensure(self) -> None:
         if not self.tokenizers:
@@ -109,7 +123,11 @@ class SDXLText(TextPipeline):
         hidden = []
         pooled = None
         for tokenizer, model in zip(self.tokenizers, self.models, strict=True):
-            ids = self._tokenize(tokenizer, captions).to(self.device)
+            if self.weighted_captions:
+                ids, weights = self._tokenize_weighted(tokenizer, captions)
+                ids = ids.to(self.device)
+            else:
+                ids = self._tokenize(tokenizer, captions).to(self.device)
             # SDXL's CLIP padding is meaningful conditioning. Match upstream: no attention
             # mask, no trimming, and no final layer norm applied to penultimate hidden states.
             output = model(ids, output_hidden_states=True)
@@ -122,6 +140,11 @@ class SDXLText(TextPipeline):
                 states = torch.cat(
                     [states[:, 0, :1], states[:, :, 1:-1].flatten(1, 2), states[:, -1, -1:]], dim=1
                 )
+            if self.weighted_captions:
+                weighted_states = states * weights.to(states.device).unsqueeze(-1)
+                # Chunk-wise weighting retains the encoder dtype. Avoid in-place
+                # writes so text-encoder training keeps a valid backward graph.
+                states = weighted_states.to(states.dtype) if self.chunks > 1 else weighted_states
             hidden.append(states)
             if hasattr(output, "text_embeds"):
                 pooled = output.text_embeds
@@ -157,6 +180,29 @@ class SDXLText(TextPipeline):
                 chunk[~valid[:, 0], 1] = tokenizer.eos_token_id
             chunks.append(chunk)
         return torch.stack(chunks, dim=1).flatten(0, 1)
+
+    def _tokenize_weighted(self, tokenizer, captions: list[str]) -> tuple[Tensor, Tensor]:
+        batch_ids, batch_weights = [], []
+        budget = self.max_len - 2
+        chunk_size = self.context_length - 2
+        for caption in captions:
+            content, weights = [], []
+            for span, weight in parse_caption_weights(caption):
+                ids = tokenizer(
+                    span, add_special_tokens=False, truncation=True, max_length=budget - len(content)
+                ).input_ids
+                content.extend(ids)
+                weights.extend([weight] * len(ids))
+                if len(content) == budget:
+                    break
+            for start in range(0, budget, chunk_size):
+                part = content[start : start + chunk_size]
+                batch_ids.append(
+                    [tokenizer.bos_token_id] + part + [tokenizer.eos_token_id]
+                    + [tokenizer.pad_token_id] * (chunk_size - len(part))
+                )
+            batch_weights.append([1.0] + weights + [1.0] * (self.max_len - 1 - len(weights)))
+        return torch.tensor(batch_ids, dtype=torch.long), torch.tensor(batch_weights, dtype=torch.float32)
 
     @torch.no_grad()
     def encode_for_cache(self, captions: list[str]) -> list[dict[str, Tensor]]:

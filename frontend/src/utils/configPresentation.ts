@@ -10,6 +10,20 @@ const labels: Record<string, string> = {
   'model.sdxl_max_token_length': 'SDXL 文本长度',
   'model.training_guidance': '训练引导值', 'sampling.guidance': '模型引导值',
   'model.flux2_variant': 'Klein 类型', 'model.krea2_variant': 'Krea 2 类型',
+  'training.backbone_lr': '主模型学习率',
+  'training.text_encoder_lr': '文本编码器学习率',
+  'training.text_encoder_2_lr': 'CLIP-G 学习率',
+  'training.llm_adapter_lr': 'LLM Adapter 学习率',
+  'training.self_attn_lr': '自注意力学习率',
+  'training.cross_attn_lr': '交叉注意力学习率',
+  'training.mlp_lr': 'MLP 学习率',
+  'training.modulation_lr': '调制层学习率',
+  'dataset.caption.weighted': '加权 Caption',
+  'objective.noise_offset': '噪声偏移强度',
+  'objective.multires_noise_iterations': '多分辨率噪声层数',
+  'objective.multires_noise_discount': '多分辨率噪声衰减',
+  'optimizer.cpu_offload': '优化器 CPU 卸载',
+  'optimizer.exclude_bias_norm_from_weight_decay': '偏置与归一化不衰减',
   'training.mode': '训练方式', 'training.train_backbone': '训练主模型（UNet / DiT）', 'training.train_text_encoder': '训练文本编码器', 'training.resume_weights': '全量模型起始权重',
   'model.vae_path': 'VAE', 'model.tokenizer_path': '分词器目录', 'model.dtype': '底模加载精度', 'model.attention': '注意力后端',
   'dataset.sources': '训练数据源', 'dataset.resolutions': '训练分辨率', 'dataset.aspect_ratio_limit': '最大长宽比',
@@ -72,6 +86,10 @@ const labels: Record<string, string> = {
   'checkpoint.save_every_epochs': '每隔几轮保存', 'checkpoint.save_state_every_steps': '恢复点保存间隔', 'checkpoint.save_state_every_epochs': '每隔几轮保存恢复点',
   'checkpoint.keep_last_n': '保留最近几次权重', 'checkpoint.save_dtype': '权重保存精度', 'checkpoint.save_on_finish': '结束时保存权重',
   'checkpoint.save_training_metadata': '保存训练元数据', 'checkpoint.state_dir': '恢复点保存目录', 'checkpoint.resume': '恢复完整训练状态', 'sampling.output_dir': '采样图保存目录', 'sampling.enabled': '生成训练预览', 'sampling.every_steps': '每隔几步预览',
+  'checkpoint.metadata_title': '模型标题', 'checkpoint.metadata_author': '模型作者',
+  'checkpoint.metadata_description': '模型说明', 'checkpoint.metadata_license': '模型许可证',
+  'checkpoint.metadata_merged_from': '合并来源模型', 'checkpoint.metadata_tags': '模型标签',
+  'checkpoint.metadata_usage_hint': '使用提示', 'checkpoint.metadata_trigger_phrase': '模型触发词',
   'sampling.every_epochs': '每隔几轮预览', 'sampling.at_start': '开始前生成预览', 'sampling.prompts': '预览提示词',
   'sampling.prompts_file': '提示词文件', 'sampling.steps': '采样步数', 'sampling.cfg': 'CFG 引导强度',
   'sampling.shift': '采样时间步偏移', 'sampling.width': '预览宽度', 'sampling.height': '预览高度',
@@ -102,6 +120,10 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path === 'adapter.conv_alpha') return 'Convolution alpha';
   if (english && path.startsWith('adapter.tlora_')) return ({ 'adapter.tlora_min_rank': 'Minimum rank', 'adapter.tlora_power': 'Rank curve', 'adapter.tlora_ortho': 'Orthogonal start' } as Record<string, string>)[path] || fallback;
   if (english && path === 'checkpoint.save_training_metadata') return 'Save training metadata';
+  if (english && path.startsWith('checkpoint.metadata_')) return ({
+    title: 'Model title', author: 'Model author', description: 'Model description', license: 'Model license',
+    merged_from: 'Merged from', tags: 'Model tags', usage_hint: 'Usage hint', trigger_phrase: 'Model trigger phrase',
+  } as Record<string, string>)[path.slice('checkpoint.metadata_'.length)] || fallback;
   if (english && path === 'checkpoint.save_state_every_steps') return 'Recovery save interval';
   if (english && path === 'checkpoint.save_state_every_epochs') return 'Recovery save interval (epochs)';
   if (english && path.startsWith('dataset.native_')) return ({'dataset.native_max_pixels':'Image area limit (equivalent side, px)','dataset.native_max_pixels_mode':'Image area limit mode','dataset.native_max_side':'Longest side limit (px)','dataset.native_overflow':'When a size limit is exceeded'} as Record<string,string>)[path] || fallback;
@@ -112,7 +134,11 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (path === 'loop.distributed_strategy') return english ? 'Multi-GPU training strategy' : labels[path];
   if (path === 'loop.deterministic') return english ? 'Reproducible training' : labels[path];
   if (path === 'adapter.preset') return english ? 'Adapter scope' : labels[path];
-  if (english && path.startsWith('training.')) return ({mode:'Training mode',train_backbone:'Train main model (UNet / DiT)',train_text_encoder:'Train text encoder',resume_weights:'Initial full-model weights'} as Record<string,string>)[path.slice(9)] || fallback;
+  if (english) {
+    const added: Record<string, string> = {'dataset.caption.weighted':'Weighted captions','objective.noise_offset':'Noise offset','objective.multires_noise_iterations':'Multiresolution noise levels','objective.multires_noise_discount':'Multiresolution noise discount','optimizer.cpu_offload':'Optimizer CPU offload','optimizer.exclude_bias_norm_from_weight_decay':'Exclude bias and norms from decay'};
+    if (added[path]) return added[path];
+  }
+  if (english && path.startsWith('training.')) return ({mode:'Training mode',train_backbone:'Train main model (UNet / DiT)',train_text_encoder:'Train text encoder',resume_weights:'Initial full-model weights',backbone_lr:'Main model learning rate',text_encoder_lr:'Text encoder learning rate',text_encoder_2_lr:'CLIP-G learning rate',llm_adapter_lr:'LLM Adapter learning rate',self_attn_lr:'Self-attention learning rate',cross_attn_lr:'Cross-attention learning rate',mlp_lr:'MLP learning rate',modulation_lr:'Modulation learning rate'} as Record<string,string>)[path.slice(9)] || fallback;
   if (english && path.startsWith('optimizer.')) {
     const optimizerLabels: Record<string, string> = {
       type: 'Optimizer', lr: 'Learning rate', weight_decay: 'Weight decay', betas: 'Update smoothing', eps: 'EPS · numerical stability',
@@ -142,7 +168,7 @@ const optimizerEnglishHelp: Record<string, string> = {
   decouple: 'Applies weight decay separately from the gradient update. On by default; turning it off adds decay to the gradient.',
   prodigy_steps: 'Number of optimizer updates used to estimate the step size. 0 keeps estimating throughout training; a positive value freezes the estimate afterward.',
   d_limiter: 'Limits sudden growth in the step-size estimate. On by default; SPEED uses its own estimation method when enabled.',
-  schedulefree_c: 'Changes the speed of Schedule-Free weight averaging. 0 uses the author’s default averaging; usually keep 0.',
+  schedulefree_c: 'Changes the speed of Schedule-Free weight averaging. 0 uses the default averaging; usually keep 0.',
   split_groups: 'Estimates step sizes independently for parameter groups. On by default; turning it off shares the estimate without enabling manual group rates.',
   split_groups_mean: 'Uses the harmonic mean of the per-group step estimates. Off by default; requires independent group estimation.',
   factored: 'Stores suitable gradient statistics in factored form to reduce optimizer-state memory. On by default; turning it off stores full statistics.',
@@ -207,7 +233,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     'dataset.native_overflow': ['等比缩小到上限内：图片超过面积或单边上限时等比缩小。\n报错并停止：图片超过上限时停止并提示调整。', 'Downscale to fit limits: scales images down proportionally when they exceed the area or side limit.\nStop with an error: stops and requests an adjustment when an image exceeds a limit.'],
     'training.mode': ['LoRA：生成 LoRA / LoKr 等附加权重。\n全量微调：直接更新所选组件的原始参数，保存模型组件。', 'LoRA: trains additional weights such as LoRA / LoKr.\nFull fine-tuning: updates the original parameters of the selected components and saves model components.'],
     'objective.loss': ['MSE：平方误差，默认选项。\nHuber / pseudo-Huber：调整大误差的惩罚方式，更换后损失数值不能直接与 MSE 比较。', 'MSE: squared error, the default.\nHuber / pseudo-Huber: changes the penalty for large errors; loss values cannot be compared directly with MSE.'],
-    'checkpoint.save_training_metadata': ['默认关闭，只写入出图软件识别底模的键、网络结构及继续训练所需的 DoRA 计算设置。开启后额外写入标题、步数、轮数、学习率、优化器、训练尺寸等元数据，适用于 LoRA、LoKr 及其 EMA 权重。不写入本机目录、图片标签、提示词或访问密钥。完整断点恢复仍需恢复点。', 'Off by default; writes only the keys image tools use to recognize the base model, the network structure and the DoRA compute settings needed to continue training. When enabled, also writes the title, steps, epoch, learning rate, optimizer, training dimensions and other metadata in LoRA and LoKr exports, including EMA weights. Local directories, image captions, prompts and access tokens are excluded. Resuming the full training state still requires a recovery point.'],
+    'checkpoint.save_training_metadata': ['在导出权重中保存训练参数及下方填写的模型信息。关闭时保留模型识别、网络结构及继续训练所需的 DoRA 计算设置。', 'Save training parameters and the model information entered below in exported weights. When off, retain model identification, network structure and the DoRA compute settings needed to continue training.'],
     'dataset.resolutions': ['单个分辨率填 1024；多个用逗号或空格分隔，如 1024, 1536。填写正整数边长，不写 1024×1024。1024 表示每桶约 1024×1024 像素；每张图会在每个基准分辨率各训练一次，增加总样本和步数。', 'Enter one size as 1024, or separate multiple sizes with commas or spaces, e.g. 1024, 1536. Use positive integer side lengths, not 1024×1024. A base of 1024 gives roughly 1024×1024 pixels per bucket. Each image trains at every base resolution, increasing samples and steps.'],
     'adapter.resume_weights': ['训练结束后仍想继续优化时，可加载上次导出的 LoRA / LoKr 权重，再设置本次新增的训练轮数或步数，也可调整学习率和数据。底模、算法和权重结构需匹配。优化器和步数重新开始；中断后原样继续请使用完整恢复点。', 'To keep improving a finished run, load its exported LoRA / LoKr weights and set the additional epochs or steps for this new run. Learning rate and data may be changed. The base model, algorithm and weight structure must match. Optimizer state and counters restart; use a full recovery point for an interrupted run.'],
     'loop.deterministic': ['默认关闭。在相同配置、设备和软件环境下提高重复训练的一致性。开启后可能固定部分计算精度和注意力设置，增加显存与耗时；具体值会显示在对应字段。完整续训需保持原设置和环境。', 'Off by default. Improves repeatability with the same configuration, device and software environment. May manage precision and attention settings and increase memory use and runtime; effective values appear in the fields. Keep the same settings and environment when resuming.'],

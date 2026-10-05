@@ -942,7 +942,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (value.adapter?.algo === 'full' && ['adapter.rank', 'adapter.alpha', 'adapter.rs_lora', 'adapter.init', 'adapter.dropout', 'adapter.rank_dropout', 'adapter.conv_rank', 'adapter.conv_alpha'].includes(fullPathKey)) return null;
     // Convolutions that follow a full LoKr rank take its fixed scale too.
     if (fullPathKey === 'adapter.conv_alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && value.adapter?.conv_rank == null) return null;
-    const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' ? {group:'model'} : {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}), ...(fullPathKey === 'adapter.layer_types' && value.training?.mode === 'full' ? {group: compact ? 'model' : 'training'} : {}) };
+    const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' && prop['x-ui']?.group === 'training' ? {group:'model'} : {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}), ...(fullPathKey === 'adapter.layer_types' && value.training?.mode === 'full' ? {group: compact ? 'model' : 'training'} : {}) };
     if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
 
@@ -1255,6 +1255,15 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           />
         );
       }
+    } else if (prop.type === 'string' && ui.control === 'textarea') {
+      control = (
+        <textarea
+          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:bg-slate-900 dark:border-slate-600"
+          rows={3}
+          value={fieldValue ?? ''}
+          onChange={(e) => onChange(setNestedValue(value, path, e.target.value))}
+        />
+      );
     } else if (prop.type === 'array' && ['number', 'integer'].includes(prop.items?.type || '')) {
       control = <NumberListInput label={fieldLabel} value={fieldValue} placeholder={Array.isArray(prop.default) ? prop.default.join(', ') : undefined}
         onChange={next => onChange(setNestedValue(value, path, next))}/>;
@@ -1287,7 +1296,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
 
     // Model files share a row; other paths, lists and editors take the full row.
     const modelFile = (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS) || ['training.resume_weights', 'adapter.resume_weights'].includes(fullPathKey);
-    const wide = !modelFile && (['sources', 'rules', 'prompts', 'args', 'group_lr'].includes(key) || ui.control === 'path' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale');
+    const wide = !modelFile && (['sources', 'rules', 'prompts', 'args', 'group_lr'].includes(key) || ui.control === 'path' || ui.control === 'textarea' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale');
     const booleanField = prop.type === 'boolean' || ui.control === 'switch';
     if (!booleanField && !managedReason && React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect || control.type === DecimalNumberInput)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});

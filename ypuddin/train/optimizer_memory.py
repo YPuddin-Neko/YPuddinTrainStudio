@@ -21,6 +21,8 @@ def optimizer_state_bytes(cfg: OptimizerConfig, param_groups: Sequence[Mapping[s
     Initial values are unknown, so p0 reserves the full sample even for zero-initialized weights.
     Parameter and gradient storage, and temporary optimizer-step workspaces, are excluded.
     """
+    if getattr(cfg, "cpu_offload", False):
+        return 0
     if optimizer_key(cfg.type) != "prodigy_plus_sf":
         return None
     try:
@@ -65,3 +67,21 @@ def optimizer_state_bytes(cfg: OptimizerConfig, param_groups: Sequence[Mapping[s
                 total += count * element_bytes
     # The constructor allocates two FP32 running statistics per group, or one shared pair.
     return total + (groups if cfg.split_groups else min(groups, 1)) * 8
+
+
+def cpu_offload_memory_bytes(cfg: OptimizerConfig, param_groups: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """CPU tensor storage for AdamW offload; excludes allocator and step workspaces."""
+    shadows = moments = gradients = 0
+    seen: set[int] = set()
+    if getattr(cfg, "cpu_offload", False):
+        for group in param_groups:
+            amsgrad = group.get("amsgrad", cfg.args.get("amsgrad", False))
+            for parameter in group["params"]:
+                if id(parameter) in seen:
+                    continue
+                seen.add(id(parameter))
+                nbytes = parameter.numel() * 4
+                shadows += nbytes
+                gradients += nbytes
+                moments += nbytes * (3 if amsgrad else 2) + 4
+    return {"parameter_bytes": shadows, "state_bytes": moments, "gradient_bytes": gradients}

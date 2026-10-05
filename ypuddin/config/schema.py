@@ -140,6 +140,11 @@ class CaptionConfig(_Strict):
         help="整条 caption 置空的概率（无条件训练，服务于 CFG）",
         ui_=ui("caption", order=60, control="slider", step=0.01),
     )
+    weighted: bool = F(
+        False,
+        help="识别 (标签)、(标签:1.2) 和 [标签]，调整 SDXL 两个 CLIP 的文本特征权重。适用于整个训练任务，也用于采样提示词。",
+        ui_=ui("caption", order=65, control="switch", advanced=True, show_when="model.family == 'sdxl'"),
+    )
     separator: str = F(",", help="tag 分隔符", ui_=ui("caption", order=70, advanced=True))
     wildcard: bool = F(
         False, help="支持 {a|b} 通配符随机选择", ui_=ui("caption", order=80, control="switch", advanced=True)
@@ -411,7 +416,7 @@ class AdapterConfig(_Strict):
     tlora_min_rank: int | None = F(
         None,
         ge=1,
-        help="噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半（论文推荐）。",
+        help="噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半。",
         ui_=ui("adapter", advanced=True, order=72, show_when="adapter.algo == 'tlora'"),
     )
     tlora_power: float = F(
@@ -423,7 +428,7 @@ class AdapterConfig(_Strict):
     )
     tlora_ortho: bool = F(
         True,
-        help="用正交初始化开始训练（论文的完整做法）：各秩从互相独立的方向开始，训练开始时不改变底模输出。关闭则与普通 LoRA 的初始化相同。",
+        help="用正交初始化开始训练：各秩从互相独立的方向开始，训练开始时不改变底模输出。关闭则与普通 LoRA 的初始化相同。",
         ui_=ui("adapter", advanced=True, order=76, control="switch", show_when="adapter.algo == 'tlora'"),
     )
     dropout: float = F(
@@ -584,6 +589,21 @@ class ObjectiveConfig(_Strict):
         help="SNR 截断值，默认 5。SDXL 的 Min-SNR 按实际噪声调度和 ε/v 预测计算损失权重；Flow 模型的 snr_like 是不同公式。仅选择对应加权方式时生效，不改变时间步抽样。",
         ui_=ui("objective", advanced=True, order=110, show_when="objective.weighting in ['snr_like', 'min_snr']"),
     )
+    noise_offset: float = F(
+        0.0, ge=0, allow_inf_nan=False,
+        help="为每张图的各潜空间通道加入共享噪声，影响输入及训练目标。0 关闭；不与多分辨率噪声同时启用。",
+        ui_=ui("objective", order=130, advanced=True, show_when="model.family == 'sdxl'"),
+    )
+    multires_noise_iterations: int = F(
+        0, ge=0, le=10,
+        help="叠加低分辨率噪声的层数。0 关闭；不与噪声偏移同时启用。",
+        ui_=ui("objective", order=131, advanced=True, show_when="model.family == 'sdxl'"),
+    )
+    multires_noise_discount: float = F(
+        0.3, ge=0, le=1,
+        help="每层低分辨率噪声的衰减系数，越小则后续层影响越弱。",
+        ui_=ui("objective", order=132, advanced=True, show_when="model.family == 'sdxl' && objective.multires_noise_iterations > 0"),
+    )
     ip_noise_gamma: float = F(
         0.0,
         ge=0,
@@ -708,6 +728,16 @@ class OptimizerConfig(_Strict):
         help="反向即时更新尚不支持，请保持关闭。",
         ui_={"x-ui": {**ui("optimizer", order=80, control="switch", advanced=True)["x-ui"], "hidden": True}},
     )
+    cpu_offload: bool = F(
+        False,
+        help="全量微调时在 CPU 保存 AdamW 状态并更新参数，降低显存占用，增加内存占用与每步传输时间。支持单卡及 DDP，不支持显存分片。",
+        ui_=ui("optimizer", order=85, control="switch", advanced=True, show_when="training.mode == 'full' && optimizer.type == 'adamw'"),
+    )
+    exclude_bias_norm_from_weight_decay: bool = F(
+        False,
+        help="全量微调时不对偏置及归一化层参数施加权重衰减，其他参数使用上方的权重衰减。",
+        ui_=ui("optimizer", order=86, control="switch", advanced=True, show_when="training.mode == 'full'"),
+    )
     group_lr: dict[str, float] = F(
         default_factory=dict,
         help="按模块分组的学习率，如 {'llm_adapter': 5e-5, 'te': 2e-5}",
@@ -738,7 +768,7 @@ class OptimizerConfig(_Strict):
 
     use_bias_correction: bool = F(
         False,
-        help="Prodigy 修正训练初期的统计偏差；PPSF 使用 RAdam 式修正与自动预热。作者均默认关闭，开启会改变早期更新曲线。",
+        help="Prodigy 修正训练初期的统计偏差；PPSF 使用 RAdam 式修正与自动预热。默认关闭，开启会改变早期更新曲线。",
         ui_=ui(
             "optimizer",
             advanced=True,
@@ -750,7 +780,7 @@ class OptimizerConfig(_Strict):
 
     safeguard_warmup: bool = F(
         False,
-        help="估计步长时排除学习率预热的影响，作者默认关闭；使用外部预热时可启用。",
+        help="估计步长时排除学习率预热的影响，默认关闭；使用外部预热时可启用。",
         ui_=ui("optimizer", advanced=True, order=140, control="switch", show_when="optimizer.type == 'prodigy'"),
     )
 
@@ -790,7 +820,7 @@ class OptimizerConfig(_Strict):
     schedulefree_c: float = F(
         0.0,
         ge=0,
-        help="控制 Schedule-Free 权重平均的速度。0 使用作者默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。",
+        help="控制 Schedule-Free 权重平均的速度。0 使用默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。",
         ui_=ui("optimizer", advanced=True, order=200, show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.use_schedulefree == true"),
     )
 
@@ -1280,13 +1310,44 @@ class CheckpointConfig(_Strict):
     save_training_metadata: bool = F(
         False,
         help=(
-            "默认关闭，只写入出图软件识别底模的键、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。"
-            "开启后额外写入标题、步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。"
+            "在导出权重中保存训练参数及下方填写的模型信息。关闭时仅保留模型识别和恢复所需信息。"
         ),
-        ui_=ui("checkpoint", advanced=True, order=65, control="switch", show_when="training.mode == 'adapter'"),
+        ui_=ui("checkpoint", advanced=True, order=65, control="switch"),
+    )
+    metadata_title: str = F(
+        "", help="模型显示标题，留空使用产物文件名前缀。",
+        ui_=ui("checkpoint", advanced=True, order=66, show_when="checkpoint.save_training_metadata == true"),
+    )
+    metadata_author: str = F(
+        "", help="模型作者或组织名称，留空不写入。",
+        ui_=ui("checkpoint", advanced=True, order=67, show_when="checkpoint.save_training_metadata == true"),
+    )
+    metadata_description: str = F(
+        "", help="模型用途或说明，支持多行，留空不写入。",
+        ui_=ui("checkpoint", advanced=True, order=68, control="textarea", show_when="checkpoint.save_training_metadata == true"),
+    )
+    metadata_license: str = F(
+        "", help="模型许可证名称或链接，留空不写入。",
+        ui_=ui("checkpoint", advanced=True, order=69, show_when="checkpoint.save_training_metadata == true"),
+    )
+    metadata_merged_from: str = F(
+        "", help="模型合并来源，留空不写入。",
+        ui_=ui("checkpoint", advanced=True, order=70, show_when="checkpoint.save_training_metadata == true"),
+    )
+    metadata_tags: str = F(
+        "", help="模型标签，多个标签用英文逗号分隔，留空不写入。",
+        ui_=ui("checkpoint", advanced=True, order=71, show_when="checkpoint.save_training_metadata == true"),
+    )
+    metadata_usage_hint: str = F(
+        "", help="模型使用建议，留空不写入。",
+        ui_=ui("checkpoint", advanced=True, order=72, control="textarea", show_when="checkpoint.save_training_metadata == true"),
+    )
+    metadata_trigger_phrase: str = F(
+        "", help="使用模型时的触发词或短语，留空不写入。",
+        ui_=ui("checkpoint", advanced=True, order=73, show_when="checkpoint.save_training_metadata == true"),
     )
     save_on_finish: bool = F(
-        True, help="结束时保存最终权重", ui_=ui("checkpoint", advanced=True, order=70, control="switch")
+        True, help="结束时保存最终权重", ui_=ui("checkpoint", advanced=True, order=75, control="switch")
     )
     resume: str | None = F(
         None,
@@ -1554,6 +1615,46 @@ class TrainingConfig(_Strict):
         help="训练文本编码器：适配器模式只更新其线性层的附加权重，全量微调更新其原始参数。SDXL 包含 CLIP-L 与 CLIP-G，其他模型使用各自的文本编码器。每步重新编码标签，不使用文本缓存，显存需求增加。",
         ui_=ui("training", order=20, control="switch"),
     )
+    backbone_lr: float | None = F(
+        None, ge=0, allow_inf_nan=False,
+        help="主模型学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+        ui_=ui("optimizer", order=30, advanced=True, show_when="training.mode == 'full' && training.train_backbone == true"),
+    )
+    text_encoder_lr: float | None = F(
+        None, ge=0, allow_inf_nan=False,
+        help="文本编码器（SDXL 为 CLIP-L）学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+        ui_=ui("optimizer", order=31, advanced=True, show_when="training.mode == 'full' && training.train_text_encoder == true"),
+    )
+    text_encoder_2_lr: float | None = F(
+        None, ge=0, allow_inf_nan=False,
+        help="CLIP-G学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+        ui_=ui("optimizer", order=32, advanced=True, show_when="training.mode == 'full' && training.train_text_encoder == true && model.family == 'sdxl'"),
+    )
+    llm_adapter_lr: float | None = F(
+        None, ge=0, allow_inf_nan=False,
+        help="Anima LLM Adapter学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+        ui_=ui("optimizer", order=33, advanced=True, show_when="training.mode == 'full' && training.train_backbone == true && model.family == 'anima'"),
+    )
+    self_attn_lr: float | None = F(
+        None, ge=0, allow_inf_nan=False,
+        help="Anima 自注意力学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+        ui_=ui("optimizer", order=34, advanced=True, show_when="training.mode == 'full' && training.train_backbone == true && model.family == 'anima'"),
+    )
+    cross_attn_lr: float | None = F(
+        None, ge=0, allow_inf_nan=False,
+        help="Anima 交叉注意力学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+        ui_=ui("optimizer", order=35, advanced=True, show_when="training.mode == 'full' && training.train_backbone == true && model.family == 'anima'"),
+    )
+    mlp_lr: float | None = F(
+        None, ge=0, allow_inf_nan=False,
+        help="Anima MLP学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+        ui_=ui("optimizer", order=36, advanced=True, show_when="training.mode == 'full' && training.train_backbone == true && model.family == 'anima'"),
+    )
+    modulation_lr: float | None = F(
+        None, ge=0, allow_inf_nan=False,
+        help="Anima 调制层学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+        ui_=ui("optimizer", order=37, advanced=True, show_when="training.mode == 'full' && training.train_backbone == true && model.family == 'anima'"),
+    )
     resume_weights: str | None = F(
         None,
         help="从本程序导出的全量模型目录继续微调权重，并重新初始化优化器；恢复原进度请使用完整训练状态。",
@@ -1580,6 +1681,9 @@ class TrainConfig(_Strict):
     def _cross(self) -> TrainConfig:
         from ypuddin.config.training_rules import training_errors
 
+        for source in [*self.dataset.sources, *self.validation.sources]:
+            if source.caption is not None and "weighted" not in source.caption.model_fields_set:
+                object.__setattr__(source.caption, "weighted", self.dataset.caption.weighted)
         mode_errors = training_errors(self)
         if mode_errors:
             raise ValueError("; ".join(f"{e['loc']}: {e['msg']}" for e in mode_errors))

@@ -72,6 +72,9 @@ def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) ->
     if cfg.fused_backward or cfg.args.get("fused_back_pass", False):
         raise ValueError("optimizer.fused_backward is not implemented; use the normal optimizer step")
     key = optimizer_key(cfg.type)
+    if getattr(cfg, "cpu_offload", False):
+        if key != "adamw" or cfg.kahan:
+            raise ValueError("CPU optimizer offload currently requires AdamW without Kahan compensation")
     if cfg.kahan and (is_schedule_free(cfg) or key == "prodigy_plus_sf"):
         raise ValueError("optimizer.kahan cannot be combined with a schedule-free optimizer")
     if key == "automagic" and cfg.kahan:
@@ -110,7 +113,12 @@ def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) ->
             kwargs[name] = math.inf if name == "growth_rate" and value is None else value
     groups = [dict(g) for g in param_groups]
     _validate_managed_learning_rates(key, kwargs["lr"], groups)
-    opt = cls(groups, **kwargs)
+    if getattr(cfg, "cpu_offload", False):
+        from .cpu_offload import CPUOffloadAdamW
+
+        opt = CPUOffloadAdamW(groups, **kwargs)
+    else:
+        opt = cls(groups, **kwargs)
     validate_optimizer_runtime(cfg, opt)
     if cfg.kahan:
         opt = KahanWrapper(opt)

@@ -50,16 +50,29 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
     memory.activation_checkpointing = 'block';
     memory.compile = false;
   }
-  const next = { ...config, model,
+  const next: Record<string, any> = { ...config, model,
     memory,
     adapter: { ...config.adapter, preset: family.default_preset },
     dataset: { ...config.dataset, text_encoding: family.capabilities.includes('online_text') ? 'auto' : 'cached' },
     sampling: { ...config.sampling, ...family.sampling, guidance: family.sampling.guidance ?? null },
     objective: { ...config.objective },
+    training: { ...config.training },
   };
   for (const [group, key] of [['sampling', 'sampler'], ['sampling', 'scheduler'], ['objective', 'timestep_sampling'], ['objective', 'weighting']] as const) {
     const options = familyParameterOptions(family, `${group}.${key}`);
     if (options?.length && !options.includes(next[group][key])) next[group][key] = options[0];
+  }
+  if (family.name !== 'sdxl') {
+    next.dataset.caption = {...next.dataset.caption, weighted:false};
+    for (const section of ['dataset', 'validation']) {
+      if (Array.isArray(next[section]?.sources)) next[section] = {...next[section], sources:next[section].sources.map((source:Record<string,any>) => source.caption ? {...source,caption:{...source.caption,weighted:false}} : source)};
+    }
+    next.objective.noise_offset = 0;
+    next.objective.multires_noise_iterations = 0;
+    next.training.text_encoder_2_lr = null;
+  }
+  if (family.name !== 'anima') {
+    for (const key of ['llm_adapter_lr','self_attn_lr','cross_attn_lr','mlp_lr','modulation_lr']) next.training[key] = null;
   }
   if (family.name === 'flux2') {
     next.sampling.steps = null; next.sampling.cfg = null; next.sampling.guidance = null;

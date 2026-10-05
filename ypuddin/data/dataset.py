@@ -219,7 +219,7 @@ def expand_items(
         resolutions = src.resolutions or ds.resolutions
         # Class-prior captions describe the base class, without the training trigger.
         # An explicit source caption configuration still takes precedence.
-        cap_cfg = src.caption if src.caption is not None else CaptionConfig() if src.is_reg else ds.caption
+        cap_cfg = src.caption if src.caption is not None else CaptionConfig(weighted=ds.caption.weighted) if src.is_reg else ds.caption
         if (ds.resolution_mode == "native" or ds.image_fit == "pad") and ds.masked_loss and r.mask_path:
             try:
                 mask_width, mask_height, _ = probe_image(Path(r.mask_path))

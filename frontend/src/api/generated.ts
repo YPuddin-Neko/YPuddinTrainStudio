@@ -2836,7 +2836,7 @@ export interface components {
             init: "default" | "scalar";
             /**
              * Tlora Min Rank
-             * @description 噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半（论文推荐）。
+             * @description 噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半。
              */
             tlora_min_rank?: number | null;
             /**
@@ -2847,7 +2847,7 @@ export interface components {
             tlora_power: number;
             /**
              * Tlora Ortho
-             * @description 用正交初始化开始训练（论文的完整做法）：各秩从互相独立的方向开始，训练开始时不改变底模输出。关闭则与普通 LoRA 的初始化相同。
+             * @description 用正交初始化开始训练：各秩从互相独立的方向开始，训练开始时不改变底模输出。关闭则与普通 LoRA 的初始化相同。
              * @default true
              */
             tlora_ortho: boolean;
@@ -3157,6 +3157,12 @@ export interface components {
              */
             caption_dropout: number;
             /**
+             * Weighted
+             * @description 识别 (标签)、(标签:1.2) 和 [标签]，调整 SDXL 两个 CLIP 的文本特征权重。适用于整个训练任务，也用于采样提示词。
+             * @default false
+             */
+            weighted: boolean;
+            /**
              * Separator
              * @description tag 分隔符
              * @default ,
@@ -3312,10 +3318,58 @@ export interface components {
             save_dtype: "bf16" | "fp16" | "fp32";
             /**
              * Save Training Metadata
-             * @description 默认关闭，只写入出图软件识别底模的键、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入标题、步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。
+             * @description 在导出权重中保存训练参数及下方填写的模型信息。关闭时仅保留模型识别和恢复所需信息。
              * @default false
              */
             save_training_metadata: boolean;
+            /**
+             * Metadata Title
+             * @description 模型显示标题，留空使用产物文件名前缀。
+             * @default
+             */
+            metadata_title: string;
+            /**
+             * Metadata Author
+             * @description 模型作者或组织名称，留空不写入。
+             * @default
+             */
+            metadata_author: string;
+            /**
+             * Metadata Description
+             * @description 模型用途或说明，支持多行，留空不写入。
+             * @default
+             */
+            metadata_description: string;
+            /**
+             * Metadata License
+             * @description 模型许可证名称或链接，留空不写入。
+             * @default
+             */
+            metadata_license: string;
+            /**
+             * Metadata Merged From
+             * @description 模型合并来源，留空不写入。
+             * @default
+             */
+            metadata_merged_from: string;
+            /**
+             * Metadata Tags
+             * @description 模型标签，多个标签用英文逗号分隔，留空不写入。
+             * @default
+             */
+            metadata_tags: string;
+            /**
+             * Metadata Usage Hint
+             * @description 模型使用建议，留空不写入。
+             * @default
+             */
+            metadata_usage_hint: string;
+            /**
+             * Metadata Trigger Phrase
+             * @description 使用模型时的触发词或短语，留空不写入。
+             * @default
+             */
+            metadata_trigger_phrase: string;
             /**
              * Save On Finish
              * @description 结束时保存最终权重
@@ -6036,6 +6090,24 @@ export interface components {
              */
             snr_gamma: number;
             /**
+             * Noise Offset
+             * @description 为每张图的各潜空间通道加入共享噪声，影响输入及训练目标。0 关闭；不与多分辨率噪声同时启用。
+             * @default 0
+             */
+            noise_offset: number;
+            /**
+             * Multires Noise Iterations
+             * @description 叠加低分辨率噪声的层数。0 关闭；不与噪声偏移同时启用。
+             * @default 0
+             */
+            multires_noise_iterations: number;
+            /**
+             * Multires Noise Discount
+             * @description 每层低分辨率噪声的衰减系数，越小则后续层影响越弱。
+             * @default 0.3
+             */
+            multires_noise_discount: number;
+            /**
              * Ip Noise Gamma
              * @description 给训练输入额外叠加噪声，训练目标仍使用原始噪声；默认 0 关闭。
              * @default 0
@@ -6134,6 +6206,18 @@ export interface components {
              */
             fused_backward: boolean;
             /**
+             * Cpu Offload
+             * @description 全量微调时在 CPU 保存 AdamW 状态并更新参数，降低显存占用，增加内存占用与每步传输时间。支持单卡及 DDP，不支持显存分片。
+             * @default false
+             */
+            cpu_offload: boolean;
+            /**
+             * Exclude Bias Norm From Weight Decay
+             * @description 全量微调时不对偏置及归一化层参数施加权重衰减，其他参数使用上方的权重衰减。
+             * @default false
+             */
+            exclude_bias_norm_from_weight_decay: boolean;
+            /**
              * Group Lr
              * @description 按模块分组的学习率，如 {'llm_adapter': 5e-5, 'te': 2e-5}
              */
@@ -6159,13 +6243,13 @@ export interface components {
             beta3?: number | null;
             /**
              * Use Bias Correction
-             * @description Prodigy 修正训练初期的统计偏差；PPSF 使用 RAdam 式修正与自动预热。作者均默认关闭，开启会改变早期更新曲线。
+             * @description Prodigy 修正训练初期的统计偏差；PPSF 使用 RAdam 式修正与自动预热。默认关闭，开启会改变早期更新曲线。
              * @default false
              */
             use_bias_correction: boolean;
             /**
              * Safeguard Warmup
-             * @description 估计步长时排除学习率预热的影响，作者默认关闭；使用外部预热时可启用。
+             * @description 估计步长时排除学习率预热的影响，默认关闭；使用外部预热时可启用。
              * @default false
              */
             safeguard_warmup: boolean;
@@ -6200,7 +6284,7 @@ export interface components {
             d_limiter: boolean;
             /**
              * Schedulefree C
-             * @description 控制 Schedule-Free 权重平均的速度。0 使用作者默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。
+             * @description 控制 Schedule-Free 权重平均的速度。0 使用默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。
              * @default 0
              */
             schedulefree_c: number;
@@ -6707,6 +6791,16 @@ export interface components {
              */
             optimizer_mb: number;
             /**
+             * Cpu Optimizer Mb
+             * @default 0
+             */
+            cpu_optimizer_mb: number;
+            /**
+             * Cpu Ema Mb
+             * @default 0
+             */
+            cpu_ema_mb: number;
+            /**
              * Gradients Mb
              * @default 0
              */
@@ -6782,6 +6876,25 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** PlanParameterGroup */
+        PlanParameterGroup: {
+            /** Name */
+            name: string;
+            /** Lr */
+            lr: number;
+            /** Weight Decay */
+            weight_decay: number;
+            /** Frozen */
+            frozen: boolean;
+            /** Parameters */
+            parameters: number;
+            /** Tensors */
+            tensors: number;
+            /** Source */
+            source: string;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * PlanParams
          * @description Empty (all zeros) when the family cannot build a meta backbone for the config.
@@ -6816,6 +6929,8 @@ export interface components {
             components?: {
                 [key: string]: number;
             };
+            /** Groups */
+            groups?: components["schemas"]["PlanParameterGroup"][];
         } & {
             [key: string]: unknown;
         };
@@ -8749,6 +8864,46 @@ export interface components {
              * @default false
              */
             train_text_encoder: boolean;
+            /**
+             * Backbone Lr
+             * @description 主模型学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。
+             */
+            backbone_lr?: number | null;
+            /**
+             * Text Encoder Lr
+             * @description 文本编码器（SDXL 为 CLIP-L）学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。
+             */
+            text_encoder_lr?: number | null;
+            /**
+             * Text Encoder 2 Lr
+             * @description CLIP-G学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。
+             */
+            text_encoder_2_lr?: number | null;
+            /**
+             * Llm Adapter Lr
+             * @description Anima LLM Adapter学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。
+             */
+            llm_adapter_lr?: number | null;
+            /**
+             * Self Attn Lr
+             * @description Anima 自注意力学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。
+             */
+            self_attn_lr?: number | null;
+            /**
+             * Cross Attn Lr
+             * @description Anima 交叉注意力学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。
+             */
+            cross_attn_lr?: number | null;
+            /**
+             * Mlp Lr
+             * @description Anima MLP学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。
+             */
+            mlp_lr?: number | null;
+            /**
+             * Modulation Lr
+             * @description Anima 调制层学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。
+             */
+            modulation_lr?: number | null;
             /**
              * Resume Weights
              * @description 从本程序导出的全量模型目录继续微调权重，并重新初始化优化器；恢复原进度请使用完整训练状态。

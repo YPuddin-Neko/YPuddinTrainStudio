@@ -9141,7 +9141,7 @@
               }
             ],
             "title": "Tlora Min Rank",
-            "description": "噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半（论文推荐）。",
+            "description": "噪声最大时仍然使用的秩。噪声越小可用的秩越多，接近干净图时用满 Rank；留空为 Rank 的一半。",
             "x-ui": {
               "advanced": true,
               "group": "adapter",
@@ -9166,7 +9166,7 @@
           "tlora_ortho": {
             "type": "boolean",
             "title": "Tlora Ortho",
-            "description": "用正交初始化开始训练（论文的完整做法）：各秩从互相独立的方向开始，训练开始时不改变底模输出。关闭则与普通 LoRA 的初始化相同。",
+            "description": "用正交初始化开始训练：各秩从互相独立的方向开始，训练开始时不改变底模输出。关闭则与普通 LoRA 的初始化相同。",
             "default": true,
             "x-ui": {
               "advanced": true,
@@ -10078,6 +10078,19 @@
               "step": 0.01
             }
           },
+          "weighted": {
+            "type": "boolean",
+            "title": "Weighted",
+            "description": "识别 (标签)、(标签:1.2) 和 [标签]，调整 SDXL 两个 CLIP 的文本特征权重。适用于整个训练任务，也用于采样提示词。",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "caption",
+              "order": 65,
+              "show_when": "model.family == 'sdxl'"
+            }
+          },
           "separator": {
             "type": "string",
             "title": "Separator",
@@ -10482,14 +10495,111 @@
           "save_training_metadata": {
             "type": "boolean",
             "title": "Save Training Metadata",
-            "description": "默认关闭，只写入出图软件识别底模的键、网络结构及必要的逐层结构，以及继续训练所需的 DoRA 计算设置。开启后额外写入标题、步数、轮数、学习率、优化器、训练尺寸等元数据。不包含本机目录、图片标签、提示词或访问密钥。",
+            "description": "在导出权重中保存训练参数及下方填写的模型信息。关闭时仅保留模型识别和恢复所需信息。",
             "default": false,
             "x-ui": {
               "advanced": true,
               "control": "switch",
               "group": "checkpoint",
-              "order": 65,
-              "show_when": "training.mode == 'adapter'"
+              "order": 65
+            }
+          },
+          "metadata_title": {
+            "type": "string",
+            "title": "Metadata Title",
+            "description": "模型显示标题，留空使用产物文件名前缀。",
+            "default": "",
+            "x-ui": {
+              "advanced": true,
+              "group": "checkpoint",
+              "order": 66,
+              "show_when": "checkpoint.save_training_metadata == true"
+            }
+          },
+          "metadata_author": {
+            "type": "string",
+            "title": "Metadata Author",
+            "description": "模型作者或组织名称，留空不写入。",
+            "default": "",
+            "x-ui": {
+              "advanced": true,
+              "group": "checkpoint",
+              "order": 67,
+              "show_when": "checkpoint.save_training_metadata == true"
+            }
+          },
+          "metadata_description": {
+            "type": "string",
+            "title": "Metadata Description",
+            "description": "模型用途或说明，支持多行，留空不写入。",
+            "default": "",
+            "x-ui": {
+              "advanced": true,
+              "control": "textarea",
+              "group": "checkpoint",
+              "order": 68,
+              "show_when": "checkpoint.save_training_metadata == true"
+            }
+          },
+          "metadata_license": {
+            "type": "string",
+            "title": "Metadata License",
+            "description": "模型许可证名称或链接，留空不写入。",
+            "default": "",
+            "x-ui": {
+              "advanced": true,
+              "group": "checkpoint",
+              "order": 69,
+              "show_when": "checkpoint.save_training_metadata == true"
+            }
+          },
+          "metadata_merged_from": {
+            "type": "string",
+            "title": "Metadata Merged From",
+            "description": "模型合并来源，留空不写入。",
+            "default": "",
+            "x-ui": {
+              "advanced": true,
+              "group": "checkpoint",
+              "order": 70,
+              "show_when": "checkpoint.save_training_metadata == true"
+            }
+          },
+          "metadata_tags": {
+            "type": "string",
+            "title": "Metadata Tags",
+            "description": "模型标签，多个标签用英文逗号分隔，留空不写入。",
+            "default": "",
+            "x-ui": {
+              "advanced": true,
+              "group": "checkpoint",
+              "order": 71,
+              "show_when": "checkpoint.save_training_metadata == true"
+            }
+          },
+          "metadata_usage_hint": {
+            "type": "string",
+            "title": "Metadata Usage Hint",
+            "description": "模型使用建议，留空不写入。",
+            "default": "",
+            "x-ui": {
+              "advanced": true,
+              "control": "textarea",
+              "group": "checkpoint",
+              "order": 72,
+              "show_when": "checkpoint.save_training_metadata == true"
+            }
+          },
+          "metadata_trigger_phrase": {
+            "type": "string",
+            "title": "Metadata Trigger Phrase",
+            "description": "使用模型时的触发词或短语，留空不写入。",
+            "default": "",
+            "x-ui": {
+              "advanced": true,
+              "group": "checkpoint",
+              "order": 73,
+              "show_when": "checkpoint.save_training_metadata == true"
             }
           },
           "save_on_finish": {
@@ -10501,7 +10611,7 @@
               "advanced": true,
               "control": "switch",
               "group": "checkpoint",
-              "order": 70
+              "order": 75
             }
           },
           "resume": {
@@ -18199,6 +18309,47 @@
               "show_when": "objective.weighting in ['snr_like', 'min_snr']"
             }
           },
+          "noise_offset": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Noise Offset",
+            "description": "为每张图的各潜空间通道加入共享噪声，影响输入及训练目标。0 关闭；不与多分辨率噪声同时启用。",
+            "default": 0.0,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 130,
+              "show_when": "model.family == 'sdxl'"
+            }
+          },
+          "multires_noise_iterations": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Multires Noise Iterations",
+            "description": "叠加低分辨率噪声的层数。0 关闭；不与噪声偏移同时启用。",
+            "default": 0,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 131,
+              "show_when": "model.family == 'sdxl'"
+            }
+          },
+          "multires_noise_discount": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Multires Noise Discount",
+            "description": "每层低分辨率噪声的衰减系数，越小则后续层影响越弱。",
+            "default": 0.3,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 132,
+              "show_when": "model.family == 'sdxl' && objective.multires_noise_iterations > 0"
+            }
+          },
           "ip_noise_gamma": {
             "type": "number",
             "minimum": 0.0,
@@ -18406,6 +18557,32 @@
               "order": 80
             }
           },
+          "cpu_offload": {
+            "type": "boolean",
+            "title": "Cpu Offload",
+            "description": "全量微调时在 CPU 保存 AdamW 状态并更新参数，降低显存占用，增加内存占用与每步传输时间。支持单卡及 DDP，不支持显存分片。",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "optimizer",
+              "order": 85,
+              "show_when": "training.mode == 'full' && optimizer.type == 'adamw'"
+            }
+          },
+          "exclude_bias_norm_from_weight_decay": {
+            "type": "boolean",
+            "title": "Exclude Bias Norm From Weight Decay",
+            "description": "全量微调时不对偏置及归一化层参数施加权重衰减，其他参数使用上方的权重衰减。",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "optimizer",
+              "order": 86,
+              "show_when": "training.mode == 'full'"
+            }
+          },
           "group_lr": {
             "additionalProperties": {
               "type": "number"
@@ -18467,7 +18644,7 @@
           "use_bias_correction": {
             "type": "boolean",
             "title": "Use Bias Correction",
-            "description": "Prodigy 修正训练初期的统计偏差；PPSF 使用 RAdam 式修正与自动预热。作者均默认关闭，开启会改变早期更新曲线。",
+            "description": "Prodigy 修正训练初期的统计偏差；PPSF 使用 RAdam 式修正与自动预热。默认关闭，开启会改变早期更新曲线。",
             "default": false,
             "x-ui": {
               "advanced": true,
@@ -18480,7 +18657,7 @@
           "safeguard_warmup": {
             "type": "boolean",
             "title": "Safeguard Warmup",
-            "description": "估计步长时排除学习率预热的影响，作者默认关闭；使用外部预热时可启用。",
+            "description": "估计步长时排除学习率预热的影响，默认关闭；使用外部预热时可启用。",
             "default": false,
             "x-ui": {
               "advanced": true,
@@ -18565,7 +18742,7 @@
             "type": "number",
             "minimum": 0.0,
             "title": "Schedulefree C",
-            "description": "控制 Schedule-Free 权重平均的速度。0 使用作者默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。",
+            "description": "控制 Schedule-Free 权重平均的速度。0 使用默认平均方式；通常保留 0，仅在需要改变平均轨迹时调整。",
             "default": 0.0,
             "x-ui": {
               "advanced": true,
@@ -19826,6 +20003,16 @@
             "title": "Optimizer Mb",
             "default": 0
           },
+          "cpu_optimizer_mb": {
+            "type": "number",
+            "title": "Cpu Optimizer Mb",
+            "default": 0
+          },
+          "cpu_ema_mb": {
+            "type": "number",
+            "title": "Cpu Ema Mb",
+            "default": 0
+          },
           "gradients_mb": {
             "type": "number",
             "title": "Gradients Mb",
@@ -19997,6 +20184,50 @@
         "title": "PlanMemory",
         "description": "Empty (all zeros, no estimate) when the family cannot build a meta backbone for the config."
       },
+      "PlanParameterGroup": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "lr": {
+            "type": "number",
+            "title": "Lr"
+          },
+          "weight_decay": {
+            "type": "number",
+            "title": "Weight Decay"
+          },
+          "frozen": {
+            "type": "boolean",
+            "title": "Frozen"
+          },
+          "parameters": {
+            "type": "integer",
+            "title": "Parameters"
+          },
+          "tensors": {
+            "type": "integer",
+            "title": "Tensors"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "name",
+          "lr",
+          "weight_decay",
+          "frozen",
+          "parameters",
+          "tensors",
+          "source"
+        ],
+        "title": "PlanParameterGroup"
+      },
       "PlanParams": {
         "properties": {
           "base": {
@@ -20036,6 +20267,13 @@
             },
             "type": "object",
             "title": "Components"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/PlanParameterGroup"
+            },
+            "type": "array",
+            "title": "Groups"
           }
         },
         "additionalProperties": true,
@@ -25103,6 +25341,158 @@
               "control": "switch",
               "group": "training",
               "order": 20
+            }
+          },
+          "backbone_lr": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backbone Lr",
+            "description": "主模型学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 30,
+              "show_when": "training.mode == 'full' && training.train_backbone == true"
+            }
+          },
+          "text_encoder_lr": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Encoder Lr",
+            "description": "文本编码器（SDXL 为 CLIP-L）学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 31,
+              "show_when": "training.mode == 'full' && training.train_text_encoder == true"
+            }
+          },
+          "text_encoder_2_lr": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Encoder 2 Lr",
+            "description": "CLIP-G学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 32,
+              "show_when": "training.mode == 'full' && training.train_text_encoder == true && model.family == 'sdxl'"
+            }
+          },
+          "llm_adapter_lr": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Adapter Lr",
+            "description": "Anima LLM Adapter学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 33,
+              "show_when": "training.mode == 'full' && training.train_backbone == true && model.family == 'anima'"
+            }
+          },
+          "self_attn_lr": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self Attn Lr",
+            "description": "Anima 自注意力学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 34,
+              "show_when": "training.mode == 'full' && training.train_backbone == true && model.family == 'anima'"
+            }
+          },
+          "cross_attn_lr": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross Attn Lr",
+            "description": "Anima 交叉注意力学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 35,
+              "show_when": "training.mode == 'full' && training.train_backbone == true && model.family == 'anima'"
+            }
+          },
+          "mlp_lr": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlp Lr",
+            "description": "Anima MLP学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 36,
+              "show_when": "training.mode == 'full' && training.train_backbone == true && model.family == 'anima'"
+            }
+          },
+          "modulation_lr": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modulation Lr",
+            "description": "Anima 调制层学习率。留空沿用参数组或基础学习率，0 冻结对应参数。专用模块设置优先于参数组和组件设置。",
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 37,
+              "show_when": "training.mode == 'full' && training.train_backbone == true && model.family == 'anima'"
             }
           },
           "resume_weights": {

@@ -19,7 +19,7 @@ const layouts: Record<string, Section[]> = {
     section('loading', ['text_encoding', 'num_workers', 'cache_latents', 'cache_dir'], ['数据读取与缓存', 'Data loading and caching']),
   ],
   caption: [
-    section('text', ['dataset.caption.trigger_word', 'dataset.caption.prefix', 'dataset.caption.suffix', 'dataset.caption.separator'], ['标签内容', 'Caption content']),
+    section('text', ['dataset.caption.trigger_word', 'dataset.caption.prefix', 'dataset.caption.suffix', 'dataset.caption.separator', 'dataset.caption.weighted'], ['标签内容', 'Caption content']),
     section('ordering', ['dataset.caption.shuffle', 'dataset.caption.keep_tokens'], ['标签顺序', 'Caption ordering'], { togglesFirst: true }),
     // Two short sections share a row; their fields stack in each half.
     section('dropout', ['dataset.caption.tag_dropout', 'dataset.caption.caption_dropout'], ['标签丢弃', 'Caption dropout'], { beside: 'ordering' }),
@@ -40,10 +40,11 @@ const layouts: Record<string, Section[]> = {
   ],
   optimizer: [
     section('basic', ['type', 'lr', 'weight_decay'], ['优化器与学习率', 'Optimizer and learning rate']),
+    section('full-rates', ['training.backbone_lr', 'training.text_encoder_lr', 'training.text_encoder_2_lr', 'training.llm_adapter_lr', 'training.self_attn_lr', 'training.cross_attn_lr', 'training.mlp_lr', 'training.modulation_lr'], ['全量微调学习率', 'Full fine-tuning learning rates']),
     section('adaptive', ['d_coef', 'd0', 'beta3', 'prodigy_steps', 'growth_rate', 'slice_p', 'min_lr', 'max_lr', 'lr_bump', 'use_speed', 'd_limiter', 'safeguard_warmup', 'split_groups', 'split_groups_mean'], ['自动步长估计', 'Step-size estimation']),
-    section('averaging', ['use_schedulefree', 'schedulefree_c', 'weight_decay_by_lr', 'decouple'], ['权重平均与衰减', 'Weight averaging and decay'], { togglesFirst: true }),
+    section('averaging', ['use_schedulefree', 'schedulefree_c', 'weight_decay_by_lr', 'decouple', 'exclude_bias_norm_from_weight_decay'], ['权重平均与衰减', 'Weight averaging and decay'], { togglesFirst: true }),
     section('stability', ['betas', 'beta2', 'eps', 'grad_clip_norm', 'clip_threshold', 'use_bias_correction', 'use_stableadamw'], ['平滑与稳定性', 'Smoothing and stability']),
-    section('precision', ['factored', 'factored_fp32', 'stochastic_rounding', 'kahan'], ['状态占用与精度', 'State memory and precision']),
+    section('precision', ['factored', 'factored_fp32', 'stochastic_rounding', 'kahan', 'cpu_offload'], ['状态占用与精度', 'State memory and precision']),
     section('variants', ['use_cautious', 'use_grams', 'use_adopt', 'use_orthograd', 'use_focus'], ['更新方式', 'Update methods']),
     section('options', ['group_lr', 'args'], ['优化器选项', 'Optimizer options']),
   ],
@@ -51,6 +52,7 @@ const layouts: Record<string, Section[]> = {
   memory: [section('resources', ['model.attention', 'base_precision', 'blocks_to_swap', 'activation_checkpointing', 'vae_encode_batch_size', 'vae_attention_chunking', 'no_half_vae', 'vae_tiling', 'cache_encode_tiled', 'offload_text_encoder', 'compile', 'allow_tf32'])],
   objective: [
     section('noise', ['timestep_sampling', 'logit_mean', 'logit_std', 'shift', 'mode_scale', 'res_shift_tokens', 'res_shift_mu', 't_min', 't_max', 'stratified'], ['噪声与时间步', 'Noise and timesteps']),
+    section('noise-shape', ['noise_offset', 'multires_noise_iterations', 'multires_noise_discount'], ['噪声分布', 'Noise distribution']),
     section('loss', ['loss', 'huber_c', 'weighting', 'snr_gamma', 'ip_noise_gamma', 'v_pred_like_loss', 'scale_v_pred_loss_like_noise_pred', 'debiased_estimation_loss'], ['损失与加权', 'Loss and weighting']),
   ],
   sampling: [
@@ -62,7 +64,8 @@ const layouts: Record<string, Section[]> = {
   ],
   checkpoint: [
     section('files', ['name', 'save_dtype'], ['权重文件', 'Weight files']),
-    section('cadence', ['save_every_steps', 'save_every_epochs', 'keep_last_n', 'save_on_finish', 'save_training_metadata'], ['权重保存', 'Weight saving']),
+    section('cadence', ['save_every_steps', 'save_every_epochs', 'keep_last_n', 'save_on_finish'], ['权重保存', 'Weight saving']),
+    section('metadata', ['save_training_metadata', 'metadata_title', 'metadata_author', 'metadata_license', 'metadata_tags', 'metadata_trigger_phrase', 'metadata_merged_from', 'metadata_usage_hint', 'metadata_description'], ['模型元数据', 'Model metadata'], { togglesFirst: true }),
     section('state', ['save_state_every_steps', 'resume'], ['断点恢复', 'Training state']),
   ],
   validation: [

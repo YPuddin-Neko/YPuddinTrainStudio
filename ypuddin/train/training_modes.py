@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,11 @@ from safetensors.torch import load_file, save_file
 from torch import Tensor, nn
 
 from ypuddin.adapters.frozen import FrozenLinear
+from ypuddin.adapters.io import model_identity
 from ypuddin.config import TrainConfig, write_config
+from ypuddin.config.export_metadata import USER_METADATA_FIELDS, user_modelspec_metadata
+
+from .full_parameter_groups import no_decay_names, parameter_category, parameter_rate
 
 
 class FullTrainingSet:
@@ -24,10 +29,11 @@ class FullTrainingSet:
 
     layers: dict = {}  # old adapter-only compatibility checks never interpret full weights as adapters
 
-    def __init__(self, modules: dict[str, nn.Module]):
+    def __init__(self, modules: dict[str, nn.Module], config: TrainConfig | None = None):
         if not modules:
             raise ValueError("full training requires at least one selected component")
         self.modules = modules
+        self.config = config
         for module in modules.values():
             if any(isinstance(layer, FrozenLinear) for layer in module.modules()):
                 raise ValueError(
@@ -35,6 +41,11 @@ class FullTrainingSet:
                 )
             module.to(dtype=torch.float32).requires_grad_(True)
         self.rebind_parameters()
+        if config is not None:
+            for name, parameter in self._names.items():
+                lr, source = parameter_rate(name, config, config.optimizer.lr, config.optimizer.group_lr)
+                if lr == 0 and source.startswith("training."):
+                    parameter.requires_grad_(False)
         if not self._names:
             raise ValueError("selected full-training components have no parameters")
 
@@ -47,7 +58,7 @@ class FullTrainingSet:
         }
 
     def parameters(self) -> list[nn.Parameter]:
-        return list({id(parameter): parameter for parameter in self._names.values()}.values())
+        return list({id(parameter): parameter for parameter in self._names.values() if parameter.requires_grad}.values())
 
     def num_params(self) -> int:
         return sum(parameter.numel() for parameter in self.parameters())
@@ -55,17 +66,42 @@ class FullTrainingSet:
     def param_groups(self, base_lr: float, weight_decay: float, group_lr=None) -> list[dict[str, Any]]:
         buckets = {}
         seen = set()
+        excluded = no_decay_names(self.modules) if self.config and self.config.optimizer.exclude_bias_norm_from_weight_decay else set()
+        for name, parameter in self._names.items():
+            if id(parameter) in seen or not parameter.requires_grad:
+                continue
+            seen.add(id(parameter))
+            component = name.split(".", 1)[0]
+            lr, _ = parameter_rate(name, self.config, base_lr, group_lr)
+            decay = 0.0 if name in excluded else weight_decay
+            buckets.setdefault((component, lr, decay), []).append(parameter)
+        return [
+            {"name": component, "params": parameters, "lr": lr, "weight_decay": decay}
+            for (component, lr, decay), parameters in sorted(buckets.items())
+        ]
+
+    def group_report(self) -> list[dict[str, Any]]:
+        cfg = self.config
+        if cfg is None:
+            return []
+        excluded = no_decay_names(self.modules) if cfg.optimizer.exclude_bias_norm_from_weight_decay else set()
+        rows = {}
+        seen = set()
         for name, parameter in self._names.items():
             if id(parameter) in seen:
                 continue
             seen.add(id(parameter))
-            component = name.split(".", 1)[0]
-            lr = next((value for key, value in (group_lr or {}).items() if key in name), base_lr)
-            buckets.setdefault((component, lr), []).append(parameter)
-        return [
-            {"name": component, "params": parameters, "lr": lr, "weight_decay": weight_decay}
-            for (component, lr), parameters in sorted(buckets.items())
-        ]
+            lr, source = parameter_rate(name, cfg, cfg.optimizer.lr, cfg.optimizer.group_lr)
+            category = parameter_category(name, cfg.model.family)
+            decay = 0.0 if name in excluded else cfg.optimizer.weight_decay
+            key = (category, lr, decay, not parameter.requires_grad, source)
+            row = rows.setdefault(key, {
+                "name": category, "lr": lr, "weight_decay": decay,
+                "frozen": not parameter.requires_grad, "parameters": 0, "tensors": 0, "source": source,
+            })
+            row["parameters"] += parameter.numel()
+            row["tensors"] += 1
+        return list(rows.values())
 
     def train(self, mode=True):
         for module in self.modules.values():
@@ -149,11 +185,31 @@ def _cpu_tensors(tensors, dtype):
     }
 
 
+def full_model_metadata(training: FullTrainingSet, cfg: TrainConfig, loaded) -> dict[str, str]:
+    metadata = {
+        "ypuddin.training_mode": "full",
+        "ypuddin.family": cfg.model.family,
+        "ypuddin.components": json.dumps(sorted(training.modules)),
+    }
+    metadata.update(model_identity(
+        cfg.model.family, (getattr(loaded, "extra", None) or {}).get("variant"), adapter=False,
+    ))
+    if cfg.checkpoint.save_training_metadata:
+        metadata.update({
+            "modelspec.title": cfg.checkpoint.name,
+            "modelspec.date": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        })
+        metadata.update(user_modelspec_metadata(cfg.checkpoint))
+    return metadata
+
+
 def save_model_artifact(
-    path: Path, training: FullTrainingSet, cfg: TrainConfig, loaded, *, tensors=None
+    path: Path, training: FullTrainingSet, cfg: TrainConfig, loaded, *, tensors=None,
+    metadata: dict[str, str] | None = None,
 ) -> Path:
     """Atomically export actual model components plus an explicit configuration for reuse."""
     state = training.training_state_dict() if tensors is None else tensors
+    metadata = full_model_metadata(training, cfg, loaded) if metadata is None else metadata
     dtype = {"fp32": torch.float32, "bf16": torch.bfloat16, "fp16": torch.float16}[cfg.checkpoint.save_dtype]
     temporary = path.with_name(path.name + ".tmp")
     if temporary.exists():
@@ -165,6 +221,9 @@ def save_model_artifact(
             config.model.dtype = "fp32"
         config.training.resume_weights = None
         config.checkpoint.resume = None
+        if not cfg.checkpoint.save_training_metadata:
+            for name in USER_METADATA_FIELDS:
+                setattr(config.checkpoint, f"metadata_{name}", "")
         component_outputs = {}
         family = cfg.model.family
         for component, module in training.modules.items():
@@ -178,15 +237,15 @@ def save_model_artifact(
             if component == "backbone":
                 if family in {"sdxl", "flux2"}:
                     module.save_config(target)
-                    save_file(values, str(target / "diffusion_pytorch_model.safetensors"))
+                    save_file(values, str(target / "diffusion_pytorch_model.safetensors"), metadata=metadata)
                     config.model.dit_path = str(path / component)
                 else:
-                    save_file(values, str(target / "model.safetensors"))
+                    save_file(values, str(target / "model.safetensors"), metadata=metadata)
                     config.model.dit_path = str(path / component / "model.safetensors")
             else:
                 if hasattr(module_config, "save_pretrained"):
                     module_config.save_pretrained(target)
-                save_file(values, str(target / "model.safetensors"))
+                save_file(values, str(target / "model.safetensors"), metadata=metadata)
                 # Qwen decoder exports use the supported single-file path, preserving the
                 # original tokenizer reference. Klein needs the original full HF wrapper.
                 is_decoder = family in {"anima", "krea2"}
@@ -230,6 +289,7 @@ def save_model_artifact(
                     "components": component_outputs,
                     "config": "config.toml",
                     "frozen_assets": "referenced_by_config",
+                    "metadata": metadata,
                 },
                 ensure_ascii=False,
                 indent=2,

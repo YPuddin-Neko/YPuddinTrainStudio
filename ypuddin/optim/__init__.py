@@ -1,3 +1,4 @@
+from .cpu_offload import CPUOffloadAdamW
 from .factory import (
     KahanWrapper,
     build_optimizer,
@@ -12,6 +13,7 @@ from .factory import (
 )
 
 __all__ = [
+    "CPUOffloadAdamW",
     "KahanWrapper",
     "build_optimizer",
     "build_scheduler",

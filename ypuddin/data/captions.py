@@ -94,6 +94,50 @@ def _expand_wildcards(text: str, rng: random.Random) -> str:
     return text
 
 
+def _split_weighted_tags(text: str, separator: str, *, boundaries: set[int] | None = None) -> list[str]:
+    if not separator:
+        raise ValueError("empty separator")
+    parts, start, index = [], 0, 0
+    round_depth = square_depth = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if (
+            not round_depth and not square_depth and text.startswith(separator, index)
+            and (boundaries is None or index in boundaries)
+        ):
+            parts.append(text[start:index])
+            index += len(separator)
+            start = index
+            continue
+        if char == "(":
+            round_depth += 1
+        elif char == ")":
+            round_depth = max(0, round_depth - 1)
+        elif char == "[":
+            square_depth += 1
+        elif char == "]":
+            square_depth = max(0, square_depth - 1)
+        index += 1
+    parts.append(text[start:])
+    return parts
+
+
+def _weighted_groups(tokens: list[str]) -> list[str]:
+    # JSON string fields may already have been split on commas. Rejoin only
+    # bracketed fragments; complete array entries remain indivisible tags.
+    positions, offset = set(), 0
+    for token in tokens[:-1]:
+        offset += len(token)
+        positions.add(offset)
+        offset += 2
+    return _split_weighted_tags(
+        ", ".join(tokens), ", ", boundaries=positions
+    ) if tokens else []
+
+
 def transform_caption(raw: str | StructuredCaption, cfg: CaptionConfig, rng: random.Random) -> str | None:
     """Returns the caption to encode, or ``None`` when this sample is dropped to unconditional."""
     if cfg.caption_dropout > 0 and rng.random() < cfg.caption_dropout:
@@ -104,7 +148,8 @@ def transform_caption(raw: str | StructuredCaption, cfg: CaptionConfig, rng: ran
     if cfg.wildcard:
         text = _expand_wildcards(text, rng)
     sep = cfg.separator
-    tags = [t.strip() for t in text.split(sep)] if text else []
+    parts = (_split_weighted_tags(text, sep) if cfg.weighted else text.split(sep)) if text else []
+    tags = [t.strip() for t in parts] if text else []
     tags = [t for t in tags if t]
     if cfg.trigger_word:
         tags = [t for t in tags if t != cfg.trigger_word]
@@ -127,6 +172,8 @@ def _transform_structured(raw: StructuredCaption, cfg: CaptionConfig, rng: rando
     tokens = list(unique(expand(t) for t in (cfg.trigger_word or "", raw.trigger, *raw.fixed)))
     for group in (raw.appearance, raw.tags, raw.environment):
         rest = [expand(token) for token in group]
+        if cfg.weighted:
+            rest = _weighted_groups(rest)
         if cfg.tag_dropout > 0:
             rest = [token for token in rest if rng.random() >= cfg.tag_dropout]
         if cfg.shuffle:

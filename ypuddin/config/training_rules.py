@@ -1,7 +1,11 @@
 """Explicit component-training capabilities and incompatible memory paths."""
 
+from .optimizer_rules import optimizer_key, optimizer_policy
+
 FULL_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "toy"})
 TEXT_ADAPTER_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2"})
+_ANIMA_LR_FIELDS = frozenset({"llm_adapter_lr", "self_attn_lr", "cross_attn_lr", "mlp_lr", "modulation_lr"})
+_FULL_LR_FIELDS = ("backbone_lr", "text_encoder_lr", "text_encoder_2_lr", *sorted(_ANIMA_LR_FIELDS))
 
 
 def training_capabilities(family: str) -> dict:
@@ -33,9 +37,75 @@ def trains_conv_adapters(cfg) -> bool:
     return preset is None or trains_convolutions(cfg.adapter, preset)
 
 
+def _caption_noise_errors(cfg) -> list[dict[str, str]]:
+    checks = [
+        (
+            cfg.dataset.caption.weighted and cfg.model.family != "sdxl",
+            "dataset.caption.weighted", "标签权重语法仅适用于 SDXL",
+        ),
+        (
+            cfg.objective.noise_offset > 0 and cfg.model.family != "sdxl",
+            "objective.noise_offset", "噪声偏移仅适用于 SDXL",
+        ),
+        (
+            cfg.objective.multires_noise_iterations > 0 and cfg.model.family != "sdxl",
+            "objective.multires_noise_iterations", "多分辨率噪声仅适用于 SDXL",
+        ),
+        (
+            cfg.objective.noise_offset > 0 and cfg.objective.multires_noise_iterations > 0,
+            "objective.multires_noise_iterations", "噪声偏移与多分辨率噪声不能同时启用，请将其中一项设为 0",
+        ),
+    ]
+    for section in ("dataset", "validation"):
+        for index, source in enumerate(getattr(cfg, section).sources):
+            caption = source.caption
+            checks.append((
+                caption is not None and "weighted" in caption.model_fields_set
+                and caption.weighted != cfg.dataset.caption.weighted,
+                f"{section}.sources.{index}.caption.weighted",
+                "标签权重语法对整个训练任务生效，请与数据集的标签权重设置保持一致",
+            ))
+    return [{"loc": loc, "msg": message} for failed, loc, message in checks if failed]
+
+
+def _full_optimizer_errors(cfg) -> list[dict[str, str]]:
+    checks = []
+    policy = optimizer_policy(cfg.optimizer.type, use_schedulefree=cfg.optimizer.use_schedulefree)
+    managed_groups = "optimizer.group_lr" in policy.get("fixed", {})
+    for field in _FULL_LR_FIELDS:
+        value = getattr(cfg.training, field)
+        if value is None:
+            continue
+        loc = f"training.{field}"
+        checks.extend([
+            (cfg.training.mode != "full", loc, "组件和模块学习率仅用于全量微调，适配器训练请清空此设置"),
+            (field in _ANIMA_LR_FIELDS and cfg.model.family != "anima", loc, "该模块学习率仅适用于 Anima"),
+            (field == "text_encoder_2_lr" and cfg.model.family != "sdxl", loc, "第二文本编码器学习率仅适用于 SDXL"),
+            (managed_groups and value > 0, loc, "当前优化器自动管理学习率，请留空；设为 0 仍可冻结该组参数"),
+        ])
+    checks.append((
+        cfg.optimizer.exclude_bias_norm_from_weight_decay and cfg.training.mode != "full",
+        "optimizer.exclude_bias_norm_from_weight_decay", "偏置和归一化参数的权重衰减排除仅用于全量微调",
+    ))
+    if cfg.optimizer.cpu_offload:
+        checks.extend([
+            (cfg.training.mode != "full", "optimizer.cpu_offload", "优化器 CPU 卸载仅用于全量微调"),
+            (optimizer_key(cfg.optimizer.type) != "adamw", "optimizer.cpu_offload", "优化器 CPU 卸载需要选择 AdamW"),
+            (cfg.optimizer.kahan, "optimizer.kahan", "优化器 CPU 卸载不支持 Kahan 补偿，请关闭补偿"),
+            (cfg.loop.distributed_strategy == "fsdp", "optimizer.cpu_offload", "优化器 CPU 卸载不支持显存分片，请使用单卡或 DDP"),
+            (cfg.optimizer.fused_backward, "optimizer.fused_backward", "优化器 CPU 卸载不支持反向即时更新"),
+        ])
+        for field in ("capturable", "differentiable", "fused", "fused_back_pass"):
+            checks.append((
+                bool(cfg.optimizer.args.get(field, False)), f"optimizer.args.{field}",
+                f"优化器 CPU 卸载不支持 {field}=true，请移除此参数或设为 false",
+            ))
+    return [{"loc": loc, "msg": message} for failed, loc, message in checks if failed]
+
+
 def training_errors(cfg) -> list[dict[str, str]]:
     selection = cfg.training
-    errors = []
+    errors = _caption_noise_errors(cfg) + _full_optimizer_errors(cfg)
 
     def reject(loc, msg):
         errors.append({"loc": loc, "msg": msg})
@@ -106,8 +176,6 @@ def distributed_training_errors(cfg) -> list[dict[str, str]]:
         ),
     ]
     if sharded:
-        from .optimizer_rules import optimizer_key
-
         checks.extend(
             [
                 (cfg.loop.gpu_count < 2, "loop.gpu_count", "显存分片至少需要两张显卡"),

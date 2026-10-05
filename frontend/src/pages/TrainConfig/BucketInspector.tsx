@@ -216,6 +216,21 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
           {!!distributed?.dropped_samples && gpus > 1 && <div><dt>{text('首轮末尾略过', 'First epoch tail skipped')}</dt><dd>{distributed.dropped_samples} {text('张', 'images')}</dd></div>}
           <div><dt>{text('可训练参数', 'Trainable parameters')}</dt><dd>{formatParams(plan?.params?.trainable)}</dd></div>
         </dl>
+        {!!plan?.params?.groups?.length && <details className="bucket-parameter-groups">
+          <summary>{text('参数分组', 'Parameter groups')}</summary>
+          <div className="bucket-table-wrap"><table className="bucket-table"><thead><tr>
+            <th>{text('模块', 'Module')}</th><th>{text('参数量', 'Parameters')}</th><th>{text('学习率', 'Rate')}</th>
+          </tr></thead><tbody>{plan.params.groups.map((group, index) => <tr key={index}>
+            <td>{({backbone:text('主模型','Main model'),text_encoder:text('文本编码器','Text encoder'),text_encoder_2:'CLIP-G',llm_adapter:'LLM Adapter',self_attn:text('自注意力','Self-attention'),cross_attn:text('交叉注意力','Cross-attention'),mlp:'MLP',modulation:text('调制层','Modulation')} as Record<string,string>)[group.name] || group.name}
+              {!group.frozen && group.weight_decay === 0 && <small className="ui-muted"> · {text('无衰减','No decay')}</small>}</td>
+            <td>{formatParams(group.parameters)}</td><td>{group.frozen ? text('冻结','Frozen') : group.lr}</td>
+          </tr>)}</tbody></table></div>
+        </details>}
+        {!!plan?.memory?.cpu_ema_mb && <dl className="estimate-list"><div><dt>{text('CPU EMA 内存', 'CPU EMA RAM')}</dt><dd>{formatBytesMB(plan.memory.cpu_ema_mb)}</dd></div></dl>}
+        {!!plan?.memory?.cpu_optimizer_mb && <dl className="estimate-list"><div>
+          <dt>{text('CPU 优化器内存', 'CPU optimizer RAM')}<ConfigHelp label={text('CPU 优化器内存说明','CPU optimizer RAM help')}>{text('每个训练进程的参数副本、状态及梯度内存，不含模型加载、数据缓存和更新临时空间。','Per-process RAM for parameter copies, states and gradients. Excludes model loading, data caches and temporary update workspace.')}</ConfigHelp></dt>
+          <dd>{formatBytesMB(plan.memory.cpu_optimizer_mb)}</dd>
+        </div></dl>}
         <div className={`estimate-memory${overCapacity ? ' is-over' : tightMemory ? ' is-tight' : ''}`}>
           <div><span>{gpus > 1 ? text('每卡显存峰值估算', 'Estimated peak per GPU') : text('显存峰值估算', 'Estimated peak memory')}</span><strong>{memoryIssue
             ? <button type="button" className="ui-link" title={memoryIssueDetail} onClick={() => onField && memoryIssue.path ? onField(memoryIssue.path) : onIssues?.()}>{text(`检查${memoryIssue.label}`, `Check ${memoryIssue.label}`)}</button>

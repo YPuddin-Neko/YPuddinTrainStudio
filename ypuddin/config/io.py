@@ -119,8 +119,15 @@ def load_config(
 # value a field is left out of the hash, so older checkpoints still authenticate their config.
 _LEGACY_VALUES: dict[str, dict[str, Any]] = {
     # Optional export and save settings, off.
-    "checkpoint": {"save_state_every_epochs": None, "save_training_metadata": False, "state_dir": None},
+    "checkpoint": {
+        "save_state_every_epochs": None, "save_training_metadata": False, "state_dir": None,
+        "metadata_author": "", "metadata_description": "", "metadata_license": "",
+        "metadata_merged_from": "", "metadata_tags": "", "metadata_title": "",
+        "metadata_usage_hint": "", "metadata_trigger_phrase": "",
+    },
     "logging": {"output_dir": None},
+    "training": {"backbone_lr": None, "text_encoder_lr": None, "text_encoder_2_lr": None, "llm_adapter_lr": None, "self_attn_lr": None, "cross_attn_lr": None, "mlp_lr": None, "modulation_lr": None},
+    "optimizer": {"cpu_offload": False, "exclude_bias_norm_from_weight_decay": False},
     # Center keeps the pixel geometry of older checkpoints.
     "dataset": {"crop_anchor": "center", "native_max_pixels_mode": "custom", "native_max_pixels_resolved": None},
     # SDXL's original single CLIP context and cache behavior.
@@ -129,6 +136,7 @@ _LEGACY_VALUES: dict[str, dict[str, Any]] = {
     "loop": {"deterministic": False},
     # Optional DDPM loss modifiers, off.
     "objective": {
+        "noise_offset": 0.0, "multires_noise_iterations": 0, "multires_noise_discount": 0.3,
         "scale_v_pred_loss_like_noise_pred": False,
         "v_pred_like_loss": 0.0,
         "debiased_estimation_loss": False,
@@ -227,6 +235,24 @@ def _fingerprint(
                 key: value for key, value in values.items()
                 if key not in legacy or value != legacy[key] or (section, key) in kept
             }
+    # A caption override uses the same schema as the task-wide caption settings.
+    def legacy_caption(value):
+        if isinstance(value, Mapping) and value.get("weighted") is False:
+            return {key: item for key, item in value.items() if key != "weighted"}
+        return value
+
+    for section in ("dataset", "validation"):
+        if isinstance(data.get(section), Mapping):
+            value = dict(data[section])
+            if "caption" in value:
+                value["caption"] = legacy_caption(value["caption"])
+            if "sources" in value:
+                value["sources"] = [
+                    {**source, "caption": legacy_caption(source["caption"])}
+                    if isinstance(source, Mapping) and "caption" in source else source
+                    for source in value["sources"]
+                ]
+            data[section] = value
     # Checkpoints from before the DoRA axis option trained the output axis; without DoRA it does nothing.
     adapter = data.get("adapter")
     if isinstance(adapter, Mapping) and (

@@ -38,6 +38,13 @@ from .sharded_state import (
     save_sharded_checkpoint,
 )
 from .trainer import Trainer
+from .training_feature_contract import (
+    STATE_KEY as TRAINING_FEATURE_STATE_KEY,
+)
+from .training_feature_contract import (
+    training_feature_contract,
+    validate_training_feature_resume,
+)
 
 
 def parameter_shard(parameter, world_size):
@@ -308,6 +315,7 @@ class ShardedTrainer(DistributedTrainer):
             expected_total_steps=self.progress.total_steps,
             legacy_scheduler_contract=getattr(self, "_resume_scheduler_contract", None),
             expected_dora_contract=compute_contract(self.adapters),
+            expected_training_features=training_feature_contract(self.cfg),
         )
         validate_optimizer_runtime(self.cfg.optimizer, self.optimizer, expected_groups=expected)
         if self.scheduler is not None and saved["scheduler"]:
@@ -329,6 +337,7 @@ class ShardedTrainer(DistributedTrainer):
         def validate_save_contract():
             self._validate_dora_contract()
             self._validate_training_compute_policy()
+            validate_training_feature_resume(self.cfg, self._training_feature_contract)
             validate_scheduler_recipe(self._scheduler_contract, self.cfg, self.progress.total_steps)
             validate_scheduler_instance(self._scheduler_contract, self.scheduler)
             return self._scheduler_contract["config"]
@@ -338,6 +347,7 @@ class ShardedTrainer(DistributedTrainer):
         scheduler_config = _collective_check(validate_save_contract)
         self.progress.extra["loss_ema"] = self._loss_ema
         self.progress.extra[STATE_KEY] = compute_contract(self.adapters)
+        self.progress.extra[TRAINING_FEATURE_STATE_KEY] = training_feature_contract(self.cfg)
         path = save_sharded_checkpoint(
             (Path(self.cfg.checkpoint.state_dir) if self.cfg.checkpoint.state_dir else self.run_dir)
             # Every rank writes to the name rank zero picks.
@@ -383,8 +393,10 @@ class ShardedTrainer(DistributedTrainer):
             self.emit("checkpoint.saved", kind="weights", step=self.progress.step, path=str(path), ema=False)
             self._primary_call(self._rotate_weights)
             return path
+        metadata = _collective_check(lambda: self._adapter_metadata() if self.is_primary else None)
         path = export_sharded_model_artifact(
-            self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.model", self.adapters, self.cfg, self.loaded
+            self.run_dir / f"{self.cfg.checkpoint.name}-{tag}.model", self.adapters, self.cfg, self.loaded,
+            metadata=metadata,
         )
         self.emit("checkpoint.saved", kind="model", step=self.progress.step, path=str(path), ema=False)
         self._primary_call(self._rotate_weights)
