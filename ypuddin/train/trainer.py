@@ -2242,13 +2242,13 @@ class Trainer:
 
     def _step_hooks(self, step: int) -> None:
         cfg = self.cfg
-        if cfg.validation.enabled and cfg.validation.every_steps and step % cfg.validation.every_steps == 0:
+        if cfg.validation.enabled and cfg.validation.every_steps_enabled and step % cfg.validation.every_steps == 0:
             self.validate()
-        if cfg.sampling.enabled and cfg.sampling.every_steps and step % cfg.sampling.every_steps == 0:
+        if cfg.sampling.enabled and cfg.sampling.every_steps_enabled and step % cfg.sampling.every_steps == 0:
             self.sample_images(tag=f"step{step}")
-        if cfg.checkpoint.save_every_steps and step % cfg.checkpoint.save_every_steps == 0:
+        if cfg.checkpoint.save_every_steps_enabled and step % cfg.checkpoint.save_every_steps == 0:
             self.save_weights(f"step{step:06d}")
-        if cfg.checkpoint.save_state_every_steps and step % cfg.checkpoint.save_state_every_steps == 0:
+        if cfg.checkpoint.save_state_every_steps_enabled and step % cfg.checkpoint.save_state_every_steps == 0:
             self.save_state()
         req = self._control_request()
         if req == "save":
@@ -2272,20 +2272,20 @@ class Trainer:
         cfg = self.cfg
         if (
             cfg.validation.enabled
-            and cfg.validation.every_epochs
+            and cfg.validation.every_epochs_enabled
             and finished_epochs % cfg.validation.every_epochs == 0
         ):
             self.validate()
         if (
             cfg.sampling.enabled
-            and cfg.sampling.every_epochs
+            and cfg.sampling.every_epochs_enabled
             and finished_epochs % cfg.sampling.every_epochs == 0
         ):
             self.sample_images(tag=f"epoch{finished_epochs}")
-        if cfg.checkpoint.save_every_epochs and finished_epochs % cfg.checkpoint.save_every_epochs == 0:
+        if cfg.checkpoint.save_every_epochs_enabled and finished_epochs % cfg.checkpoint.save_every_epochs == 0:
             self.save_weights(f"epoch{finished_epochs:04d}")
         if (
-            cfg.checkpoint.save_state_every_epochs
+            cfg.checkpoint.save_state_every_epochs_enabled
             and finished_epochs % cfg.checkpoint.save_state_every_epochs == 0
         ):
             self.save_state(f"epoch{finished_epochs:04d}")

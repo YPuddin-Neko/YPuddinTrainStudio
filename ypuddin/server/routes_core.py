@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, model_validator
 
 import ypuddin
 from ypuddin.config import TrainConfig, deep_merge, dump_toml, read_config_file
+from ypuddin.config.intervals import normalize_legacy_intervals
 from ypuddin.models import available as available_families
 from ypuddin.train.plan import plan as make_plan
 
@@ -711,7 +712,7 @@ def _preset_row(name: str, data: dict[str, Any], builtin: bool, updated_at: floa
     return {
         "name": name,
         "description": data.get("description", ""),
-        "config": data.get("config", {}),
+        "config": normalize_legacy_intervals(data.get("config", {})),
         "builtin": builtin,
         "updated_at": updated_at,
     }
@@ -765,7 +766,7 @@ def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: boo
         )
     from ypuddin.train.native_resolution import clear_native_vram_resolution
 
-    fragment = clear_native_vram_resolution(preserve_legacy_dora(body.config))
+    fragment = normalize_legacy_intervals(clear_native_vram_resolution(preserve_legacy_dora(body.config)))
     validated = _validated_or_error(deep_merge(initial_family_config(c, family), fragment))
     from ypuddin.config.optimizer_rules import canonical_optimizer_fragment
 
@@ -829,11 +830,14 @@ def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)
     from ypuddin.train.native_resolution import clear_native_vram_resolution
 
     preset = get_preset(name, c)
-    raw = body.config
+    raw = normalize_legacy_intervals(body.config)
     checkpoint = raw.get("checkpoint")
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         raw = clear_native_vram_resolution(raw)
-    merged = deep_merge(TrainConfig().to_dict(), deep_merge(clear_native_vram_resolution(preset["config"]), raw))
+    merged = deep_merge(
+        TrainConfig().to_dict(),
+        deep_merge(normalize_legacy_intervals(clear_native_vram_resolution(preset["config"])), raw),
+    )
     cfg, errors = _validate(merged)
     return {
         "ok": cfg is not None,

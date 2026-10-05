@@ -24,8 +24,10 @@ import ConfigHelp from '../../components/ConfigHelp';
 import CaptionFormatSelect from '../../components/CaptionFormatSelect';
 import './config-fields.css';
 import { optionalValueLabel } from './optionalValues';
+import { INTERVAL_FIELDS, intervalFieldPath, normalizeLegacyIntervals } from '../../utils/intervals';
 import ParameterFields from './ParameterFields';
 import RecoveryInterval from './RecoveryInterval';
+import FrequencyInput from './FrequencyInput';
 import ParameterToggleSection from './ParameterToggleSection';
 import { LoadingNote } from '../../components/Loading';
 
@@ -853,7 +855,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
-  const value = React.useMemo(() => normalizeOptimizerConfig(schema, sourceValue), [schema, sourceValue]);
+  const value = React.useMemo(() => normalizeOptimizerConfig(schema, normalizeLegacyIntervals(sourceValue)), [schema, sourceValue]);
   const activeComputePolicy = confirmedTrainingComputePolicy(computePolicy, value);
   const [modelAssets, setModelAssets] = React.useState<ModelAsset[]>([]);
   React.useEffect(() => {
@@ -901,7 +903,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       const previous = optimizerEdits.current.get(type);
       next = previous ? restoreOptimizerSelection(schema, next, previous) : selectOptimizer(schema, next, type);
     }
-    const normalized = normalizeOptimizerConfig(schema, next);
+    const normalized = normalizeOptimizerConfig(schema, normalizeLegacyIntervals(next));
     lastEmittedConfig.current = normalized;
     onValueChange(normalized);
   };
@@ -914,6 +916,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
+    const intervalRule = INTERVAL_FIELDS[fullPathKey];
+    if (intervalFieldPath(fullPathKey) !== fullPathKey) return null;
     if (['checkpoint.save_state_every_epochs', 'dataset.native_max_pixels_mode'].includes(fullPathKey)) return null;
     if (['checkpoint.output_dir', 'checkpoint.state_dir', 'sampling.output_dir', 'logging.output_dir', 'logging.events_path', 'dataset.cache_dir'].includes(fullPathKey)) return null;
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
@@ -958,9 +962,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup) && !(compact && parentPath[0] === 'training' && groupFilter.includes('training'))) return null;
-    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto auto_vram custom 自动 分辨率优先 显存优先 resolution first VRAM first 自定义' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
+    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${intervalRule ? `${fullPathKey}_enabled` : ''} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs checkpoint.save_state_every_epochs_enabled epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto auto_vram custom 自动 分辨率优先 显存优先 resolution first VRAM first 自定义' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
-    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || fullPathKey === 'checkpoint.save_state_every_steps' && e.loc === 'checkpoint.save_state_every_epochs' || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode');
+    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || intervalRule && e.loc === `${fullPathKey}_enabled` || fullPathKey === 'checkpoint.save_state_every_steps' && ['checkpoint.save_state_every_epochs', 'checkpoint.save_state_every_epochs_enabled'].includes(e.loc || '') || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode');
     const revealOutputName = versionSources && fullPathKey === 'checkpoint.name' && (editOutput === 'name' || !!errorItem || !!search.trim());
     if (versionSources && fullPathKey === 'checkpoint.name' && !revealOutputName) return null;
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
@@ -1022,8 +1026,20 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = <div className="config-managed-value"><output id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`}>{display}</output><span>{computeManaged?.tag ?? (english ? 'Automatic' : '自动管理')}</span></div>;
     } else if (fullPathKey === 'checkpoint.save_state_every_steps') {
       control = <RecoveryInterval id={fieldId} label={fieldLabel} english={english} invalid={!!errorItem}
-        value={{save_state_every_steps:fieldValue ?? null,save_state_every_epochs:value.checkpoint?.save_state_every_epochs ?? null}}
+        value={{
+          save_state_every_steps:value.checkpoint?.save_state_every_steps === undefined ? 100 : value.checkpoint.save_state_every_steps,
+          save_state_every_epochs:value.checkpoint?.save_state_every_epochs === undefined ? 1 : value.checkpoint.save_state_every_epochs,
+          save_state_every_steps_enabled:value.checkpoint?.save_state_every_steps_enabled ?? true,
+          save_state_every_epochs_enabled:value.checkpoint?.save_state_every_epochs_enabled ?? false,
+        }}
         onChange={interval=>onChange(setNestedValue(value,['checkpoint'],{...value.checkpoint,...interval}))}/>;
+    } else if (intervalRule) {
+      const enabledKey = `${key}_enabled`;
+      const enabled = value[parentPath[0]]?.[enabledKey] ?? intervalRule.enabled;
+      const interval = getNestedValue(value, path) === undefined ? intervalRule.fallback : getNestedValue(value, path);
+      control = <FrequencyInput name={fullPathKey} english={english} invalid={!!errorItem}
+        enabled={!!enabled} value={interval}
+        onChange={(next, checked)=>onChange(setNestedValue(value, parentPath, {...value[parentPath[0]], [key]:next === null && !checked ? intervalRule.fallback : next, [enabledKey]:checked}))}/>;
     } else if (fullPathKey === 'dataset.crop_anchor') {
       control = <StudioSelect id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-hint`} aria-invalid={!!errorItem}
         value={fieldValue ?? 'center'} optionColumns={3}
@@ -1298,7 +1314,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const modelFile = (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS) || ['training.resume_weights', 'adapter.resume_weights'].includes(fullPathKey);
     const wide = !modelFile && (['sources', 'rules', 'prompts', 'args', 'group_lr'].includes(key) || ui.control === 'path' || ui.control === 'textarea' || key.endsWith('_path') || key === 'output_dir' || fullPathKey === 'adapter.lr_scale');
     const booleanField = prop.type === 'boolean' || ui.control === 'switch';
-    if (!booleanField && !managedReason && React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect || control.type === DecimalNumberInput)) {
+    if (!intervalRule && !booleanField && !managedReason && React.isValidElement(control) && (typeof control.type === 'string' || control.type === StudioSelect || control.type === DecimalNumberInput)) {
       control = React.cloneElement(control as React.ReactElement<any>, {id: fieldId, 'aria-label': (control.props as any)['aria-label'] || fieldLabel, 'aria-invalid': !!errorItem});
     }
     // Small values also read in scientific form beside the label, e.g. 0.0001 = 1e-4.
@@ -1396,7 +1412,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             {scientific && <span className="config-field-badge" title={english ? 'The same value in scientific notation' : '同一数值的科学计数法'}><span className="sr-only">{english ? ', scientific notation ' : '，科学计数法 '}</span>{scientific}</span>}
           </label>
           <span className="config-field-reference">
-            <code className="config-field-key" tabIndex={0} title={fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs != null ? 'checkpoint.save_state_every_epochs' : fullPathKey}>{fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs != null ? 'checkpoint.save_state_every_epochs' : fullPathKey}</code>
+            <code className="config-field-key" tabIndex={0} title={fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs_enabled ? 'checkpoint.save_state_every_epochs' : fullPathKey}>{fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs_enabled ? 'checkpoint.save_state_every_epochs' : fullPathKey}</code>
             {helpButton}
           </span>
         </div>

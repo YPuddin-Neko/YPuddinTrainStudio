@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, field_validator
 from starlette.background import BackgroundTask
 
 from ypuddin.config import DatasetSourceConfig, TrainConfig, deep_merge
+from ypuddin.config.intervals import normalize_legacy_intervals
 from ypuddin.config.io import absolute_paths
 from ypuddin.data import IndexDB, scan_sources
 
@@ -469,7 +470,8 @@ def get_project_config(
     if f.exists():
         from .source_roles import normalize_source_roles
 
-        return normalize_source_roles(c, pid, json.loads(f.read_text(encoding="utf-8")), version["id"])
+        raw = normalize_legacy_intervals(json.loads(f.read_text(encoding="utf-8")))
+        return normalize_source_roles(c, pid, raw, version["id"])
     from .environment import environment_attention_default
 
     cfg = TrainConfig()
@@ -489,7 +491,7 @@ def put_project_config(
 ) -> dict[str, Any]:
     from ypuddin.train.native_resolution import clear_native_vram_resolution
 
-    body = clear_native_vram_resolution(body)
+    body = normalize_legacy_intervals(clear_native_vram_resolution(body))
     reindex = []
     with c.db.lock:
         version = assert_version_writable(c, pid, version_id)
@@ -605,6 +607,7 @@ def _write_project_config(
     c: ServiceContext, pid: str, body: dict[str, Any], version_id: str | None = None
 ) -> None:
     """Caller holds the DB lock to serialize config edits with dataset source registration."""
+    body = normalize_legacy_intervals(body)
     d = c.config_path(pid, version_id).parent
     d.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=d, suffix=".tmp", delete=False) as fp:

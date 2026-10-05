@@ -3278,32 +3278,54 @@ export interface components {
              */
             name: string;
             /**
-             * Save Every Steps
-             * @description 每多少次优化更新导出权重，默认留空不按步保存。适合较长任务保留中间结果；权重文件不含优化器与随机状态。
+             * Save Every Steps Enabled
+             * @default false
              */
-            save_every_steps?: number | null;
+            save_every_steps_enabled: boolean;
+            /**
+             * Save Every Steps
+             * @description 每多少次优化更新导出权重，默认关闭按步保存。适合较长任务保留中间结果；权重文件不含优化器与随机状态。
+             * @default 100
+             */
+            save_every_steps: number;
+            /**
+             * Save Every Epochs Enabled
+             * @default true
+             */
+            save_every_epochs_enabled: boolean;
             /**
              * Save Every Epochs
-             * @description 每多少轮导出权重，默认 1 每轮保存；留空关闭此触发器。与按步保存分别生效，可能在同一步产生不同标签的文件。
+             * @description 每多少轮导出权重，默认每轮保存；清空输入后不按轮保存。与按步保存分别生效，可能在同一步产生不同标签的文件。
              * @default 1
              */
-            save_every_epochs: number | null;
+            save_every_epochs: number;
             /**
              * State Dir
              * @description 完整恢复点的保存目录，留空使用训练器默认位置；独立 CLI 留空时随训练产物保存。
              */
             state_dir?: string | null;
             /**
+             * Save State Every Steps Enabled
+             * @default true
+             */
+            save_state_every_steps_enabled: boolean;
+            /**
              * Save State Every Steps
              * @description 每 N 个参数更新步保存完整恢复点，默认 100。界面可切换为按 Epoch（轮）保存，或关闭定期保存开关。暂停时仍会另存恢复点。异常退出后只能恢复到最近一次成功保存的位置。
              * @default 100
              */
-            save_state_every_steps: number | null;
+            save_state_every_steps: number;
+            /**
+             * Save State Every Epochs Enabled
+             * @default false
+             */
+            save_state_every_epochs_enabled: boolean;
             /**
              * Save State Every Epochs
              * @description 每完成 N 轮保存完整恢复点，默认关闭。按步和按轮的触发器独立；轮中达到最大步数时，不算完成一轮。暂停时仍会另存恢复点。
+             * @default 1
              */
-            save_state_every_epochs?: number | null;
+            save_state_every_epochs: number;
             /**
              * Keep Last N
              * @description 仅保留最近 N 组按步保存的权重（普通/EMA 成组；轮次与最终产物保留）
@@ -7782,16 +7804,27 @@ export interface components {
              */
             enabled: boolean;
             /**
-             * Every Steps
-             * @description 每多少次优化更新生成预览，默认留空不按步触发。设置较大间隔可减少频繁生成；不影响训练最大步数。
+             * Every Steps Enabled
+             * @default false
              */
-            every_steps?: number | null;
+            every_steps_enabled: boolean;
+            /**
+             * Every Steps
+             * @description 每多少次优化更新生成预览，默认关闭按步触发。设置较大间隔可减少频繁生成；不影响训练最大步数。
+             * @default 100
+             */
+            every_steps: number;
+            /**
+             * Every Epochs Enabled
+             * @default true
+             */
+            every_epochs_enabled: boolean;
             /**
              * Every Epochs
-             * @description 每多少轮生成预览，默认 1 每轮一次；留空关闭按轮触发。它与按步触发独立，同时到期会各生成一组。
+             * @description 每多少轮生成预览，默认每轮一次；清空输入后不按轮触发。它与按步触发独立，同时到期会各生成一组。
              * @default 1
              */
-            every_epochs: number | null;
+            every_epochs: number;
             /**
              * At Start
              * @description 默认关闭；开启后在首次训练更新前生成基线图，便于与后续结果对比。从已完成该阶段的完整状态恢复时不会重复生成。
@@ -8999,16 +9032,27 @@ export interface components {
              */
             sources?: components["schemas"]["DatasetSourceConfig"][];
             /**
+             * Every Steps Enabled
+             * @default false
+             */
+            every_steps_enabled: boolean;
+            /**
              * Every Steps
              * @description 每 N 步验证
+             * @default 100
              */
-            every_steps?: number | null;
+            every_steps: number;
+            /**
+             * Every Epochs Enabled
+             * @default true
+             */
+            every_epochs_enabled: boolean;
             /**
              * Every Epochs
              * @description 每 N 轮验证
              * @default 1
              */
-            every_epochs: number | null;
+            every_epochs: number;
             /**
              * Timesteps
              * @description 训练时间步分布的固定分位数，默认 0.1/0.3/0.5/0.7/0.9；会经过当前训练分布和 shift 转换，不一定等于同名实际 t。更改后验证损失不可直接与旧设置比较。

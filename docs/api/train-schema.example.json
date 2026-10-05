@@ -701,37 +701,39 @@
             "order": 10
           }
         },
+        "save_every_steps_enabled": {
+          "default": false,
+          "title": "Save Every Steps Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "hidden": true
+          }
+        },
         "save_every_steps": {
-          "anyOf": [
-            {
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "每多少次优化更新导出权重，默认留空不按步保存。适合较长任务保留中间结果；权重文件不含优化器与随机状态。",
+          "default": 100,
+          "description": "每多少次优化更新导出权重，默认关闭按步保存。适合较长任务保留中间结果；权重文件不含优化器与随机状态。",
+          "minimum": 1,
           "title": "Save Every Steps",
+          "type": "integer",
           "x-ui": {
             "group": "checkpoint",
             "order": 20
           }
         },
+        "save_every_epochs_enabled": {
+          "default": true,
+          "title": "Save Every Epochs Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "hidden": true
+          }
+        },
         "save_every_epochs": {
-          "anyOf": [
-            {
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
           "default": 1,
-          "description": "每多少轮导出权重，默认 1 每轮保存；留空关闭此触发器。与按步保存分别生效，可能在同一步产生不同标签的文件。",
+          "description": "每多少轮导出权重，默认每轮保存；清空输入后不按轮保存。与按步保存分别生效，可能在同一步产生不同标签的文件。",
+          "minimum": 1,
           "title": "Save Every Epochs",
+          "type": "integer",
           "x-ui": {
             "group": "checkpoint",
             "order": 30
@@ -753,37 +755,39 @@
             "hidden": true
           }
         },
+        "save_state_every_steps_enabled": {
+          "default": true,
+          "title": "Save State Every Steps Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "hidden": true
+          }
+        },
         "save_state_every_steps": {
-          "anyOf": [
-            {
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
           "default": 100,
           "description": "每 N 个参数更新步保存完整恢复点，默认 100。界面可切换为按 Epoch（轮）保存，或关闭定期保存开关。暂停时仍会另存恢复点。异常退出后只能恢复到最近一次成功保存的位置。",
+          "minimum": 1,
           "title": "Save State Every Steps",
+          "type": "integer",
           "x-ui": {
             "group": "checkpoint",
             "order": 40
           }
         },
+        "save_state_every_epochs_enabled": {
+          "default": false,
+          "title": "Save State Every Epochs Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "hidden": true
+          }
+        },
         "save_state_every_epochs": {
-          "anyOf": [
-            {
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
+          "default": 1,
           "description": "每完成 N 轮保存完整恢复点，默认关闭。按步和按轮的触发器独立；轮中达到最大步数时，不算完成一轮。暂停时仍会另存恢复点。",
+          "minimum": 1,
           "title": "Save State Every Epochs",
+          "type": "integer",
           "x-ui": {
             "group": "checkpoint",
             "order": 45
@@ -3101,38 +3105,40 @@
             "order": 0
           }
         },
+        "every_steps_enabled": {
+          "default": false,
+          "title": "Every Steps Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "hidden": true
+          }
+        },
         "every_steps": {
-          "anyOf": [
-            {
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "每多少次优化更新生成预览，默认留空不按步触发。设置较大间隔可减少频繁生成；不影响训练最大步数。",
+          "default": 100,
+          "description": "每多少次优化更新生成预览，默认关闭按步触发。设置较大间隔可减少频繁生成；不影响训练最大步数。",
+          "minimum": 1,
           "title": "Every Steps",
+          "type": "integer",
           "x-ui": {
             "group": "sampling",
             "order": 10,
             "show_when": "sampling.enabled == true"
           }
         },
+        "every_epochs_enabled": {
+          "default": true,
+          "title": "Every Epochs Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "hidden": true
+          }
+        },
         "every_epochs": {
-          "anyOf": [
-            {
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
           "default": 1,
-          "description": "每多少轮生成预览，默认 1 每轮一次；留空关闭按轮触发。它与按步触发独立，同时到期会各生成一组。",
+          "description": "每多少轮生成预览，默认每轮一次；清空输入后不按轮触发。它与按步触发独立，同时到期会各生成一组。",
+          "minimum": 1,
           "title": "Every Epochs",
+          "type": "integer",
           "x-ui": {
             "group": "sampling",
             "order": 20,
@@ -3753,38 +3759,40 @@
             "show_when": "validation.enabled == true"
           }
         },
+        "every_steps_enabled": {
+          "default": false,
+          "title": "Every Steps Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "hidden": true
+          }
+        },
         "every_steps": {
-          "anyOf": [
-            {
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
+          "default": 100,
           "description": "每 N 步验证",
+          "minimum": 1,
           "title": "Every Steps",
+          "type": "integer",
           "x-ui": {
             "group": "validation",
             "order": 30,
             "show_when": "validation.enabled == true"
           }
         },
+        "every_epochs_enabled": {
+          "default": true,
+          "title": "Every Epochs Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "hidden": true
+          }
+        },
         "every_epochs": {
-          "anyOf": [
-            {
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
           "default": 1,
           "description": "每 N 轮验证",
+          "minimum": 1,
           "title": "Every Epochs",
+          "type": "integer",
           "x-ui": {
             "group": "validation",
             "order": 40,

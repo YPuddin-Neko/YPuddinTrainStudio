@@ -11,6 +11,7 @@ from typing import Any
 
 import tomli_w
 
+from .intervals import normalize_legacy_intervals, project_legacy_intervals
 from .schema import TrainConfig
 
 if sys.version_info >= (3, 11):
@@ -93,12 +94,12 @@ def load_config(
     base: Mapping[str, Any] | None = None,
 ) -> TrainConfig:
     """Resolve ``base <- presets... <- file <- overrides`` into a validated config."""
-    data: dict[str, Any] = dict(base or {})
+    data: dict[str, Any] = normalize_legacy_intervals(base or {})
     for preset in presets:
         patch = preset if isinstance(preset, Mapping) else read_config_file(preset)
-        data = deep_merge(data, preserve_legacy_dora(patch))
+        data = deep_merge(data, normalize_legacy_intervals(preserve_legacy_dora(patch)))
     if path is not None:
-        data = deep_merge(data, preserve_legacy_dora(read_config_file(path)))
+        data = deep_merge(data, normalize_legacy_intervals(preserve_legacy_dora(read_config_file(path))))
         # Full-model exports carry native components next to this config. Rebind
         # only those generated component paths after copying/unpacking an artifact;
         # frozen VAE/tokenizer references retain their explicit original locations.
@@ -111,7 +112,7 @@ def load_config(
                 data = rebind_artifact_components(data, manifest, Path(path).parent)
 
     patch = overrides if isinstance(overrides, Mapping) else parse_overrides(overrides)
-    data = deep_merge(data, patch)
+    data = deep_merge(data, normalize_legacy_intervals(patch))
     return TrainConfig.model_validate(data)
 
 
@@ -227,7 +228,7 @@ def _fingerprint(
     config: TrainConfig | Mapping[str, Any], *, kept: set[tuple[str, str]] | frozenset = frozenset()
 ) -> dict[str, Any]:
     """The hashed form: legacy settings at their legacy value are left out, except ``kept`` ones."""
-    data = config.to_dict() if isinstance(config, TrainConfig) else dict(config)
+    data = project_legacy_intervals(config.to_dict() if isinstance(config, TrainConfig) else config)
     for section, legacy in _LEGACY_VALUES.items():
         values = data.get(section)
         if isinstance(values, Mapping):

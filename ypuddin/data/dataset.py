@@ -14,6 +14,7 @@ from torch import Tensor
 from torch.utils.data import Dataset
 
 from ypuddin.config import CaptionConfig, DatasetConfig, DatasetSourceConfig, TrainConfig
+from ypuddin.config.intervals import project_legacy_interval_section
 from ypuddin.config.schema import MAX_SIDE
 from ypuddin.models import LatentSpec
 
@@ -721,7 +722,9 @@ def build_data(
                     **({"native_max_pixels": layout.native_max_pixels}
                        if ds.resolution_mode == "native" and ds.native_max_pixels_mode in {"auto", "auto_vram"} else {}),
                 },
-                "validation": cfg.validation.model_dump(mode="json", exclude={"sources"}),
+                "validation": project_legacy_interval_section(
+                    "validation", cfg.validation.model_dump(mode="json", exclude={"sources"}),
+                ),
                 "validation_content": [item.record.content_hash for item in layout.validation_items],
             },
         ),

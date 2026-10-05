@@ -332,6 +332,7 @@ def _run_worker(index, out, requested_device, deadline):
         )
         cfg.dataset.bucket_step = 16
         cfg.sampling.every_steps = 3
+        cfg.sampling.every_steps_enabled = True
         trainer = CheckedTrainer(cfg, device=device)
         trainer.prepare()
         initial, _ = trainer.adapters.export_state()

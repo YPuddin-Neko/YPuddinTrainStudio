@@ -8,6 +8,7 @@ import { EVENT_TYPES } from '../../events/eventTypes';
 import { Job, Plan, Preset, ModelAsset, DatasetInfo } from '../../api/types';
 import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
 import { mergeConfig } from '../../utils/config';
+import { intervalFieldPath, normalizeLegacyIntervals } from '../../utils/intervals';
 import { applyTrainingPreset, reusableTrainingPreset } from '../../utils/trainingPresets';
 import { formatApiError } from '../../utils/errors';
 import { fillDefaultModels, changeModelFamily, matchingTrainingDatasets } from '../../utils/workspaceConfig';
@@ -59,6 +60,8 @@ function restoreDraftChanges(current: unknown, base: unknown, draft: unknown): u
 }
 
 function restoreDatasetDraft(current: Record<string, any>, base: Record<string, any>, draft: Record<string, any>) {
+  base = normalizeLegacyIntervals(base);
+  draft = normalizeLegacyIntervals(draft);
   const next = restoreDraftChanges(current, base, draft) as Record<string, any>;
   for (const section of ['dataset', 'validation']) {
     const remote = current[section]?.sources, saved = base[section]?.sources, local = draft[section]?.sources;
@@ -357,7 +360,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       projectId ? apiClient.get<Record<string, any>>(versionConfigUrl(projectId, versionId), { silent: true }) : Promise.resolve({}),
     ]).then(([nextSchema, nextDefaults, draft]) => {
       if (!active) return;
-      const next = fillDefaultModels(mergeConfig(nextDefaults, draft), registeredModelsRef.current);
+      const next = fillDefaultModels(mergeConfig(nextDefaults, normalizeLegacyIntervals(draft)), registeredModelsRef.current);
       setSchema(nextSchema);
       setDefaults(nextDefaults);
       initialConfigRef.current = JSON.stringify(next);
@@ -435,7 +438,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         const [remote, nextDatasets] = await request;
         await saveQueueRef.current.catch(() => {});
         if (controller.signal.aborted || draftRef.current.projectId !== projectId || draftRef.current.versionId !== versionId) return;
-        const next = fillDefaultModels(mergeConfig(defaults, remote), registeredModelsRef.current);
+        const next = fillDefaultModels(mergeConfig(defaults, normalizeLegacyIntervals(remote)), registeredModelsRef.current);
         // An in-flight save may have reached the server after this GET snapshot.
         // Keep its acknowledged baseline so the merged dataset changes are saved again.
         if (!savingAtStart) lastSavedRef.current = JSON.stringify(next);
@@ -608,7 +611,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setImportError('');
     try {
       const next = await apiClient.post<Record<string, any>>('/config/import', { text: importText, format: 'toml' }, { silent: true });
-      setConfig(fillDefaultModels(next, registeredModels));
+      setConfig(fillDefaultModels(normalizeLegacyIntervals(next), registeredModels));
       setImportOpen(false);
     } catch (err: unknown) { setImportError(formatApiError(err)); }
     finally { setImporting(false); }
@@ -693,7 +696,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     }
     setActiveTab(issue.tab); setSearch(''); setShowAdvanced(true); setIssuesOpen(false); setRevealVersion(value => value + 1);
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      let path = issue.path === 'checkpoint.save_state_every_epochs' ? 'checkpoint.save_state_every_steps' : issue.path === 'dataset.native_max_pixels_mode' ? 'dataset.native_max_pixels' : issue.path;
+      const issuePath = intervalFieldPath(issue.path);
+      let path = issuePath === 'checkpoint.save_state_every_epochs' ? 'checkpoint.save_state_every_steps' : issuePath === 'dataset.native_max_pixels_mode' ? 'dataset.native_max_pixels' : issuePath;
       let target = document.getElementById(`field-${path}`);
       while (!target && path.includes('.')) { path = path.slice(0, path.lastIndexOf('.')); target = document.getElementById(`field-${path}`); }
       target?.scrollIntoView?.({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });

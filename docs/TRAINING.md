@@ -233,7 +233,10 @@ epochs = 10
 
 [checkpoint]
 output_dir = "/data/output"
+save_every_epochs_enabled = true
 save_every_epochs = 1
 ```
 
 文件支持 TOML 和 JSON。命令行可通过 `ypuddin validate config.toml` 校验配置，再使用 `ypuddin plan config.toml` 检查数据与计划。命令列表见 [开发指南](DEVELOPMENT.md#命令行)。
+
+保存、采样和验证的按步、按轮频率分别使用启用开关与正整数间隔。例如 `save_every_epochs_enabled = false` 关闭按轮导出权重，`save_every_epochs` 保留间隔值；按步保存、完整恢复点和训练结束保存各自独立。旧配置中的频率空值仍按关闭读取，数字仍按开启读取。

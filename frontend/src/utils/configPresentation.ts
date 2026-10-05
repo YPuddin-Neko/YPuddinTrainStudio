@@ -280,10 +280,10 @@ export function configFieldHint(path: string, english = false, optimizerType?: s
       ? ['分别控制权重平均与梯度大小估计，通常保留默认值。', 'Controls weight averaging and gradient-size estimation; usually keep the defaults.']
       : ['数值越大，反应越平缓；通常保留默认值。', 'Higher values react more smoothly; usually keep the defaults.'],
     'optimizer.grad_clip_norm': optimizerType === 'prodigy_plus_sf'
-      ? ['外部梯度裁剪，默认 0 关闭；与 StableAdamW 内部更新保护不同。', 'External gradient clipping defaults to 0 (off); it differs from StableAdamW’s internal protection.']
+      ? ['外部梯度裁剪，默认设为 0 关闭；与 StableAdamW 内部更新保护不同。', 'External gradient clipping: set to 0 to disable (default); it differs from StableAdamW’s internal protection.']
       : optimizerType === 'automagic'
-      ? ['外部梯度裁剪，默认 0 关闭；与优化器内部更新保护不同。', 'External gradient clipping defaults to 0 (off); it differs from internal update clipping.']
-      : ['限制异常大梯度；通常保留 1，0 关闭。', 'Limits unusually large gradients; usually keep 1. 0 disables it.'],
+      ? ['外部梯度裁剪，默认设为 0 关闭；与优化器内部更新保护不同。', 'External gradient clipping: set to 0 to disable (default); it differs from internal update clipping.']
+      : ['限制异常大梯度；通常保留 1，设为 0 关闭。', 'Limits unusually large gradients; usually keep 1. Set to 0 to disable.'],
     'optimizer.eps': optimizerType === 'prodigy_plus_sf'
       ? ['通常保留默认值；选择 Adam-atan2 才切换算法，需关闭 StableAdamW 和 FOCUS。', 'Usually keep the default. Selecting Adam-atan2 changes the algorithm; StableAdamW and FOCUS must be off.']
       : ['防止除以接近零的数；通常保留默认值。', 'Prevents division by values near zero; usually keep the default.'],

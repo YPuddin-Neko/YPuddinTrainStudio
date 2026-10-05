@@ -73,8 +73,8 @@ def smoke_config(
         {
             "output_dir": str(out),
             "name": "smoke",
-            "save_every_epochs": None,
-            "save_every_steps": None,
+            "save_every_epochs_enabled": False,
+            "save_every_steps_enabled": False,
             "resume": None,
         }
     )
@@ -86,8 +86,8 @@ def smoke_config(
             if key in data["sampling"]
         },
         "enabled": True,
-        "every_steps": None,
-        "every_epochs": None,
+        "every_steps_enabled": False,
+        "every_epochs_enabled": False,
         "at_start": False,
         "prompts": [
             {

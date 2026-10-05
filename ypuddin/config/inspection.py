@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from .intervals import INTERVAL_DEFAULTS, normalize_legacy_intervals
 from .io import deep_merge
 from .issues import validation_issues
 from .optimizer_rules import optimizer_key
@@ -20,7 +21,7 @@ _CONDITIONAL_SECTIONS = {"objective", "scheduler", "optimizer", "sampling", "val
 
 def inspect_config(raw: dict[str, Any]) -> dict[str, Any]:
     schema = TrainConfig.json_schema()
-    effective = deep_merge(TrainConfig().to_dict(), raw)
+    effective = deep_merge(TrainConfig().to_dict(), normalize_legacy_intervals(raw))
     if isinstance(effective.get("optimizer"), dict):
         effective["optimizer"]["type"] = optimizer_key(str(effective["optimizer"].get("type", "adamw")))
     known_optimizer = isinstance(effective.get("optimizer"), dict) and effective["optimizer"].get(
@@ -71,13 +72,18 @@ def inspect_config(raw: dict[str, Any]) -> dict[str, Any]:
                     continue
                 child = resolve(properties[key], item)
                 condition = child.get("x-ui", {}).get("show_when")
+                comparison_value = (
+                    effective[path[0]].get(key, item)
+                    if len(path) == 1 and key in INTERVAL_DEFAULTS.get(path[0], {})
+                    else item
+                )
                 if (
                     path
                     and path[0] in _CONDITIONAL_SECTIONS
                     and (path[0] != "optimizer" or known_optimizer)
                     and condition
                     and "default" in child
-                    and item != child["default"]
+                    and comparison_value != child["default"]
                 ):
                     try:
                         if not evaluate(condition, effective):

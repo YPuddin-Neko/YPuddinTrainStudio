@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from pathlib import PureWindowsPath
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from .intervals import normalize_interval_section
 from .optimizer_rules import (
     optimizer_capabilities,
     optimizer_key,
@@ -24,6 +26,17 @@ PositiveRank = Annotated[int, Field(ge=1)]
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+
+class _IntervalConfig(_Strict):
+    _interval_section: ClassVar[str]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_intervals(cls, values: Any) -> Any:
+        if isinstance(values, Mapping):
+            return normalize_interval_section(cls._interval_section, values)
+        return values
 
 
 # --------------------------------------------------------------------------- model
@@ -1257,7 +1270,9 @@ class LoopConfig(_Strict):
 
 
 # --------------------------------------------------------------------------- checkpoint
-class CheckpointConfig(_Strict):
+class CheckpointConfig(_IntervalConfig):
+    _interval_section = "checkpoint"
+
     output_dir: str = F("outputs/run", help="输出目录", ui_={"x-ui": {"hidden": True}})
     name: str = F(
         "lora",
@@ -1267,16 +1282,18 @@ class CheckpointConfig(_Strict):
         help="产物文件名前缀，不含目录或路径分隔符。默认 lora 在项目任务入队时自动按项目显示名和版本生成；非默认自定义名称保留。独立 CLI 仍按此名称保存。",
         ui_=ui("checkpoint", order=10, advanced=True),
     )
-    save_every_steps: int | None = F(
-        None,
+    save_every_steps_enabled: bool = F(False, ui_={"x-ui": {"hidden": True}})
+    save_every_steps: int = F(
+        100,
         ge=1,
-        help="每多少次优化更新导出权重，默认留空不按步保存。适合较长任务保留中间结果；权重文件不含优化器与随机状态。",
+        help="每多少次优化更新导出权重，默认关闭按步保存。适合较长任务保留中间结果；权重文件不含优化器与随机状态。",
         ui_=ui("checkpoint", order=20),
     )
-    save_every_epochs: int | None = F(
+    save_every_epochs_enabled: bool = F(True, ui_={"x-ui": {"hidden": True}})
+    save_every_epochs: int = F(
         1,
         ge=1,
-        help="每多少轮导出权重，默认 1 每轮保存；留空关闭此触发器。与按步保存分别生效，可能在同一步产生不同标签的文件。",
+        help="每多少轮导出权重，默认每轮保存；清空输入后不按轮保存。与按步保存分别生效，可能在同一步产生不同标签的文件。",
         ui_=ui("checkpoint", order=30),
     )
     state_dir: str | None = F(
@@ -1284,14 +1301,16 @@ class CheckpointConfig(_Strict):
         help="完整恢复点的保存目录，留空使用训练器默认位置；独立 CLI 留空时随训练产物保存。",
         ui_={"x-ui": {"hidden": True}},
     )
-    save_state_every_steps: int | None = F(
+    save_state_every_steps_enabled: bool = F(True, ui_={"x-ui": {"hidden": True}})
+    save_state_every_steps: int = F(
         100,
         ge=1,
         help="每 N 个参数更新步保存完整恢复点，默认 100。界面可切换为按 Epoch（轮）保存，或关闭定期保存开关。暂停时仍会另存恢复点。异常退出后只能恢复到最近一次成功保存的位置。",
         ui_=ui("checkpoint", order=40),
     )
-    save_state_every_epochs: int | None = F(
-        None,
+    save_state_every_epochs_enabled: bool = F(False, ui_={"x-ui": {"hidden": True}})
+    save_state_every_epochs: int = F(
+        1,
         ge=1,
         help="每完成 N 轮保存完整恢复点，默认关闭。按步和按轮的触发器独立；轮中达到最大步数时，不算完成一轮。暂停时仍会另存恢复点。",
         ui_=ui("checkpoint", order=45),
@@ -1379,7 +1398,9 @@ class SamplePrompt(_Strict):
     cfg: float | None = F(None, ge=0, allow_inf_nan=False)
 
 
-class SamplingConfig(_Strict):
+class SamplingConfig(_IntervalConfig):
+    _interval_section = "sampling"
+
     guidance: float | None = F(
         None,
         ge=0,
@@ -1397,16 +1418,18 @@ class SamplingConfig(_Strict):
         help="按下面的时机生成训练预览图，默认关闭；开启后至少填写一条提示词或提示词文件。预览会占用生成时间，不参与梯度更新。",
         ui_=ui("sampling", order=0, control="switch"),
     )
-    every_steps: int | None = F(
-        None,
+    every_steps_enabled: bool = F(False, ui_={"x-ui": {"hidden": True}})
+    every_steps: int = F(
+        100,
         ge=1,
-        help="每多少次优化更新生成预览，默认留空不按步触发。设置较大间隔可减少频繁生成；不影响训练最大步数。",
+        help="每多少次优化更新生成预览，默认关闭按步触发。设置较大间隔可减少频繁生成；不影响训练最大步数。",
         ui_=ui("sampling", order=10, show_when="sampling.enabled == true"),
     )
-    every_epochs: int | None = F(
+    every_epochs_enabled: bool = F(True, ui_={"x-ui": {"hidden": True}})
+    every_epochs: int = F(
         1,
         ge=1,
-        help="每多少轮生成预览，默认 1 每轮一次；留空关闭按轮触发。它与按步触发独立，同时到期会各生成一组。",
+        help="每多少轮生成预览，默认每轮一次；清空输入后不按轮触发。它与按步触发独立，同时到期会各生成一组。",
         ui_=ui("sampling", order=20, show_when="sampling.enabled == true"),
     )
     at_start: bool = F(
@@ -1519,7 +1542,9 @@ class SamplingConfig(_Strict):
     )
 
 
-class ValidationConfig(_Strict):
+class ValidationConfig(_IntervalConfig):
+    _interval_section = "validation"
+
     enabled: bool = F(
         False,
         help="在固定验证图片和噪声上计算损失，默认关闭；开启需设置验证划分比例或单独来源。用于比较训练变化，不会对验证图片反向更新。",
@@ -1537,10 +1562,12 @@ class ValidationConfig(_Strict):
         help="显式验证数据源",
         ui_=ui("validation", order=20, show_when="validation.enabled == true"),
     )
-    every_steps: int | None = F(
-        None, ge=1, help="每 N 步验证", ui_=ui("validation", order=30, show_when="validation.enabled == true")
+    every_steps_enabled: bool = F(False, ui_={"x-ui": {"hidden": True}})
+    every_steps: int = F(
+        100, ge=1, help="每 N 步验证", ui_=ui("validation", order=30, show_when="validation.enabled == true")
     )
-    every_epochs: int | None = F(
+    every_epochs_enabled: bool = F(True, ui_={"x-ui": {"hidden": True}})
+    every_epochs: int = F(
         1, ge=1, help="每 N 轮验证", ui_=ui("validation", order=40, show_when="validation.enabled == true")
     )
     timesteps: list[float] = F(

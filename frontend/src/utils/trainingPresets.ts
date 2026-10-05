@@ -1,4 +1,5 @@
 import { mergeConfig } from './config';
+import { normalizeLegacyIntervals } from './intervals';
 
 const VERSION_FIELDS = [
   ['dataset', 'sources'],
@@ -31,7 +32,7 @@ export function preservePresetDoraMode(config: Record<string, any>): Record<stri
  * the preset keeps the configuration's own files.
  */
 export function reusableTrainingPreset(config: Record<string, any>): Record<string, any> {
-  const result = preservePresetDoraMode(config);
+  const result = normalizeLegacyIntervals(preservePresetDoraMode(config));
   for (const [group, field] of VERSION_FIELDS) {
     if (result[group] && typeof result[group] === 'object') delete result[group][field];
   }
