@@ -17,6 +17,7 @@ _TAG_ROLES = frozenset({
     "series", "artist", "appearance", "tags", "environment",
 })
 _SCORE = re.compile(r"\bscore_[a-z0-9_]+\b", re.IGNORECASE)
+_EMOTICON = re.compile(r"[0-9oOxXuUtT=^<>@|+.;()\\_\-]+")
 _MESSAGES = {
     "anima_artist_prefix": "Anima recommends @ before an artist name; review the proposed value",
     "anima_tag_spacing": "Anima recommends spaces in tags, except score_* tokens",
@@ -32,6 +33,8 @@ def _propose_token(token: str, role: str, triggers: set[str], codes: set[str]) -
     content = token.strip()
     # Dynamic prompts and protected trigger tokens need the user's own semantics.
     if not content or content in triggers or _SCORE.fullmatch(content) or any(char in content for char in "{}<>"):
+        return token
+    if "_" in content and _EMOTICON.fullmatch(content):
         return token
 
     def normalize(part):

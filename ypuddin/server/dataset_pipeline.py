@@ -29,6 +29,7 @@ from .errors import ApiError, NotFound
 TERMINAL = {"completed", "failed", "cancelled"}
 # A head detection keeps its results for review in its operation folder.
 PROPOSALS = "proposals.json"
+ANIMA_CAPTION_INSPECTION_VERSION = 4
 
 
 class PipelineCancelled(Exception):
@@ -273,7 +274,7 @@ class DatasetPipeline:
         formats = family_caption_formats(family)
         settings: list[Any] = [{
             "content_signature_version": 1,
-            "caption_inspection_version": 3,
+            "caption_inspection_version": ANIMA_CAPTION_INSPECTION_VERSION if family == "anima" else 3,
             "transparency_inspection_version": 4,
             "model_family": family,
         }]
