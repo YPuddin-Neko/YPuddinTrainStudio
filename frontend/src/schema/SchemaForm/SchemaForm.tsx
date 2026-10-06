@@ -695,8 +695,8 @@ function NativePixelLimit({value, mode, estimate, english, label, onChange, onMo
       className={mode === 'custom' ? 'config-native-limit-toggle' : undefined} anchorRef={box}
       aria-describedby="config-dataset.native_max_pixels-hint" value={mode}
       options={[
-        {value: 'auto', label: english ? `Auto, resolution first (${amount(false)})` : `自动分辨率优先（${amount(false)}）`},
-        {value: 'auto_vram', disabled: !!unavailableReason, label: english ? `Auto, VRAM first (${amount(true)})` : `自动显存优先（${amount(true)}）`},
+        {value: 'auto', label: english ? `Auto-resolution first (${amount(false)})` : `自动-分辨率优先(${amount(false)})`},
+        {value: 'auto_vram', disabled: !!unavailableReason, label: english ? `Auto-VRAM first (${amount(true)})` : `自动-显存优先(${amount(true)})`},
         {value: 'custom', label: english ? 'Custom' : '自定义'},
       ]}
       onValueChange={next => {

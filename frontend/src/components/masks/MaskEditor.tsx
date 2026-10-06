@@ -9,6 +9,7 @@ import ImageEditor from './ImageEditor';
 import Switch from '../Switch';
 import { SlidingIndicator } from '../motion';
 import OverflowStrip from '../OverflowStrip';
+import { useConfirmation } from '../useConfirmation';
 
 interface Props { datasetId: string; imageId: string; relPath: string; onClose: () => void; onSaved: () => void; onEnableTraining: () => Promise<void>; allowPaint?: boolean }
 const control = 'ui-btn ui-btn-sm';
@@ -18,6 +19,7 @@ export function MaskEditor(props: Props) {
 }
 function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onEnableTraining }: Props) {
   const text = useWorkspaceText();
+  const { confirm, confirmation } = useConfirmation();
   const [info, setInfo] = React.useState<MaskInfo | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
@@ -89,7 +91,16 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
     window.addEventListener('beforeunload', beforeUnload); return () => window.removeEventListener('beforeunload', beforeUnload);
   }, []);
 
-  const close = () => { if (!saving && (!doc.current?.dirty || window.confirm(text('遮罩尚未保存，确定放弃这些修改？', 'Discard the unsaved mask changes?')))) onClose(); };
+  const close = async () => {
+    if (saving) return;
+    if (doc.current?.dirty && !await confirm({ title: text('放弃遮罩修改', 'Discard mask changes'), message: text('遮罩尚未保存，确定放弃这些修改？', 'Discard the unsaved mask changes?'), confirmLabel: text('放弃并关闭', 'Discard and close'), danger: true })) return;
+    onClose();
+  };
+  const reloadMask = async () => {
+    if (saving) return;
+    if (doc.current?.dirty && !await confirm({ title: text('重新读取遮罩', 'Reload mask'), message: text('重新读取会放弃未保存的修改，继续？', 'Reload and discard unsaved changes?'), confirmLabel: text('放弃并重新读取', 'Discard and reload'), danger: true })) return;
+    setReload(value => value + 1);
+  };
   const perform = (operation: MaskOperation) => { if (!doc.current || saving || stroke.current) return; doc.current.apply(operation); setMessage(''); redraw(); };
   const undo = () => { if (!saving && !stroke.current) { doc.current?.undo(); setMessage(''); redraw(); } };
   const redo = () => { if (!saving && !stroke.current) { doc.current?.redo(); setMessage(''); redraw(); } };
@@ -145,7 +156,7 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
   const scale = info ? Math.min(1, (hostWidth - 24) / info.width, (hostHeight - 24) / info.height) * zoom : 1;
   const coverage = React.useMemo(() => { void revision; return doc.current?.coverage ?? 0; }, [revision]);
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4" onClick={close}>
+  return <><div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4" onClick={()=>void close()}>
     <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={keyDown} onClick={(event) => event.stopPropagation()} className="flex max-h-[95vh] w-full max-w-7xl min-w-0 flex-col overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
       <header className="flex items-start justify-between gap-3 border-b border-slate-200 p-3 dark:border-slate-700">
         <div className="min-w-0"><h2 id={titleId} className="text-base font-semibold">{text('编辑训练遮罩', 'Edit training mask')}</h2><p className="break-all text-xs text-slate-500 dark:text-slate-400">{relPath}{info && ` · ${info.width}×${info.height}`}</p></div>
@@ -154,7 +165,7 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
       <div className="space-y-2.5 p-3">
         <p className="text-xs text-slate-600 dark:text-slate-300">{text('白色参与训练，黑色忽略。叠加预览中，红色表示被忽略的区域。', 'White participates in training; black is ignored. The red overlay marks ignored areas.')}</p>
         {loading && <p role="status" className="flex items-center gap-2 py-8"><Loader2 className="h-5 w-5 animate-spin" />{text('正在读取原图尺寸与已有遮罩…', 'Loading image dimensions and existing mask…')}</p>}
-        {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"><p className="whitespace-pre-line break-words">{error}</p><button type="button" className="ui-link mt-2" disabled={saving} onClick={() => { if (!doc.current?.dirty || window.confirm(text('重新读取会放弃未保存的修改，继续？', 'Reload and discard unsaved changes?'))) setReload((value) => value + 1); }}>{text('重新读取遮罩', 'Reload mask')}</button></div>}
+        {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"><p className="whitespace-pre-line break-words">{error}</p><button type="button" className="ui-link mt-2" disabled={saving} onClick={() => void reloadMask()}>{text('重新读取遮罩', 'Reload mask')}</button></div>}
         {info && !loading && <>
           <div className="flex flex-wrap items-center gap-2">
             <OverflowStrip className="ui-segmented" containerClassName="image-editor-tool-strip" role="group" label={text('绘制工具', 'Drawing tools')} activeKey={tool}>{([{ key: 'brush', Icon: Brush, label: text('笔刷 · 参与', 'Brush · include') }, { key: 'erase', Icon: Eraser, label: text('擦除 · 忽略', 'Erase · ignore') }, { key: 'pan', Icon: Hand, label: text('移动画布', 'Pan canvas') }] as const).map(({ key, Icon, label }) => <button key={key} type="button" aria-pressed={tool === key} disabled={saving} onClick={() => setTool(key)}><Icon className="h-4 w-4" />{label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></OverflowStrip>
@@ -187,5 +198,5 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
         <div className="flex flex-wrap gap-2"><button type="button" className={control} disabled={saving} onClick={close}>{text('返回数据集', 'Back to dataset')}</button><button type="button" className={control} disabled={saving || loading || !info} onClick={() => void save(false)}><Save className="h-4 w-4" />{saving ? text('保存中…', 'Saving…') : text('保存遮罩', 'Save mask')}</button><button type="button" className="ui-btn ui-btn-sm ui-btn-primary" disabled={saving || loading || !info} onClick={() => void save(true)}>{text('保存并启用遮罩训练', 'Save and enable masked training')}</button></div>
       </footer>
     </section>
-  </div>;
+  </div>{confirmation}</>;
 }

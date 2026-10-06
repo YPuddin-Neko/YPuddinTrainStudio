@@ -32,6 +32,7 @@ import './training-workspace.css';
 import '../../styles/parameter-workspace.css';
 import ParameterModeToggle from '../../components/ParameterModeToggle';
 import Dialog from '../../components/Dialog';
+import { useConfirmation } from '../../components/useConfirmation';
 import ConfigInspection from './ConfigInspection';
 import ParameterSections from '../../components/ParameterSections';
 import { workflowSchema } from '../../utils/parameterWorkflow';
@@ -107,6 +108,7 @@ export default function TrainConfig() {
   return <TrainConfigContent key={`${id}/${versionId || 'active'}`} projectId={id} versionId={versionId}/>;
 }
 function TrainConfigContent({ projectId, versionId }: { projectId?: string; versionId?: string }) {
+  const {confirm, confirmation} = useConfirmation();
   const queryClient = useQueryClient();
   const { t, i18n } = useTranslation();
   const english = i18n.language.startsWith('en');
@@ -736,6 +738,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     {!versions.current && (versions.loading ? <LoadingNote block label={text('正在读取版本…', 'Loading version…')}/> : <p className="workspace-message">{text('此版本不存在或不可访问。', 'This version does not exist or is unavailable.')}</p>)}
   </div>;
   return <div className="training-studio project-workspace parameter-workspace" aria-busy={savingNavigation}>
+    {confirmation}
     <div className="parameter-workspace-header">
     <div className="training-title-actions">
     {project ? <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} beforeAction={flushDraft} status={draftStatus} titleBadge={familyBadge} error={versions.error}/> : <div className="project-heading-placeholder"><h1>{text('训练参数', 'Training parameters')}</h1>{familyBadge}{draftStatus}</div>}
@@ -768,7 +771,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         <details className="config-tools" data-popover><summary className="ui-btn"><Settings2 size={14}/>{text('配置工具', 'Config tools')}</summary><div className="config-tools-menu">
           <Link to="/presets">{text('管理参数预设','Manage parameter presets')}</Link>
           <Link to={modelUrl}>{text('管理与下载模型','Manage & download models')}</Link>
-          <button type="button" disabled={!loaded} onClick={() => {setImportError('');setImportOpen(true);}}>{t('train.importToml')}</button><button type="button" disabled={!loaded} onClick={handleExport}>{t('train.exportToml')}</button><button type="button" disabled={!loaded} onClick={() => { if (window.confirm(t('train.resetConfirm'))) setConfig(structuredClone(defaults)); }}>{t('train.resetDefaults')}</button>
+          <button type="button" disabled={!loaded} onClick={() => {setImportError('');setImportOpen(true);}}>{t('train.importToml')}</button><button type="button" disabled={!loaded} onClick={handleExport}>{t('train.exportToml')}</button><button type="button" disabled={!loaded} onClick={async () => { if (await confirm({title:t('train.resetDefaults'),message:t('train.resetConfirm'),confirmLabel:t('train.resetDefaults'),danger:true})) setConfig(structuredClone(defaults)); }}>{t('train.resetDefaults')}</button>
         </div></details>
       </div>
     </div>

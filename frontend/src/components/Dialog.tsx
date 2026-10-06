@@ -5,7 +5,7 @@ import './dialog.css';
 import { useWorkspaceText } from '../utils/workspaceText';
 import { useAnimatedClose } from './useAnimatedClose';
 
-export default function Dialog({ title, onClose, children, wide = false, closeDisabled = false }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean; closeDisabled?: boolean }) {
+export default function Dialog({ title, onClose, children, wide = false, closeDisabled = false, nested = false }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean; closeDisabled?: boolean; nested?: boolean }) {
   const text = useWorkspaceText();
   const panel = React.useRef<HTMLDivElement>(null);
   const {closing,requestClose}=useAnimatedClose(onClose,closeDisabled);
@@ -30,5 +30,5 @@ export default function Dialog({ title, onClose, children, wide = false, closeDi
     element?.addEventListener('keydown', keydown);
     return () => { element?.removeEventListener('keydown', keydown); previous?.focus(); };
   }, []);
-  return createPortal(<div className={`workspace-dialog-backdrop${closing ? ' is-closing' : ''}`} onMouseDown={event => { if (event.target === event.currentTarget) closeRef.current(); }}><div ref={panel} role="dialog" aria-modal="true" aria-labelledby={id} className={`workspace-dialog ${wide ? 'workspace-dialog-wide' : ''}`}><header><h2 id={id}>{title}</h2><button type="button" className="ui-btn ui-btn-quiet ui-btn-icon" disabled={closeDisabled} aria-label={text('关闭','Close')} onClick={() => closeRef.current()}><X size={18}/></button></header>{children}</div></div>, document.body);
+  return createPortal(<div className={`workspace-dialog-backdrop${nested ? ' workspace-dialog-nested' : ''}${closing ? ' is-closing' : ''}`} onMouseDown={event => { if (event.target === event.currentTarget) closeRef.current(); }}><div ref={panel} role="dialog" aria-modal="true" aria-labelledby={id} className={`workspace-dialog ${wide ? 'workspace-dialog-wide' : ''}`}><header><h2 id={id}>{title}</h2><button type="button" className="ui-btn ui-btn-quiet ui-btn-icon" disabled={closeDisabled} aria-label={text('关闭','Close')} onClick={() => closeRef.current()}><X size={18}/></button></header>{children}</div></div>, document.body);
 }

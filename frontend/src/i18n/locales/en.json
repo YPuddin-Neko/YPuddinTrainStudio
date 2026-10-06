@@ -141,7 +141,7 @@
     "precache": "Pre-cache",
     "enqueuing": "Enqueuing…",
     "rescan": "Rescan",
-    "remove": "Remove",
+    "remove": "Remove dataset",
     "precacheEnqueued": "Pre-cache job enqueued.",
     "deleteConfirm": "Remove dataset registration for \"{path}\"? Files on disk will NOT be deleted.",
     "filterPlaceholder": "Search filenames or captions…",

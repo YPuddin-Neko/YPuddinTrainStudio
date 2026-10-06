@@ -27,9 +27,11 @@ import DatasetNavigationGuard from '../../components/datasets/DatasetNavigationG
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { datasetReturnTarget } from '../../utils/datasetReturn';
 import TopbarBreadcrumb from '../../components/TopbarBreadcrumb';
+import Dialog from '../../components/Dialog';
+import { useConfirmation } from '../../components/useConfirmation';
 import {
   RefreshCcw,
-  Trash2,
+  FolderMinus,
   Search,
   X,
   Brush,
@@ -46,15 +48,9 @@ export function DatasetWorkspace({id}: {id?:string}) {
   const hasDataRouter = !!React.useContext(UNSAFE_DataRouterContext);
   const { t } = useTranslation();
   const text = useWorkspaceText();
+  const {confirm, confirmation} = useConfirmation();
   const queryClient = useQueryClient();
   const contextProblem = text('无法确认此数据集所属的项目版本。','The dataset project/version could not be verified.');
-
-  // locales 占位符为单花括号（{n}），i18next 默认插值（{{}}）不处理，需手工替换
-  const tt = React.useCallback(
-    (key: string, vars: Record<string, string | number>) =>
-      Object.entries(vars).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), t(key)),
-    [t]
-  );
 
   const [info, setInfo] = React.useState<DatasetInfo | null>(() => queryClient.getQueriesData<DatasetInfo[]>({ queryKey: ['project-workspace-datasets'] }).flatMap(([, rows]) => rows || []).find(row => row.source.id === id && row.stats && row.index_status) || null);
   const [infoError, setInfoError] = React.useState('');
@@ -96,6 +92,9 @@ export function DatasetWorkspace({id}: {id?:string}) {
   const savedRepeats = info?.source.repeats;
   React.useEffect(() => {setFolderName(savedFolderName); if(savedRepeats !== undefined)setRepeats(String(savedRepeats));}, [savedFolderName, savedRepeats]);
   const [busyAction, setBusyAction] = React.useState<string | null>(null);
+  const [removeOpen, setRemoveOpen] = React.useState(false);
+  const [removeError, setRemoveError] = React.useState('');
+  const removing = React.useRef(false);
   const [versionAccess, setVersionAccess] = React.useState<{ key: string; editable: boolean; archived: boolean; error?: string } | null>(null);
   const versionRequest = React.useRef<AbortController | null>(null);
   const versionKey = info?.source.version_id ? `${info.source.project_id}/${info.source.version_id}` : '';
@@ -211,7 +210,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
       .finally(() => {setSavingCaption(false);captionSave.current=null;});
     captionSave.current=pending;return pending;
   };
-  const closeCaption = () => {if(!savingCaption && (!captionDirty || window.confirm(text('标签尚未保存，确定放弃这些修改？','Discard the unsaved caption changes?'))))setActiveImage(null);};
+  const closeCaption = async () => {if (!savingCaption && (!captionDirty || await confirm({title:text('放弃标签修改', 'Discard caption changes'),message:text('标签尚未保存，确定放弃这些修改？','Discard the unsaved caption changes?'),confirmLabel:text('放弃修改', 'Discard changes'),danger:true}))) setActiveImage(null);};
   const beforeNavigation = async () => {
     if(maskImage)throw new Error(text('请先在遮罩编辑器中保存或关闭，再切换项目页面。','Save or close the mask editor before switching project pages.'));
     if(activeImage && captionDirty || captionSave.current)await saveCaption();
@@ -262,15 +261,12 @@ export function DatasetWorkspace({id}: {id?:string}) {
       .finally(() => setBusyAction(null));
   };
 
-  const handleDelete = () => {
-    if (!id || !info || !canEdit) return;
-    if (window.confirm(tt('dataset.deleteConfirm', { path: info.source.path }))) {
-      setBusyAction('delete');
-      apiClient.delete(`/datasets/${id}`)
-        .then(() => navigate(returnUrl))
-        .catch(error => setActionError(formatApiError(error)))
-        .finally(() => setBusyAction(null));
-    }
+  const removeDataset = async () => {
+    if (!id || !info || !canEdit || removing.current) return;
+    removing.current = true; setBusyAction('delete'); setRemoveError('');
+    try { await apiClient.delete(`/datasets/${id}`, {silent:true}); navigate(returnUrl); }
+    catch (error) { setRemoveError(formatApiError(error)); }
+    finally { removing.current = false; setBusyAction(null); }
   };
 
   const statusLabel = (status?: string): string => {
@@ -303,6 +299,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
 
   return (
     <div className="dataset-workspace" data-testid="dataset-page">
+      {confirmation}
       {hasDataRouter && <DatasetNavigationGuard shouldBlock={() => {
         return leaveRef.current.dirty;
       }} beforeLeave={() => leaveRef.current.beforeNavigation()} onError={error => setActionError(formatApiError(error))}/>}
@@ -331,7 +328,7 @@ export function DatasetWorkspace({id}: {id?:string}) {
           {curationUrl && <Link className="ui-btn" to={curationUrl}>{text('数据集筛选','Curation')}</Link>}
           {canEdit && info?.source.can_append && <button type="button" className="ui-btn" aria-expanded={showAddImages} onClick={()=>setShowAddImages(value=>!value)}>{text('添加图片', 'Add images')}</button>}
           <button type="button" className="ui-btn ui-btn-icon" onClick={handleRescan} disabled={!canEdit || !!busyAction || adding} title={t('dataset.rescan')} aria-label={t('dataset.rescan')}><RefreshCcw size={15}/></button>
-          <button type="button" className="ui-btn ui-btn-icon ui-btn-danger" onClick={handleDelete} disabled={!canEdit || !!busyAction || adding} title={t('dataset.remove')} aria-label={t('dataset.remove')}><Trash2 size={15}/></button>
+          <button type="button" className="ui-btn ui-btn-icon ui-btn-danger" onClick={() => {setRemoveError('');setRemoveOpen(true);}} disabled={!canEdit || !!busyAction || adding} title={text('移除数据集登记，保留磁盘文件', 'Remove dataset registration and keep files on disk')} aria-label={t('dataset.remove')}><FolderMinus size={15}/></button>
         </div>
       </div>
       {showAddImages && (canEdit || adding) && info?.source.can_append && info.source.project_id && <ProjectDataImport
@@ -366,6 +363,15 @@ export function DatasetWorkspace({id}: {id?:string}) {
       </div>
 
       {canEdit && maskImage && id && <MaskEditor datasetId={id} imageId={maskImage.hash} relPath={maskImage.relPath} onClose={() => setMaskImage(null)} onSaved={() => { void fetchInfo(); }} onEnableTraining={enableMaskedTraining} />}
+
+      {removeOpen && info && <Dialog title={text('移除数据集', 'Remove dataset')} onClose={() => {if (!removing.current) setRemoveOpen(false);}} closeDisabled={busyAction === 'delete'}>
+        <div className="dataset-remove-dialog">
+          <p>{text('从当前版本移除此数据集？磁盘中的图片、标签和遮罩文件都会保留。', 'Remove this dataset from the current version? Its images, captions and masks will remain on disk.')}</p>
+          <code>{info.source.path}</code>
+          {removeError && <p role="alert" className="workspace-message error">{removeError}</p>}
+          <footer><button type="button" className="ui-btn" disabled={busyAction === 'delete'} onClick={() => setRemoveOpen(false)}>{text('取消', 'Cancel')}</button><button type="button" className="ui-btn ui-btn-primary ui-btn-danger" disabled={!canEdit || busyAction === 'delete'} onClick={() => void removeDataset()}>{busyAction === 'delete' ? text('正在移除…', 'Removing…') : text('移除', 'Remove')}</button></footer>
+        </div>
+      </Dialog>}
 
       {/* 大图 + caption 编辑 */}
       {activeImage && (

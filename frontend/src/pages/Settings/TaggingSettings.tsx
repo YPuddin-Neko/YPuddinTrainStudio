@@ -6,6 +6,7 @@ import type { VlmService } from '../../api/types';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../../components/StudioSelect';
+import { useConfirmation } from '../../components/useConfirmation';
 import { LoadingNote } from '../../components/Loading';
 import { VisionModelState } from '../../components/datasets/VisionModelField';
 import { SERVICE_NAMES, TAGGER_SERIES, modelName, resolveService, useTaggingSettings, useVisionModels, useVlmError, useVlmModels, useVlmServices, type TaggingSettings as Tagging, type VlmSettings } from '../../components/datasets/visionHooks';
@@ -35,27 +36,38 @@ function Field({ id, label, hint, children }: { id?: string; label: string; hint
 
 function KeyField({ service }: { service: VlmService }) {
   const text = useWorkspaceText();
+  const { confirm, confirmation } = useConfirmation();
   const client = useQueryClient();
   const [editing, setEditing] = React.useState(false);
   const [value, setValue] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
+  const confirming = React.useRef(false);
   const act = async (request: () => Promise<unknown>) => {
     setBusy(true); setError('');
     try { await request(); setEditing(false); setValue(''); await client.invalidateQueries({ queryKey: ['vlm-services'] }); } catch (e) { setError(formatApiError(e)); } finally { setBusy(false); }
   };
   const save = (event: React.FormEvent) => { event.preventDefault(); if (value.trim()) void act(() => apiClient.put(`/vlm/services/${service.id}/key`, { api_key: value.trim() }, { silent: true })); };
+  const remove = async () => {
+    if (busy || confirming.current) return;
+    confirming.current = true; setBusy(true);
+    try {
+      if (await confirm({ title: text('删除 API 密钥', 'Delete API key'), message: text('删除保存的 API 密钥？', 'Delete the saved API key?'), confirmLabel: text('删除', 'Delete'), danger: true })) {
+        await act(() => apiClient.delete(`/vlm/services/${service.id}/key`, { silent: true }));
+      }
+    } finally { confirming.current = false; setBusy(false); }
+  };
   const local = service.editable && service.id !== 'custom';
   return <Field id="tagging-vlm-key" label={text('API 密钥', 'API key')} hint={error ? <span role="alert" className="tagging-settings-error">{error}</span> : text('保存在训练服务器上，之后不再显示。', 'Kept on the training server and never shown again.')}>
     {service.key_configured && !editing
       ? <span className="tagging-settings-inline"><span className="tagging-settings-saved"><CircleCheck size={14}/>{text('已保存', 'Saved')}</span>
         <button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={() => setEditing(true)}>{text('更换', 'Replace')}</button>
-        <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet ui-btn-danger" disabled={busy} onClick={() => { if (window.confirm(text('删除保存的 API 密钥？', 'Delete the saved API key?'))) void act(() => apiClient.delete(`/vlm/services/${service.id}/key`, { silent: true })); }}>{text('删除', 'Delete')}</button></span>
+        <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet ui-btn-danger" disabled={busy} onClick={() => void remove()}>{text('删除', 'Delete')}</button></span>
       : <form className="tagging-settings-inline" onSubmit={save}>
         <input id="tagging-vlm-key" className="settings-input" type="password" autoComplete="off" spellCheck={false} value={value} disabled={busy} placeholder={local ? text('本地服务通常不需要', 'Usually not needed locally') : text('粘贴 API 密钥', 'Paste the API key')} onChange={event => setValue(event.target.value)}/>
         <button type="submit" className="ui-btn" disabled={busy || !value.trim()}>{busy && <Loader2 size={13} className="animate-spin"/>}{text('保存密钥', 'Save key')}</button>
         {service.key_configured && <button type="button" className="ui-btn ui-btn-quiet" disabled={busy} onClick={() => { setEditing(false); setValue(''); }}>{text('取消', 'Cancel')}</button>}
-      </form>}
+      </form>}{confirmation}
   </Field>;
 }
 

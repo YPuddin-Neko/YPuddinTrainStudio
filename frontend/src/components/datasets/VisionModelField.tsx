@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { CircleAlert, CircleCheck, Download, Trash2, X } from 'lucide-react';
@@ -10,6 +10,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { LoadingNote } from '../Loading';
 import StudioSelect from '../StudioSelect';
 import { ACTIVE_DOWNLOAD, TAGGER_SERIES, modelName, useTaggingSettings } from './visionHooks';
+import { useConfirmation } from '../useConfirmation';
 
 /** Why a vision run cannot start yet: the catalog failed to load, or ONNX Runtime is missing. */
 export function VisionRuntimeNotice({ catalog }: { catalog: UseQueryResult<VisionCatalog> }) {
@@ -25,28 +26,39 @@ export function VisionRuntimeNotice({ catalog }: { catalog: UseQueryResult<Visio
 /** Downloaded state, progress or the download button of one model, from the source chosen in 设置 → 打标. */
 export function VisionModelState({ model, disabled }: { model: VisionModel; disabled?: boolean }) {
   const text = useWorkspaceText();
+  const { confirm, confirmation } = useConfirmation();
   const client = useQueryClient();
   const { tagging } = useTaggingSettings();
   const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const requestPending = useRef(false);
   const task = model.download;
   const active = ACTIVE_DOWNLOAD.includes(task?.status ?? '');
   const source = model.sources.includes(tagging?.model_source as never) ? tagging!.model_source : 'huggingface';
   const act = async (request: () => Promise<unknown>) => {
-    setError('');
-    try { await request(); } catch (e) { setError(formatApiError(e)); }
-    await client.invalidateQueries({ queryKey: ['vision-models'] });
+    if (requestPending.current) return;
+    requestPending.current = true; setPending(true); setError('');
+    try {
+      try { await request(); } catch (e) { setError(formatApiError(e)); }
+      await client.invalidateQueries({ queryKey: ['vision-models'] });
+    } finally { requestPending.current = false; setPending(false); }
+  };
+  const remove = async () => {
+    if (disabled || requestPending.current) return;
+    if (!await confirm({ title: text('删除模型文件', 'Delete model files'), message: text(`删除 ${model.label} 的模型文件？`, `Delete the ${model.label} model files?`), confirmLabel: text('删除', 'Delete'), danger: true })) return;
+    await act(() => apiClient.delete(`/vision/models/${model.id}`, { silent: true }));
   };
   const percent = task?.total_bytes ? Math.min(100, Math.floor((task.downloaded_bytes || 0) / task.total_bytes * 100)) : 0;
   const failure = error || (task?.status === 'failed' ? task.error : '');
   const state = model.ready
     ? <span className="vision-model-state ready"><CircleCheck size={14}/>{text(`已下载 · ${formatBytes(model.size)}`, `Downloaded · ${formatBytes(model.size)}`)}
-      <button type="button" className="ui-btn ui-btn-quiet ui-btn-icon ui-btn-sm" aria-label={text(`删除 ${model.label}`, `Delete ${model.label}`)} title={text('删除模型文件', 'Delete model files')} disabled={disabled} onClick={() => { if (window.confirm(text(`删除 ${model.label} 的模型文件？`, `Delete the ${model.label} model files?`))) void act(() => apiClient.delete(`/vision/models/${model.id}`, { silent: true })); }}><Trash2 size={13}/></button></span>
+      <button type="button" className="ui-btn ui-btn-quiet ui-btn-icon ui-btn-sm" aria-label={text(`删除 ${model.label}`, `Delete ${model.label}`)} title={text('删除模型文件', 'Delete model files')} disabled={disabled || pending} onClick={() => void remove()}><Trash2 size={13}/></button></span>
     : active ? <span className="vision-model-progress" role="status">
       <span className="vision-model-bar" aria-hidden="true"><span style={{ width: `${task?.status === 'verifying' ? 100 : percent}%` }}/></span>
       <span className="vision-model-state">{task?.status === 'verifying' ? text('校验文件…', 'Verifying…') : task?.status === 'queued' ? text('等待下载…', 'Waiting…') : `${formatBytes(task?.downloaded_bytes || 0)} / ${formatBytes(model.size)} · ${percent}%`}</span>
       <button type="button" className="ui-btn ui-btn-quiet ui-btn-icon ui-btn-sm" aria-label={text('取消下载', 'Cancel download')} title={text('取消下载', 'Cancel download')} onClick={() => void act(() => apiClient.post(`/vision/models/${model.id}/cancel`, {}, { silent: true }))}><X size={13}/></button></span>
     : <button type="button" className="ui-btn" disabled={disabled || !!(model.token_required && !model.token_configured)} title={model.token_required && !model.token_configured ? text('请先在设置 → 访问密钥中保存 Hugging Face 令牌', 'Save a Hugging Face token under Settings → Access keys first') : source === 'modelscope' ? text('从魔搭社区下载', 'From ModelScope') : text('从 Hugging Face 下载', 'From Hugging Face')} onClick={() => void act(() => apiClient.post(`/vision/models/${model.id}/download`, { source }, { silent: true }))}><Download size={14}/>{text(`下载模型 · ${formatBytes(model.size)}`, `Download · ${formatBytes(model.size)}`)}</button>;
-  return <>{state}{failure && <p role="alert" className="vision-model-error">{failure}</p>}</>;
+  return <>{state}{failure && <p role="alert" className="vision-model-error">{failure}</p>}{confirmation}</>;
 }
 
 export default function VisionModelField({ role, value, onChange, disabled, catalog, label, hint }: {

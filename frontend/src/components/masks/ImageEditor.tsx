@@ -12,6 +12,7 @@ import './image-editor.css';
 import { SlidingIndicator } from '../motion';
 import { LoadingNote } from '../Loading';
 import OverflowStrip from '../OverflowStrip';
+import { useConfirmation } from '../useConfirmation';
 
 type Mode = 'paint' | 'mask';
 type Tool = 'brush' | 'erase' | 'pan' | 'pick';
@@ -24,6 +25,7 @@ interface Props {
 }
 export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,onEnableTraining,navigationError,onReloadList}:Props) {
   const text = useWorkspaceText();
+  const { confirm, confirmation } = useConfirmation();
   const [mode,setMode] = React.useState<Mode>('paint');
   const [tool,setTool] = React.useState<Tool>('brush');
   const [color,setColor] = React.useState('#ffffff');
@@ -104,10 +106,20 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
     const unload=(event:BeforeUnloadEvent)=>{if(dirty()||saving){event.preventDefault();event.returnValue='';}};
     window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);
   },[saving]);
-  const close=()=>{if(!saving&&(!dirty()||window.confirm(text('图片或遮罩尚未保存，放弃这些修改并关闭？','Discard the unsaved image and mask changes?'))))onClose();};
-  const closeAndRefresh=()=>{
-    if(saving||dirty()&&!window.confirm(text('关闭并刷新列表会放弃未保存的图片和遮罩修改，继续？','Close and refresh the list, discarding unsaved image and mask edits?')))return;
+  const close=async()=>{
+    if(saving)return;
+    if(dirty()&&!await confirm({title:text('放弃图片与遮罩修改','Discard image and mask edits'),message:text('图片或遮罩尚未保存，放弃这些修改并关闭？','Discard the unsaved image and mask changes?'),confirmLabel:text('放弃并关闭','Discard and close'),danger:true}))return;
+    onClose();
+  };
+  const closeAndRefresh=async()=>{
+    if(saving)return;
+    if(dirty()&&!await confirm({title:text('关闭并刷新列表','Close and refresh list'),message:text('关闭并刷新列表会放弃未保存的图片和遮罩修改，继续？','Close and refresh the list, discarding unsaved image and mask edits?'),confirmLabel:text('放弃并刷新列表','Discard and refresh list'),danger:true}))return;
     onReloadList?.();onClose();
+  };
+  const reloadImage=async()=>{
+    if(saving)return;
+    if(dirty()&&!await confirm({title:text('重新读取图片与遮罩','Reload image and mask'),message:text('重新读取会放弃未保存修改，继续？','Reload and discard unsaved changes?'),confirmLabel:text('放弃并重新读取','Discard and reload'),danger:true}))return;
+    setReload(value=>value+1);
   };
   const finishStroke=()=>{
     if(stroke.current){
@@ -167,7 +179,8 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
     }finally{setSaving(false);redraw();}
   };
   const restore=async()=>{
-    if(!info||saving||!window.confirm(text('恢复最近一次保存前的图片和遮罩？当前未保存修改也会放弃。','Restore the image and mask from before the latest save? Unsaved edits will also be discarded.')))return;
+    if(!info||saving)return;
+    if(!await confirm({title:text('恢复上次保存前','Restore previous save'),message:text('恢复最近一次保存前的图片和遮罩？当前未保存修改也会放弃。','Restore the image and mask from before the latest save? Unsaved edits will also be discarded.'),confirmLabel:text('恢复文件','Restore files'),danger:true}))return;
     setSaving(true);setError('');
     try{
       const restored=await restorePaint(datasetId,info);identity.current={imageId:restored.image_id,relPath:restored.rel_path};setInfo(restored);
@@ -193,7 +206,7 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
       else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
     }
   };
-  return createPortal(<div className="image-editor-backdrop" onClick={close}>
+  return createPortal(<><div className="image-editor-backdrop" onClick={()=>void close()}>
     <section className="image-editor" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialog} onKeyDown={keyDown} onClick={event=>event.stopPropagation()}>
       <header><div><h2 id={titleId}>{text('涂抹与遮罩','Paint and mask')}</h2><p title={relPath}>{relPath}{info&&` · ${info.width} × ${info.height}`}</p></div><button ref={closeButton} type="button" className="ui-btn ui-btn-quiet ui-btn-icon" aria-label={text('关闭图片编辑器','Close image editor')} disabled={saving} onClick={close}><X size={17}/></button></header>
       <div className="image-editor-tools">
@@ -214,11 +227,11 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
         <button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('缩小','Zoom out')} title={text('缩小','Zoom out')} onClick={()=>setZoom(value=>Math.max(.25,value/1.5))}><ZoomOut size={14}/></button><button type="button" className="ui-btn ui-btn-sm" onClick={()=>{setZoom(1);viewport.current?.scrollTo(0,0);}}>{text('适应','Fit')} {Math.round(scale*100)}%</button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('放大','Zoom in')} title={text('放大','Zoom in')} onClick={()=>setZoom(value=>Math.min(8,value*1.5))}><ZoomIn size={14}/></button>
       </div>
       <p className="image-editor-hint">{mode==='paint'?text('Alt + 点击取色；擦回原图可恢复本次编辑前的像素。','Alt + click picks a color. Erase restores pixels from before this editing session.'):text('白色参与训练，黑色忽略；红色为忽略区域。无独立遮罩时使用图片透明度。','White trains, black is ignored; red marks ignored areas. Without a separate mask, image transparency is used.')}</p>
-      {error&&<p className="image-editor-status" role="alert">{error} {requiresReopen?<><span>{text('图片身份或文件已变化，请刷新列表后重新打开。','The image identity or files changed. Refresh the list and reopen the image.')}</span><button type="button" className="ui-btn ui-btn-sm" disabled={saving} onClick={closeAndRefresh}>{text('关闭并刷新列表','Close and refresh list')}</button></>:<button type="button" className="ui-btn ui-btn-sm" disabled={saving} onClick={()=>{if(!dirty()||window.confirm(text('重新读取会放弃未保存修改，继续？','Reload and discard unsaved changes?'))){setReload(value=>value+1);}}}>{text('重新读取','Reload')}</button>}</p>}
+      {error&&<p className="image-editor-status" role="alert">{error} {requiresReopen?<><span>{text('图片身份或文件已变化，请刷新列表后重新打开。','The image identity or files changed. Refresh the list and reopen the image.')}</span><button type="button" className="ui-btn ui-btn-sm" disabled={saving} onClick={()=>void closeAndRefresh()}>{text('关闭并刷新列表','Close and refresh list')}</button></>:<button type="button" className="ui-btn ui-btn-sm" disabled={saving} onClick={()=>void reloadImage()}>{text('重新读取','Reload')}</button>}</p>}
       {navigationError&&<p className="image-editor-status" role="alert">{navigationError}</p>}
       {loading?<LoadingNote className="image-editor-status" label={text('正在读取图片与遮罩…','Loading image and mask…')}/>:info&&<div ref={viewport} className="image-editor-viewport" data-testid="paint-viewport"><div className="image-editor-stage" style={{width:Math.max(1,info.width*scale),height:Math.max(1,info.height*scale)}}><canvas ref={canvas} aria-label={text('图像与遮罩绘制画布','Image and mask drawing canvas')} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={finishStroke} onPointerCancel={finishStroke} onLostPointerCapture={finishStroke} onPointerLeave={()=>{if(cursor.current)cursor.current.style.visibility='hidden';}} style={{cursor:tool==='pan'?'grab':tool==='pick'?'copy':'crosshair'}}/><div ref={cursor} aria-hidden="true" className="image-editor-cursor" style={{visibility:'hidden',width:diameter*scale,height:diameter*scale}}/></div></div>}
       {message&&<p role="status" className="image-editor-status">{message}</p>}
       <footer><small>{dirty()?text('有未保存修改','Unsaved changes'):text('已同步','Up to date')} · {text('Ctrl/Cmd + Z 撤销，Ctrl/Cmd + S 保存','Ctrl/Cmd + Z to undo, Ctrl/Cmd + S to save')}</small><div className="image-editor-footer-actions"><button type="button" className="ui-btn" disabled={saving||loading||requiresReopen||!info?.can_restore} onClick={()=>void restore()}>{text('恢复上次保存前','Restore previous save')}</button><button type="button" className="ui-btn" disabled={saving} onClick={close}>{text('返回图片列表','Back to images')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={saving||loading||requiresReopen||!info||!dirty()} onClick={()=>void save()}>{saving?text('保存中…','Saving…'):text('保存修改','Save changes')}</button>{mode==='mask'&&onEnableTraining&&<button type="button" className="ui-btn" disabled={saving||loading||requiresReopen||!info} onClick={()=>void save(true)}>{text('保存并启用遮罩训练','Save and enable masked training')}</button>}</div></footer>
     </section>
-  </div>,document.body);
+  </div>{confirmation}</>,document.body);
 }

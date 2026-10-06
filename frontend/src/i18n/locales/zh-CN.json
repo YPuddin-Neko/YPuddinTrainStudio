@@ -141,7 +141,7 @@
     "precache": "准备训练缓存",
     "enqueuing": "入队中…",
     "rescan": "重新扫描",
-    "remove": "移除注册",
+    "remove": "移除数据集",
     "precacheEnqueued": "训练缓存准备任务已入队。",
     "deleteConfirm": "确定移除数据集「{path}」的注册吗？磁盘文件不会被删除。",
     "filterPlaceholder": "搜索文件名或标签…",

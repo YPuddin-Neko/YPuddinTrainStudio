@@ -11,6 +11,7 @@ import { projectUrl } from '../../utils/projectVersions';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import StudioSelect from '../../components/StudioSelect';
+import { useConfirmation } from '../../components/useConfirmation';
 import '../Queue/queue.css';
 import './artifacts.css';
 import { Box, Download, Trash2, FileJson, PackageOpen, RefreshCw, Search, Wrench, X } from 'lucide-react';
@@ -26,6 +27,7 @@ interface ArtifactsProps { embedded?: boolean; projectId?: string; versionId?: s
 export default function Artifacts({ embedded = false, projectId: projectScope, versionId: versionScope, jobId: jobScope, readOnly = false }: ArtifactsProps) {
   const { t, i18n } = useTranslation();
   const text = useWorkspaceText();
+  const { confirm, confirmation } = useConfirmation();
   const [params, setParams] = useSearchParams();
   const scoped = projectScope !== undefined || versionScope !== undefined || jobScope !== undefined;
   const projectId = scoped ? projectScope : params.get('project_id') || params.get('project') || undefined;
@@ -46,13 +48,15 @@ export default function Artifacts({ embedded = false, projectId: projectScope, v
   const scopeKey = JSON.stringify([projectId, versionId, jobId]);
   const [loadedScope, setLoadedScope] = React.useState('');
   const scopeRef = React.useRef(scopeKey);
-  React.useLayoutEffect(() => { scopeRef.current = scopeKey; }, [scopeKey]);
+  const readOnlyRef = React.useRef(readOnly);
+  React.useLayoutEffect(() => { scopeRef.current = scopeKey; readOnlyRef.current = readOnly; }, [scopeKey, readOnly]);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [error, setError] = React.useState('');
   const [metadataFor, setMetadataFor] = React.useState<VersionedArtifact | null>(null);
   const request = React.useRef<AbortController | null>(null);
   const metadataClose = React.useRef<HTMLButtonElement>(null);
+  const confirming = React.useRef(false);
   const fetchArtifacts = React.useCallback(async () => {
     request.current?.abort(); const controller = new AbortController(); request.current = controller;
     setLoading(true); setError(''); setArtifacts([]);
@@ -79,6 +83,16 @@ export default function Artifacts({ embedded = false, projectId: projectScope, v
     try { await run(); if (originalScope === scopeRef.current) await fetchArtifacts(); }
     catch (error) { if (originalScope === scopeRef.current) setError(formatApiError(error)); }
     finally { setBusy(null); }
+  };
+  const remove = async (artifact: VersionedArtifact) => {
+    if (readOnly || busy || confirming.current) return;
+    const originalScope = scopeKey;
+    confirming.current = true;
+    try {
+      if (!await confirm({ title: text('移除产物记录', 'Remove output record'), message: text(`从产物列表移除 ${artifact.name}？磁盘中的权重文件会保留。`, `Remove ${artifact.name} from the output list? Its weight file will remain on disk.`), confirmLabel: text('移除记录', 'Remove record'), danger: true })) return;
+      if (originalScope !== scopeRef.current || readOnlyRef.current) return;
+      await action(artifact.id, () => apiClient.delete(`/artifacts/${artifact.id}`, { silent: true }));
+    } finally { confirming.current = false; }
   };
   React.useEffect(() => { setPage(1); }, [query, scopeKey, sort]);
   const updateQuery = (value: string) => {
@@ -120,10 +134,11 @@ export default function Artifacts({ embedded = false, projectId: projectScope, v
         <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/50"><tr><th className="px-3 py-2.5">{t('artifacts.name')}</th><th className="px-3 py-2.5">{t('artifacts.job')}</th><th className="px-3 py-2.5">{t('artifacts.algo')}</th><th className="artifact-secondary px-3 py-2.5">{onlyFullModels ? text('模型组件', 'Model components') : text('参数规模 / 组件', 'Adapter size / components')}</th><th className="px-3 py-2.5">{t('artifacts.size')}</th><th className="artifact-secondary px-3 py-2.5">{t('artifacts.created')}</th><th className="px-3 py-2.5 text-right">{t('artifacts.actions')}</th></tr></thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-700">{sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(artifact => <tr key={artifact.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30" data-testid={`artifact-row-${artifact.id}`}>
           <td className="max-w-60 break-words px-3 py-3 font-mono text-xs font-medium">{artifact.name}<small className="artifact-compact-meta">{sizeLabel(artifact)}: {sizeDetail(artifact)} · {formatTime(artifact.created_at)}</small>{!scoped && artifact.project_id && <Link className="artifact-project-link" to={projectUrl(artifact.project_id, artifact.version_id, 'results')}>{text('项目', 'Project')} {artifact.project_id} · {text('所属版本结果', 'Version results')}</Link>}</td><td className="px-3 py-3 font-mono text-xs text-slate-500">{artifact.job_id ? <Link to={`/jobs/${encodeURIComponent(artifact.job_id)}`} className="ui-link">{artifact.job_id}</Link> : '—'}</td><td className="px-3 py-3 text-xs">{artifact.kind === 'model' ? <>{artifactTypeLabel(artifact, !(i18n.resolvedLanguage || i18n.language).startsWith('zh'))}<span className="block text-slate-500">{text('组件目录 · ZIP', 'Component directory · ZIP')}</span></> : <>{artifact.algo || text('适配器', 'Adapter')}{artifact.kind && artifact.kind !== 'weights' && <span className="block text-slate-400">{artifact.kind}</span>}</>}</td><td className="artifact-secondary whitespace-nowrap px-3 py-3 font-mono text-xs">{sizeDetail(artifact)}</td><td className="whitespace-nowrap px-3 py-3 font-mono text-xs">{formatBytes(artifact.size)}</td><td className="artifact-secondary whitespace-nowrap px-3 py-3 text-xs text-slate-500">{formatTime(artifact.created_at)}</td>
-          <td className="artifact-action-cell px-3 py-3"><div className="artifact-row-actions flex items-center justify-end gap-1.5"><a href={apiUrl(`/artifacts/${encodeURIComponent(artifact.id)}/download`)} download={artifact.kind === 'model' ? `${artifact.name}.zip` : undefined} className={button} aria-label={`${t('common.download')}: ${artifact.name}`} title={t('common.download')}><Download className="h-4 w-4" /></a><button className={button} aria-label={`${text('查看元数据', 'View metadata')}: ${artifact.name}`} title={text('查看元数据', 'View metadata')} onClick={() => setMetadataFor(artifact)}><FileJson className="h-4 w-4" /></button>{artifact.legacy_text_keys && <button type="button" className="ui-btn ui-btn-sm" aria-label={`${text('修复键名', 'Fix key names')}: ${artifact.name}`} title={text('修复模型层的旧键名，权重不变。', 'Repair legacy model-layer key names; weights stay unchanged.')} disabled={readOnly || !!busy} onClick={() => void action(artifact.id, () => apiClient.post(`/artifacts/${artifact.id}/fix-text-keys`, undefined, { silent: true }))}><Wrench className="h-3.5 w-3.5"/>{busy === artifact.id ? text('修复中…', 'Fixing…') : text('修复键名', 'Fix key names')}</button>}<button type="button" className={`${button} ui-btn-danger`} aria-label={`${text('移除产物记录', 'Remove output record')}: ${artifact.name}`} disabled={readOnly || !!busy} onClick={() => { if (window.confirm(text(`从产物列表移除 ${artifact.name}？磁盘中的权重文件会保留。`, `Remove ${artifact.name} from the output list? Its weight file will remain on disk.`))) void action(artifact.id, () => apiClient.delete(`/artifacts/${artifact.id}`, { silent: true })); }}><Trash2 className="h-4 w-4" /></button></div></td>
+          <td className="artifact-action-cell px-3 py-3"><div className="artifact-row-actions flex items-center justify-end gap-1.5"><a href={apiUrl(`/artifacts/${encodeURIComponent(artifact.id)}/download`)} download={artifact.kind === 'model' ? `${artifact.name}.zip` : undefined} className={button} aria-label={`${t('common.download')}: ${artifact.name}`} title={t('common.download')}><Download className="h-4 w-4" /></a><button className={button} aria-label={`${text('查看元数据', 'View metadata')}: ${artifact.name}`} title={text('查看元数据', 'View metadata')} onClick={() => setMetadataFor(artifact)}><FileJson className="h-4 w-4" /></button>{artifact.legacy_text_keys && <button type="button" className="ui-btn ui-btn-sm" aria-label={`${text('修复键名', 'Fix key names')}: ${artifact.name}`} title={text('修复模型层的旧键名，权重不变。', 'Repair legacy model-layer key names; weights stay unchanged.')} disabled={readOnly || !!busy} onClick={() => void action(artifact.id, () => apiClient.post(`/artifacts/${artifact.id}/fix-text-keys`, undefined, { silent: true }))}><Wrench className="h-3.5 w-3.5"/>{busy === artifact.id ? text('修复中…', 'Fixing…') : text('修复键名', 'Fix key names')}</button>}<button type="button" className={`${button} ui-btn-danger`} aria-label={`${text('移除产物记录', 'Remove output record')}: ${artifact.name}`} disabled={readOnly || !!busy} onClick={() => void remove(artifact)}><Trash2 className="h-4 w-4" /></button></div></td>
         </tr>)}</tbody>
       </table>}
     </div>
     {metadataFor && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setMetadataFor(null)}><div role="dialog" aria-modal="true" aria-labelledby="artifact-metadata-title" onKeyDown={event => { if (event.key === 'Escape') setMetadataFor(null); }} onClick={event => event.stopPropagation()} className="max-h-[80vh] w-full max-w-2xl min-w-0 space-y-4 overflow-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-800"><div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3 dark:border-slate-700"><h3 id="artifact-metadata-title" className="break-all text-sm font-semibold">{t('artifacts.metadata')} · {metadataFor.name}</h3><button ref={metadataClose} className={button} aria-label={t('common.close')} onClick={() => setMetadataFor(null)}><X className="h-4 w-4" /></button></div><pre className="overflow-x-auto rounded-lg bg-slate-50 p-3 font-mono text-xs dark:bg-slate-900">{JSON.stringify(metadataFor.metadata || {}, null, 2)}</pre></div></div>}
+    {confirmation}
   </div>;
 }

@@ -5,6 +5,7 @@ import { Pause, Play, Save, RotateCcw, XCircle, Loader2, Zap } from 'lucide-reac
 import { apiClient } from '../../api/client';
 import type { Job } from '../../api/types';
 import ProgressBar from '../../components/ProgressBar';
+import { useConfirmation } from '../../components/useConfirmation';
 import { formatApiError } from '../../utils/errors';
 import { formatEta } from '../../utils/format';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -64,16 +65,23 @@ export function JobStatus({ status }: { status: string }) {
 }
 export function JobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: Job) => void }) {
   const text = useWorkspaceText();
+  const { confirm, confirmation } = useConfirmation();
   const [busy, setBusy] = React.useState('');
   const [error, setError] = React.useState('');
+  const pending = React.useRef(false);
   const current = React.useRef(job.id); current.current = job.id;
   const run = async (action: string) => {
-    if (action === 'cancel' && !window.confirm(text(`取消任务“${job.name}”？任务将在安全位置停止。已有产物会保留。`, `Cancel “${job.name}”? It will stop at a safe point. Existing outputs are kept.`))) return;
-    if (action === 'force' && !window.confirm(text(`强制开始“${job.name}”？将跳过显存估算立即开始；没有空闲显卡时，最早开始运行的任务会保存状态并暂停。`, `Force-start “${job.name}”? It starts now without the memory estimate. If no GPU is free, the job that started earliest saves its state and pauses.`))) return;
+    if (pending.current) return;
+    pending.current = true;
     const id = job.id; setBusy(action); setError('');
-    try { const result = await apiClient.post<Job>(`/jobs/${id}/${action}`, {}, { silent: true }); if (current.current === id) onUpdated(result); }
+    try {
+      if (action === 'cancel' && !await confirm({ title: text('取消任务', 'Cancel job'), message: text(`取消任务“${job.name}”？任务将在安全位置停止。已有产物会保留。`, `Cancel “${job.name}”? It will stop at a safe point. Existing outputs are kept.`), confirmLabel: text('取消任务', 'Cancel job'), danger: true })) return;
+      if (action === 'force' && !await confirm({ title: text('强制开始', 'Force start'), message: text(`强制开始“${job.name}”？将跳过显存估算立即开始；没有空闲显卡时，最早开始运行的任务会保存状态并暂停。`, `Force-start “${job.name}”? It starts now without the memory estimate. If no GPU is free, the job that started earliest saves its state and pauses.`), confirmLabel: text('强制开始', 'Force start') })) return;
+      if (current.current !== id) return;
+      const result = await apiClient.post<Job>(`/jobs/${id}/${action}`, {}, { silent: true }); if (current.current === id) onUpdated(result);
+    }
     catch (failure) { if (current.current === id) setError(formatApiError(failure)); }
-    finally { if (current.current === id) setBusy(''); }
+    finally { pending.current = false; setBusy(''); }
   };
   const actions: { key: string; label: string; Icon: typeof Play }[] = [];
   if (job.type !== 'xyz' && ['running', 'queued', 'scheduled'].includes(job.status)) actions.push({ key: 'pause', label: text('暂停', 'Pause'), Icon: Pause });
@@ -82,5 +90,5 @@ export function JobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: 
   if (job.status === 'running' && job.type === 'train') actions.push({ key: 'save', label: text('保存检查点', 'Save checkpoint'), Icon: Save });
   if (['running', 'queued', 'scheduled', 'paused', 'pausing'].includes(job.status)) actions.push({ key: 'cancel', label: text('取消', 'Cancel'), Icon: XCircle });
   if (['failed', 'cancelled', 'completed'].includes(job.status)) actions.push({ key: 'retry', label: job.type === 'xyz' ? text('重新生成', 'Generate again') : job.type === 'cache' ? text('重新准备', 'Prepare again') : text('重新训练', 'Run again'), Icon: RotateCcw });
-  return <div className="task-actions-wrap"><div className="task-actions">{actions.map(({ key, label, Icon }) => <button key={key} type="button" className="ui-btn ui-btn-sm" disabled={!!busy} data-testid={`job-${key}-${job.id}`} onClick={() => void run(key)}>{busy === key ? <Loader2 size={13} className="animate-spin"/> : <Icon size={13}/>}<span>{label}</span></button>)}</div>{error && <p className="task-inline-error" role="alert">{error}</p>}</div>;
+  return <div className="task-actions-wrap"><div className="task-actions">{actions.map(({ key, label, Icon }) => <button key={key} type="button" className="ui-btn ui-btn-sm" disabled={!!busy} data-testid={`job-${key}-${job.id}`} onClick={() => void run(key)}>{busy === key ? <Loader2 size={13} className="animate-spin"/> : <Icon size={13}/>}<span>{label}</span></button>)}</div>{error && <p className="task-inline-error" role="alert">{error}</p>}{confirmation}</div>;
 }

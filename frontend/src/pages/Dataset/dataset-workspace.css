@@ -64,3 +64,7 @@
   .dataset-library-search { max-width:none; flex-basis:100%; }
   .caption-dialog-backdrop { padding:12px; } .caption-dialog { padding:16px; }
 }
+.dataset-remove-dialog { display:flex; flex-direction:column; gap:16px; }
+.dataset-remove-dialog p { margin:0; }
+.dataset-remove-dialog > code { display:block; max-height:120px; overflow:auto; overflow-wrap:anywhere; font-size:12px; }
+.dataset-remove-dialog footer { display:flex; justify-content:flex-end; gap:8px; }
