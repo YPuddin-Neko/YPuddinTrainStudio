@@ -86,6 +86,63 @@ class SDXLText(TextPipeline):
             if enabled else self._unweighted_fingerprint
         )
 
+    def prompt_fingerprint(self, mode: str) -> str:
+        return hashlib.blake2b(
+            f"sdxl-inference-prompt-v1:{mode}:{self._unweighted_fingerprint}".encode(), digest_size=24,
+        ).hexdigest()
+
+    @torch.no_grad()
+    def encode_prompt(self, captions: list[str], device: torch.device | str, *, mode: str) -> TextCond:
+        from .prompt_weights import prompt_chunks
+
+        self._ensure()
+        hidden, pooled = [], None
+        tokenized = [[prompt_chunks(tokenizer, caption, mode, self.context_length) for caption in captions]
+                     for tokenizer in self.tokenizers]
+        for tokenizer, model, batch in zip(self.tokenizers, self.models, tokenized, strict=True):
+            count = max(len(chunks) for chunks in batch) if mode == "comfyui" else max(
+                len(chunks) for encoder_batch in tokenized for chunks in encoder_batch
+            )
+            empty = prompt_chunks(tokenizer, "", mode, self.context_length)[0]
+            for chunks in batch:
+                chunks.extend([empty] * (count - len(chunks)))
+            ids = torch.tensor([chunk[0] for chunks in batch for chunk in chunks], device=self.device)
+            factors = torch.tensor([chunk[1] for chunks in batch for chunk in chunks], device=self.device)
+            weighted = bool((factors != 1).any())
+            if mode == "comfyui" and weighted:
+                ids = torch.cat((ids, torch.tensor([empty[0]], device=self.device)))
+            output = model(ids, output_hidden_states=True)
+            states = output.hidden_states[-2]
+            if mode == "comfyui":
+                states = states.float()
+            if mode == "comfyui" and weighted:
+                states, baseline = states[:-1], states[-1]
+                mask = factors != 1
+                adjusted = (states - baseline) * factors.unsqueeze(-1) + baseline
+                states = torch.where(mask.unsqueeze(-1), adjusted, states)
+            elif mode == "a1111":
+                states = states.reshape(len(captions), count, self.context_length, -1)
+                factors = factors.reshape(len(captions), count, self.context_length, 1)
+                # A1111's default emphasis restores each encoded chunk's original mean.
+                weighted_states = states * factors
+                original_mean = states.mean(dim=(0, 2, 3), keepdim=True)
+                weighted_mean = weighted_states.mean(dim=(0, 2, 3), keepdim=True)
+                states = weighted_states * (original_mean / weighted_mean)
+            hidden.append(states.reshape(len(captions), count * self.context_length, -1))
+            if hasattr(output, "text_embeds"):
+                pooled = output.text_embeds[:len(captions) * count].reshape(len(captions), count, -1)[:, 0]
+                if mode == "comfyui":
+                    pooled = pooled.float()
+        if pooled is None:
+            raise RuntimeError("SDXL CLIP-G did not return projected pooled embeddings")
+        length = min(states.shape[1] for states in hidden)
+        return TextCond({"embeds": torch.cat([states[:, :length] for states in hidden], dim=-1), "pooled": pooled}).to(device)
+
+    def encode_prompts_for_cache(self, captions: list[str], *, mode: str) -> list[dict[str, Tensor]]:
+        # Prompt length is independent per cache entry, unlike fixed training-caption lengths.
+        return [{key: value[0].contiguous() for key, value in self.encode_prompt([caption], "cpu", mode=mode).tensors.items()}
+                for caption in captions]
+
     def _ensure(self) -> None:
         if not self.tokenizers:
             from transformers import CLIPTokenizerFast

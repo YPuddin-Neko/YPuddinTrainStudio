@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Download, Layers, Package, Trash2 } from 'lucide-react';
 import { apiUrl } from '../../api/client';
 import type { JobCheckpoint } from '../../api/types';
+import { artifactTypeLabel } from '../../utils/artifactType';
 import CopyButton from '../../components/CopyButton';
 import { LazyImage } from '../../components/Loading';
 import { epochAt, epochText, inEpochs, parseEpochQuery } from '../../utils/epochFilter';
@@ -30,14 +31,13 @@ export default function ArtifactGrid({ checkpoints, stepsPerEpoch, loaded, onOpe
   checkpoints: JobCheckpoint[]; stepsPerEpoch?: number | null; loaded: boolean;
   onOpenSample: (url: string) => void; onDelete: (checkpoint: JobCheckpoint) => void; onDeleteMany: (checkpoints: JobCheckpoint[]) => void; deleting?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const text = useWorkspaceText();
   const [query, setQuery] = React.useState('');
   const ranges = React.useMemo(() => parseEpochQuery(query), [query]);
   const shown = React.useMemo(() => [...checkpoints].reverse().filter(item => inEpochs(epochAt(item, stepsPerEpoch), ranges)), [checkpoints, stepsPerEpoch, ranges]);
   const browser = useCheckpointBrowser(shown, 'studio.job.outputs.pageSize');
   const changeQuery = (value: string) => { setQuery(value); browser.resetFilter(); };
-  const kindLabel = (kind: string) => kind === 'model' ? text('全量模型组件', 'Full-model components') : kind === 'weights' ? text('权重', 'Weights') : kind;
 
   if (!loaded) return <section className="artifact-browser" aria-label={text('产物', 'Outputs')}><SkeletonGrid/></section>;
   if (!checkpoints.length) return <div className="sample-empty"><Layers size={30} aria-hidden="true"/><p>{text('暂无产物', 'No outputs yet')}</p><span>{text('训练到保存步数或轮次后，导出的权重会出现在这里；恢复点在右侧“恢复点”页。', 'Exported weights appear here once training reaches a save step or epoch; resume points have their own tab.')}</span></div>;
@@ -59,7 +59,7 @@ export default function ArtifactGrid({ checkpoints, stepsPerEpoch, loaded, onOpe
             aria-label={item.sample_url ? text(`查看第 ${item.step} 步的采样图`, `Open the step ${item.step} preview`) : text('此步没有采样图', 'No preview at this step')}>
             {item.sample_url ? <LazyImage src={sampleSource(item.sample_url)} alt="" loading="lazy"/>
               : <span className="artifact-preview-empty"><Package size={22} aria-hidden="true"/>{text('此步没有采样图', 'No preview at this step')}</span>}
-            <span className="artifact-kind" data-kind={item.kind}>{kindLabel(item.kind)}{item.ema ? ' · EMA' : ''}</span>
+            <span className="artifact-kind" data-kind={item.kind}>{artifactTypeLabel(item, !(i18n.resolvedLanguage || i18n.language).startsWith('zh'))}{item.ema ? ' · EMA' : ''}</span>
           </button>
           <div className="artifact-body">
             <strong className="artifact-name" title={name}>{name}</strong>

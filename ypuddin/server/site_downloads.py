@@ -117,18 +117,23 @@ def _label(tag: str) -> str:
     return tag.replace("_", " ") if re.search(r"[^\W\d_]{2}", tag) else tag
 
 
-def caption_groups(post: Post, *, anima: bool) -> dict[str, list[str]]:
+def caption_groups(post: Post, *, anima: bool, weighted: bool = False) -> dict[str, list[str]]:
     """The post's tags as caption text, grouped the way structured captions name them: people count,
     characters, works, artists (with Anima's @), then everything else in the site's order."""
     named = {*post.artists, *post.characters, *post.copyrights}
     general = [tag for tag in post.tags if tag not in named]
-    return {
+    groups = {
         "count": [_label(tag) for tag in general if COUNT_TAG.match(normalize(tag))],
         "character": [_label(tag) for tag in post.characters],
         "series": [_label(tag) for tag in post.copyrights],
         "artist": [("@" if anima else "") + _label(tag) for tag in post.artists],
         "tags": [_label(tag) for tag in general if not COUNT_TAG.match(normalize(tag))],
     }
+    if weighted:
+        from ypuddin.data.captions import escape_literal_caption_tag
+
+        groups = {key: [escape_literal_caption_tag(tag) for tag in tags] for key, tags in groups.items()}
+    return groups
 
 
 def caption_text(groups: dict[str, list[str]], suffix: str) -> str:
@@ -164,6 +169,7 @@ class _Batch(Downloads):
         self.excluded = set(excluded_tags(payload["excluded_tags"]))
         self.min_side, self.min_score = payload["min_side"], payload["min_score"]
         self.taken, self.md5s, self.anima, self.suffix = taken, set(md5s), anima, suffix
+        self.weighted = bool(payload.get("weighted_captions", False))
         self.digests: set[str] = set()
         self.saved: list[dict] = []
         self.duplicates = 0
@@ -216,7 +222,7 @@ class _Batch(Downloads):
         image.write_bytes(data)
         caption = caption_path(image, self.suffix)
         caption.write_text(
-            caption_text(caption_groups(post, anima=self.anima), self.suffix), encoding="utf-8"
+            caption_text(caption_groups(post, anima=self.anima, weighted=self.weighted), self.suffix), encoding="utf-8"
         )
         self.saved.append({"post_id": post.id, "md5": post.md5, "file": image.name, "caption": caption.name})
         return True
@@ -501,6 +507,8 @@ class SiteDownloadManager:
                     "ratings": [rating for rating in RATINGS if rating in request.ratings],
                     "caption_suffix": suffix,
                     "anima": config.get("model", {}).get("family") == "anima",
+                    "weighted_captions": config.get("model", {}).get("family") == "sdxl"
+                    and config.get("dataset", {}).get("caption", {}).get("weighted", False),
                     "ownership_token": uuid.uuid4().hex,
                 }
                 self.c.db.insert(

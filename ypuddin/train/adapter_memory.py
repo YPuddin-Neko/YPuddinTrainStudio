@@ -77,6 +77,24 @@ def _layer_memory(
         factor("down")
         factor("up", copied=exported or masked)
         delta_dtype = merge_dtype if exported else mm_dtype
+    elif adapter.kind == "ortho":
+        rank = adapter.rank
+        # Cayley solve saves its two matrices, LU factors/pivots, and the scaled rotation.
+        result.retained += 4 * rank * rank * 4 + rank * 4
+        if param_dtype != torch.float32:
+            result.retained += 2 * rank * 4  # FP32 in/out scales used by the core.
+        if exported:
+            # Export builds FP32 LoRA factors; only the constant down factor is saved by
+            # the final matmul. The SVD bases themselves are resident model buffers.
+            result.retained += rank * adapter.fan_in * merge_bytes + rank * 4
+            if adapter.basis_out.dtype != torch.float32 or masked:
+                result.retained += adapter.out_features * rank * 4
+            delta_dtype = merge_dtype
+        else:
+            for basis in (adapter.basis_out, adapter.basis_in):
+                if basis.dtype != mm_dtype or (basis is adapter.basis_out and masked):
+                    result.retained += basis.numel() * _size(mm_dtype)
+            delta_dtype = mm_dtype
     elif adapter.kind == "lokr":
         factor_dtypes = []
         for part in ("w1", "w2"):
@@ -131,6 +149,10 @@ def _layer_memory(
 
     if dora is not None:
         result.retained += n * merge_bytes  # merged, shared by normalization and rescaling backward.
+        if exported and dora.axis == "input" and layer.weight.dim() > 2:
+            # Input-channel normalization flattens a transposed convolution kernel;
+            # the reshape copies storage, which norm backward also retains.
+            result.retained += n * merge_bytes
         channels = dora.dora_scale.numel()
         # Norm, norm+epsilon and ratio are new; the magnitude is a parameter unless cast for export.
         result.retained += 3 * channels * merge_bytes
@@ -173,6 +195,9 @@ def _layer_memory(
         (p.numel() * (p.element_size() + gradient_bytes) for p in params.values()), default=0
     )
     result.workspace = max(result.workspace, factor_gradient_cast)
+    if adapter.kind == "ortho":
+        # The FP32 solve and core backward have rank-sized, not dense-weight, workspaces.
+        result.workspace = max(result.workspace, 8 * adapter.rank**2 * 4 + 2 * adapter.out_features * adapter.rank * 4)
     if unsupported:
         result.workspace = max(result.workspace, 4 * n * 4)
     return result, unsupported

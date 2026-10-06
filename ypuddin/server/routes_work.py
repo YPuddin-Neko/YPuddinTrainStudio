@@ -17,6 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
+import psutil
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -35,7 +36,7 @@ from .db import new_id, now
 from .environment import maintenance_reason
 from .errors import ApiError, NotFound
 from .gpu_metrics import device_metric_series
-from .gpu_selection import GpuSelection, planning_devices, selection_error
+from .gpu_selection import GpuSelection, planning_devices, planning_memory, selection_error
 from .hardware import gpu_info
 from .import_progress import ImportProgress
 from .job_logs import failure_record_bytes, missing_failure_record, read_log
@@ -2199,19 +2200,27 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         )
     if error := selection_error(body.gpu_devices, planning_cfg.loop.gpu_count, devices):
         raise ApiError(error, code="job.gpu_selection", status=422)
-    selected = planning_devices(devices, planning_cfg.loop.gpu_count, body.gpu_devices)
-    target = min(selected, key=lambda gpu: gpu.get("mem_total_mb") or 0) if selected else None
+    selected = planning_devices(
+        devices, planning_cfg.loop.gpu_count, body.gpu_devices,
+        prefer_available=(
+            planning_cfg.dataset.resolution_mode == "native"
+            and planning_cfg.dataset.native_max_pixels_mode == "auto_vram"
+            and planning_cfg.dataset.native_max_pixels_resolved is None
+            and not planning_cfg.checkpoint.resume
+        ),
+    )
+    memory_target = planning_memory(selected)
     # The shared image index lets an unchanged dataset skip re-reading and hashing every image,
     # as the parameter check's plan already does.
     preflight = plan(
         planning_cfg,
         check_compile=body.type == "train",
         index_db_path=c.service_cache_dir("index") / "index.sqlite",
-        gpu_total_mb=target["mem_total_mb"] if target else None,
-        device=target["device"] if target else "cpu",
+        **memory_target,
     )
     memory = preflight.get("memory") or {}
     estimated_peak_mb = memory.get("peak_mb_estimate")
+    estimated_host_mb = memory.get("host_memory_mb_estimate") if body.type == "train" else None
     if body.type == "cache":
         # This worker only caches text/latent features; it never materializes
         # the trainable backbone, gradients or optimizer. Missing/partial phase
@@ -2224,12 +2233,17 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
             and all(type(value) in (int, float) and math.isfinite(value) and value >= 0 for value in values)
             else None
         )
-    from .memory_fit import capacity_shortfall, shortfall_error
+    from .memory_fit import capacity_shortfall, host_memory_error, shortfall_error
 
     if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
         shortfall := capacity_shortfall(estimated_peak_mb, selected or devices, cfg.loop.gpu_count)
     ):
         preflight["errors"].append(shortfall_error(shortfall))
+        preflight["ok"] = False
+    if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
+        issue := host_memory_error(estimated_host_mb, psutil.virtual_memory().available / 2**20)
+    ):
+        preflight["errors"].append(issue)
         preflight["ok"] = False
     if not preflight["ok"]:
         raise ApiError(
@@ -2239,7 +2253,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
 
     try:
         cfg = resolve_native_vram_config(
-            cfg, device=target["device"] if target else "cpu", plan_result=preflight,
+            cfg, device=memory_target["device"], plan_result=preflight,
         )
     except DataConfigError as error:
         raise ApiError(
@@ -2282,7 +2296,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
                 "run_dir": str(run_dir),
                 "samples_dir": str(samples_dir),
                 "config_json": json.dumps(cfg.to_dict()),
-                "progress_json": json.dumps({"estimated_peak_mb": estimated_peak_mb}),
+                "progress_json": json.dumps({"estimated_peak_mb": estimated_peak_mb, "estimated_host_mb": estimated_host_mb}),
                 "latest_json": "{}",
             },
         )
@@ -2585,7 +2599,10 @@ def job_samples(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, An
     "/jobs/{jid}/checkpoints", response_model=list[m.JobCheckpoint], response_model_exclude_unset=True
 )
 def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
+    from .artifact_types import export_type
+
     out = []
+    job = _get_job(c, jid)
     arts = {
         a["path"]: a["id"] for a in c.db.fetchall("SELECT id, path FROM artifacts WHERE job_id=?", (jid,))
     }
@@ -2619,6 +2636,7 @@ def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str
                     "size": size,
                     "created_at": ev["ts"],
                     "artifact_id": arts.get(str(p)),
+                    "export_type": export_type(ev["kind"], p, config_json=job.get("config_json")),
                     "ema": bool(ev.get("ema")),
                     "epoch": ev.get("epoch"),
                     "loss": ev["loss"] if ev.get("loss") is not None else step_losses.get(ev["step"]),
@@ -2797,7 +2815,9 @@ def _adapter_header(path: str, mtime_ns: int, size: int) -> tuple[tuple[str, ...
         return tuple(file.keys()), dict(file.metadata() or {})
 
 
-def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
+def _artifact_row(r: dict[str, Any], c: ServiceContext | None = None) -> dict[str, Any]:
+    from .artifact_types import export_type
+
     out = dict(r)
     meta = json.loads(r.get("meta_json") or "{}")
     out.pop("meta_json", None)
@@ -2815,7 +2835,7 @@ def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
         except (OSError, ValueError):
             pass
     elif path.is_file():
-        from ypuddin.adapters.convert import has_legacy_text_keys
+        from ypuddin.adapters.convert import has_legacy_adapter_keys
 
         try:
             stat = path.stat()
@@ -2823,7 +2843,7 @@ def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
         except Exception:  # noqa: BLE001 - an unreadable file still lists; its download shows what it is
             keys, header = (), None
         if header is not None and r["kind"] in ADAPTER_ARTIFACT_KINDS:
-            out["legacy_text_keys"] = has_legacy_text_keys(keys, header)
+            out["legacy_text_keys"] = has_legacy_adapter_keys(keys, header)
         if not meta and header is not None:
             meta = header
             args = {}
@@ -2855,6 +2875,11 @@ def _artifact_row(r: dict[str, Any]) -> dict[str, Any]:
                 }
             )
     out["metadata"] = {k: v for k, v in meta.items() if k != "ypuddin.targets"}
+    out["export_type"] = export_type(r["kind"], path, family=out.get("family") or meta.get("ypuddin.family"))
+    if out["export_type"] is None and r["kind"] == "model" and c and r.get("job_id"):
+        job = c.db.fetchone("SELECT config_json FROM jobs WHERE id=?", (r["job_id"],))
+        if job:
+            out["export_type"] = export_type(r["kind"], path, config_json=job["config_json"])
     return out
 
 
@@ -2874,7 +2899,7 @@ def list_artifacts(
             params.append(value)
     sql = "SELECT * FROM artifacts" + (" WHERE " + " AND ".join(conditions) if conditions else "")
     return [
-        _artifact_row(r)
+        _artifact_row(r, c)
         for r in c.db.fetchall(sql + " ORDER BY created_at DESC", tuple(params))
         if artifact_exists(r)
     ]
@@ -2889,7 +2914,7 @@ def _get_artifact(c: ServiceContext, aid: str) -> dict[str, Any]:
 
 @router.get("/artifacts/{aid}", response_model=m.Artifact, response_model_exclude_unset=True)
 def get_artifact(aid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    return _artifact_row(_get_artifact(c, aid))
+    return _artifact_row(_get_artifact(c, aid), c)
 
 
 @router.delete("/artifacts/{aid}", response_model=m.Ok, response_model_exclude_unset=True)
@@ -2959,7 +2984,7 @@ def download_artifact(aid: str, c: ServiceContext = Depends(ctx)) -> Response:
 
 @router.post("/artifacts/{aid}/fix-text-keys", response_model=m.Artifact, response_model_exclude_unset=True)
 def fix_artifact_text_keys(aid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    """Rename an older file's text encoder keys to the names ComfyUI reads; weights stay the same."""
+    """Rename an older adapter's keys to the names ComfyUI reads; weights stay the same."""
     r = _get_artifact(c, aid)
     with (
         c.versions.mutation(r["project_id"], r.get("version_id"), data=False)
@@ -2972,18 +2997,24 @@ def fix_artifact_text_keys(aid: str, c: ServiceContext = Depends(ctx)) -> dict[s
 def _fix_text_keys(c: ServiceContext, r: dict) -> dict[str, Any]:
     if r["kind"] not in ADAPTER_ARTIFACT_KINDS:
         raise ApiError(
-            "Only adapter weight artifacts have text encoder keys", code="artifact.kind", status=422
+            "仅适配器权重支持修复键名。", code="artifact.kind", status=422
         )
-    from safetensors.torch import save_file
+    from safetensors import safe_open
+    from safetensors.torch import load_file, save_file
 
-    from ypuddin.adapters import load_adapter_file
-    from ypuddin.adapters.convert import modernize_text_keys
+    from ypuddin.adapters.convert import modernize_adapter_keys
 
     path = Path(r["path"])
     if not path.is_file():
         raise NotFound("artifact file is missing", code="artifact.missing")
-    tensors, meta = load_adapter_file(path)
-    renamed, renamed_meta = modernize_text_keys(tensors, meta)
+    # Compare file names directly: the training loader canonicalizes Klein aliases on read.
+    tensors = load_file(str(path))
+    with safe_open(str(path), framework="pt") as file:
+        meta = dict(file.metadata() or {})
+    try:
+        renamed, renamed_meta = modernize_adapter_keys(tensors, meta)
+    except ValueError as exc:
+        raise ApiError(str(exc), code="artifact.duplicate_keys", status=422) from exc
     if renamed.keys() == tensors.keys() and renamed_meta == meta:
         return _artifact_row(r)
     staged = path.with_name(f".{path.name}.{new_id('k')}.tmp")

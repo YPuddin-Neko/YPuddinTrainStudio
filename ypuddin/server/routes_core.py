@@ -29,7 +29,7 @@ from . import models as m
 from .context import ServiceContext
 from .db import new_id, now
 from .errors import ApiError, NotFound
-from .gpu_selection import GpuSelection, planning_devices, selection_error
+from .gpu_selection import GpuSelection, planning_devices, planning_memory, selection_error
 from .hardware import gpu_info
 
 router = APIRouter()
@@ -673,22 +673,37 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
     loop = cfg.get("loop")
     requested_count = loop.get("gpu_count", 1) if isinstance(loop, dict) else 1
     requested_count = requested_count if type(requested_count) is int and requested_count > 0 else 1
-    if error := selection_error(body.gpu_devices, requested_count, gpus):
-        raise ApiError(error, code="job.gpu_selection", status=422)
-    selected = planning_devices(gpus, requested_count, body.gpu_devices)
-    target = min(selected, key=lambda gpu: gpu.get("mem_total_mb") or 0) if selected else None
+    gpu_error = selection_error(body.gpu_devices, requested_count, gpus)
+    dataset = cfg.get("dataset")
+    prefer_available = (
+        isinstance(dataset, dict)
+        and dataset.get("resolution_mode") == "native"
+        and dataset.get("native_max_pixels_mode") == "auto_vram"
+        and dataset.get("native_max_pixels_resolved") is None
+        and not (isinstance(checkpoint, dict) and checkpoint.get("resume"))
+    )
+    selected = planning_devices(
+        gpus, requested_count, [] if gpu_error else body.gpu_devices, prefer_available=prefer_available,
+    )
     result = make_plan(
         cfg,
         index_db_path=c.service_cache_dir("index") / "index.sqlite",
-        gpu_total_mb=target["mem_total_mb"] if target else None,
-        device=target["device"] if target else "cpu",
+        **planning_memory(selected),
     )
-    from .memory_fit import capacity_shortfall, shortfall_error
+    from .memory_fit import capacity_shortfall, host_memory_error, shortfall_error
     from .supervisor import training_device_error
 
     count = (result.get("distributed") or {}).get("world_size", 1)
+    if gpu_error:
+        result["errors"].append({"loc": "gpu_devices", "msg": gpu_error})
+        result["ok"] = False
     if error := training_device_error(count, gpus):
         result["errors"].append({"loc": "loop.gpu_count", "msg": error})
+        result["ok"] = False
+    if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
+        issue := host_memory_error((result.get("memory") or {}).get("host_memory_mb_estimate"), psutil.virtual_memory().available / 2**20)
+    ):
+        result["errors"].append(issue)
         result["ok"] = False
     # Starting would only wait forever, so the plan names the shortfall while it can still be fixed.
     if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (

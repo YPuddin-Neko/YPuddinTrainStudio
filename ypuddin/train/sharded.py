@@ -307,6 +307,7 @@ class ShardedTrainer(DistributedTrainer):
             expected_batch_size=self.cfg.dataset.batch_size,
             expected_grad_accum=self.cfg.loop.grad_accum,
             expected_dataset_fingerprint=self.bundle.plan.fingerprint,
+            compatible_dataset_fingerprints=getattr(self.bundle.plan, "compatible_fingerprints", ()),
             expected_model_identity=self.model_identity,
             expected_deterministic=self.cfg.loop.deterministic,
             expected_compute_policy=self.compute_policy,

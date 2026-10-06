@@ -41,7 +41,7 @@ from .images import (
 from .index import (
     ImageRecord,
     IndexDB,
-    dataset_fingerprint,
+    dataset_fingerprint_variants,
     mask_for,
     probe_image,
     record_content_key,
@@ -159,6 +159,7 @@ class DataPlan:
     native_max_pixels: int | None = None
     native_auto_max_pixels: int | None = None
     native_max_pixels_mode: str = "custom"
+    compatible_fingerprints: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         result = {
@@ -691,6 +692,34 @@ def build_data(
     for it in items:
         k = (it.bucket.base, it.bucket.width, it.bucket.height)
         counts[k] = counts.get(k, 0) + 1
+    fingerprints = dataset_fingerprint_variants(
+        records + [item.record for item in layout.validation_items],
+        layout.sources,
+        settings={
+            **({"bucket_policy": BUCKET_POLICY} if ds.resolution_mode == "bucket" else {}),
+            "dataset": {
+                **ds.model_dump(
+                    mode="json",
+                    exclude={"sources", "cache_dir", "num_workers", "native_max_pixels_resolved"}
+                    | ({"image_fit"} if ds.image_fit == "crop" else set())
+                    | ({"crop_anchor"} if ds.crop_anchor == "center" or ds.image_fit == "pad" else set())
+                    | ({"native_max_pixels_mode"} if ds.native_max_pixels_mode == "custom" else set())
+                    | (
+                        {"resolution_mode", "native_max_pixels", "native_max_pixels_mode",
+                         "native_max_side", "native_overflow"}
+                        if ds.resolution_mode == "bucket"
+                        else set()
+                    ),
+                ),
+                **({"native_max_pixels": layout.native_max_pixels}
+                   if ds.resolution_mode == "native" and ds.native_max_pixels_mode in {"auto", "auto_vram"} else {}),
+            },
+            "validation": project_legacy_interval_section(
+                "validation", cfg.validation.model_dump(mode="json", exclude={"sources"}),
+            ),
+            "validation_content": [item.record.content_hash for item in layout.validation_items],
+        },
+    )
     plan = DataPlan(
         images=len(records),
         items=len(items),
@@ -700,34 +729,8 @@ def build_data(
         native_auto_max_pixels=layout.native_auto_max_pixels,
         native_max_pixels_mode=ds.native_max_pixels_mode,
         buckets=[{"base": b, "w": w, "h": h, "items": n} for (b, w, h), n in sorted(counts.items())],
-        fingerprint=dataset_fingerprint(
-            records + [item.record for item in layout.validation_items],
-            layout.sources,
-            settings={
-                **({"bucket_policy": BUCKET_POLICY} if ds.resolution_mode == "bucket" else {}),
-                "dataset": {
-                    **ds.model_dump(
-                        mode="json",
-                        exclude={"sources", "cache_dir", "num_workers", "native_max_pixels_resolved"}
-                        | ({"image_fit"} if ds.image_fit == "crop" else set())
-                        | ({"crop_anchor"} if ds.crop_anchor == "center" or ds.image_fit == "pad" else set())
-                        | ({"native_max_pixels_mode"} if ds.native_max_pixels_mode == "custom" else set())
-                        | (
-                            {"resolution_mode", "native_max_pixels", "native_max_pixels_mode",
-                             "native_max_side", "native_overflow"}
-                            if ds.resolution_mode == "bucket"
-                            else set()
-                        ),
-                    ),
-                    **({"native_max_pixels": layout.native_max_pixels}
-                       if ds.resolution_mode == "native" and ds.native_max_pixels_mode in {"auto", "auto_vram"} else {}),
-                },
-                "validation": project_legacy_interval_section(
-                    "validation", cfg.validation.model_dump(mode="json", exclude={"sources"}),
-                ),
-                "validation_content": [item.record.content_hash for item in layout.validation_items],
-            },
-        ),
+        fingerprint=fingerprints[0],
+        compatible_fingerprints=fingerprints[1:],
     )
     return DataBundle(train, val, plan, records, bm, cache)
 

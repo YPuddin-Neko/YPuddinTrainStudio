@@ -584,6 +584,7 @@ def plan(
     cfg: TrainConfig | dict[str, Any],
     *,
     gpu_total_mb: float | None = None,
+    gpu_memory_budget_mb: float | None = None,
     index_db_path: str | Path | None = None,
     device: str | torch.device | None = None,
     check_compile: bool = True,
@@ -671,7 +672,7 @@ def plan(
     out["compute_policy"] = compute_policy
     if check_compile:
         try:
-            validate_compile_environment(cfg.memory.compile, device_type)
+            validate_compile_environment(cfg.memory.compile, device_type, isolated=True)
         except CompileEnvironmentError as error:
             out["errors"].append({"loc": "memory.compile", "msg": str(error)})
     metal_runtime = None
@@ -939,7 +940,7 @@ def plan(
                     / 2**20
                 )
                 optimizer_mb = aset.num_params() * 4 * (0.5 if "8bit" in cfg.optimizer.type else 2) / 2**20
-                from .optimizer_memory import cpu_offload_memory_bytes
+                from .optimizer_memory import cpu_offload_memory_bytes, cpu_offload_step_workspace_bytes
 
                 optimizer_groups = aset.param_groups(cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr)
                 optimizer_bytes = optimizer_state_bytes(cfg.optimizer, optimizer_groups)
@@ -953,6 +954,10 @@ def plan(
                 if full_training and cfg.loop.ema:
                     cpu_ema_mb = sum(t.numel() * 4 for module in aset.modules.values() for t in module.state_dict().values()) / 2**20
                     ema_mb = 0.0
+                cpu_optimizer_mb = sum(cpu_optimizer.values()) / 2**20
+                cpu_workspace_mb = cpu_offload_step_workspace_bytes(cfg.optimizer, optimizer_groups) / 2**20
+                # Each DDP process creates its optimizer shadows and CPU EMA copy.
+                host_memory_mb = (cpu_optimizer_mb + cpu_workspace_mb + cpu_ema_mb) * cfg.loop.gpu_count
                 layout = (
                     family.memory_layout_meta(backbone) if hasattr(family, "memory_layout_meta") else None
                 )
@@ -1099,6 +1104,7 @@ def plan(
                     + dequant_mb
                     + communication_mb
                     + optimizer_workspace_mb
+                    + (host_memory_mb if device_type in {"cpu", "mps"} else 0.0)
                 )
                 fixed_cache_phases = family.cache_memory_estimate(cfg, compute_dtype)
                 previews = preview_shapes(cfg, family.spec.latent.align)
@@ -1222,13 +1228,13 @@ def plan(
                     selection_error = None
                     if resolved is None:
                         if device_type not in {"cuda", "mps"}:
-                            selection_error = "请先选择训练显卡，再计算显存面积上限。"
+                            selection_error = "当前设备使用 CPU，无法按显存计算面积上限；请改用自动分辨率优先或自定义。"
                         elif type(gpu_total_mb) not in (int, float) or not math.isfinite(gpu_total_mb) or gpu_total_mb <= 0:
                             selection_error = "无法读取训练显卡的显存容量。"
                         elif cfg.training.train_text_encoder:
-                            selection_error = "训练文本编码器时无法计算显存面积上限，请选择按图片尺寸自动计算或自定义。"
+                            selection_error = "训练文本编码器时无法估算完整显存占用；请改用自动分辨率优先或自定义。"
                         elif fusion["unsupported"]:
-                            selection_error = "当前适配器无法估算完整显存占用，请选择按图片尺寸自动计算或自定义。"
+                            selection_error = "当前适配器无法估算完整显存占用；请改用自动分辨率优先或自定义。"
                         elif vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2"}:
                             selection_error = "无法估算当前 VAE 的显存占用，请检查模型文件或使用自定义面积上限。"
                         elif not data_layouts or native_out["auto_max_pixels"] is None:
@@ -1241,7 +1247,7 @@ def plan(
                                 fixed_preview["peak_mb_estimate"] if fixed_preview else 0,
                                 vae.weights_mb + 512 if vae is not None and ds.cache_latents else 0,
                             )
-                            budget = gpu_total_mb * HEADROOM
+                            budget = min(gpu_total_mb * HEADROOM, gpu_memory_budget_mb) if gpu_memory_budget_mb is not None else gpu_total_mb * HEADROOM
 
                             def candidate_peak(pixels, candidate_counts, candidate_images):
                                 candidate_ds = ds.model_copy(update={"native_max_pixels": pixels})
@@ -1274,6 +1280,7 @@ def plan(
                             image_shapes.clear()
                             out["warnings"] = [w for w in out["warnings"] if w.get("code") not in {
                                 "images.padding", "native.execution", "captions.missing", "buckets.small",
+                                "distributed.tail",
                             }]
                             counts = _append_data_plan(
                                 out, cfg, family.spec.latent, loop=cfg.loop, seed=cfg.loop.seed,
@@ -1313,8 +1320,10 @@ def plan(
                     "latent_encoding_workspace_mb_estimate": round(latent_workspace_mb, 1),
                     "adapter_mb": round(adapter_mb, 1),
                     "optimizer_mb": round(optimizer_mb, 1),
-                    "cpu_optimizer_mb": round(sum(cpu_optimizer.values()) / 2**20, 1),
+                    "cpu_optimizer_mb": round(cpu_optimizer_mb, 1),
                     "cpu_ema_mb": round(cpu_ema_mb, 1),
+                    "host_memory_mb_estimate": round(host_memory_mb, 1),
+                    "gpu_memory_budget_mb": gpu_memory_budget_mb,
                     "gradients_mb": round(gradients_mb, 1),
                     "compensation_mb": round(compensation_mb, 1),
                     "ema_mb": round(ema_mb, 1),
@@ -1441,6 +1450,8 @@ def plan(
             }
             out["errors"].append(issue)
             memory["unavailable_issue"] = issue
+            if out.get("native") is not None:
+                out["native"]["auto_vram_error"] = issue["msg"]
     out["params"] = params
     out["memory"] = memory
     out["text_encoding"] = (

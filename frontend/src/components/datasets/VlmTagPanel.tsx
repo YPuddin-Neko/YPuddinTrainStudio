@@ -9,7 +9,7 @@ import type { TaggingOptions } from '../../api/types';
 import CaptionOutputField, { type CaptionOutputFormat } from './CaptionOutputField';
 import VisionModelField, { VisionRuntimeNotice } from './VisionModelField';
 import { DeviceField, OperationResult, RangeField, ScopeField, SelectField, TagOutputOptions } from './VisionPanelParts';
-import { SERVICE_NAMES, resolveService, useCategoryLabels, useRememberedSettings, useScopeOptions, useTaggingSettings, useVisionModels, useVlmServices } from './visionHooks';
+import { SERVICE_NAMES, resolveService, useCategoryLabels, useRememberedSettings, useScopeOptions, useWeightedCaptionEscaping, useTaggingSettings, useVisionModels, useVlmServices } from './visionHooks';
 import { BUILTIN_TEMPLATES, defaultTemplate, defaultFormatTemplate, templateFormats, type PromptTemplate, type VlmMode, type VlmOutput } from './vlmPrompts';
 import type { PipelineOperation } from './DatasetPipelinePanel';
 import './dataset-vision.css';
@@ -39,6 +39,7 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
   const { tagging, query: settingsQuery } = useTaggingSettings();
   const catalog = useVisionModels();
   const scopes = useScopeOptions(projectId, versionId);
+  const escapeRequired = useWeightedCaptionEscaping(projectId, versionId);
   const [shared, updateShared] = useRememberedSettings('studio.vlm.service', SHARED);
   const [settings, update] = useRememberedSettings(`studio.vlm.${mode}`, modeDefaults(mode));
   const [tagger, updateTagger] = useRememberedSettings('studio.assist.tagger', TAGGER);
@@ -128,7 +129,7 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
           temperature: vlm.temperature, max_tokens: vlm.max_tokens ?? null, image_size: vlm.image_size, image_detail: vlm.image_detail,
           concurrency: vlm.concurrency, interval: vlm.interval, timeout: vlm.timeout, retries: vlm.retries,
         },
-        ...(assisted ? { tagging: { categories, model: taggerModel?.id, general_threshold: tagger.general_threshold, character_threshold: tagger.character_threshold, device: cuda ? tagger.device : 'cpu', replace_underscore: tagger.replace_underscore, escape_parentheses: tagger.escape_parentheses } } : {}),
+        ...(assisted ? { tagging: { categories, model: taggerModel?.id, general_threshold: tagger.general_threshold, character_threshold: tagger.character_threshold, device: cuda ? tagger.device : 'cpu', replace_underscore: tagger.replace_underscore, escape_parentheses: escapeRequired || tagger.escape_parentheses } } : {}),
       });
     } catch (e) { setError(formatApiError(e)); }
   };
@@ -166,7 +167,7 @@ export default function VlmTagPanel({ mode, projectId, versionId, locked, latest
             <span className="vision-field-hint">{text('用这些类别的标签作为参考。', 'Use these tag categories as reference.')}</span></div>
           {cuda && <DeviceField value={tagger.device} disabled={locked} onChange={device => updateTagger({ device })}/>}
         </div>
-        <TagOutputOptions replaceUnderscore={tagger.replace_underscore} escapeParentheses={tagger.escape_parentheses}
+        <TagOutputOptions replaceUnderscore={tagger.replace_underscore} escapeParentheses={tagger.escape_parentheses} escapeRequired={escapeRequired}
           disabled={locked} onChange={patch => updateTagger({
             ...(patch.replaceUnderscore === undefined ? {} : { replace_underscore: patch.replaceUnderscore }),
             ...(patch.escapeParentheses === undefined ? {} : { escape_parentheses: patch.escapeParentheses }),

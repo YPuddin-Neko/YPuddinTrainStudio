@@ -51,6 +51,7 @@ class GpuStats(_Out):
     mem_free_mb: int | None = None
     mem_reserved_mb: int | None = None
     mem_total_mb: int | None = None
+    memory_capacity_mb: float | None = None
     temp_c: float | None = None
     power_w: float | None = None
     power_limit_w: float | None = None
@@ -388,6 +389,8 @@ class PlanMemory(_Out):
     optimizer_mb: float = 0
     cpu_optimizer_mb: float = 0
     cpu_ema_mb: float = 0
+    host_memory_mb_estimate: float = 0
+    gpu_memory_budget_mb: float | None = None
     gradients_mb: float = 0
     estimate_scope: Literal["per_device"] = "per_device"
     communication_mb_estimate: float = 0
@@ -1038,6 +1041,7 @@ class JobCheckpoint(_Out):
     size: int | None
     created_at: float
     artifact_id: str | None = None
+    export_type: Literal["lora", "checkpoint", "diffusion_model"] | None = None
     ema: bool = False
     epoch: float | None = None  # epochs completed when saved
     loss: float | None = None  # training loss of the step it was saved at
@@ -1047,6 +1051,7 @@ class JobCheckpoint(_Out):
 class LogLine(_Out):
     offset: int = 0
     kind: Literal["record", "traceback", "text"] = "text"
+    standalone: bool = False
     ts: float | None
     level: str
     source: str | None = None
@@ -1084,6 +1089,7 @@ class QueueDevice(_Out):
     power_w: float | None = None
     power_limit_w: float | None = None
     memory_scope: str | None = None  # "unified_system" when the GPU shares system memory
+    memory_capacity_mb: float | None = None
     job_id: str | None = None
     job_name: str | None = None
     status: str | None = None
@@ -1107,6 +1113,7 @@ class Artifact(_Out):
     path: str
     size: int
     kind: str
+    export_type: Literal["lora", "checkpoint", "diffusion_model"] | None = None
     step: int | None
     created_at: float
     algo: str | None = None

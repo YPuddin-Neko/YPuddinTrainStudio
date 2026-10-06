@@ -27,6 +27,24 @@ from .xyz import (
 GRID_PIXELS = 64 * 1024 * 1024  # largest downloadable page grid
 
 
+def _prompt_conditions(text, prompts, modes, device, check):
+    conditions = {}
+    modes = list(dict.fromkeys(modes))
+    encode_prompt = getattr(text, "encode_prompt", None)
+    for prompt in dict.fromkeys(prompts):
+        shared = None
+        for mode in modes:
+            check()
+            if callable(encode_prompt):
+                condition = encode_prompt([prompt], device, mode=mode).to("cpu")
+            else:
+                if shared is None:
+                    shared = text.encode([prompt], device=device).to("cpu")
+                condition = shared
+            conditions[(prompt, mode)] = condition
+    return conditions
+
+
 def _atomic_json(path: Path, value):
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -407,9 +425,9 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
             prompts.append(request.negative)
         emit("phase.changed", phase="encoding_text")
         loaded.text.to(device)
-        for prompt in dict.fromkeys(prompts):
-            check()
-            conditions[prompt] = loaded.text.encode([prompt], device=device).to("cpu")
+        conditions = _prompt_conditions(
+            loaded.text, prompts, (cell.get("noise", "comfyui") for cell in cells), device, check
+        )
         base_conditions = dict(conditions)
         loaded.text.unload()
         check()
@@ -488,10 +506,10 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                         # text adapters when parking encoders; unloading would discard them.
                         emit("phase.changed", phase="encoding_text")
                         loaded.text.to(device)
-                        conditions = {}
-                        for prompt in base_conditions:
-                            check()
-                            conditions[prompt] = loaded.text.encode([prompt], device=device).to("cpu")
+                        conditions = _prompt_conditions(
+                            loaded.text, (prompt for prompt, _ in base_conditions),
+                            (mode for _, mode in base_conditions), device, check,
+                        )
                         loaded.text.to("cpu")
                     if swapper:
                         swapper.move_model_to_device(loaded.backbone)
@@ -510,9 +528,10 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                         )
                     )
                     guidance = cell["guidance"] if cell["guidance"] is not None else defaults.guidance
-                    cond = conditions[request.prompt].to(device)
+                    prompt_mode = cell.get("noise", "comfyui")
+                    cond = conditions[(request.prompt, prompt_mode)].to(device)
                     uncond = (
-                        conditions[request.negative].to(device) if needs_uncond(loaded, cell["cfg"]) else None
+                        conditions[(request.negative, prompt_mode)].to(device) if needs_uncond(loaded, cell["cfg"]) else None
                     )
                     emit(
                         "xyz.progress",

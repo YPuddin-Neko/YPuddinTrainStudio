@@ -30,7 +30,9 @@ export const METRICS: Record<MetricKey, MetricInfo> = {
 
 export const METRIC_KEYS = Object.keys(METRICS) as MetricKey[];
 export const MAX_CHARTS = 16;
-export const MAX_SERIES = 6;
+export const MAX_SERIES = 4;
+/** Expanded learning-rate groups and validation curves count toward the rendered limit. */
+export const MAX_PLOT_SERIES = MAX_SERIES;
 
 const series = (...keys: MetricKey[]): MetricSeriesSetting[] => keys.map(metric => ({ metric, color: METRICS[metric].color }));
 

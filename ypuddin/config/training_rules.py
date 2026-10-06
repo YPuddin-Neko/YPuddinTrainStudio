@@ -57,15 +57,6 @@ def _caption_noise_errors(cfg) -> list[dict[str, str]]:
             "objective.multires_noise_iterations", "噪声偏移与多分辨率噪声不能同时启用，请将其中一项设为 0",
         ),
     ]
-    for section in ("dataset", "validation"):
-        for index, source in enumerate(getattr(cfg, section).sources):
-            caption = source.caption
-            checks.append((
-                caption is not None and "weighted" in caption.model_fields_set
-                and caption.weighted != cfg.dataset.caption.weighted,
-                f"{section}.sources.{index}.caption.weighted",
-                "标签权重语法对整个训练任务生效，请与数据集的标签权重设置保持一致",
-            ))
     return [{"loc": loc, "msg": message} for failed, loc, message in checks if failed]
 
 

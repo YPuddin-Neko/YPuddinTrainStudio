@@ -657,8 +657,8 @@ const PAIR_NAMES: Record<string, { names: [[string, string], [string, string]]; 
   'objective.res_shift_mu': { names: [['小图', 'Small'], ['大图', 'Large']], step: '0.01' },
 };
 
-function NativePixelLimit({value, mode, estimate, english, label, onChange, onModeChange, invalid}: {
-  value: number | string; mode: 'auto' | 'auto_vram' | 'custom'; estimate?: NativeAreaEstimate; english: boolean; label: string;
+function NativePixelLimit({value, mode, estimate, english, label, onChange, onModeChange, invalid, unavailableReason}: {
+  value: number | string; mode: 'auto' | 'auto_vram' | 'custom'; estimate?: NativeAreaEstimate; english: boolean; label: string; unavailableReason?: string;
   onChange: (next: number | string) => void; onModeChange: (next: string, custom: number) => void; invalid: boolean;
 }) {
   const box = React.useRef<HTMLDivElement>(null);
@@ -676,6 +676,7 @@ function NativePixelLimit({value, mode, estimate, english, label, onChange, onMo
   }, [mode]);
   const side = typeof value === 'number' && value > 0 ? Number(Math.sqrt(value).toFixed(2)) : '';
   const amount = (vram: boolean) => {
+    if (vram && unavailableReason) return english ? 'unavailable' : '暂不可用';
     const pixels = vram ? estimate?.vramMaxPixels : estimate?.maxPixels;
     if (estimate?.state === 'ready' && typeof pixels === 'number' && pixels > 0) return String(Number(Math.sqrt(pixels).toFixed(2)));
     if (estimate?.state === 'loading') return english ? 'calculating…' : '计算中…';
@@ -695,7 +696,7 @@ function NativePixelLimit({value, mode, estimate, english, label, onChange, onMo
       aria-describedby="config-dataset.native_max_pixels-hint" value={mode}
       options={[
         {value: 'auto', label: english ? `Auto, resolution first (${amount(false)})` : `自动分辨率优先（${amount(false)}）`},
-        {value: 'auto_vram', label: english ? `Auto, VRAM first (${amount(true)})` : `自动显存优先（${amount(true)}）`},
+        {value: 'auto_vram', disabled: !!unavailableReason, label: english ? `Auto, VRAM first (${amount(true)})` : `自动显存优先（${amount(true)}）`},
         {value: 'custom', label: english ? 'Custom' : '自定义'},
       ]}
       onValueChange={next => {
@@ -731,8 +732,8 @@ function nativeAreaHint(mode: unknown, estimate: NativeAreaEstimate | undefined,
 
 /** Nullable values keep their type; an empty numeric draft becomes null on blur. */
 const SchemaValueInput: React.FC<{
-  schema: any; property: SchemaProperty; value: any; name: string; placeholder?: string; compact?: boolean; onChange: (value: any) => void;
-}> = ({ schema, property, value, name, placeholder, compact = false, onChange }) => {
+  schema: any; property: SchemaProperty; value: any; name: string; label?: string; placeholder?: string; compact?: boolean; onChange: (value: any) => void;
+}> = ({ schema, property, value, name, label, placeholder, compact = false, onChange }) => {
   const { t, i18n } = useTranslation();
   const alternatives = property.anyOf || [property];
   const nullable = alternatives.some(p => p.type === 'null');
@@ -769,17 +770,17 @@ const SchemaValueInput: React.FC<{
         name={`${name}.${key}`} compact={compact} onChange={next => onChange({ ...value, [key]: next })}/>
     </div>)}
   </div>;
-  if (prop.enum) return <StudioSelect aria-label={name} value={value == null ? '' : String(value)}
+  if (prop.enum) return <StudioSelect aria-label={label || name} value={value == null ? '' : String(value)}
     onValueChange={next => onChange(next === '' && nullable ? null : prop.enum!.find(item => String(item) === next))}
     options={[...(nullable ? [{value:'',label:emptyLabel}] : []), ...prop.enum.map(item => ({value:String(item),label:String(item)}))]}/>;
   if (prop.type === 'boolean') return nullable
-    ? <StudioSelect aria-label={name} value={value == null ? '' : String(value)} onValueChange={next => onChange(next === '' ? null : next === 'true')}
+    ? <StudioSelect aria-label={label || name} value={value == null ? '' : String(value)} onValueChange={next => onChange(next === '' ? null : next === 'true')}
       options={[{value:'',label:emptyLabel},{value:'true',label:english ? 'Enabled' : 'Enabled (开启)'},{value:'false',label:english ? 'Disabled' : 'Disabled (关闭)'}]}/>
-    : <Switch aria-label={name} checked={!!value} onCheckedChange={onChange}/>;
-  if (prop.type === 'array') return <textarea className={cls} aria-label={name} value={typeof value === 'string' ? value : JSON.stringify(value ?? [])}
+    : <Switch aria-label={label || name} checked={!!value} onCheckedChange={onChange}/>;
+  if (prop.type === 'array') return <textarea className={cls} aria-label={label || name} value={typeof value === 'string' ? value : JSON.stringify(value ?? [])}
     onChange={event => { try { onChange(JSON.parse(event.target.value)); } catch { onChange(event.target.value); } }}/>
   const numeric = prop.type === 'integer' || prop.type === 'number';
-  const input = <input id={`config-${name}`} className={cls} aria-label={name} type={numeric ? 'number' : 'text'}
+  const input = <input id={`config-${name}`} className={cls} aria-label={label || name} type={numeric ? 'number' : 'text'}
     value={value ?? ''} min={prop.minimum ?? prop['x-ui']?.min} max={prop.maximum ?? prop['x-ui']?.max}
     step={prop['x-ui']?.step ?? (prop.type === 'integer' ? 1 : 'any')}
     placeholder={nullable && numeric && !algorithmChoice ? emptyLabel : placeholder}
@@ -958,7 +959,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const backboneLabel = fullPathKey === 'training.train_backbone' && family
       ? (family.name === 'sdxl' ? (english ? 'Train main model (UNet)' : '训练主模型（UNet）') : (english ? 'Train main model (DiT)' : '训练主模型（DiT）'))
       : undefined;
-    const fieldLabel = weightMeta?.label || backboneLabel || (fullPathKey === 'objective.snr_gamma' && value.objective?.weighting === 'min_snr' ? 'Min-SNR Gamma' : configFieldLabel(fullPathKey, t(`fields.${key}`, prop.title || key), english));
+    const fieldLabel = weightMeta?.label || backboneLabel || (fullPathKey === 'training.text_encoder_lr' && family?.name === 'sdxl' ? (english ? 'CLIP-L learning rate' : 'CLIP-L 学习率') : undefined) || (fullPathKey === 'objective.snr_gamma' && value.objective?.weighting === 'min_snr' ? 'Min-SNR Gamma' : configFieldLabel(fullPathKey, t(`fields.${key}`, prop.title || key), english));
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup) && !(compact && parentPath[0] === 'training' && groupFilter.includes('training'))) return null;
@@ -1037,7 +1038,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       const enabledKey = `${key}_enabled`;
       const enabled = value[parentPath[0]]?.[enabledKey] ?? intervalRule.enabled;
       const interval = getNestedValue(value, path) === undefined ? intervalRule.fallback : getNestedValue(value, path);
-      control = <FrequencyInput name={fullPathKey} english={english} invalid={!!errorItem}
+      control = <FrequencyInput name={fullPathKey} label={fieldLabel} english={english} invalid={!!errorItem}
         enabled={!!enabled} value={interval}
         onChange={(next, checked)=>onChange(setNestedValue(value, parentPath, {...value[parentPath[0]], [key]:next === null && !checked ? intervalRule.fallback : next, [enabledKey]:checked}))}/>;
     } else if (fullPathKey === 'dataset.crop_anchor') {
@@ -1047,6 +1048,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         onValueChange={next=>onChange(setNestedValue(value,path,next))}/>;
     } else if (fullPathKey === 'dataset.native_max_pixels') {
       control = <NativePixelLimit value={fieldValue} label={fieldLabel} english={english} invalid={!!errorItem}
+        unavailableReason={family?.runtime_backend === 'cpu' ? (english ? 'CPU training has no GPU memory budget.' : 'CPU 训练无法按显存计算面积上限。') : value.training?.train_text_encoder ? (english ? 'VRAM-first sizing is unavailable while training text encoders.' : '训练文本编码器时不能使用自动显存优先。') : nativeAreaEstimate?.vramError || undefined}
         mode={value.dataset?.native_max_pixels_mode === 'auto_vram' ? 'auto_vram' : value.dataset?.native_max_pixels_mode === 'auto' ? 'auto' : 'custom'} estimate={nativeAreaEstimate}
         onModeChange={(next, custom) => onChange(setNestedValue(value, ['dataset'], {...value.dataset, native_max_pixels_mode: next, native_max_pixels: custom}))}
         onChange={next => onChange(setNestedValue(value, path, next))}/>;
@@ -1159,7 +1161,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     } else if (prop.anyOf) {
       const inputProperty = fullPathKey === 'optimizer.eps' && value.optimizer?.type !== 'prodigy_plus_sf'
         ? {...prop, anyOf: prop.anyOf.filter(branch => branch.type !== 'null')} : prop;
-      control = <SchemaValueInput schema={schema} property={inputProperty} value={fieldValue} name={fullPathKey} compact={compactField}
+      control = <SchemaValueInput schema={schema} property={inputProperty} value={fieldValue} name={fullPathKey} label={fullPathKey.startsWith('training.') ? fieldLabel : undefined} compact={compactField}
         placeholder={family && fullPathKey.startsWith('sampling.') && ['steps', 'cfg', 'shift'].includes(key) ? (family.sampling?.[key as 'steps' | 'cfg' | 'shift'] != null ? String(family.sampling[key as 'steps' | 'cfg' | 'shift']) : key === 'shift' ? t('sampling.shiftAuto') : undefined) : undefined}
         onChange={(val) => onChange(setNestedValue(value, path, val))} />;
     } else if (fullPathKey === 'model.flux2_variant') {
@@ -1232,7 +1234,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <div className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
           {/* A switch whose package is missing cannot be turned on; one already on can still be turned off. */}
           <Switch id={fieldId} aria-label={fieldLabel} aria-invalid={!!errorItem} checked={!!fieldValue}
-            disabled={!fieldValue && !!unavailableOptions?.true}
+            disabled={!fieldValue && (!!unavailableOptions?.true || !!unusedReason)}
             onCheckedChange={checked => onChange(setNestedValue(value, path, checked))}>
           </Switch>
         </div>
@@ -1381,7 +1383,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (recoveryField && React.isValidElement(control)) control = React.cloneElement(control as React.ReactElement<any>, {help:helpButton,error:errorItem?.msg});
     const body = readOnly ? <fieldset disabled className="config-readonly-control">{control}</fieldset> : control;
     const footer = <div className="config-field-footer">
-      {hint && <p id={managedReason ? `${fieldId}-managed-reason` : `${fieldId}-hint`} className="config-field-hint">{hint}</p>}
+      {hint && hint !== errorItem?.msg && <p id={managedReason ? `${fieldId}-managed-reason` : `${fieldId}-hint`} className="config-field-hint">{hint}</p>}
       {/* A reason Studio cannot phrase for this field stays in the preflight panel; the border still marks it. */}
       {errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
       {!errorItem && notices.filter(notice => notice.loc === fullPathKey).map(notice => <p key={notice.msg} className="config-field-notice">

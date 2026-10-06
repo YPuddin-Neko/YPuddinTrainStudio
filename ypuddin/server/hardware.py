@@ -651,6 +651,8 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
         vm = system_memory if system_memory is not None else psutil.virtual_memory()
         utilization = _apple_gpu_utilization()
         sensors = _apple_gpu_sensors()
+        from ypuddin.train.memory_budget import mps_memory_capacity_mb
+
         # Apple reports system unified-memory usage, not per-process GPU allocation.
         return [
             {
@@ -659,6 +661,7 @@ def gpu_info(*, include_unavailable: bool = False, system_memory: Any | None = N
                 "device": "mps",
                 "name": _apple_name(),
                 "mem_total_mb": round(vm.total / 2**20),
+                "memory_capacity_mb": mps_memory_capacity_mb(vm.total / 2**20, isolated=True),
                 "mem_used_mb": round((vm.total - vm.available) / 2**20),
                 "mem_free_mb": round(vm.available / 2**20),
                 "memory_scope": "unified_system",

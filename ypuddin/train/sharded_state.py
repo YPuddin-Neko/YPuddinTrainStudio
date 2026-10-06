@@ -386,6 +386,7 @@ def load_sharded_checkpoint(
     expected_batch_size: int | None = None,
     expected_grad_accum: int | None = None,
     expected_dataset_fingerprint: str | None = None,
+    compatible_dataset_fingerprints: tuple[str, ...] = (),
     expected_model_identity: str | None = None,
     expected_deterministic: bool | None = None,
     expected_compute_policy: dict[str, Any] | None = None,
@@ -422,7 +423,6 @@ def load_sharded_checkpoint(
             "world_size": world if expected_world_size is None else expected_world_size,
             "batch_size": expected_batch_size,
             "grad_accum": expected_grad_accum,
-            "dataset_fingerprint": expected_dataset_fingerprint,
             "model_identity": expected_model_identity,
         }
         if checks["world_size"] != world:
@@ -430,6 +430,10 @@ def load_sharded_checkpoint(
         for key, expected in checks.items():
             if expected is not None and meta.get(key) != expected:
                 raise ValueError(f"分片训练状态的 {key} 与当前训练设置不同，不能精确恢复")
+        if expected_dataset_fingerprint is not None and meta.get("dataset_fingerprint") not in (
+            expected_dataset_fingerprint, *compatible_dataset_fingerprints,
+        ):
+            raise ValueError("分片训练状态的 dataset_fingerprint 与当前训练设置不同，不能精确恢复")
         if expected_deterministic is not None:
             if meta["progress"].get("extra", {}).get("deterministic") != expected_deterministic:
                 raise ValueError("分片训练状态的可复现计算设置与当前训练不同")

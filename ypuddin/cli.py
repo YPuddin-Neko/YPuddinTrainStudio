@@ -137,16 +137,22 @@ def cmd_convert(args: argparse.Namespace) -> int:
     from safetensors.torch import save_file
 
     from ypuddin.adapters import load_adapter_file
-    from ypuddin.adapters.convert import comfy_to_kohya, kohya_to_comfy, lycoris_to_kohya, modernize_text_keys
+    from ypuddin.adapters.convert import (
+        comfy_to_kohya,
+        kohya_to_comfy,
+        lycoris_to_kohya,
+        modernize_adapter_keys,
+    )
     from ypuddin.models import get_family
 
-    tensors, meta = modernize_text_keys(*load_adapter_file(args.file))
+    tensors, meta = modernize_adapter_keys(*load_adapter_file(args.file))
     if args.to == "comfyui":
         out = kohya_to_comfy(tensors, list(get_family(args.family).adaptable_modules()))
     elif args.to == "kohya":
         out = comfy_to_kohya(lycoris_to_kohya(tensors))
     else:
         raise SystemExit(f"unknown target {args.to}")
+    out, meta = modernize_adapter_keys(out, meta)
     save_file(out, args.output, metadata=meta)
     print(f"wrote {args.output} ({len(out)} tensors)")
     return 0
@@ -156,6 +162,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
     from safetensors.torch import load_file, save_file
 
     from ypuddin.adapters import build_metadata
+    from ypuddin.adapters.convert import modernize_adapter_keys
     from ypuddin.tools import extract_from_state_dicts
 
     base, tuned = load_file(args.base), load_file(args.tuned)
@@ -180,6 +187,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
         architecture=f"{args.family}/{args.algo}",
         title=Path(args.output).stem,
     )
+    tensors, meta = modernize_adapter_keys(tensors, meta)
     save_file({k: v.contiguous() for k, v in tensors.items()}, args.output, metadata=meta)
     print(f"wrote {args.output}: {len(report)} modules")
     return 0

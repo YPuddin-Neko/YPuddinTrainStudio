@@ -19,6 +19,18 @@ INTERVAL_DEFAULTS: dict[str, dict[str, tuple[int, bool]]] = {
     "validation": {"every_steps": (100, False), "every_epochs": (1, True)},
 }
 _BOOL = TypeAdapter(bool)
+_INT = TypeAdapter(int)
+
+
+def interval_disabled(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return False
+    try:
+        return _INT.validate_python(value) == 0
+    except ValidationError:
+        return False
 
 
 def normalize_interval_section(section: str, values: Mapping[str, Any]) -> dict[str, Any]:
@@ -28,15 +40,13 @@ def normalize_interval_section(section: str, values: Mapping[str, Any]) -> dict[
         enabled = f"{field}_enabled"
         if field not in result:
             continue
+        disabled = interval_disabled(result[field])
         if enabled not in result:
-            result[enabled] = result[field] is not None
-        if result[field] is None:
-            try:
-                active = _BOOL.validate_python(result[enabled])
-            except ValidationError:
-                continue
-            if not active:
-                result[field] = fallback
+            result[enabled] = not disabled
+        if disabled:
+            # A cleared interval wins over an enabled flag retained by an old client.
+            result[enabled] = False
+            result[field] = fallback
     return result
 
 

@@ -8,7 +8,7 @@ import CheckboxSelect from '../CheckboxSelect';
 import CaptionOutputField, { type CaptionOutputFormat } from './CaptionOutputField';
 import VisionModelField, { VisionRuntimeNotice } from './VisionModelField';
 import { DeviceField, OperationResult, RangeField, ScopeField, TagOutputOptions } from './VisionPanelParts';
-import { useCategoryLabels, useRememberedSettings, useScopeOptions, useVisionModels } from './visionHooks';
+import { useCategoryLabels, useRememberedSettings, useScopeOptions, useWeightedCaptionEscaping, useVisionModels } from './visionHooks';
 import type { PipelineOperation } from './DatasetPipelinePanel';
 import './dataset-vision.css';
 
@@ -23,6 +23,7 @@ export default function AutoTagPanel({ projectId, versionId, locked, latest, hea
   const text = useWorkspaceText();
   const catalog = useVisionModels();
   const scopes = useScopeOptions(projectId, versionId);
+  const escapeRequired = useWeightedCaptionEscaping(projectId, versionId);
   const [settings, update] = useRememberedSettings('studio.autotag.settings', DEFAULTS);
   const [scope, setScope] = useState('');
   const [error, setError] = useState('');
@@ -50,7 +51,7 @@ export default function AutoTagPanel({ projectId, versionId, locked, latest, hea
           model: model?.id, general_threshold: settings.general_threshold, character_threshold: settings.character_threshold, categories: categories.length ? categories : ['general'],
           existing: settings.existing, device: cuda ? settings.device : 'cpu', trigger_word: settings.trigger.trim() || null,
           exclude_tags: settings.exclude.split(',').map(tag => tag.trim()).filter(Boolean),
-          replace_underscore: settings.replace_underscore, escape_parentheses: settings.escape_parentheses, output_format: settings.output_format,
+          replace_underscore: settings.replace_underscore, escape_parentheses: escapeRequired || settings.escape_parentheses, output_format: settings.output_format,
         },
       });
     } catch (e) { setError(formatApiError(e)); }
@@ -93,7 +94,7 @@ export default function AutoTagPanel({ projectId, versionId, locked, latest, hea
       </div>
       <div className="vision-row vision-row-quad">
         <div className="vision-field vision-field-pair"><span className="vision-field-label">{text('标签格式', 'Tag formatting')}</span>
-          <TagOutputOptions replaceUnderscore={settings.replace_underscore} escapeParentheses={settings.escape_parentheses}
+          <TagOutputOptions replaceUnderscore={settings.replace_underscore} escapeParentheses={settings.escape_parentheses} escapeRequired={escapeRequired}
             disabled={locked} onChange={patch => update({
               ...(patch.replaceUnderscore === undefined ? {} : { replace_underscore: patch.replaceUnderscore }),
               ...(patch.escapeParentheses === undefined ? {} : { escape_parentheses: patch.escapeParentheses }),

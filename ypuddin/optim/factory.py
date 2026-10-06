@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import math
+from collections import Counter
 from collections.abc import Callable
 from copy import deepcopy
 from typing import Any
@@ -195,10 +196,17 @@ def optimizer_learning_rates(
                 d = shared if use_shared else source.get("d", 0)
                 rate = float(d) * float(group.get("effective_lr", rate))
             rates.append(rate)
-    return {
-        group.get("name", str(index)): rate
-        for index, (group, rate) in enumerate(zip(optimizer.param_groups, rates, strict=True))
-    }
+    names = [str(group.get("name", index)) for index, group in enumerate(optimizer.param_groups)]
+    counts = Counter(names)
+    result = {}
+    for index, (name, rate) in enumerate(zip(names, rates, strict=True)):
+        key = name
+        if counts[name] > 1:
+            key = f"{name}/{index + 1}"
+            while key in counts or key in result:
+                key += f"/{index + 1}"
+        result[key] = rate
+    return result
 
 
 def optimizer_hyperparameter_snapshot(cfg: OptimizerConfig, optimizer: Optimizer) -> list[dict[str, Any]]:

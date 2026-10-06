@@ -61,6 +61,12 @@ export function unusedSettingReason(path: string, { family, config, english }: F
   const text = (zh: string, en: string) => english ? en : zh;
   const name = modelName(family);
   switch (path) {
+    case 'optimizer.cpu_offload':
+      if (runtime === 'mps' || runtime === 'cpu') return text('当前设备没有独立显存，CPU 卸载会增加内存占用。', 'This device has no dedicated VRAM; CPU offload increases memory use.');
+      if (config.loop?.distributed_strategy === 'fsdp' || config.optimizer?.kahan) return text('CPU 卸载需使用数据并行并关闭低精度更新补偿。', 'CPU offload requires data parallelism with Kahan updates disabled.');
+      return undefined;
+    case 'optimizer.exclude_bias_norm_from_weight_decay':
+      return !config.optimizer?.weight_decay ? text('权重衰减已为 0，此项不改变训练。', 'Weight decay is already 0, so this has no effect.') : undefined;
     case 'memory.vae_attention_chunking':
       if (family.name !== 'anima' && family.name !== 'krea2') return text('此项仅用于 Anima / Krea 2 的图片 VAE。', 'This setting applies only to the Anima / Krea 2 image VAE.');
       return runtime && runtime !== 'hip' ? text('此项仅在 HIP 环境生效，当前设备不使用 VAE 注意力分块。', 'This setting applies only on HIP; this device does not use VAE attention chunking.') : undefined;

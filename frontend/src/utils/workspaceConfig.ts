@@ -65,7 +65,7 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
   if (family.name !== 'sdxl') {
     next.dataset.caption = {...next.dataset.caption, weighted:false};
     for (const section of ['dataset', 'validation']) {
-      if (Array.isArray(next[section]?.sources)) next[section] = {...next[section], sources:next[section].sources.map((source:Record<string,any>) => source.caption ? {...source,caption:{...source.caption,weighted:false}} : source)};
+      if (Array.isArray(next[section]?.sources)) next[section] = {...next[section], sources:next[section].sources.map((source:Record<string,any>) => source.caption ? {...source,caption:Object.fromEntries(Object.entries(source.caption).filter(([key]) => key !== 'weighted'))} : source)};
     }
     next.training.text_encoder_2_lr = null;
   }

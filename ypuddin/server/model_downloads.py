@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from .context import ServiceContext
 from .db import new_id, now
-from .download_errors import download_auth_error
+from .download_errors import download_auth_error, download_http_error
 from .errors import ApiError, Conflict, NotFound
 from .model_catalog import TAGGER_FILES
 from .model_credentials import ModelCredentials, Provider
@@ -684,9 +684,7 @@ class ModelDownloads:
             if isinstance(error, urllib.error.HTTPError):
                 message = download_auth_error(
                     error, provider=row["provider"], authenticated=bool(token), mirror=row["mirror"] != "official",
-                ) or f"HTTP {error.code}: check the repository/file and your network access."
-                if error.code == 429:
-                    message += " Rate limited: save the official source token or wait before retrying."
+                ) or download_http_error(error.code)
             self._update(
                 id_,
                 status="cancelled" if event.is_set() else "failed",

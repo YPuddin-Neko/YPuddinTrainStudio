@@ -85,3 +85,68 @@ def cpu_offload_memory_bytes(cfg: OptimizerConfig, param_groups: Sequence[Mappin
                 gradients += nbytes
                 moments += nbytes * (3 if amsgrad else 2) + 4
     return {"parameter_bytes": shadows, "state_bytes": moments, "gradient_bytes": gradients}
+
+
+def cpu_offload_step_workspace_bytes(
+    cfg: OptimizerConfig, param_groups: Sequence[Mapping[str, Any]],
+) -> int:
+    """Peak AdamW CPU temporaries; parameter groups execute sequentially."""
+    if not cfg.cpu_offload:
+        return 0
+    peak = 0
+    seen: set[int] = set()
+    for group in param_groups:
+        sizes = []
+        for parameter in group["params"]:
+            if id(parameter) not in seen:
+                seen.add(id(parameter))
+                sizes.append(parameter.numel() * 4)
+        if not sizes:
+            continue
+        maximize = bool(group.get("maximize", cfg.args.get("maximize", False)))
+        if group.get("foreach", cfg.args.get("foreach", False)):
+            # Negated gradients are released before the square roots. The CPU
+            # step increment can coexist with the negated-gradient group.
+            peak = max(peak, sum(sizes) + (4 if maximize else 0))
+        else:
+            # CPU AdamW also takes this path when foreach is left as None.
+            # The preceding denominator lives until the new sqrt/divide result
+            # is assigned; maximize additionally retains a negated gradient.
+            previous = 0
+            for size in sizes:
+                peak = max(peak, previous + (3 if maximize else 2) * size)
+                if maximize:
+                    peak = max(peak, 2 * previous + size)
+                previous = size
+    return peak
+
+
+def validate_cpu_offload_memory(
+    cfg: OptimizerConfig, param_groups: Sequence[Mapping[str, Any]], *, ema_bytes: int = 0,
+) -> None:
+    """Check live host memory before allocating shadows, including CLI and old queued jobs."""
+    if not cfg.cpu_offload:
+        return
+    import psutil
+    import torch.distributed as dist
+
+    from .memory_budget import host_memory_error
+
+    distributed = dist.is_available() and dist.is_initialized()
+    world = dist.get_world_size() if distributed else 1
+    required_mb = (
+        sum(cpu_offload_memory_bytes(cfg, param_groups).values())
+        + cpu_offload_step_workspace_bytes(cfg, param_groups)
+        + ema_bytes
+    ) * world / 2**20
+    result = [None]
+    if not distributed or dist.get_rank() == 0:
+        try:
+            result[0] = host_memory_error(required_mb, psutil.virtual_memory().available / 2**20)
+        except (OSError, RuntimeError) as error:
+            result[0] = {"loc": "memory.host", "msg": f"无法读取可用系统内存，不能检查 CPU 卸载预算：{error}"}
+    # All ranks check the same snapshot before any rank starts allocating CPU copies.
+    if distributed:
+        dist.broadcast_object_list(result, src=0)
+    if result[0] is not None:
+        raise RuntimeError(result[0]["msg"])

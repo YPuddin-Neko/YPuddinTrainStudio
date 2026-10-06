@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from .db import now
-from .download_errors import download_auth_error
+from .download_errors import download_auth_error, download_http_error
 from .errors import ApiError, NotFound
 from .model_catalog import VISION_MODELS
 
@@ -271,7 +271,7 @@ class VisionModels:
             if isinstance(error, urllib.error.HTTPError):
                 message = download_auth_error(
                     error, provider=provider, authenticated=bool(token), gated=bool(entry.get("token_required")),
-                ) or f"HTTP {error.code}: the file could not be downloaded from this source"
+                ) or download_http_error(error.code)
             log.warning("vision model download %s failed: %s", model_id, message)
             self._update(model_id, status="failed", error=message, bytes_per_second=None, finished_at=now())
         finally:

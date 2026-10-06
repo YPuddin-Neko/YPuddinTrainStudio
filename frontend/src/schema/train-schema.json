@@ -2719,7 +2719,7 @@
         },
         "split_groups": {
           "default": true,
-          "description": "开启：每个参数组分别估计自适应步长。\n关闭：所有参数组共享一个自适应步长估计。",
+          "description": "开启：每个参数组分别估计自适应步长。\n关闭：所有参数组共享一个自适应步长估计。\n不同训练组件、学习率或权重衰减设置会形成不同参数组。",
           "title": "Split Groups",
           "type": "boolean",
           "x-ui": {
@@ -2732,7 +2732,7 @@
         },
         "split_groups_mean": {
           "default": false,
-          "description": "开启：取各组步长估计的调和平均值作为共同基础步长。\n关闭：各组使用各自的步长估计。",
+          "description": "开启：取各组步长估计的调和平均值作为共同基础步长，再应用各组的学习率。\n关闭：各组使用各自的步长估计。",
           "title": "Split Groups Mean",
           "type": "boolean",
           "x-ui": {

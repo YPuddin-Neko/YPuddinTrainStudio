@@ -1,13 +1,14 @@
 """Read worker logs by byte offset and parse each line's record header.
 
-A ``record`` line carries a Python logging or PyTorch glog header. A ``traceback``
-line starts an interpreter traceback printed without a header. Other ``text`` lines
+A ``record`` line carries a logging header or independently classified native output.
+A ``traceback`` line starts an interpreter traceback printed without a header. Other ``text`` lines
 belong to the record above them (traceback frames, multi-line messages, progress
 bars); the log view groups them because a record can span two reads.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from datetime import datetime
@@ -46,13 +47,40 @@ _GLOG_LEVELS = {"I": "info", "W": "warn", "E": "error", "F": "error"}
 _CAPTURED = re.compile(r"^\[captured (?P<time>[^\]]+)\] (?P<message>.*)$")
 _NCCL_CONFIGURATION = re.compile(
     r"^(?:\[rank\d+\]:\s*)?\[PG ID \d+ PG GUID \S+ Rank \d+\] "
-    r"ProcessGroupNCCL (?:initialization options|environments):(?:\s|$)"
+    r"ProcessGroupNCCL (?:initialization options|environments):(?:\s+|$)(?P<fields>.*)$"
+)
+_NCCL_NUMBER_FIELDS = (
+    "size", "global rank", "PG Name", "TIMEOUT(ms)", "USE_HIGH_PRIORITY_STREAM", "SPLIT_FROM", "SPLIT_COLOR",
+    "TORCH_NCCL_ASYNC_ERROR_HANDLING", "TORCH_NCCL_DUMP_ON_TIMEOUT", "TORCH_NCCL_WAIT_TIMEOUT_DUMP_MILSEC",
+    "TORCH_NCCL_DESYNC_DEBUG", "TORCH_NCCL_ENABLE_TIMING", "TORCH_NCCL_BLOCKING_WAIT",
+    "TORCH_NCCL_USE_TENSOR_REGISTER_ALLOCATOR_HOOK", "TORCH_NCCL_ENABLE_MONITORING",
+    "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC", "TORCH_NCCL_TRACE_BUFFER_SIZE", "TORCH_NCCL_COORD_CHECK_MILSEC",
+    "TORCH_NCCL_NAN_CHECK", "TORCH_NCCL_CUDA_EVENT_CACHE", "TORCH_NCCL_LOG_CPP_STACK_ON_UNCLEAN_SHUTDOWN",
+)
+_NCCL_FIELD = re.compile(
+    r"(?:" + "|".join(re.escape(field) for field in _NCCL_NUMBER_FIELDS) + r"):\s*\d+"
+    r"|NCCL version:\s*\d+(?:\.\d+){1,3}|TORCH_DISTRIBUTED_DEBUG:\s*(?:OFF|INFO|DETAIL)"
 )
 _NCCL_INITIALIZATION = re.compile(
     r"(?:\[rank\d+\]:\s*)?\[PG ID \d+ PG GUID \S+ Rank \d+\] "
     r"(?:ProcessGroupNCCL broadcast unique ID through store took \d+(?:\.\d+)?(?:[eE][+-]?\d+)? ms"
-    r"|ProcessGroupNCCL created ncclComm_ 0x[\da-fA-F]+ on CUDA device: (?:\d+|[\x00\x01])"
+    r"|ProcessGroupNCCL created ncclComm_ 0x[\da-fA-F]+ on CUDA device: (?:\d+|[\x00-\x07])"
     r"|NCCL_DEBUG: N/A)\s*"
+)
+_NCCL_NATIVE = re.compile(
+    _RANK + r"\s*(?:[^\s:]+:\d+:\d+\s+)?(?:\[\d+\]\s+)?"
+    r"(?:[\w./\\-]+:\d+\s+)?NCCL (?P<level>WARN|ERROR|FATAL)\s+(?P<message>.*)$"
+)
+_NCCL_DEVICE_FAILURE = re.compile(
+    r"\b(?:Cuda|HIP) failure\b|\b(?:cudaErrorMemoryAllocation|hipErrorOutOfMemory|illegal memory access)\b"
+    r"|\bunhandled (?:cuda|hip) error\b|^out of memory(?:\W|$)",
+    re.IGNORECASE,
+)
+_NATIVE_CRASH = re.compile(
+    _RANK + r"\s*(?:Memory access fault by GPU\b|Fatal Python error:"
+    r"|(?:(?:bash|zsh|sh|fish):\s*)?Segmentation fault\b"
+    r"|(?:[^\n]+:\s+line \d+:\s+|(?:\[\d+\][+-]?\s+)?)(?:\d+\s+)Segmentation fault\b)",
+    re.IGNORECASE,
 )
 
 MAX_READ = 512 * 1024
@@ -139,6 +167,50 @@ def _glog_time(match: re.Match[str], now: datetime) -> float | None:
         return None
 
 
+def _raw_event_level(line: str) -> str | None:
+    body = _PROCESS_RANK.sub("", line, count=1)
+    if not body.startswith("{"):
+        return None
+
+    def unique_fields(pairs):
+        value = dict(pairs)
+        if len(value) != len(pairs):
+            raise ValueError("duplicate JSON field")
+        return value
+
+    try:
+        value = json.loads(body, object_pairs_hook=unique_fields)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(value, dict) or not isinstance(value.get("event"), str):
+        return None
+    # Extra fields may carry diagnostics; only this complete progress-only schema is quiet.
+    if (
+        value.keys() == {"event", "step", "total"}
+        and value["event"] == "progress"
+        and type(value["step"]) is int and type(value["total"]) is int
+        and 0 <= value["step"] <= value["total"] and value["total"] > 0
+    ):
+        return "debug"
+    return "info"
+
+
+def _nccl_configuration(line: str) -> bool:
+    header = _NCCL_CONFIGURATION.fullmatch(line)
+    if header:
+        body = header["fields"].strip()
+        if not body:
+            return True
+    else:
+        body = _PROCESS_RANK.sub("", line, count=1)
+        if body[:1].isspace():
+            return False
+    fields = [field.strip() for field in body.split(",")]
+    return all(_NCCL_FIELD.fullmatch(field) for field in fields) and (
+        header is not None or any(field.partition(":")[0] not in {"size", "global rank", "PG Name"} for field in fields)
+    )
+
+
 def parse_log_lines(lines: list[str], *, now: datetime | None = None) -> list[dict[str, Any]]:
     now = now or datetime.now()
     out = []
@@ -165,10 +237,11 @@ def parse_log_lines(lines: list[str], *, now: datetime | None = None) -> list[di
     for line in out:
         # Native initialization notices bypass Python logging; retain their raw file and source.
         if line["level"] == "info" and (
-            _NCCL_CONFIGURATION.match(line["msg"]) or _NCCL_INITIALIZATION.fullmatch(line["msg"])
+            _nccl_configuration(line["msg"]) or _NCCL_INITIALIZATION.fullmatch(line["msg"])
         ):
             line["kind"] = "record"
             line["level"] = "debug"
+            line["standalone"] = True
     return out
 
 
@@ -221,8 +294,30 @@ def _parse_plain_lines(lines: list[str], *, now: datetime) -> list[dict[str, Any
                 {"kind": "record", "ts": None, "level": _LEVELS.get(level, level), "source": None, "msg": line}
             )
             continue
+        if match := _NCCL_NATIVE.match(line):
+            level = "warn" if match["level"] == "WARN" else "error"
+            if _NCCL_DEVICE_FAILURE.search(match["message"]):
+                level = "error"
+            out.append({
+                "kind": "record", "ts": None, "level": level,
+                "source": "NCCL", "msg": line, "standalone": True,
+            })
+            continue
+        if _NATIVE_CRASH.match(line):
+            out.append({
+                "kind": "record", "ts": None, "level": "error", "source": None, "msg": line,
+                # Python fatal errors print a thread dump after the header; keep it attached.
+                **({} if re.match(_RANK + r"\s*Fatal Python error:", line, re.IGNORECASE) else {"standalone": True}),
+            })
+            continue
         if _TRACEBACK.match(line):
             out.append({"kind": "traceback", "ts": None, "level": "error", "source": None, "msg": line})
+            continue
+        if level := _raw_event_level(line):
+            out.append({
+                "kind": "record", "ts": None, "level": level, "source": None,
+                "msg": line, "standalone": True,
+            })
             continue
         level = "error" if re.search(r"\b\w*(?:Error|Exception):", line) else "info"
         if level == "info" and re.search(r"(?:^\s*warning\b|\b\w*Warning:)", line, re.IGNORECASE):
@@ -241,6 +336,7 @@ def entry_levels(lines: list[Mapping[str, Any]]) -> list[str]:
     """
     levels: list[str] = []
     level = kind = rank = None
+    standalone = False
     traceback = "none"
     chained = False
     for line in lines:
@@ -251,7 +347,7 @@ def entry_levels(lines: list[Mapping[str, Any]]) -> list[str]:
         line_rank = found[1] if found else None
         body = message[found.end() :] if found else message
         different_rank = line_rank is not None and rank is not None and line_rank != rank
-        if level is None or different_rank:
+        if level is None or different_rank or standalone or line.get("standalone"):
             joins = False
         elif line_kind == "traceback":
             joins = (
@@ -268,6 +364,7 @@ def entry_levels(lines: list[Mapping[str, Any]]) -> list[str]:
             joins = False
         if not joins:
             level, kind, rank, traceback = line_level, line_kind, line_rank, "none"
+            standalone = bool(line.get("standalone"))
         if line_kind == "traceback":
             traceback = "frames"
         elif traceback == "frames" and body.strip() and not body[:1].isspace():

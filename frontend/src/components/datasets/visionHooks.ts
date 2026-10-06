@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import type { DatasetInfo, Settings, VisionCatalog, VisionModel, VlmService, VlmServices } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import { versionConfigUrl } from '../../utils/projectVersions';
 import { formatApiError } from '../../utils/errors';
 
 export const ACTIVE_DOWNLOAD = ['queued', 'downloading', 'verifying'];
@@ -136,4 +137,12 @@ export function useCategoryLabels() {
     general: text('通用', 'General'), character: text('角色', 'Characters'), copyright: text('作品', 'Works'), artist: text('画师', 'Artists'),
     meta: text('元信息', 'Meta'), model: text('生成模型', 'Generators'), quality: text('质量', 'Quality'), rating: text('评级', 'Rating'),
   } as Record<string, string>;
+}
+
+export function useWeightedCaptionEscaping(projectId: string, versionId: string) {
+  const config = useQuery({
+    queryKey: ['tagging-training-config', projectId, versionId],
+    queryFn: ({ signal }) => apiClient.get<{ model?: { family?: string }; dataset?: { caption?: { weighted?: boolean } } }>(versionConfigUrl(projectId, versionId), { signal, silent: true }),
+  });
+  return config.data?.model?.family === 'sdxl' && config.data?.dataset?.caption?.weighted === true;
 }

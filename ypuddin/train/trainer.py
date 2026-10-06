@@ -671,6 +671,17 @@ class Trainer:
         groups = self.adapters.param_groups(
             cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr
         )
+        if cfg.optimizer.cpu_offload:
+            from .optimizer_memory import validate_cpu_offload_memory
+
+            ema_bytes = 0
+            if cfg.loop.ema and cfg.training.mode == "full":
+                ema_bytes = sum(
+                    tensor.numel() * 4
+                    for module in self.adapters.modules.values()
+                    for tensor in module.state_dict().values()
+                )
+            validate_cpu_offload_memory(cfg.optimizer, groups, ema_bytes=ema_bytes)
         self.optimizer = self._build_training_optimizer(groups)
         self._prepare_grad_scaler()
         if is_schedule_free(cfg.optimizer):
@@ -1036,8 +1047,10 @@ class Trainer:
 
     def _build_text_cache(self, cache_root: Path) -> None:
         self.text_cache = TextCache(cache_root / "text")
-        # (image cache name, caption); prompts and the unconditional caption (dropout, CFG sampling) share one file.
+        # Training dropout uses the training encoder; SDXL sampling has its own prompt grammar.
         captions = {(TextCache.PROMPTS, "")}
+        preview_captions = set()
+        separate_prompts = callable(getattr(self.loaded.text, "encode_prompt", None))
         for ds in (self.bundle.train, self.bundle.validation):
             if ds is not None:
                 captions.update(ds.use_cached_captions())
@@ -1046,8 +1059,11 @@ class Trainer:
                 _load_prompts_file(self.cfg.sampling.prompts_file) if self.cfg.sampling.prompts_file else []
             )
             for p in prompts:
-                captions.update(((TextCache.PROMPTS, p.prompt), (TextCache.PROMPTS, p.negative)))
+                (preview_captions if separate_prompts else captions).update(
+                    ((TextCache.PROMPTS, p.prompt), (TextCache.PROMPTS, p.negative))
+                )
         ordered = sorted(captions)
+        total = len(ordered) + len(preview_captions)
         text_log = self._cache_progress_log("text")
         n = build_text_cache(
             ordered,
@@ -1055,18 +1071,31 @@ class Trainer:
             self.loaded.text.encode_for_cache,
             self.loaded.text.fingerprint,
             progress=lambda d, t: (
-                self.emit("cache.progress", kind="text", done=d, total=t),
-                text_log(d, t),
+                self.emit("cache.progress", kind="text", done=d, total=total),
+                text_log(d, total),
             ),
             total=len(ordered),
         )
+        if preview_captions:
+            mode = self.cfg.sampling.noise
+            n += build_text_cache(
+                sorted(preview_captions),
+                self.text_cache,
+                lambda items: self.loaded.text.encode_prompts_for_cache(items, mode=mode),
+                self.loaded.text.prompt_fingerprint(mode),
+                progress=lambda d, t: (
+                    self.emit("cache.progress", kind="text", done=len(ordered) + d, total=total),
+                    text_log(len(ordered) + d, total),
+                ),
+                total=len(preview_captions),
+            )
         if text_log.shared:
             text_log.shared_result(n)
         elif n:
             log.info(
                 "cached %d text encodings (%d captions of images and prompts) in %.1fs",
                 n,
-                len(ordered),
+                total,
                 text_log.elapsed,
             )
         else:
@@ -1161,7 +1190,8 @@ class Trainer:
             raise ValueError(
                 "checkpoint training mode differs: full-model weights and adapters are not interchangeable"
             )
-        if ck["dataset_fingerprint"] and ck["dataset_fingerprint"] != self.bundle.plan.fingerprint:
+        fingerprints = (self.bundle.plan.fingerprint, *getattr(self.bundle.plan, "compatible_fingerprints", ()))
+        if ck["dataset_fingerprint"] and ck["dataset_fingerprint"] not in fingerprints:
             if ck["format"] == 1:
                 raise ValueError(
                     "legacy checkpoint dataset fingerprint/order is incompatible with the current index; "
@@ -1235,7 +1265,7 @@ class Trainer:
 
     def _adapter_metadata(self) -> dict[str, str]:
         if self.cfg.training.mode == "full":
-            metadata = full_model_metadata(self.adapters, self.cfg, self.loaded)
+            metadata = full_model_metadata(self.adapters, self.cfg, getattr(self, "loaded", None))
             metadata["ypuddin.config_hash"] = self.config_hash
             if self.cfg.checkpoint.save_training_metadata:
                 from ypuddin.adapters.recipe import training_recipe_metadata
@@ -1525,6 +1555,28 @@ class Trainer:
             return self.loaded.text.encode(captions, self.device)
         finally:
             self.loaded.text.to("cpu")
+
+    def _preview_text_cond(self, prompt: str) -> TextCond:
+        encoder = self.loaded.text
+        encode = getattr(encoder, "encode_prompt", None)
+        if not callable(encode):
+            return self._text_cond([prompt])
+        if (getattr(self, "compute_policy", None) or {}).get("id") in DTK_TEXT_LORA_ALL_POLICY_IDS:
+            self._validate_training_compute_policy()
+            validate_compute_runtime(capture_compute_runtime(self.device), self.compute_runtime)
+        mode = self.cfg.sampling.noise
+        if self.text_mode == "cached" and self.text_cache is not None:
+            entry = self.text_cache.get(TextCache.key(TextCache.PROMPTS, prompt, encoder.prompt_fingerprint(mode)))
+            if entry is None:
+                raise RuntimeError(f"预览提示词缓存缺失：{prompt[:80]}")
+            return TextCond({key: value.unsqueeze(0) for key, value in entry.items()}).to(self.device)
+        if not self.cfg.memory.offload_text_encoder or self.device.type == "cpu":
+            return encode([prompt], self.device, mode=mode)
+        encoder.to(self.device)
+        try:
+            return encode([prompt], self.device, mode=mode)
+        finally:
+            encoder.to("cpu")
 
     def _latents(self, batch: dict[str, Any]) -> Tensor:
         if "latents" in batch:
@@ -2415,8 +2467,8 @@ class Trainer:
             )
             # A prompt without its own seed (or with 0) follows the run's preview seed.
             seed = p.seed if p.seed else base_seed + i
-            cond = self._text_cond([p.prompt])
-            uncond = self._text_cond([p.negative])
+            cond = self._preview_text_cond(p.prompt)
+            uncond = self._preview_text_cond(p.negative)
             shape = (1, self.family.spec.latent.channels, h // stride, w // stride)
             model_dtype = self.loaded.dtype if self.device.type != "cpu" else torch.float32
 

@@ -9,7 +9,7 @@ from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from .intervals import normalize_interval_section
+from .intervals import INTERVAL_DEFAULTS, interval_disabled, normalize_interval_section
 from .optimizer_rules import (
     optimizer_capabilities,
     optimizer_key,
@@ -30,6 +30,15 @@ class _Strict(BaseModel):
 
 class _IntervalConfig(_Strict):
     _interval_section: ClassVar[str]
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in INTERVAL_DEFAULTS[self._interval_section]:
+            fallback = INTERVAL_DEFAULTS[self._interval_section][name][0]
+            disabled = interval_disabled(value)
+            super().__setattr__(name, fallback if disabled else value)
+            super().__setattr__(f"{name}_enabled", not disabled)
+            return
+        super().__setattr__(name, value)
 
     @model_validator(mode="before")
     @classmethod
@@ -839,13 +848,13 @@ class OptimizerConfig(_Strict):
 
     split_groups: bool = F(
         True,
-        help="开启：每个参数组分别估计自适应步长。\n关闭：所有参数组共享一个自适应步长估计。",
+        help="开启：每个参数组分别估计自适应步长。\n关闭：所有参数组共享一个自适应步长估计。\n不同训练组件、学习率或权重衰减设置会形成不同参数组。",
         ui_=ui("optimizer", advanced=True, order=210, control="switch", show_when="optimizer.type == 'prodigy_plus_sf'"),
     )
 
     split_groups_mean: bool = F(
         False,
-        help="开启：取各组步长估计的调和平均值作为共同基础步长。\n关闭：各组使用各自的步长估计。",
+        help="开启：取各组步长估计的调和平均值作为共同基础步长，再应用各组的学习率。\n关闭：各组使用各自的步长估计。",
         ui_=ui("optimizer", advanced=True, order=220, control="switch", show_when="optimizer.type == 'prodigy_plus_sf' && optimizer.split_groups == true"),
     )
 
@@ -1709,7 +1718,7 @@ class TrainConfig(_Strict):
         from ypuddin.config.training_rules import training_errors
 
         for source in [*self.dataset.sources, *self.validation.sources]:
-            if source.caption is not None and "weighted" not in source.caption.model_fields_set:
+            if source.caption is not None:
                 object.__setattr__(source.caption, "weighted", self.dataset.caption.weighted)
         mode_errors = training_errors(self)
         if mode_errors:

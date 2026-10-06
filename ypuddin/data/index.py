@@ -417,19 +417,46 @@ def dataset_fingerprint(
     *,
     settings: dict | None = None,
 ) -> str:
+    return dataset_fingerprint_variants(records, sources, settings=settings)[0]
+
+
+def dataset_fingerprint_variants(
+    records: list[ImageRecord],
+    sources: list[DatasetSourceConfig],
+    *,
+    settings: dict | None = None,
+) -> tuple[str, ...]:
     """Identity of training content and its interpretation, independent of source locations.
 
     Caption/mask bytes and source association matter; directory names and image names do not.
     Versioning intentionally invalidates old checkpoints whose fingerprints ignored sidecars.
     """
-    h = hashlib.blake2b(digest_size=8)
     # Selection is already represented by the records; keep names out of resume identity.
     semantic_sources = [s.model_dump(mode="json", exclude={"path", "excluded_files", "excluded_dirs"}) for s in sources]
+
+    def legacy_caption_settings(values):
+        result = dict(values)
+        caption = result.get("caption")
+        if isinstance(caption, dict) and caption.get("weighted") is False:
+            result["caption"] = {key: value for key, value in caption.items() if key != "weighted"}
+        return result
+
     payload = {
         "version": 2,
         "sources": semantic_sources,
         "settings": settings or {},
         "records": sorted(record_content_key(r) for r in records),
     }
-    h.update(json.dumps(payload, sort_keys=True).encode())
-    return h.hexdigest()
+    canonical_settings = dict(settings or {})
+    if isinstance(canonical_settings.get("dataset"), dict):
+        canonical_settings["dataset"] = legacy_caption_settings(canonical_settings["dataset"])
+    canonical = {
+        **payload,
+        "sources": [legacy_caption_settings(source) for source in semantic_sources],
+        "settings": canonical_settings,
+    }
+    # Both published false-default representations describe these same records and settings.
+    return tuple(dict.fromkeys(
+        hashlib.blake2b(json.dumps(value, sort_keys=True).encode(), digest_size=8).hexdigest()
+        for value in (canonical, payload)
+    ))

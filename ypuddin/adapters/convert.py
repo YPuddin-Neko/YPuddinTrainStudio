@@ -120,9 +120,14 @@ def modernize_text_keys(
         return "lora_te_" + (path[len("model_") :] if path.startswith("model_layers_") else path)
 
     out = {}
+    sources = {}
     for key, value in tensors.items():
         module, dot, suffix = key.partition(".")
-        out[rename(module) + dot + suffix] = value
+        target = rename(module)
+        previous = sources.setdefault(target, module)
+        if previous != module:
+            raise ValueError(f"文本编码器的同一层存在重复名称：{previous}、{module}")
+        out[target + dot + suffix] = value
     meta = dict(metadata)
     try:
         targets = json.loads(meta.get("ypuddin.targets") or "{}")
@@ -133,4 +138,31 @@ def modernize_text_keys(
         meta["ypuddin.targets"] = json.dumps({rename(key): value for key, value in targets.items()})
     if isinstance(prefixes, dict) and prefixes.get("text_encoder") == "lora_te1":
         meta["ypuddin.component_prefixes"] = json.dumps({**prefixes, "text_encoder": "lora_te"})
+    return out, meta
+
+
+def has_legacy_adapter_keys(keys: Iterable[str], metadata: dict[str, str]) -> bool:
+    names = list(keys)
+    if has_legacy_text_keys(names, metadata):
+        return True
+    if metadata.get("ypuddin.family") not in (None, "flux2"):
+        return False
+    from ypuddin.models.flux2.adapter_keys import has_legacy_keys
+
+    return has_legacy_keys(names)
+
+
+def modernize_adapter_keys(
+    tensors: dict[str, Tensor], metadata: dict[str, str]
+) -> tuple[dict[str, Tensor], dict[str, str]]:
+    """Use current file aliases without casting weights or adding optional metadata."""
+    out, meta = modernize_text_keys(tensors, metadata)
+    if meta.get("ypuddin.family") in (None, "flux2"):
+        from ypuddin.models.flux2.adapter_keys import remap_adapter_keys
+
+        out = remap_adapter_keys(out, to_comfy=True)
+    if "modelspec.hash_sha256" in meta:
+        from .io import sha256_of_tensors
+
+        meta["modelspec.hash_sha256"] = "0x" + sha256_of_tensors(out)
     return out, meta

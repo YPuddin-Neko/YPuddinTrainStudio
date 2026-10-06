@@ -16,20 +16,34 @@ function bounded(point: Point, view = viewport()): Point {
   return { x: clamp(point.x, view.x + MARGIN, view.x + view.width - SIZE - MARGIN),
     y: clamp(point.y, view.y + MARGIN, view.y + view.height - SIZE - MARGIN) };
 }
-function initialPosition() {
+type Anchor = { version: 2; horizontal: 'left' | 'right'; vertical: 'top' | 'bottom'; x: number; y: number };
+function anchored(point: Point, view = viewport()): Anchor {
+  const left = point.x - view.x, top = point.y - view.y;
+  const right = view.width - SIZE - left, bottom = view.height - SIZE - top;
+  return { version: 2, horizontal: left < right ? 'left' : 'right', vertical: top < bottom ? 'top' : 'bottom',
+    x: Math.max(MARGIN, Math.min(left, right)), y: Math.max(MARGIN, Math.min(top, bottom)) };
+}
+function resolve(anchor: Anchor, view = viewport()): Point {
+  return bounded({ x: view.x + (anchor.horizontal === 'left' ? anchor.x : view.width - SIZE - anchor.x),
+    y: view.y + (anchor.vertical === 'top' ? anchor.y : view.height - SIZE - anchor.y) }, view);
+}
+function initialAnchor(): Anchor {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) return bounded(saved);
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+      if (saved.version === 2 && ['left', 'right'].includes(saved.horizontal) && ['top', 'bottom'].includes(saved.vertical)) return saved;
+      return anchored(bounded(saved));
+    }
   } catch { /* Optional browser preference. */ }
-  const view = viewport();
-  return bounded({ x: view.x + view.width - SIZE - MARGIN, y: view.y + 60 }, view);
+  return { version: 2, horizontal: 'right', vertical: 'bottom', x: MARGIN, y: MARGIN };
 }
-function remember(point: Point) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(point)); } catch { /* Optional browser preference. */ }
+function remember(anchor: Anchor) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(anchor)); } catch { /* Optional browser preference. */ }
 }
 
 export function useTaskCenterPosition(panel: React.RefObject<HTMLDivElement>, open: boolean) {
-  const [position, setPosition] = React.useState(initialPosition);
+  const anchor = React.useRef<Anchor>(initialAnchor());
+  const [position, setPosition] = React.useState(() => resolve(anchor.current));
   const current = React.useRef(position);
   const [view, setView] = React.useState(viewport);
   const [dragging, setDragging] = React.useState(false);
@@ -44,7 +58,7 @@ export function useTaskCenterPosition(panel: React.RefObject<HTMLDivElement>, op
       const active = gesture.current;
       if (!active) return;
       gesture.current = null;
-      if (active.moved) { suppressClick.current = true; remember(current.current); }
+      if (active.moved) { suppressClick.current = true; anchor.current = anchored(current.current); remember(anchor.current); }
       setDragging(false);
       try { active.target.releasePointerCapture?.(active.id); } catch { /* The browser may have released it. */ }
     };
@@ -63,7 +77,7 @@ export function useTaskCenterPosition(panel: React.RefObject<HTMLDivElement>, op
       finish();
       const nextView = viewport();
       setView(nextView);
-      current.current = bounded(current.current, nextView);
+      current.current = resolve(anchor.current, nextView);
       setPosition(current.current);
     };
     window.addEventListener('pointermove', move);
@@ -85,7 +99,7 @@ export function useTaskCenterPosition(panel: React.RefObject<HTMLDivElement>, op
       window.visualViewport?.removeEventListener('scroll', resize);
       const active = gesture.current;
       gesture.current = null;
-      if (active?.moved) remember(current.current);
+      if (active?.moved) { anchor.current = anchored(current.current); remember(anchor.current); }
       try { active?.target.releasePointerCapture?.(active.id); } catch { /* Capture already ended. */ }
     };
   }, []);

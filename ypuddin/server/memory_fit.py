@@ -9,10 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ypuddin.train.memory_budget import HEADROOM
-
-# Free memory within this share of capacity means nothing else holds the device.
-IDLE_SHARE = 0.97
+from ypuddin.train.memory_budget import HEADROOM, available_memory_budget, device_capacity
+from ypuddin.train.memory_budget import host_memory_error as host_memory_error
 
 
 def gb(mb: float) -> str:
@@ -33,17 +31,18 @@ def capacity_shortfall(
         (
             device
             for device in devices
-            if isinstance(device.get("mem_total_mb"), (int, float)) and device["mem_total_mb"] > 0
+            if device_capacity(device) is not None
         ),
-        key=lambda device: device["mem_total_mb"],
+        key=device_capacity,
         reverse=True,
     )
     if len(sized) < max(1, count):
         return None  # Missing devices are reported by the device-selection checks.
     limit = sized[max(1, count) - 1]
-    if estimate_mb <= limit["mem_total_mb"] * HEADROOM:
+    capacity = device_capacity(limit)
+    if estimate_mb <= capacity * HEADROOM:
         return None
-    return {"estimate_mb": estimate_mb, "capacity_mb": limit["mem_total_mb"], "device": limit["device"]}
+    return {"estimate_mb": estimate_mb, "capacity_mb": capacity, "device": limit["device"]}
 
 
 def shortfall_error(shortfall: dict[str, Any]) -> dict[str, str]:
@@ -68,11 +67,5 @@ def shortfall_reason(shortfall: dict[str, Any]) -> str:
 
 def fits_now(estimate_mb: float | None, device: dict[str, Any]) -> bool:
     """Whether the run can start on this device at the moment."""
-    free, total = device.get("mem_free_mb"), device.get("mem_total_mb")
-    if not estimate_mb or free is None:
-        return True
-    if estimate_mb <= free * HEADROOM:
-        return True
-    # An idle device is judged by its capacity, the same rule used when the run was accepted.
-    idle = isinstance(total, (int, float)) and total > 0 and free >= total * IDLE_SHARE
-    return idle and estimate_mb <= total * HEADROOM
+    budget = available_memory_budget(device)
+    return not estimate_mb or budget is None or estimate_mb <= budget

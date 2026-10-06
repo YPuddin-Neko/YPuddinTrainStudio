@@ -4,6 +4,8 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from ypuddin.train.memory_budget import available_memory_budget, device_capacity
+
 DeviceId = Annotated[str, Field(pattern=r"^(cuda:[0-9]+|mps)$")]
 
 
@@ -30,9 +32,21 @@ def selection_error(devices: list[str], count: int, inventory: list[dict[str, An
 
 
 def planning_devices(
-    inventory: list[dict[str, Any]], count: int, requested: list[str]
+    inventory: list[dict[str, Any]], count: int, requested: list[str], *, prefer_available: bool = False,
 ) -> list[dict[str, Any]]:
     """Use the smallest selected card, or the limiting card of an automatic allocation."""
     if requested:
         return [gpu for gpu in inventory if gpu["device"] in requested]
-    return sorted(inventory, key=lambda gpu: gpu.get("mem_total_mb") or 0, reverse=True)[:max(1, count)]
+    budget = available_memory_budget if prefer_available else device_capacity
+    return sorted(inventory, key=lambda gpu: budget(gpu) or 0, reverse=True)[:max(1, count)]
+
+
+def planning_memory(devices: list[dict[str, Any]]) -> dict[str, Any]:
+    """Every participating device must fit the same frozen per-device training geometry."""
+    target = min(devices, key=lambda gpu: device_capacity(gpu) or 0) if devices else None
+    budgets = [available_memory_budget(gpu) for gpu in devices]
+    return {
+        "gpu_total_mb": device_capacity(target) if target else None,
+        "gpu_memory_budget_mb": min(budgets) if budgets and all(value is not None for value in budgets) else None,
+        "device": target["device"] if target else "cpu",
+    }

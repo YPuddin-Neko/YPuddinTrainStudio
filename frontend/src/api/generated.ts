@@ -1472,7 +1472,7 @@ export interface paths {
         put?: never;
         /**
          * Fix Artifact Text Keys
-         * @description Rename an older file's text encoder keys to the names ComfyUI reads; weights stay the same.
+         * @description Rename an older adapter's keys to the names ComfyUI reads; weights stay the same.
          */
         post: operations["fix_artifact_text_keys_api_artifacts__aid__fix_text_keys_post"];
         delete?: never;
@@ -2970,6 +2970,8 @@ export interface components {
             size: number;
             /** Kind */
             kind: string;
+            /** Export Type */
+            export_type?: ("lora" | "checkpoint" | "diffusion_model") | null;
             /** Step */
             step: number | null;
             /** Created At */
@@ -4743,6 +4745,8 @@ export interface components {
             mem_reserved_mb?: number | null;
             /** Mem Total Mb */
             mem_total_mb?: number | null;
+            /** Memory Capacity Mb */
+            memory_capacity_mb?: number | null;
             /** Temp C */
             temp_c?: number | null;
             /** Power W */
@@ -5055,6 +5059,8 @@ export interface components {
             created_at: number;
             /** Artifact Id */
             artifact_id?: string | null;
+            /** Export Type */
+            export_type?: ("lora" | "checkpoint" | "diffusion_model") | null;
             /**
              * Ema
              * @default false
@@ -5329,6 +5335,11 @@ export interface components {
              * @enum {string}
              */
             kind: "record" | "traceback" | "text";
+            /**
+             * Standalone
+             * @default false
+             */
+            standalone: boolean;
             /** Ts */
             ts: number | null;
             /** Level */
@@ -6314,12 +6325,13 @@ export interface components {
              * Split Groups
              * @description 开启：每个参数组分别估计自适应步长。
              *     关闭：所有参数组共享一个自适应步长估计。
+             *     不同训练组件、学习率或权重衰减设置会形成不同参数组。
              * @default true
              */
             split_groups: boolean;
             /**
              * Split Groups Mean
-             * @description 开启：取各组步长估计的调和平均值作为共同基础步长。
+             * @description 开启：取各组步长估计的调和平均值作为共同基础步长，再应用各组的学习率。
              *     关闭：各组使用各自的步长估计。
              * @default false
              */
@@ -6825,6 +6837,13 @@ export interface components {
              */
             cpu_ema_mb: number;
             /**
+             * Host Memory Mb Estimate
+             * @default 0
+             */
+            host_memory_mb_estimate: number;
+            /** Gpu Memory Budget Mb */
+            gpu_memory_budget_mb?: number | null;
+            /**
              * Gradients Mb
              * @default 0
              */
@@ -7316,6 +7335,8 @@ export interface components {
             power_limit_w?: number | null;
             /** Memory Scope */
             memory_scope?: string | null;
+            /** Memory Capacity Mb */
+            memory_capacity_mb?: number | null;
             /** Job Id */
             job_id?: string | null;
             /** Job Name */

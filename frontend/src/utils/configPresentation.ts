@@ -18,7 +18,7 @@ const labels: Record<string, string> = {
   'training.cross_attn_lr': '交叉注意力学习率',
   'training.mlp_lr': 'MLP 学习率',
   'training.modulation_lr': '调制层学习率',
-  'dataset.caption.weighted': '加权 Caption',
+  'dataset.caption.weighted': '标签权重语法',
   'objective.noise_offset': '噪声偏移强度',
   'objective.multires_noise_iterations': '多分辨率噪声层数',
   'objective.multires_noise_discount': '多分辨率噪声衰减',
@@ -169,8 +169,8 @@ const optimizerEnglishHelp: Record<string, string> = {
   prodigy_steps: 'Number of optimizer updates used to estimate the step size. 0 keeps estimating throughout training; a positive value freezes the estimate afterward.',
   d_limiter: 'Limits sudden growth in the step-size estimate. On by default; SPEED uses its own estimation method when enabled.',
   schedulefree_c: 'Changes the speed of Schedule-Free weight averaging. 0 uses the default averaging; usually keep 0.',
-  split_groups: 'On: Each parameter group estimates its adaptive step size separately.\nOff: All parameter groups share one adaptive step-size estimate.',
-  split_groups_mean: 'On: Use the harmonic mean of group estimates as a shared base step size.\nOff: Each group uses its own step-size estimate.',
+  split_groups: 'On: Each parameter group estimates its adaptive step size separately.\nOff: All parameter groups share one adaptive step-size estimate.\nDifferent training components, learning rates, or weight decay settings create separate parameter groups.',
+  split_groups_mean: 'On: Use the harmonic mean of group estimates as a shared base step size, then apply each group’s learning rate.\nOff: Each group uses its own step-size estimate.',
   factored: 'Stores suitable gradient statistics in factored form to reduce optimizer-state memory. On by default; turning it off stores full statistics.',
   factored_fp32: 'Stores factored statistics in FP32 to reduce rounding errors. On by default; applies only when factored statistics are enabled.',
   use_stableadamw: 'Normalizes updates inside the optimizer using StableAdamW. On by default; cannot be combined with the Adam-atan2 option in the EPS field.',
@@ -224,7 +224,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     ? 'β1 controls schedule-free weight averaging; β2 smooths the estimate of gradient size. Usually keep this optimizer’s defaults.'
     : 'β1 控制免调度训练中的权重平均，β2 平滑梯度大小的估计。通常保留当前优化器的默认值。';
   const help: Record<string, [string, string]> = {
-    'dataset.native_max_pixels': ['分辨率优先：按训练图片计算，尽量保留原图尺寸。\n显存优先：按所选显卡和训练参数调整面积上限。\n自定义：填写等效边长，面积上限为其平方。最长边限制和模型对齐同时生效。', 'Resolution first calculates the limit from training images to preserve their original size.\nVRAM first adjusts the limit for the selected GPUs and training settings.\nCustom uses the square of the entered equivalent side length. Longest-side limits and model alignment also apply.'],
+    'dataset.native_max_pixels': ['自动分辨率优先：按训练图片计算，尽量保留原图尺寸。\n自动显存优先：在自动分辨率优先的上限内，按可用显存和训练参数缩小。\n自定义：填写等效边长，面积上限为其平方。\n所有模式同时受最长边上限和模型尺寸对齐限制。', 'Resolution first calculates the limit from training images to preserve their original size.\nVRAM first reduces the resolution-first limit to fit available GPU memory and training settings.\nCustom uses the square of the entered equivalent side length.\nAll modes also apply longest-side limits and model alignment.'],
     'dataset.native_max_side': ['填宽或高允许达到的最大长度，单位为像素。例如 4096 表示宽、高都不得超过 4096。\n面积上限和最长边上限必须同时满足，以先触及的限制为准。面积填 1024、最长边填 4096 时，2048×2048 的图片仍会因面积超限而缩小。\n想保留原图尺寸，两个上限都需要容纳原图及模型对齐补边。', 'Enter the maximum allowed width or height in pixels. 4096 means neither dimension may exceed 4096.\nBoth the area and longest-side limits must be satisfied; the tighter limit determines the size. An area setting of 1024 still downscales a 2048×2048 image even if the longest-side limit is 4096.\nTo retain the original size, both limits must accommodate the image and any model-alignment padding.'],
     'checkpoint.save_state_every_steps': ['Step：按参数更新次数保存，100 Step 为每 100 步保存。\nEpoch：按完整训练轮数保存，2 Epoch 为每完成 2 轮保存。轮中达到最大步数不算完成一轮。\n默认每 100 Step 保存；关闭开关可停用定期保存。暂停时仍会保存当前恢复点；意外退出只能从最近一次成功保存的位置继续。', 'Step: saves by optimizer updates; 100 Step saves every 100 updates.\nEpoch: saves by completed dataset passes; 2 Epoch saves after every two complete epochs. Reaching the step limit partway through an epoch does not complete it.\nDefaults to 100 Step; turn off the switch to disable periodic saving. Pausing still saves a recovery point; crashes can only recover the last successful save.'],
     'dataset.crop_anchor': ['选择裁切后要保留的位置。上中贴住顶部，多余部分从下方裁掉，可避免居中裁切削去头部；左右位置同理。仅裁掉超出训练尺寸的部分，图片与遮罩保持对齐。分桶和原生尺寸模式均适用，保留完整画面时不使用此设置。', 'Choose the part of the image to retain. Top center keeps the top edge and removes excess from the bottom, helping retain heads; left and right work similarly. Only the area outside the training dimensions is removed, and masks stay aligned. Applies to bucket and native cropping; unused when preserving the whole image.'],
@@ -232,7 +232,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     'dataset.image_fit': ['保留完整画面：等比缩放后补边，补边区域不计入直接损失，但仍作为模型输入。\n裁切填满尺寸：等比缩放至填满后，按裁切保留位置裁剪。\n新项目默认保留完整画面；旧配置沿用原来的裁切设置。', 'Pad: scales proportionally and adds padding. Padded areas are excluded from direct loss but remain part of the model input.\nCrop: scales proportionally to fill the target and crops at the selected anchor.\nNew projects default to Pad; existing configurations keep their crop setting.'],
     'dataset.native_overflow': ['等比缩小到上限内：图片超过面积或单边上限时等比缩小。\n报错并停止：图片超过上限时停止并提示调整。', 'Downscale to fit limits: scales images down proportionally when they exceed the area or side limit.\nStop with an error: stops and requests an adjustment when an image exceeds a limit.'],
     'training.mode': ['LoRA：生成 LoRA / LoKr 等附加权重。\n全量微调：直接更新所选组件的原始参数，保存模型组件。', 'LoRA: trains additional weights such as LoRA / LoKr.\nFull fine-tuning: updates the original parameters of the selected components and saves model components.'],
-    'objective.loss': ['MSE：平方误差，默认选项。\nHuber / pseudo-Huber：调整大误差的惩罚方式，更换后损失数值不能直接与 MSE 比较。', 'MSE: squared error, the default.\nHuber / pseudo-Huber: changes the penalty for large errors; loss values cannot be compared directly with MSE.'],
+    'objective.loss': ['MSE：平方误差，默认选项。\nHuber / pseudo-Huber：减弱异常大误差的影响，更换后损失数值不能直接与 MSE 比较。', 'MSE: squared error, the default.\nHuber / pseudo-Huber: reduces the influence of unusually large errors; loss values cannot be compared directly with MSE.'],
     'checkpoint.save_training_metadata': ['在导出权重中保存训练参数及下方填写的模型信息。关闭时保留模型识别、网络结构及继续训练所需的 DoRA 计算设置。', 'Save training parameters and the model information entered below in exported weights. When off, retain model identification, network structure and the DoRA compute settings needed to continue training.'],
     'dataset.resolutions': ['单个分辨率填 1024；多个用逗号或空格分隔，如 1024, 1536。填写正整数边长，不写 1024×1024。1024 表示每桶约 1024×1024 像素；每张图会在每个基准分辨率各训练一次，增加总样本和步数。', 'Enter one size as 1024, or separate multiple sizes with commas or spaces, e.g. 1024, 1536. Use positive integer side lengths, not 1024×1024. A base of 1024 gives roughly 1024×1024 pixels per bucket. Each image trains at every base resolution, increasing samples and steps.'],
     'adapter.resume_weights': ['训练结束后仍想继续优化时，可加载上次导出的 LoRA / LoKr 权重，再设置本次新增的训练轮数或步数，也可调整学习率和数据。底模、算法和权重结构需匹配。优化器和步数重新开始；中断后原样继续请使用完整恢复点。', 'To keep improving a finished run, load its exported LoRA / LoKr weights and set the additional epochs or steps for this new run. Learning rate and data may be changed. The base model, algorithm and weight structure must match. Optimizer state and counters restart; use a full recovery point for an interrupted run.'],
@@ -381,12 +381,17 @@ export const OPAQUE_CONFIG_ISSUE = '此配置未通过检查，展开详情查�
  * in the field's unit; a validator's own reason is translated from its wording.
  */
 export function presentConfigIssues(errors: ValidationIssue[], english = false): ConfigIssue[] {
-  const issues = errors.map(error => {
+  const expanded = errors.flatMap(error => {
+    const detail = String(error.msg || '').replace(/^Value error, /, '');
+    return detail.split(/; (?=[a-z_]+(?:\.[a-z_0-9]+)+: )/).map(msg => ({ ...error, msg }));
+  });
+  const issues = expanded.map(error => {
     const detail = String(error.msg || '').replace(/^Value error, /, '');
     const memory = detail.match(/^estimated peak memory ([\d.]+ GB) exceeds (.+) capacity ([\d.]+ GB)$/);
     const location = (Array.isArray(error.loc) ? error.loc.map(String).join('.') : String(error.loc || '')).replace(/^body\./, '').replace(/^config\./, '');
-    const embedded = detail.match(/\b(model\.[a-z_]+)\b/)?.[1];
-    const path = embedded && (!location || location === 'model') ? embedded : location;
+    const leading = detail.match(/^([a-z_]+(?:\.[a-z_0-9]+)+):\s*/);
+    const embedded = leading?.[1] ?? detail.match(/\b(model\.[a-z_]+)\b/)?.[1];
+    const path = embedded && (!location || location === embedded.split('.')[0]) ? embedded : location;
     const label = configFieldLabel(path, path || (english ? 'Configuration' : '配置'), english);
     const type = typeof error.type === 'string' ? error.type : undefined;
     const ctx = error.ctx && typeof error.ctx === 'object' ? error.ctx as Record<string, unknown> : undefined;
@@ -406,6 +411,7 @@ export function presentConfigIssues(errors: ValidationIssue[], english = false):
       else if (/unknown preset/i.test(detail)) message = '当前模型不支持这个训练范围，请重新选择';
       else if (Array.from(detail).every(character => character.charCodeAt(0) < 128)) message = OPAQUE_CONFIG_ISSUE;
     }
+    if (leading && path === leading[1]) message = message.replace(leading[0], '');
     return { path, label, message, detail, tab: configTabForPath(path), type, ctx };
   });
   return issues.filter((issue, index) => issues.findIndex(item => item.path === issue.path && item.detail === issue.detail) === index);

@@ -70,11 +70,12 @@ class _Batch(Downloads):
 
     over_limit = ("Regularization download exceeded its byte limit", "regularization.too_large")
 
-    def __init__(self, manager, oid, client, output, count, excluded, taken, cancelled):
+    def __init__(self, manager, oid, client, output, count, excluded, taken, cancelled, *, weighted=False):
         super().__init__(client, count, max_bytes=MAX_BATCH_BYTES, cancelled=cancelled)
         self.manager, self.oid, self.output = manager, oid, output
         self.excluded, self.taken = set(excluded), taken
         self.identities: set[str] = set()
+        self.weighted = weighted
         self.manifest: list[dict] = []
 
     def wanted(self, post: Post) -> bool:
@@ -102,8 +103,13 @@ class _Batch(Downloads):
         self.identities.add(digest)
         name = f"{self.source}_{post.id}.png"
         image.save(self.output / name)
+        tags = [tag.replace("_", " ") for tag in post.tags]
+        if self.weighted:
+            from ypuddin.data.captions import escape_literal_caption_tag
+
+            tags = [escape_literal_caption_tag(tag) for tag in tags]
         (self.output / name).with_suffix(".txt").write_text(
-            ", ".join(tag.replace("_", " ") for tag in post.tags), encoding="utf-8"
+            ", ".join(tags), encoding="utf-8"
         )
         self.manifest.append(
             {
@@ -414,6 +420,8 @@ class RegularizationManager:
                     )
                 payload = request.model_dump(mode="json") | {
                     "prompts": prompts,
+                    "weighted_captions": config.get("model", {}).get("family") == "sdxl"
+                    and config.get("dataset", {}).get("caption", {}).get("weighted", False),
                     "ownership_token": uuid.uuid4().hex,
                 }
                 if request.prompt_source == "training_tags" and request.source == "ai":
@@ -833,14 +841,18 @@ class RegularizationManager:
                     code="regularization.empty_plan",
                 )
             batch = _Batch(
-                self, oid, client, output, payload["count"], excluded, taken | profile.post_ids, cancelled
+                self, oid, client, output, payload["count"], excluded, taken | profile.post_ids, cancelled,
+                weighted=payload.get("weighted_captions", False),
             )
             collect(
                 profile, client, batch, payload["count"], lambda message: self._update(oid, message=message)
             )
             batch.finish()
             return
-        batch = _Batch(self, oid, client, output, payload["count"], excluded, taken, cancelled)
+        batch = _Batch(
+            self, oid, client, output, payload["count"], excluded, taken, cancelled,
+            weighted=payload.get("weighted_captions", False),
+        )
         tags = payload["prompt"].split()
         terms, local = client.query(tags, excluded)
         if local:

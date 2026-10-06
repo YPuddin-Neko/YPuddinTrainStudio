@@ -12,6 +12,18 @@ _OFFICIAL_HOSTS = {
 }
 
 
+def download_http_error(code: int) -> str:
+    reasons = {
+        404: "找不到下载文件，请检查模型仓库和文件名",
+        408: "下载请求超时，请重试",
+        429: "下载请求过于频繁，请稍后重试",
+    }
+    reason = reasons.get(code)
+    if reason is None:
+        reason = "下载服务器暂时出错，请稍后重试" if 500 <= code < 600 else "下载源无法提供该文件"
+    return f"{reason}（HTTP {code}）"
+
+
 def download_auth_error(
     error: HTTPError, *, provider: str, authenticated: bool,
     gated: bool = False, mirror: bool = False,

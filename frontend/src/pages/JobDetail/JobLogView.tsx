@@ -44,7 +44,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
 function LogRow({ entry, query }: { entry: LogEntry; query: string }) {
   const text = useWorkspaceText();
   const time = logTime(entry.ts);
-  const source = entry.source || 'Unknown source';
+  const source = entry.source || 'process.output';
   const detail = entry.translatedDetail ?? entry.detail;
   const original = entry.translated || entry.translatedDetail ? [entry.msg, ...entry.detail].join('\n') : undefined;
   return <div className="job-log-entry" data-level={entry.level} data-kind={entry.kind} data-tone={entry.level === 'info' ? logTone(entry.msg) ?? undefined : undefined}>

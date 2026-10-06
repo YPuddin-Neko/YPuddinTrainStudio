@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from ypuddin.config import TrainConfig, write_config
 from ypuddin.config.io import absolute_paths
 from ypuddin.runtime_profiles import current_profile
@@ -29,7 +31,7 @@ from .gpu_selection import selection_error
 from .hardware import gpu_info
 from .job_logs import SUPERVISOR_SOURCE, append_failure_record, entry_levels, read_log
 from .job_paths import deleting_jobs, event_file, log_file, state_directory
-from .memory_fit import capacity_shortfall, device_label, fits_now, gb, shortfall_reason
+from .memory_fit import capacity_shortfall, device_label, fits_now, gb, host_memory_error, shortfall_reason
 from .process_output import ProcessOutput
 from .sample_events import sample_event_loss
 from .xyz import RESIDENT_IDLE_SECONDS, resident_key, resident_label
@@ -373,6 +375,12 @@ class JobSupervisor:
         if error := selection_error(requested, count, inventory):
             self._publish_admission(job, error=error)
             return None
+        estimates = json.loads(job.get("progress_json") or "{}")
+        if check_memory and (
+            issue := host_memory_error(estimates.get("estimated_host_mb"), psutil.virtual_memory().available / 2**20)
+        ):
+            self._publish_admission(job, progress={"phase": "waiting_for_memory", "wait_reason": issue["msg"]})
+            return None
         if current_profile().endswith("-cpu"):
             if count > 1:
                 self._publish_admission(job, error="CPU 环境不能启动多卡训练")
@@ -391,7 +399,7 @@ class JobSupervisor:
             for job_id, allocation in self._devices.items()
             for device in self._allocation(allocation)
         }
-        estimate = json.loads(job.get("progress_json") or "{}").get("estimated_peak_mb") or 0
+        estimate = estimates.get("estimated_peak_mb") or 0
         candidates = [
             gpu
             for gpu in inventory
@@ -1349,7 +1357,8 @@ class JobSupervisor:
                     {
                         "estimated_peak_mb": json.loads(job.get("progress_json") or "{}").get(
                             "estimated_peak_mb"
-                        )
+                        ),
+                        "estimated_host_mb": json.loads(job.get("progress_json") or "{}").get("estimated_host_mb"),
                     }
                 ),
                 "latest_json": "{}",

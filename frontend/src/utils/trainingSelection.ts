@@ -65,7 +65,6 @@ export function selectTrainingComponents(next: Record<string, any>, previous: Re
 
 export function trainingManagedReason(config: Record<string, any>, path: string, en: boolean) {
   const full = config.training?.mode === 'full';
-  if (path === 'optimizer.cpu_offload' && (config.loop?.distributed_strategy === 'fsdp' || config.optimizer?.kahan)) return en ? 'CPU offload requires data parallelism and Kahan updates disabled.' : 'CPU 卸载需使用数据并行并关闭低精度更新补偿。';
   if (config.loop?.distributed_strategy === 'fsdp' && path === 'training.train_text_encoder' && !config.training?.train_text_encoder) return en ? 'Memory sharding currently trains the main model. Choose data parallelism to train text encoders.' : '显存分片当前训练主模型；需要训练文本编码器时请选择数据并行。';
   if (full && path === 'memory.base_precision' && config.memory?.base_precision === 'fp32') return en ? 'Full fine-tuning retains FP32 trainable weights. Mixed precision controls forward computation.' : '全量微调保留 FP32 可训练权重；前向计算精度由混合精度控制。';
   if (full && path === 'memory.blocks_to_swap' && !config.memory?.blocks_to_swap) return en ? 'Block swapping currently supports frozen adapter bases only.' : '当前层换出仅支持适配器训练中的冻结底模。';

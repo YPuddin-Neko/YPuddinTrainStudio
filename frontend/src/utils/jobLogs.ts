@@ -9,6 +9,7 @@ export interface LogEntry {
   /** Byte offset of the record's first line: unique and ordered across reads. */
   id: number;
   kind: 'record' | 'traceback' | 'text';
+  standalone?: boolean;
   ts: number | null;
   level: LogLevel;
   source: string | null;
@@ -56,7 +57,7 @@ export function groupLogLines(lines: JobLogLine[]): LogEntry[] {
     const previousRank = current?.msg.match(PROCESS_RANK)?.[1];
     const differentRank = rank !== undefined && previousRank !== undefined && rank !== previousRank;
     const warningHead = kind === 'text' && traceback !== 'frames' && WARNING_HEAD.test(line.msg);
-    const joins = current !== null && !differentRank && (kind === 'traceback'
+    const joins = current !== null && !current.standalone && !line.standalone && !differentRank && (kind === 'traceback'
       ? current.kind === 'traceback' || current.level === 'error'
         || (current.kind === 'record' && current.level === 'warn' && (traceback === 'none' || chained))
       : kind === 'text' && !warningHead
@@ -64,7 +65,8 @@ export function groupLogLines(lines: JobLogLine[]): LogEntry[] {
     if (joins && current) {
       current.detail.push(line.msg);
     } else {
-      current = { id: line.offset, kind, ts: line.ts ?? null, level, source: line.source ?? null, msg: line.msg, detail: [] };
+      current = { id: line.offset, kind, ts: line.ts ?? null, level, source: line.source ?? null, msg: line.msg, detail: [],
+        ...(line.standalone ? { standalone: true } : {}) };
       entries.push(current);
       traceback = 'none';
     }
@@ -94,14 +96,14 @@ export function visibleLogEntries(entries: LogEntry[], { filter, debug, query }:
   return entries.filter(entry => (filter === 'info' ? entry.level === 'info' : RANK[entry.level] >= minimum) && (!needle
     || entry.msg.toLocaleLowerCase().includes(needle)
     || (entry.translated || '').toLocaleLowerCase().includes(needle)
-    || (entry.source || '').toLocaleLowerCase().includes(needle)
+    || (entry.source || 'process.output').toLocaleLowerCase().includes(needle)
     || entry.translatedDetail?.some(line => line.toLocaleLowerCase().includes(needle))
     || entry.detail.some(line => line.toLocaleLowerCase().includes(needle))));
 }
 
 /** Drop the package prefix: every trainer logger starts with it. */
 export function logSource(source: string | null): string {
-  return source ? source.replace(/^ypuddin\./, '') : '';
+  return (source || 'process.output').replace(/^ypuddin\./, '');
 }
 
 export function logTime(ts: number | null): string {
@@ -110,13 +112,13 @@ export function logTime(ts: number | null): string {
   return [date.getHours(), date.getMinutes(), date.getSeconds()].map(part => String(part).padStart(2, '0')).join(':');
 }
 
-/** ``[INFO]`` for records; plain output without a declared level has none. */
+/** Every entry uses the level assigned by the log API. */
 export function logLevelTag(entry: LogEntry): string {
-  return entry.kind === 'text' && entry.level === 'info' ? '' : `[${entry.level.toUpperCase()}]`;
+  return `[${entry.level.toUpperCase()}]`;
 }
 
 export function logEntryText(entry: LogEntry): string {
   const time = logTime(entry.ts);
-  const head = [time && `[${time}]`, logLevelTag(entry), entry.source ? `${entry.source}:` : '', entry.translated ?? entry.msg].filter(Boolean).join(' ');
+  const head = [time && `[${time}]`, logLevelTag(entry), `${entry.source || 'process.output'}:`, entry.translated ?? entry.msg].filter(Boolean).join(' ');
   return [head, ...(entry.translatedDetail ?? entry.detail)].join('\n');
 }

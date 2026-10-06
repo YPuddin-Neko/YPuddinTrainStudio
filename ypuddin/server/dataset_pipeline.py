@@ -286,6 +286,8 @@ class DatasetPipeline:
             if cap_cfg is None:
                 cap_cfg = {} if source.get("is_reg") else config.get("dataset", {}).get("caption", {})
             advice: dict[str, Any] = {}
+            if family == "sdxl" and config.get("dataset", {}).get("caption", {}).get("weighted", False):
+                advice["weighted_caption_inspection"] = 1
             if family == "anima":
                 advice = {"trigger_word": cap_cfg.get("trigger_word") or ""}
                 if cap_cfg.get("shuffle") or cap_cfg.get("tag_dropout", 0) > 0:
@@ -763,6 +765,9 @@ class DatasetPipeline:
         family_name = config.get("model", {}).get("family", "anima")
         caption_formats = family_caption_formats(family_name)
         caption_profile = "anima" if config.get("model", {}).get("family") == "anima" else None
+        weighted_captions = (
+            family_name == "sdxl" and config.get("dataset", {}).get("caption", {}).get("weighted", False)
+        )
         files, global_issues = [], []
         for source in self._sources(pid, vid):
             root = Path(source["path"])
@@ -860,6 +865,10 @@ class DatasetPipeline:
                     record["caption"] = (
                         raw_caption.text() if isinstance(raw_caption, StructuredCaption) else raw_caption
                     )
+                    if weighted_captions:
+                        from ypuddin.data.captions import weighted_caption_issues
+
+                        record["issues"].extend(weighted_caption_issues(record["caption"]))
                     if caption_profile:
                         # Match expand_items: an explicit source override wins;
                         # regularization otherwise has no stochastic transforms.
@@ -1171,6 +1180,14 @@ class DatasetPipeline:
 
         return get_project_config(pid, self.c, vid).get("model", {}).get("family") == "anima"
 
+    def _weighted_tags(self, pid: str, vid: str) -> bool:
+        from .routes_work import get_project_config
+
+        config = get_project_config(pid, self.c, vid)
+        return config.get("model", {}).get("family") == "sdxl" and bool(
+            config.get("dataset", {}).get("caption", {}).get("weighted", False)
+        )
+
     def _tagger_run(self, oid: str, paths: list[str], options: dict, exclude, *, anima: bool):
         """Each image's tags as (tag, category) in caption order, from the chosen tagger."""
         from .model_catalog import LABEL_FILES, VISION_MODELS
@@ -1181,7 +1198,7 @@ class DatasetPipeline:
         entry = VISION_MODELS[options["model"]]
         files = self.vision.files(options["model"])
         provider, device_index = self._vision_provider(options["device"])
-        return self._vision_call(
+        results = self._vision_call(
             oid,
             lambda: tag_images(
                 paths,
@@ -1201,6 +1218,11 @@ class DatasetPipeline:
                 cancel=self.cancel_events.get(oid),
             ),
         )
+        if options.get("_weighted_caption_tags"):
+            from ypuddin.data.captions import escape_literal_caption_tag
+
+            return [[(escape_literal_caption_tag(tag), category) for tag, category in tags] for tags in results]
+        return results
 
     def _autotag(
         self, oid: str, work: Path, images: list[dict], options: dict, *, anima: bool = False
@@ -1804,7 +1826,9 @@ class DatasetPipeline:
                         changes = self._captions(oid, work, images, request["captions"])
                     elif action == "autotag":
                         changes = self._autotag(
-                            oid, work, images, request["tagging"], anima=self._anima(pid, vid)
+                            oid, work, images,
+                            {**request["tagging"], "_weighted_caption_tags": self._weighted_tags(pid, vid)},
+                            anima=self._anima(pid, vid)
                         )
                     elif action == "automask":
                         changes, report = self._automask(oid, work, images, request["automask"])
@@ -1815,7 +1839,8 @@ class DatasetPipeline:
                             work,
                             images,
                             request["vlm"],
-                            request["tagging"] if action == "assisttag" else None,
+                            {**request["tagging"], "_weighted_caption_tags": self._weighted_tags(pid, vid)}
+                            if action == "assisttag" else None,
                             anima=self._anima(pid, vid),
                         )
                         result.update(report)

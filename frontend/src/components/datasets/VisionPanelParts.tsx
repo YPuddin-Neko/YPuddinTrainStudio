@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Undo2 } from 'lucide-react';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import ConfigHelp from '../ConfigHelp';
 import StudioSelect from '../StudioSelect';
 import Switch from '../Switch';
 import type { PipelineOperation } from './DatasetPipelinePanel';
@@ -32,15 +33,18 @@ export function DeviceField({ value, onChange, disabled }: { value: 'auto' | 'cp
     <span className="vision-field-hint">{text('训练占满显存时可改用 CPU。', 'Use the CPU while training fills the GPU.')}</span></div>;
 }
 
-export function TagOutputOptions({ replaceUnderscore, escapeParentheses, onChange, disabled }: {
-  replaceUnderscore: boolean; escapeParentheses: boolean;
+export function TagOutputOptions({ replaceUnderscore, escapeParentheses, onChange, disabled, escapeRequired = false }: {
+  replaceUnderscore: boolean; escapeParentheses: boolean; escapeRequired?: boolean;
   onChange: (patch: { replaceUnderscore?: boolean; escapeParentheses?: boolean }) => void;
   disabled: boolean;
 }) {
   const text = useWorkspaceText();
   return <div className="vision-inline-options" aria-label={text('标签输出格式', 'Tag output formatting')}>
     <Switch checked={replaceUnderscore} disabled={disabled} onCheckedChange={checked => onChange({ replaceUnderscore: checked })}>{text('下划线转空格', 'Replace underscores with spaces')}</Switch>
-    <Switch checked={escapeParentheses} disabled={disabled} onCheckedChange={checked => onChange({ escapeParentheses: checked })}>{text('括号转义', 'Escape parentheses')}</Switch>
+    <span className="vision-option-with-help"><Switch checked={escapeRequired || escapeParentheses} disabled={disabled || escapeRequired} onCheckedChange={checked => { if (!escapeRequired && !disabled) onChange({ escapeParentheses: checked }); }}>{text('括号转义', 'Escape parentheses')}</Switch><ConfigHelp label={text('括号转义说明', 'Bracket escaping help')}>{[
+      text('在新生成的标签中，将普通圆括号写成 \\( 和 \\)。已有转义不会重复添加。', 'Writes literal parentheses as \\( and \\) in newly generated tags. Already escaped parentheses are not escaped again.'),
+      ...(escapeRequired ? [text('当前启用了加权标注，普通圆括号和方括号自动转义。关闭加权标注后恢复此选项的原选择；已有标签文件不会改写。', 'Caption weights are enabled, so literal parentheses and square brackets are escaped automatically. Disabling caption weights restores your previous choice; existing caption files are not rewritten.')] : []),
+    ].join('\n\n')}</ConfigHelp></span>
   </div>;
 }
 

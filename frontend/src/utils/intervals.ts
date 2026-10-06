@@ -20,9 +20,10 @@ export function normalizeLegacyIntervals(source: Config): Config {
     if (!section || typeof section !== 'object' || Array.isArray(section) || !Object.prototype.hasOwnProperty.call(section, key)) continue;
     const enabledKey = `${key}_enabled`;
     const hasEnabled = Object.prototype.hasOwnProperty.call(section, enabledKey);
-    const enabled = hasEnabled ? section[enabledKey] : section[key] !== null;
-    const interval = section[key] === null && enabled === false ? fallback : section[key];
-    if (hasEnabled && interval === section[key]) continue;
+    const disabledValue = section[key] === null || section[key] === 0;
+    const enabled = disabledValue ? false : hasEnabled ? section[enabledKey] : true;
+    const interval = disabledValue ? fallback : section[key];
+    if (hasEnabled && interval === section[key] && enabled === section[enabledKey]) continue;
     if (result === source) result = { ...source };
     result[group] = { ...section, [key]: interval, [enabledKey]: enabled };
   }

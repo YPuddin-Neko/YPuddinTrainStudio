@@ -1,3 +1,4 @@
+import { formatRateValue } from '../JobDetail/metricPresentation';
 import { useId, useState } from 'react';
 import { ArrowDown, BarChart3, Grid2X2, Database, Loader2 } from 'lucide-react';
 import type { Plan } from '../../api/types';
@@ -49,7 +50,7 @@ function memoryFixes(memory: Plan['memory'], native: boolean, text: (zh: string,
   return fixes.filter((fix, index) => fixes.findIndex(item => item.path === fix.path) === index);
 }
 
-export default function BucketInspector({ plan, loading, onData, hasSources = false, indexed, onIssues, onField, error, onRetry, dataset }: { plan: Plan | null; loading: boolean; onData: () => void; hasSources?: boolean; indexed?: { images: number; captioned: number }; onIssues?: () => void; onField?: (path: string) => void; error?:string; onRetry?:()=>void; dataset?: DatasetSizing }) {
+export default function BucketInspector({ plan, loading, onData, hasSources = false, indexed, onIssues, onField, error, onRetry, dataset, familyName }: { plan: Plan | null; loading: boolean; onData: () => void; hasSources?: boolean; indexed?: { images: number; captioned: number }; onIssues?: () => void; onField?: (path: string) => void; error?:string; onRetry?:()=>void; dataset?: DatasetSizing; familyName?: string }) {
   const text = useWorkspaceText();
   const routeId = useId();
   const [view, setView] = useState<'shape' | 'table'>('shape');
@@ -130,11 +131,12 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
   const totalSource = !plan?.total_steps || !plan.steps_per_epoch ? '' : plan.epochs && plan.total_steps === plan.epochs * plan.steps_per_epoch ? text(`${plan.epochs} 轮`, `${plan.epochs} epochs`) : text('按最大步数', 'max steps');
   const peak = plan?.memory?.peak_mb_estimate ?? null;
   const capacity = plan?.memory?.gpu_total_mb ?? null;
+  const budget = plan?.memory?.gpu_memory_budget_mb ?? (capacity ? capacity * 0.95 : null);
   const memoryIssue = peak == null && plan?.memory?.unavailable_issue
     ? presentConfigIssues([plan.memory.unavailable_issue], text('zh', 'en') === 'en')[0] : null;
   const memoryIssueDetail = memoryIssue?.message === OPAQUE_CONFIG_ISSUE ? memoryIssue.detail : memoryIssue?.message;
-  const overCapacity = peak != null && !!capacity && peak > capacity * 0.95;
-  const tightMemory = !overCapacity && peak != null && !!capacity && peak > capacity * 0.9;
+  const overCapacity = peak != null && !!capacity && budget != null && peak > budget;
+  const tightMemory = !overCapacity && peak != null && !!capacity && budget != null && peak > budget * 0.95;
   const memoryBlocked = overCapacity && !!plan?.errors?.some(item => item.loc === 'memory');
   // The VAE's phases are listed beside the training peak when they set the peak or come close to the card.
   const trainingPeak = plan?.memory?.training_peak_mb_estimate ?? null;
@@ -219,11 +221,11 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
         {!!plan?.params?.groups?.length && <details className="bucket-parameter-groups">
           <summary>{text('参数分组', 'Parameter groups')}</summary>
           <div className="bucket-table-wrap"><table className="bucket-table"><thead><tr>
-            <th>{text('模块', 'Module')}</th><th>{text('参数量', 'Parameters')}</th><th>{text('学习率', 'Rate')}</th>
+            <th>{text('模块', 'Module')}</th><th>{text('参数量', 'Parameters')}</th><th>{text('学习率', 'Learning rate')}</th>
           </tr></thead><tbody>{plan.params.groups.map((group, index) => <tr key={index}>
-            <td>{({backbone:text('主模型','Main model'),text_encoder:text('文本编码器','Text encoder'),text_encoder_2:'CLIP-G',llm_adapter:'LLM Adapter',self_attn:text('自注意力','Self-attention'),cross_attn:text('交叉注意力','Cross-attention'),mlp:'MLP',modulation:text('调制层','Modulation')} as Record<string,string>)[group.name] || group.name}
+            <td>{({backbone:text('主模型','Main model'),text_encoder:familyName === 'sdxl' ? 'CLIP-L' : text('文本编码器','Text encoder'),text_encoder_2:'CLIP-G',llm_adapter:'LLM Adapter',self_attn:text('自注意力','Self-attention'),cross_attn:text('交叉注意力','Cross-attention'),mlp:'MLP',modulation:text('调制层','Modulation')} as Record<string,string>)[group.name] || group.name}
               {!group.frozen && group.weight_decay === 0 && <small className="ui-muted"> · {text('无衰减','No decay')}</small>}</td>
-            <td>{formatParams(group.parameters)}</td><td>{group.frozen ? text('冻结','Frozen') : group.lr}</td>
+            <td>{formatParams(group.parameters)}</td><td>{group.frozen ? text('冻结','Frozen') : formatRateValue(group.lr)}</td>
           </tr>)}</tbody></table></div>
         </details>}
         {!!plan?.memory?.cpu_ema_mb && <dl className="estimate-list"><div><dt>{text('CPU EMA 内存', 'CPU EMA RAM')}</dt><dd>{formatBytesMB(plan.memory.cpu_ema_mb)}</dd></div></dl>}
@@ -231,6 +233,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
           <dt>{text('CPU 优化器内存', 'CPU optimizer RAM')}<ConfigHelp label={text('CPU 优化器内存说明','CPU optimizer RAM help')}>{text('每个训练进程的参数副本、状态及梯度内存，不含模型加载、数据缓存和更新临时空间。','Per-process RAM for parameter copies, states and gradients. Excludes model loading, data caches and temporary update workspace.')}</ConfigHelp></dt>
           <dd>{formatBytesMB(plan.memory.cpu_optimizer_mb)}</dd>
         </div></dl>}
+        {!!plan?.memory?.host_memory_mb_estimate && <dl className="estimate-list"><div><dt>{text('主机内存需求', 'Host memory needed')}<ConfigHelp label={text('主机内存需求说明', 'Host memory requirement help')}>{text('所有训练进程的 CPU 优化器、更新临时峰值与 CPU EMA 合计内存；不含系统、数据缓存和模型加载。', 'Combined memory for CPU optimizers, temporary update peaks and CPU EMA across all training processes. Excludes the operating system, data caches and model loading.')}</ConfigHelp></dt><dd>{formatBytesMB(plan.memory.host_memory_mb_estimate)}</dd></div></dl>}
         <div className={`estimate-memory${overCapacity ? ' is-over' : tightMemory ? ' is-tight' : ''}`}>
           <div><span>{gpus > 1 ? text('每卡显存峰值估算', 'Estimated peak per GPU') : text('显存峰值估算', 'Estimated peak memory')}</span><strong>{memoryIssue
             ? <button type="button" className="ui-link" title={memoryIssueDetail} onClick={() => onField && memoryIssue.path ? onField(memoryIssue.path) : onIssues?.()}>{text(`检查${memoryIssue.label}`, `Check ${memoryIssue.label}`)}</button>
@@ -242,9 +245,9 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
           {vaePhases.map(row => <div key={row.key}><dt>{row.label}<ConfigHelp label={text(`${row.label}说明`, `${row.label} help`)}>{row.help.filter(Boolean).join('\n')}</ConfigHelp></dt><dd>{formatBytesMB(row.phase.peak_mb_estimate)}</dd></div>)}
         </dl>}
         {overCapacity && capacity && peak != null && <div className="estimate-alert" role="alert">
-          <strong>{memoryBlocked ? text('超过显卡容量，无法开始训练', 'Exceeds GPU memory; training cannot start') : text('超过显卡容量', 'Exceeds GPU memory')}</strong>
+          <strong>{memoryBlocked ? text('超过可用显存预算，无法开始训练', 'Exceeds the available GPU memory budget; training cannot start') : text('超过可用显存预算', 'Exceeds the available GPU memory budget')}</strong>
           <p>{memoryBlocked
-            ? text(`预计峰值比单卡可用预算多 ${formatBytesMB(peak - capacity * 0.95)}（容量 ${formatBytesMB(capacity)}，保留 5% 余量）。可以这样减少显存占用：`, `The estimate exceeds the per-GPU budget by ${formatBytesMB(peak - capacity * 0.95)} (${formatBytesMB(capacity)} capacity, keeping 5% headroom). Reduce memory with:`)
+            ? text(`预计峰值比单卡可用预算多 ${formatBytesMB(peak - (budget ?? capacity * 0.95))}（当前可用预算 ${formatBytesMB(budget)}）。可以这样减少显存占用：`, `The estimate exceeds the per-GPU budget by ${formatBytesMB(peak - (budget ?? capacity * 0.95))} (current available budget ${formatBytesMB(budget)}). Reduce memory with:`)
             : text('启动前显存检查已在任务队列的调度设置中关闭，训练可能因显存不足而失败。', 'The pre-launch memory check is off in the queue settings, so training may fail for lack of memory.')}</p>
           <ul>{memoryFixes(plan?.memory, nativeMode, text).map(fix => <li key={fix.path}>{onField ? <button type="button" className="ui-link" onClick={() => onField(fix.path)}>{fix.label}</button> : fix.label}</li>)}</ul>
         </div>}

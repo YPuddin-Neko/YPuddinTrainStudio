@@ -14,6 +14,15 @@ _EXPORT = {
     for source, target in _LAYERS.items()
 }
 _IMPORT = {target: source for source, target in _EXPORT.items()}
+# The extraction CLI historically used the generic backbone prefix.
+_EXPORT.update({
+    "lora_unet_" + source.replace(".", "_"): "lora_unet_" + target.replace(".", "_")
+    for source, target in _LAYERS.items()
+})
+
+
+def has_legacy_keys(keys) -> bool:
+    return any(key.partition(".")[0] in _EXPORT for key in keys)
 
 
 def remap_adapter_keys(tensors: dict[str, Tensor], *, to_comfy: bool) -> dict[str, Tensor]:

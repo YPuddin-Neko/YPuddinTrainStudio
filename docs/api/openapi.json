@@ -5308,7 +5308,7 @@
     "/api/artifacts/{aid}/fix-text-keys": {
       "post": {
         "summary": "Fix Artifact Text Keys",
-        "description": "Rename an older file's text encoder keys to the names ComfyUI reads; weights stay the same.",
+        "description": "Rename an older adapter's keys to the names ComfyUI reads; weights stay the same.",
         "operationId": "fix_artifact_text_keys_api_artifacts__aid__fix_text_keys_post",
         "parameters": [
           {
@@ -9532,6 +9532,22 @@
           "kind": {
             "type": "string",
             "title": "Kind"
+          },
+          "export_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "lora",
+                  "checkpoint",
+                  "diffusion_model"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Export Type"
           },
           "step": {
             "anyOf": [
@@ -14199,6 +14215,17 @@
             ],
             "title": "Mem Total Mb"
           },
+          "memory_capacity_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Capacity Mb"
+          },
           "temp_c": {
             "anyOf": [
               {
@@ -15230,6 +15257,22 @@
             ],
             "title": "Artifact Id"
           },
+          "export_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "lora",
+                  "checkpoint",
+                  "diffusion_model"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Export Type"
+          },
           "ema": {
             "type": "boolean",
             "title": "Ema",
@@ -16222,6 +16265,11 @@
             ],
             "title": "Kind",
             "default": "text"
+          },
+          "standalone": {
+            "type": "boolean",
+            "title": "Standalone",
+            "default": false
           },
           "ts": {
             "anyOf": [
@@ -18760,7 +18808,7 @@
           "split_groups": {
             "type": "boolean",
             "title": "Split Groups",
-            "description": "开启：每个参数组分别估计自适应步长。\n关闭：所有参数组共享一个自适应步长估计。",
+            "description": "开启：每个参数组分别估计自适应步长。\n关闭：所有参数组共享一个自适应步长估计。\n不同训练组件、学习率或权重衰减设置会形成不同参数组。",
             "default": true,
             "x-ui": {
               "advanced": true,
@@ -18773,7 +18821,7 @@
           "split_groups_mean": {
             "type": "boolean",
             "title": "Split Groups Mean",
-            "description": "开启：取各组步长估计的调和平均值作为共同基础步长。\n关闭：各组使用各自的步长估计。",
+            "description": "开启：取各组步长估计的调和平均值作为共同基础步长，再应用各组的学习率。\n关闭：各组使用各自的步长估计。",
             "default": false,
             "x-ui": {
               "advanced": true,
@@ -20018,6 +20066,22 @@
             "type": "number",
             "title": "Cpu Ema Mb",
             "default": 0
+          },
+          "host_memory_mb_estimate": {
+            "type": "number",
+            "title": "Host Memory Mb Estimate",
+            "default": 0
+          },
+          "gpu_memory_budget_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Memory Budget Mb"
           },
           "gradients_mb": {
             "type": "number",
@@ -21308,6 +21372,17 @@
               }
             ],
             "title": "Memory Scope"
+          },
+          "memory_capacity_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Capacity Mb"
           },
           "job_id": {
             "anyOf": [

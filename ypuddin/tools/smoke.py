@@ -161,7 +161,7 @@ def run_smoke(
 
     emitter = Emitter(path=out / "events.jsonl", listeners=[on_event])
     cuda = torch.cuda.is_available() and (device is None or device.startswith("cuda"))
-    if cuda:
+    if cuda and torch.cuda.is_initialized():
         torch.cuda.reset_peak_memory_stats(device)
 
     trainer = Trainer(scfg, device=device, emitter=emitter)

@@ -15,6 +15,38 @@ from .caption_json import StructuredCaption, edited_content, load_caption, rende
 _WILDCARD = re.compile(r"\{([^{}]*)\}")
 
 
+def escape_literal_caption_tag(text: str) -> str:
+    """Quote literal tag characters before entering a weighted caption."""
+    return re.sub(r"(?<!\\)([()\[\]])", lambda match: "\\" + match.group(0), text)
+
+
+def weighted_caption_issues(text: str) -> list[dict[str, str]]:
+    plain = re.sub(r"\\.", "", text)
+    stack = []
+    balanced = True
+    for char in plain:
+        if char in "([":
+            stack.append(char)
+        elif char in ")]":
+            if not stack or stack.pop() != {")": "(", "]": "["}[char]:
+                # Round and square weight syntax may nest, but each needs its own closer.
+                balanced = False
+                break
+    balanced = balanced and not stack
+    issues = []
+    if not balanced:
+        issues.append({
+            "severity": "warning", "code": "weighted_caption_unbalanced",
+            "message": "标签中有未配对的权重括号；若括号属于表情或标签本身，请在括号前加反斜杠转义。",
+        })
+    if re.search(r"\w\s+\([^():]+\)", plain):
+        issues.append({
+            "severity": "warning", "code": "weighted_caption_literal_parentheses",
+            "message": "标签中有“名称 (限定词)”形式；括号会被解释为权重，若需保留字面括号，请在括号前加反斜杠转义。",
+        })
+    return issues
+
+
 def read_training_caption(
     path: str | Path | None, fallback: str | None = None, *, require_known_format: bool = False
 ) -> str | StructuredCaption:

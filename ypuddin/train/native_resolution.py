@@ -75,15 +75,32 @@ def _resume_pixels(cfg: TrainConfig) -> int:
 
 
 def device_capacity_mb(device: str | torch.device) -> float | None:
-    """Capacity of the runtime device; temporary occupancy is handled by admission."""
+    """Maximum working set of the runtime device, excluding reserved system memory on MPS."""
     target = torch.device(device)
     if target.type == "cuda":
         return torch.cuda.get_device_properties(target).total_memory / 2**20
     if target.type == "mps":
         import psutil
 
-        return psutil.virtual_memory().total / 2**20
+        from .memory_budget import mps_memory_capacity_mb
+
+        return mps_memory_capacity_mb(psutil.virtual_memory().total / 2**20)
     return None
+
+
+def device_memory_budget_mb(device: str | torch.device, capacity_mb: float) -> float | None:
+    """Measure a fresh run's available budget once, before freezing its area."""
+    from .memory_budget import available_memory_budget
+
+    target = torch.device(device)
+    free = None
+    if target.type == "cuda":
+        free = torch.cuda.mem_get_info(target)[0] / 2**20
+    elif target.type == "mps":
+        import psutil
+
+        free = psutil.virtual_memory().available / 2**20
+    return available_memory_budget({"mem_total_mb": capacity_mb, "mem_free_mb": free})
 
 
 def resolve_native_vram_config(
@@ -91,6 +108,7 @@ def resolve_native_vram_config(
     *,
     device: str | torch.device,
     gpu_total_mb: float | None = None,
+    gpu_memory_budget_mb: float | None = None,
     plan_result: dict[str, Any] | None = None,
 ) -> TrainConfig:
     """Resolve once for a fresh run; explicit snapshots and resumed runs keep their geometry."""
@@ -103,11 +121,14 @@ def resolve_native_vram_config(
     if plan_result is None:
         if gpu_total_mb is None:
             gpu_total_mb = device_capacity_mb(device)
+        if gpu_total_mb is not None and gpu_memory_budget_mb is None:
+            gpu_memory_budget_mb = device_memory_budget_mb(device, gpu_total_mb)
         if not isinstance(gpu_total_mb, (int, float)) or not math.isfinite(gpu_total_mb) or gpu_total_mb <= 0:
-            raise DataConfigError("dataset.native_max_pixels_mode", "无法读取目标设备的显存容量，请使用手动图像面积上限。")
+            reason = "当前设备使用 CPU，无法按显存计算面积上限" if torch.device(device).type == "cpu" else "无法读取目标设备的显存容量"
+            raise DataConfigError("dataset.native_max_pixels_mode", f"{reason}；请改用自动分辨率优先或自定义。")
         from .plan import plan
 
-        plan_result = plan(cfg, device=device, gpu_total_mb=gpu_total_mb)
+        plan_result = plan(cfg, device=device, gpu_total_mb=gpu_total_mb, gpu_memory_budget_mb=gpu_memory_budget_mb)
     native = plan_result.get("native") or {}
     if error := native.get("auto_vram_error"):
         raise DataConfigError("dataset.native_max_pixels_mode", str(error))
@@ -131,10 +152,11 @@ def resolve_distributed_native_vram_config(
     if not dist.is_initialized():
         raise RuntimeError("distributed native resolution requires an initialized process group")
     needs_budget = not cfg.checkpoint.resume and cfg.dataset.native_max_pixels_resolved is None
-    local: dict[str, Any] = {"capacity_mb": None, "error": None}
+    local: dict[str, Any] = {"capacity_mb": None, "budget_mb": None, "error": None}
     if needs_budget:
         try:
             local["capacity_mb"] = device_capacity_mb(device)
+            local["budget_mb"] = device_memory_budget_mb(device, local["capacity_mb"])
         except Exception as error:
             local["error"] = str(error)
     readings = [None] * world_size
@@ -145,6 +167,7 @@ def resolve_distributed_native_vram_config(
             if any(reading["error"] for reading in readings):
                 raise ValueError("；".join(reading["error"] for reading in readings if reading["error"]))
             capacities = [reading["capacity_mb"] for reading in readings]
+            budgets = [reading.get("budget_mb") for reading in readings]
             if needs_budget and any(
                 not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0
                 for value in capacities
@@ -153,6 +176,7 @@ def resolve_distributed_native_vram_config(
             planning_cfg = cfg.model_copy(update={"loop": cfg.loop.model_copy(update={"gpu_count": world_size})})
             resolved = resolve_native_vram_config(
                 planning_cfg, device=device, gpu_total_mb=min(capacities) if needs_budget else None,
+                gpu_memory_budget_mb=min(budgets) if needs_budget and all(value is not None for value in budgets) else None,
             )
             result[0] = {"pixels": resolved.dataset.native_max_pixels_resolved}
         except Exception as error:

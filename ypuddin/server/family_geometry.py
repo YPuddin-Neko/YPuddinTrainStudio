@@ -142,6 +142,7 @@ class FamilyGeometry:
         self._proc: subprocess.Popen[str] | None = None
         self._failed_at: float | None = None
         self._failure = ""
+        self._family_failures: dict[str, str] = {}
         self._closed = False
 
     def start(self) -> threading.Event:
@@ -164,13 +165,16 @@ class FamilyGeometry:
             return done
 
     def layers(self, name: str) -> dict[str, Any]:
-        """The family's layer counts; waits for a measurement in progress and starts one if needed."""
+        """Wait for the initial measurement; retry failed measurements in the background."""
         if (known := _measured.get(name)) is not None:
             return known
-        self.start().wait(self.timeout + 30)  # the child is stopped at its timeout
+        retry = self._failed_at is not None
+        done = self.start()
+        if not retry:
+            done.wait(self.timeout + 30)  # the child is stopped at its timeout
         if (known := _measured.get(name)) is not None:
             return known
-        return unmeasured(name, self._failure or "not measured")
+        return unmeasured(name, self._family_failures.get(name) or self._failure or "not measured")
 
     def close(self, timeout: float = 10.0) -> None:
         with self._lock:
@@ -196,6 +200,7 @@ class FamilyGeometry:
             )
             stored = {}
             failures = []
+            family_failures = {}
             with _lock:
                 for name in available():
                     geometry = families.get(name)
@@ -206,6 +211,7 @@ class FamilyGeometry:
                             else "missing layer counts"
                         )
                         failures.append(f"{name}: {reason}")
+                        family_failures[name] = reason
                         log.warning("Model family %s has no layer counts: %s", name, reason)
                         continue
                     _measured[name] = geometry
@@ -217,11 +223,13 @@ class FamilyGeometry:
             with self._lock:
                 self._failed_at = time.monotonic() if failures else None
                 self._failure = "; ".join(failures)
+                self._family_failures = family_failures
         except Exception as error:  # noqa: BLE001
             with self._lock:
                 closed = self._closed
                 self._failed_at = time.monotonic()
                 self._failure = str(error) or type(error).__name__
+                self._family_failures = {}
             if not closed:
                 log.warning("Could not measure model family layers: %s", error)
         finally:
