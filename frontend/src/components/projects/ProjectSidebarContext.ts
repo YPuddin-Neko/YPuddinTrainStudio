@@ -16,5 +16,5 @@ export interface ProjectSidebarSelection {
 export const ProjectSidebarContext = createContext<{
   target: HTMLDivElement | null;
   closeNavigation: () => void;
-  register?: (selection: ProjectSidebarSelection, beforeAction?: () => Promise<void>) => () => void;
+  register?: (selection: ProjectSidebarSelection, beforeAction?: () => Promise<void>, refresh?: () => Promise<unknown>) => () => void;
 } | null>(null);

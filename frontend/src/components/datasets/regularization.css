@@ -18,6 +18,14 @@
 .reg-options[open] > :not(summary) { margin-top:12px; }
 .reg-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .reg-actions > span { font-size:11px; color:var(--studio-dim); }
+.reg-action-buttons { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; }
+.reg-model-fields { min-width:0; border-top:1px solid var(--studio-line); padding-top:12px; }
+.reg-model-fields legend { display:flex; align-items:center; gap:8px; font-size:12px; padding-right:8px; }
+.reg-model-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.reg-model-path { display:grid; gap:7px; min-width:0; }
+.reg-model-label,.reg-model-switch { display:flex; align-items:center; gap:8px; }
+.reg-model-switch { align-self:center; }
+.regularization-panel > form .reg-model-switch .studio-switch { display:inline-flex; }
 .reg-error { color:#b91c1c; font-size:12px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; margin:8px 0; }
 .dark .reg-error,.dark .reg-failed { color:#fca5a5; }
 .reg-error .ui-btn { margin-left:8px; }
@@ -29,7 +37,7 @@
 .reg-task details { margin-top:8px; }
 .reg-task pre { margin-top:8px; padding:10px; max-height:180px; overflow:auto; background:var(--studio-muted); border-radius:6px; font-size:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .reg-failed { color:#b91c1c; }
-@media(max-width:540px) { .regularization-panel { padding:12px; } .reg-grid-three { grid-template-columns:repeat(2,minmax(0,1fr)); } .reg-actions { flex-wrap:wrap; } .reg-actions > span { flex-basis:100%; } .reg-actions > button { margin-left:auto; } }
+@media(max-width:540px) { .regularization-panel { padding:12px; } .reg-grid-three { grid-template-columns:repeat(2,minmax(0,1fr)); } .reg-model-grid { grid-template-columns:minmax(0,1fr); } .reg-actions { flex-wrap:wrap; } .reg-actions > span { flex-basis:100%; } .reg-action-buttons { margin-left:auto; } }
 .reg-training-plan { display:grid; gap:12px; min-width:0; padding-top:12px; border-top:1px solid var(--studio-line); }
 .reg-tag-selection { display:grid; gap:8px; min-width:0; font-size:12px; }
 .reg-tag-selection > div { display:flex; flex-wrap:wrap; gap:6px; max-height:180px; overflow:auto; }

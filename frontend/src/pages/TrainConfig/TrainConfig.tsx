@@ -1,4 +1,5 @@
 import React from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useNavigate, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { SchemaForm, ValidationError, SourceRoleInfo, OutputBindingInfo, type NativeAreaEstimate } from '../../schema/SchemaForm/SchemaForm';
@@ -18,7 +19,7 @@ import { doraConfirmationMessages, readDoraPrecisionReport, type DoraPrecisionRe
 import { useWorkspaceText } from '../../utils/workspaceText';
 import ProjectWorkspaceHeader from '../../components/projects/ProjectWorkspaceHeader';
 import { useProjectVersions } from '../../components/projects/useProjectVersions';
-import { projectUrl, versionConfigUrl, type VersionedProject } from '../../utils/projectVersions';
+import { projectUrl, versionConfigUrl, type VersionedProject, type ProjectVersion } from '../../utils/projectVersions';
 import '../../styles/project-workspace.css';
 import BucketInspector from './BucketInspector';
 import StudioSelect from '../../components/StudioSelect';
@@ -106,6 +107,7 @@ export default function TrainConfig() {
   return <TrainConfigContent key={`${id}/${versionId || 'active'}`} projectId={id} versionId={versionId}/>;
 }
 function TrainConfigContent({ projectId, versionId }: { projectId?: string; versionId?: string }) {
+  const queryClient = useQueryClient();
   const { t, i18n } = useTranslation();
   const english = i18n.language.startsWith('en');
   const text = useWorkspaceText();
@@ -219,6 +221,12 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     saveStatusMounted.current = true;
     return () => { saveStatusMounted.current = false; };
   }, []);
+  const refreshSavedFamily = React.useCallback((owner: string, version: string | null | undefined, draft: Record<string, any>) => {
+    const savedVersion = queryClient.getQueryData<ProjectVersion[]>(['project-versions', owner])?.find(item => item.id === version);
+    if (savedVersion?.family === draft.model?.family) return;
+    void queryClient.invalidateQueries({ queryKey: ['project-versions', owner] });
+    void queryClient.invalidateQueries({ queryKey: ['project', owner] });
+  }, [queryClient]);
   const persistDraft = React.useCallback(async (owner: string, version: string | null | undefined, draft: Record<string, any>) => {
     const revision = ++saveStatusRevision.current;
     const current = () => saveStatusMounted.current && revision === saveStatusRevision.current
@@ -231,6 +239,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     }
     try {
       await apiClient.put(versionConfigUrl(owner, version), draft, { silent: true });
+      refreshSavedFamily(owner, version, draft);
       if (current()) setDraftSaveState('idle');
     } catch (err) {
       if (current()) {
@@ -240,7 +249,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       }
       throw err;
     }
-  }, [setError, setDraftSaveState]);
+  }, [setError, setDraftSaveState, refreshSavedFamily]);
   React.useLayoutEffect(() => {
     draftRef.current = { projectId, versionId, config, loaded, archived };
     if (projectId && loaded && !archived) rememberTrainingDraft(trainingDraftKey(projectId, versionId), config, submittedConfigRef.current || lastSavedRef.current);
@@ -254,11 +263,14 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     rememberTrainingDraft(key, draft.config, submittedConfigRef.current || lastSavedRef.current);
     if (datasetRefreshBlocked.current) return;
     saveQueueRef.current = saveQueueRef.current.catch(() => {}).then(async () => {
-      if (encoded !== lastSavedRef.current) await apiClient.put(versionConfigUrl(draft.projectId!, draft.versionId), draft.config, { silent: true });
+      if (encoded !== lastSavedRef.current) {
+        await apiClient.put(versionConfigUrl(draft.projectId!, draft.versionId), draft.config, { silent: true });
+        refreshSavedFamily(draft.projectId!, draft.versionId, draft.config);
+      }
       clearSavedTrainingDraft(key, encoded);
     });
     void saveQueueRef.current.catch(() => {});
-  }, [projectId, versionId]);
+  }, [projectId, versionId, refreshSavedFamily]);
 
   const flushDraft = async () => {
     if (datasetRefreshPending.current) await datasetRefreshPending.current;

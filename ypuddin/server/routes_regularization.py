@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from ypuddin.config import ModelConfig
 from ypuddin.config.issues import plain_context
 
 from .errors import ApiError
@@ -44,6 +45,7 @@ router = APIRouter(route_class=SecretSafeRoute)
 class RegularizationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: Literal["ai", "danbooru", "gelbooru", "e621", "rule34"] = "ai"
+    model: ModelConfig | None = None
     prompt: str = Field("", max_length=8000)
     prompt_source: Literal["manual", "training_tags"] = "manual"
     source_ids: list[str] = Field(default_factory=list, max_length=200)
@@ -212,3 +214,8 @@ def operation(oid: str, service=Depends(manager)):
 @router.post("/regularization/{oid}/cancel", response_model=RegularizationTask)
 def cancel(oid: str, service=Depends(manager)):
     return service.cancel(oid)
+
+
+@router.post("/regularization/{oid}/release", response_model=RegularizationTask)
+def release(oid: str, service=Depends(manager)):
+    return service.release(oid)

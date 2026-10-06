@@ -7,8 +7,8 @@ import type { ProjectVersion, VersionedProject } from '../../utils/projectVersio
 import type { ProjectSidebarSelection } from './ProjectSidebarContext';
 import ProjectWorkspaceHeader from './ProjectWorkspaceHeader';
 
-export default function PersistentProjectSidebar({selection,beforeAction}: {
-  selection: ProjectSidebarSelection; beforeAction: () => Promise<void>;
+export default function PersistentProjectSidebar({selection,beforeAction,refreshPage}: {
+  selection: ProjectSidebarSelection; beforeAction: () => Promise<void>; refreshPage?: () => Promise<void>;
 }) {
   const location = useLocation();
   const pageOwnsSelection = selection.routeKey === location.key;
@@ -45,6 +45,6 @@ export default function PersistentProjectSidebar({selection,beforeAction}: {
   if(unresolvedWorkspace || missing || !pageOwnsSelection && project.archived)return null;
   return <ProjectWorkspaceHeader sidebarOnly project={project} versionId={versionId} versions={versions} current={current}
     active={selection.active} workflowActive={pageOwnsSelection} beforeAction={beforeAction}
-    refresh={async()=>{await Promise.all([projectQuery.refetch(),versionsQuery.refetch()]);}}
+    refresh={async()=>{await Promise.all([projectQuery.refetch(),versionsQuery.refetch(),pageOwnsSelection && refreshPage?.()]);}}
     error={pageOwnsSelection ? undefined : projectQuery.error || versionsQuery.error}/>;
 }

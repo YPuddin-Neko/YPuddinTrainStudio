@@ -35,8 +35,8 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
   const registerSidebar = sidebar?.register;
   React.useLayoutEffect(()=>{
     if(sidebarOnly || !registerSidebar)return;
-    return registerSidebar({project,versionId,versions,current,active,routeKey:location.key,pathname:location.pathname},beforeAction);
-  },[sidebarOnly,registerSidebar,project,versionId,versions,current,active,location.key,location.pathname,beforeAction]);
+    return registerSidebar({project,versionId,versions,current,active,routeKey:location.key,pathname:location.pathname},beforeAction,refresh);
+  },[sidebarOnly,registerSidebar,project,versionId,versions,current,active,location.key,location.pathname,beforeAction,refresh]);
   const [dialog, setDialog] = React.useState<'create' | 'edit' | 'compare' | 'paths' | null>(null);
   const [name, setName] = React.useState('');
   const [note, setNote] = React.useState('');
@@ -59,8 +59,8 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
   }, [sidebarOnly,busy,versionId,current?.status,current?.archived,current?.busy,project.id,project.active_version_id,queryClient]);
   const readyVersions = versions.filter(item => item.status === 'ready');
   const sourceFamily = versions.find(item => item.id === source)?.family;
-  const familyLabel = (value?: string) => value === 'flux' ? `FLUX.1 · ${text('已停用', 'Retired')}` : families.find(item => item.name === value)?.label || value || text('沿用配置', 'From configuration');
-  const familyOptions = trainingFamilyOptions(families, text('zh', 'en') === 'en', sourceFamily || family);
+  const familyLabel = (value?: string) => value === 'flux' ? `FLUX.1 · ${text('已停用', 'Retired')}` : trainingFamilyOptions(families, text('zh', 'en') === 'en', value).find(item => item.value === value)?.label || value || text('沿用配置', 'From configuration');
+  const familyOptions = trainingFamilyOptions(families, text('zh', 'en') === 'en', dialog === 'edit' ? family : sourceFamily || family);
   const incompatibleFamily = !!sourceFamily && !!family && sourceFamily !== family;
   const copySources = readyVersions.filter(item => !item.archived && !('busy' in item && item.busy));
   const switchVersion = async (nextId: string) => {
@@ -82,7 +82,7 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
       setName(kind === 'edit' ? current?.name || '' : `v${Math.max(versions.length, ...versions.map(item => item.number || 0)) + 1}`);
       setNote(kind === 'edit' ? current?.note || '' : '');
       const origin = copySources.find(item => item.id === current?.id) || copySources[0];
-      setSource(origin?.id || ''); setFamily(origin?.family || ''); setMode('copy');
+      setSource(origin?.id || ''); setFamily(kind === 'edit' ? current?.display_family ?? current?.family ?? '' : origin?.family || ''); setMode('copy');
       setCompareTo(readyVersions.find(item => item.id !== selectedId)?.id || ''); setComparison(null);
       setDialog(kind);
     } catch (error) { setError(formatApiError(error)); }
@@ -104,8 +104,9 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
         const next = await apiClient.post<ProjectVersion>(`/projects/${project.id}/versions`, { name: name.trim(), note: note.trim(), source_version_id: source || null, data_mode: source ? mode : 'empty', copy_config: !!source, ...(family ? {family} : {}) }, { silent: true });
         await refresh(); setDialog(null); navigate(projectUrl(project.id, next.id));
       } else if (current && !current.archived) {
-        await apiClient.patch(`/projects/${project.id}/versions/${current.id}`, { name: name.trim(), note: note.trim() }, { silent: true });
-        await refresh(); setDialog(null);
+        const updated = await apiClient.patch<ProjectVersion>(`/projects/${project.id}/versions/${current.id}`, { name: name.trim(), note: note.trim(), ...(family !== (current.display_family ?? current.family ?? '') ? { display_family: family || null } : {}) }, { silent: true });
+        queryClient.setQueryData<ProjectVersion[]>(['project-versions', project.id], previous => previous?.map(item => item.id === updated.id ? updated : item));
+        await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ['project', project.id] })]); setDialog(null);
       }
     } catch (error) { setError(formatApiError(error)); }
     finally { setBusy(false); }
@@ -141,7 +142,7 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
     {supported && <>
       <div className="project-sidebar-version-heading"><span>{text('当前版本', 'Current version')}</span>{current && <span className={`project-sidebar-version-state status-${current.status}`} title={current.error || current.note || versionState(current)}>{current.status === 'copying' && <Loader2 size={11} className="animate-spin"/>}{versionState(current)}</span>}</div>
       <StudioSelect searchable aria-label={text('项目版本', 'Project versions')} value={selectedId || ''} disabled={busy || !versions.length} icon={<GitBranch size={13}/>} onValueChange={value => void switchVersion(value)} options={versions.filter(item => showArchived || !item.archived || item.id === selectedId).map(item => ({value:item.id,label:`${item.name}${item.archived || item.status !== 'ready' ? ` · ${versionState(item)}` : ''}`}))}/>
-      <div className="project-sidebar-model">{text('模型类型', 'Model type')} · {familyLabel(current?.family)}</div>
+      <div className="project-sidebar-model">{text('模型类型', 'Model type')} · {familyLabel(current?.display_family ?? current?.family)}</div>
       <div className="project-sidebar-actions" aria-label={text('版本操作', 'Version actions')}>
         <button type="button" className="ui-btn ui-btn-icon" onClick={() => void begin('create')} disabled={busy || versions.some(item => item.status === 'copying')} title={text('新版本', 'New version')} aria-label={text('新版本', 'New version')}><Plus size={14}/></button>
         <button type="button" className="ui-btn ui-btn-icon" onClick={() => void begin('compare')} disabled={!current || readyVersions.length < 2 || busy} title={text('比较版本参数', 'Compare version parameters')} aria-label={text('比较', 'Compare')}><GitCompare size={14}/></button>
@@ -162,6 +163,7 @@ export default function ProjectWorkspaceHeader({ project, versionId, versions, c
     {dialog && <Dialog title={dialog === 'create' ? text('新建实验版本', 'New experiment version') : dialog === 'edit' ? text('版本设置', 'Version settings') : dialog === 'compare' ? text('比较版本', 'Compare versions') : text('本版本的文件位置', 'Files in this version')} onClose={() => { if (!busy) {setDialog(null);setError('');} }} closeDisabled={busy} wide={dialog === 'compare' || dialog === 'paths'}>
       {error && <div role="alert" className="workspace-message error">{error}</div>}
       {(dialog === 'create' || dialog === 'edit') && <form onSubmit={save} className="version-form"><label>{text('版本名称', 'Version name')}<input value={name} onChange={event => setName(event.target.value)} maxLength={120} required disabled={busy || dialog === 'edit' && !!current?.archived}/></label><label>{text('实验说明', 'Experiment notes')}<textarea value={note} onChange={event => setNote(event.target.value)} placeholder={text('例如：仅训练服装区域，学习率调整为 0.0002', 'For example: train clothing only, learning rate 0.0002')} disabled={busy || dialog === 'edit' && !!current?.archived}/></label>
+        {dialog === 'edit' && <label>{text('模型类型', 'Model type')}<StudioSelect aria-label={text('模型类型', 'Model type')} value={family} onValueChange={setFamily} disabled={busy || !!current?.archived} options={familyOptions}/></label>}
         {dialog === 'create' && <><label>{text('创建来源', 'Create from')}<StudioSelect aria-label={text('创建来源', 'Create from')} value={source} onValueChange={value => { setSource(value);setFamily(versions.find(item => item.id === value)?.family || ''); }} disabled={busy} options={[{value:'',label:text('默认配置 · 空白版本', 'Default configuration · blank version')},...copySources.map(item => ({value:item.id,label:item.name}))]}/></label>
           <label>{text('训练模型类型', 'Training model type')}<StudioSelect aria-label={text('训练模型类型', 'Training model type')} value={family || (source ? '' : 'anima')} onValueChange={setFamily} disabled={busy} options={[...(source ? [{value:'',label:text(`沿用来源版本 · ${familyLabel(sourceFamily)}`, `Inherit source · ${familyLabel(sourceFamily)}`)}] : []),...familyOptions]}/></label>
           <p className="version-family-note">{incompatibleFamily ? text('更换模型类型会重置模型路径、恢复权重和训练参数。', 'Changing model type resets model paths, resume weights and training settings.') : text('使用所选模型的默认配置。', 'Uses the selected model’s defaults.')}</p>

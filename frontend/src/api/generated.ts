@@ -2387,6 +2387,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/regularization/{oid}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Release */
+        post: operations["release_api_regularization__oid__release_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{pid}/versions/{vid}/site-downloads": {
         parameters: {
             query?: never;
@@ -7096,6 +7113,8 @@ export interface components {
             cover_url?: string | null;
             /** Active Family */
             active_family?: string | null;
+            /** Active Display Family */
+            active_display_family?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -7308,6 +7327,8 @@ export interface components {
             progress: components["schemas"]["VersionProgress"];
             /** Family */
             family?: string | null;
+            /** Display Family */
+            display_family?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -7576,6 +7597,7 @@ export interface components {
              * @enum {string}
              */
             source: "ai" | "danbooru" | "gelbooru" | "e621" | "rule34";
+            model?: components["schemas"]["ModelConfig"] | null;
             /**
              * Prompt
              * @default
@@ -9167,6 +9189,8 @@ export interface components {
             note?: string | null;
             /** Archived */
             archived?: boolean | null;
+            /** Display Family */
+            display_family?: ("anima" | "krea2" | "sdxl" | "flux2" | "toy") | null;
         };
         /** VersionPaths */
         VersionPaths: {
@@ -15115,6 +15139,37 @@ export interface operations {
         };
     };
     cancel_api_regularization__oid__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                oid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularizationTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_api_regularization__oid__release_post: {
         parameters: {
             query?: never;
             header?: never;

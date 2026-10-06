@@ -130,7 +130,7 @@ export default function Projects() {
   const open = (project: GalleryProject) => `/projects/${encodeURIComponent(project.id)}?step=overview`;
   const menu = (project: GalleryProject) => <ProjectCardMenu name={project.name} archived={project.archived} busy={!!pending || project.deletion?.state === 'deleting'} onEdit={() => setEditor(project)} onArchive={() => void mutate(project.id, () => apiClient.patch(`/projects/${project.id}`, { archived: !project.archived }))} onDelete={() => remove(project)}/>;
   const activity = (project: GalleryProject) => project.deletion ? <ProjectDeletionLine deletion={project.deletion}/> : <ProjectActivityLine job={project.latest_job}/>;
-  const meta = (project: GalleryProject) => [project.category ? categoryLabel(project.category, english) : text('未分类', 'Uncategorized'), familyLabel(project.active_family), versionLabel(project)].filter(Boolean);
+  const meta = (project: GalleryProject) => [project.category ? categoryLabel(project.category, english) : text('未分类', 'Uncategorized'), familyLabel(project.active_display_family ?? project.active_family), versionLabel(project)].filter(Boolean);
 
   return <div className="projects-workspace" data-testid="projects-page">
     <header className="projects-toolbar">

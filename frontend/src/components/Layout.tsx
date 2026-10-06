@@ -57,14 +57,15 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   const [projectSidebarTarget, setProjectSidebarTarget] = React.useState<HTMLDivElement | null>(null);
   const closeNavigation = React.useCallback(() => setMenuOpen(false), []);
   const [projectSelection,setProjectSelection] = React.useState<ProjectSidebarSelection | null>(null);
-  const projectAction = React.useRef<{owner:symbol;beforeAction?:()=>Promise<void>} | null>(null);
-  const registerProject = React.useCallback((selection:ProjectSidebarSelection,beforeAction?:()=>Promise<void>)=>{
+  const projectAction = React.useRef<{owner:symbol;beforeAction?:()=>Promise<void>;refresh?:()=>Promise<unknown>} | null>(null);
+  const registerProject = React.useCallback((selection:ProjectSidebarSelection,beforeAction?:()=>Promise<void>,refresh?:()=>Promise<unknown>)=>{
     const owner=Symbol('project-page');
-    projectAction.current={owner,beforeAction};
+    projectAction.current={owner,beforeAction,refresh};
     setProjectSelection(previous=>JSON.stringify(previous)===JSON.stringify(selection) ? previous : selection);
     return ()=>{if(projectAction.current?.owner===owner)projectAction.current=null;};
   },[]);
   const beforeProjectAction = React.useCallback(async()=>{await projectAction.current?.beforeAction?.();},[]);
+  const refreshProjectPage = React.useCallback(async()=>{await projectAction.current?.refresh?.();},[]);
   const projectSidebar = React.useMemo(() => ({ target: projectSidebarTarget, closeNavigation, register:registerProject }), [projectSidebarTarget, closeNavigation,registerProject]);
   const contentRef = React.useRef<HTMLDivElement>(null);
   // A new page or project step fades in; query changes inside a page (tabs, filters) do not.
@@ -189,7 +190,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
               label={item.label}
               active={location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to))}
             />
-            {item.to === '/projects' && <div ref={setProjectSidebarTarget} className="project-sidebar-slot" data-testid="project-sidebar-slot">{projectSelection && <PersistentProjectSidebar key={projectSelection.project.id} selection={projectSelection} beforeAction={beforeProjectAction}/>}</div>}
+            {item.to === '/projects' && <div ref={setProjectSidebarTarget} className="project-sidebar-slot" data-testid="project-sidebar-slot">{projectSelection && <PersistentProjectSidebar key={projectSelection.project.id} selection={projectSelection} beforeAction={beforeProjectAction} refreshPage={refreshProjectPage}/>}</div>}
             </React.Fragment>
           ))}
         </nav>

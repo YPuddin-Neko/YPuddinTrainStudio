@@ -5,6 +5,7 @@ export type VersionedProject = Project & { active_version_id?: string | null; ve
 export interface ProjectVersion {
   id: string; project_id: string; number?: number; name: string; note: string; archived: boolean;
   family?: string;
+  display_family?: string | null;
   parent_version_id?: string | null; status: 'copying' | 'ready' | 'failed';
   created_at: number; updated_at: number; dataset_ids: string[]; busy?: boolean;
   progress?: { phase: string; files_done: number; files_total: number; bytes_done: number; bytes_total: number };

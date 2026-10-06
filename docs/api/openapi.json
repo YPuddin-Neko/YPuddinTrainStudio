@@ -7937,6 +7937,45 @@
         }
       }
     },
+    "/api/regularization/{oid}/release": {
+      "post": {
+        "summary": "Release",
+        "operationId": "release_api_regularization__oid__release_post",
+        "parameters": [
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Oid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegularizationTask"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{pid}/versions/{vid}/site-downloads": {
       "get": {
         "summary": "Status",
@@ -20643,6 +20682,17 @@
               }
             ],
             "title": "Active Family"
+          },
+          "active_display_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Display Family"
           }
         },
         "additionalProperties": true,
@@ -21243,6 +21293,17 @@
               }
             ],
             "title": "Family"
+          },
+          "display_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Family"
           }
         },
         "additionalProperties": true,
@@ -22027,6 +22088,16 @@
             ],
             "title": "Source",
             "default": "ai"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "prompt": {
             "type": "string",
@@ -26112,6 +26183,24 @@
               }
             ],
             "title": "Archived"
+          },
+          "display_family": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "anima",
+                  "krea2",
+                  "sdxl",
+                  "flux2",
+                  "toy"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Family"
           }
         },
         "type": "object",

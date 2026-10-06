@@ -659,6 +659,7 @@ class Project(_Out):
     category: str | None = None
     cover_url: str | None = None
     active_family: str | None = None
+    active_display_family: str | None = None
 
 
 class ProjectPage(_Out):
@@ -725,6 +726,7 @@ class ProjectVersion(_Out):
     stats: VersionStats
     progress: VersionProgress
     family: str | None = None
+    display_family: str | None = None
 
 
 class DatasetSource(_Out):

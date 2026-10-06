@@ -18,7 +18,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-from ypuddin.config import CaptionConfig, ModelConfig
+from ypuddin.config import CaptionConfig, ModelConfig, SamplingConfig
 from ypuddin.data.index import iter_images
 
 from .booru import (
@@ -446,13 +446,14 @@ class RegularizationManager:
                 if request.source == "ai":
                     from ypuddin.models import get_family
 
-                    model = ModelConfig.model_validate(config.get("model", {}))
+                    model = (
+                        request.model.model_copy(deep=True)
+                        if request.model is not None
+                        else ModelConfig.model_validate(config.get("model", {}))
+                    )
                     # Prior generation uses the base model's SDPA path, independent of training adapters.
                     model.attention = "auto"
                     family = get_family(model.family)
-                    issues = family.validate_config(model)
-                    if issues:
-                        raise ApiError("; ".join(issues), status=422, code="regularization.models")
                     if request.width % family.spec.latent.align or request.height % family.spec.latent.align:
                         raise ApiError(
                             f"Width and height must be multiples of {family.spec.latent.align}",
@@ -473,10 +474,48 @@ class RegularizationManager:
                                 status=403,
                                 code="regularization.path",
                             )
+                    if request.model is not None and model.dit_path:
+                        from .routes_core import _model_row
+                        from .xyz import adopt_backbone_objective
+
+                        target = Path(model.dit_path).expanduser().resolve()
+                        for asset in self.c.db.fetchall(
+                            "SELECT * FROM models WHERE family=? AND kind='dit'", (model.family,)
+                        ):
+                            if Path(asset["path"]).expanduser().resolve() != target:
+                                continue
+                            projected = _model_row(asset, self.c)
+                            if projected.get("unsupported_reason"):
+                                raise ApiError(
+                                    projected["unsupported_reason"], status=422, code="regularization.models"
+                                )
+                            if model.family == "krea2" and projected.get("variant") in {"raw", "turbo"}:
+                                if (
+                                    "krea2_variant" in request.model.model_fields_set
+                                    and model.krea2_variant not in {"auto", projected["variant"]}
+                                ):
+                                    raise ApiError(
+                                        f"此 Krea 2 模型已登记为 {projected['variant'].title()}，请选择对应类型。",
+                                        status=422,
+                                        code="regularization.variant",
+                                    )
+                                model.krea2_variant = projected["variant"]
+                            break
+                        if not {"prediction_type", "zero_terminal_snr"} & request.model.model_fields_set:
+                            adopt_backbone_objective(model, target)
+                    issues = ([family.spec.retired_reason] if family.spec.retired_reason else [])
+                    issues.extend(family.validate_config(model))
+                    if issues:
+                        raise ApiError("; ".join(issues), status=422, code="regularization.models")
+                    sampling = (
+                        SamplingConfig(sampler=family.spec.sampling.sampler).model_dump(mode="json")
+                        if request.model is not None
+                        else config.get("sampling", {})
+                    )
                     devices = gpu_info() if model.family != "toy" else []
                     payload.update(
                         model=model.model_dump(mode="json"),
-                        sampling=config.get("sampling", {}),
+                        sampling=sampling,
                         device=devices[0]["device"] if devices else "cpu",
                         fingerprint_cache=str(self.c.cache_dir(pid, version["id"]) / "fingerprints"),
                     )
@@ -533,6 +572,28 @@ class RegularizationManager:
                 event.set()
             self._update(oid, status="cancelling", message="Cancellation requested")
         return self.get(oid)
+
+    def release(self, oid):
+        with self.c.db.lock:
+            row = self._row(oid)
+            self.c.resolve_version(row["project_id"], row["version_id"])
+            if row["source"] != "ai":
+                raise ApiError("此任务未加载生成模型。", status=409, code="regularization.no_model")
+            self.cancel(oid)
+        deadline = time.monotonic() + 15
+        while True:
+            with self.c.db.lock:
+                process = self.processes.get(oid)
+                released = (
+                    oid not in self.cancel_events
+                    and (process is None or process.poll() is not None)
+                    and self.c.db.get_kv(RESERVATION, {}).get("id") != oid
+                )
+                if released:
+                    return self.get(oid)
+            if time.monotonic() >= deadline:
+                raise ApiError("生成任务仍在停止，请稍后重试。", status=409, code="regularization.releasing")
+            time.sleep(0.05)
 
     def _rollback(self, row):
         from .routes_work import _records_path, _write_project_config, get_project_config
@@ -710,7 +771,6 @@ class RegularizationManager:
                 env=dict(os.environ, PYTHONUNBUFFERED="1"),
             )
             self.processes[oid] = proc
-            self.c.db.update("regularization_operations", oid, {"worker_pid": proc.pid})
             seen = 0
             cancel_time = None
             failure = None
@@ -735,6 +795,7 @@ class RegularizationManager:
                     )
 
             try:
+                self.c.db.update("regularization_operations", oid, {"worker_pid": proc.pid})
                 while True:
                     if cancelled.is_set():
                         stop.touch(exist_ok=True)

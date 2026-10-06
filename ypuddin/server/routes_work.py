@@ -154,7 +154,7 @@ def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     jobs = c.db.fetchone("SELECT COUNT(*) AS n FROM jobs WHERE project_id=?", (r["id"],))["n"]
     arts = artifact_count(c.db, project_id=r["id"])
     version = (
-        c.db.fetchone("SELECT name,number FROM project_versions WHERE id=?", (r["active_version_id"],))
+        c.db.fetchone("SELECT name,number,display_family FROM project_versions WHERE id=?", (r["active_version_id"],))
         if r["active_version_id"]
         else None
     )
@@ -163,6 +163,7 @@ def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         "category": r.get("category"),
         "cover_url": cover_url(c, r),
         "active_family": version_family(c, c.resolve_version(r["id"], r["active_version_id"])),
+        "active_display_family": version["display_family"] if version else None,
         "active_version_name": version["name"] if version else None,
         "active_version_number": version["number"] if version else None,
         "archived": bool(r["archived"]),
@@ -639,6 +640,7 @@ class VersionPatch(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=100, pattern=r".*\S.*")
     note: str | None = Field(None, max_length=4000)
     archived: bool | None = None
+    display_family: Literal["anima", "krea2", "sdxl", "flux2", "toy"] | None = None
 
 
 @router.get("/projects/{pid}/versions", response_model=list[m.ProjectVersion])
@@ -679,6 +681,8 @@ def patch_version(pid: str, vid: str, body: VersionPatch, c: ServiceContext = De
             for k, v in body.model_dump().items()
             if v is not None
         }
+        if "display_family" in body.model_fields_set:
+            fields["display_family"] = body.display_family
         if fields.get("name") and c.db.fetchone(
             "SELECT id FROM project_versions WHERE project_id=? AND name=? AND id<>?",
             (pid, fields["name"], vid),

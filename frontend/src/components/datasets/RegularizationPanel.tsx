@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation } from 'react-router-dom';
-import { FolderOpen, ImagePlus, Loader2, RefreshCw, X } from 'lucide-react';
+import { FolderOpen, ImagePlus, Loader2, MemoryStick, RefreshCw, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
+import type { FamilyInfo, ModelAsset } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
-import { projectUrl } from '../../utils/projectVersions';
+import { projectUrl, versionConfigUrl } from '../../utils/projectVersions';
+import { fillDefaultModels } from '../../utils/workspaceConfig';
+import { modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
+import { EVENT_TYPES } from '../../events/eventTypes';
+import { useEventStream } from '../../events/useEventStream';
 import StudioSelect from '../StudioSelect';
 import ProjectDataImport from '../../pages/ProjectDetail/ProjectDataImport';
 import type { CredentialStates } from '../../pages/Settings/AccessKeys';
+import RegularizationModelFields, { type GenerationModel } from './RegularizationModelFields';
 import './regularization.css';
 
 type Source = 'ai' | 'danbooru' | 'gelbooru' | 'e621' | 'rule34';
@@ -47,6 +53,8 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
   const [repeats, setRepeats] = useState(1);
   const [excluded, setExcluded] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [releasing, setReleasing] = useState(false);
+  const [modelDraft, setModelDraft] = useState<{scope: string; value: GenerationModel} | null>(null);
   const [error, setError] = useState('');
   const notified = useRef(new Set<string>());
   const loaded = useRef(false);
@@ -59,6 +67,21 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     queryFn: () => apiClient.get<Snapshot>(endpoint, {silent:true}),
     refetchInterval: q => q.state.data?.operations.some(active) ? 1200 : false,
   });
+  const modelQuery = useQuery({ queryKey: ['regularization-model', projectId, versionId], enabled: source === 'ai',
+    queryFn: async ({signal}) => {
+      const [config, families, assets] = await Promise.all([
+        apiClient.get<{model?: GenerationModel}>(versionConfigUrl(projectId, versionId), {silent:true, signal}),
+        apiClient.get<FamilyInfo[]>('/families', {silent:true, signal}),
+        apiClient.get<ModelAsset[]>('/models', {silent:true, signal}),
+      ]);
+      const model = fillDefaultModels({ model: config.model || {family:'anima' as const, dtype:'auto' as const} }, assets).model;
+      return {model, families, assets};
+    },
+  });
+  const generationModel = modelDraft?.scope === endpoint ? modelDraft.value : modelQuery.data?.model;
+  const generationFamily = modelQuery.data?.families.find(item => item.name === generationModel?.family);
+  const modelReady = !!generationModel && !!generationFamily && !modelQuery.error && trainingFamilyOptions(modelQuery.data?.families || [], false, generationModel.family).some(item => item.value === generationModel.family)
+    && modelFamilyWeights(generationFamily).every(weight => !weight.required || !!generationModel[weight.field as keyof GenerationModel]?.toString().trim());
   const credentials = useQuery({ queryKey: ['credentials'], enabled: source !== 'ai',
     queryFn: () => apiClient.get<CredentialStates>('/credentials', { silent: true }), staleTime: 0,
   });
@@ -77,14 +100,15 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     loaded.current = true;
   }, [query.data]);
   const current = query.data?.operations.find(active);
-  const locked = readOnly || submitting || !!current;
+  const locked = readOnly || submitting || releasing || !!current;
   const credentialsBlocked = source !== 'ai' && (credentials.isPending || !!credentials.error || (['gelbooru', 'rule34'].includes(source) && !credentials.data?.[source]?.configured));
   const fromTraining = source === 'ai' && promptSource === 'training_tags';
   const matching = source !== 'ai' && siteMode === 'training_tags';
   const manualSite = source !== 'ai' && siteMode === 'manual';
   const requestBody = {source,prompt:prompt.trim(),count,width,height,steps,cfg,seed,negative,prior_weight:weight,repeats,
     excluded_tags:excluded.split(',').map(value=>value.trim()).filter(Boolean),
-    prompt_source:fromTraining || matching?'training_tags':'manual',source_ids:sourceRange?[sourceRange]:[],generation_scope:generationScope};
+    prompt_source:fromTraining || matching?'training_tags':'manual',source_ids:sourceRange?[sourceRange]:[],generation_scope:generationScope,
+    ...(source === 'ai' && generationModel ? {model:generationModel} : {})};
   const requestKey = JSON.stringify(requestBody);
   const [plannedRequest, setPlannedRequest] = useState(requestKey);
   useEffect(() => { const timer=setTimeout(()=>setPlannedRequest(requestKey),250); return ()=>clearTimeout(timer); },[requestKey]);
@@ -111,6 +135,13 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     retry:false, refetchOnWindowFocus:false, staleTime:60_000,
     queryFn:({signal})=>apiClient.post<Estimate>(`${endpoint}/estimate`,JSON.parse(plannedEstimate),{silent:true,signal})});
   const estimatePending = estimateKey !== plannedEstimate || estimate.isFetching;
+  useEventStream<{dataset_id?: string; project_id?: string; version_id?: string; reason?: string}>(EVENT_TYPES.DATASET_CHANGED, event => {
+    if (event.project_id && event.project_id !== projectId || event.version_id && event.version_id !== versionId || event.reason === 'refreshing') return;
+    if (!(event.project_id && event.version_id) && !query.data?.operations.some(task => task.dataset_id === event.dataset_id)) return;
+    void query.refetch();
+    if (fromTraining) void plan.refetch();
+    if (matching) void match.refetch();
+  });
   const percent = (share:number) => `${Math.round(share*100)}%`;
   const ratio = (value:number) => Number(value.toFixed(2)).toString();
   const toggleExcluded = (tag:string) => setExcluded(previous=>{
@@ -133,7 +164,14 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     catch (err) { setError(formatApiError(err)); }
     finally { setSubmitting(false); }
   };
-  const ready = !locked && !credentialsBlocked && !query.error && (fromTraining ? !planPending && !plan.error && !!plan.data?.planned_images : matching ? matchReady : !!prompt.trim());
+  const release = async () => {
+    if (!current || current.source !== 'ai' || !current.can_cancel || readOnly || releasing) return;
+    setReleasing(true); setError('');
+    try { await apiClient.post<RegularizationTask>(`/regularization/${current.id}/release`, {}, {silent:true}); await query.refetch(); }
+    catch (err) { setError(formatApiError(err)); }
+    finally { setReleasing(false); }
+  };
+  const ready = !locked && !credentialsBlocked && !query.error && (source !== 'ai' || modelReady) && (fromTraining ? !planPending && !plan.error && !!plan.data?.planned_images : matching ? matchReady : !!prompt.trim());
   const statusName = (status: string) => ({queued:text('等待开始','Queued'),running:text('进行中','Running'),cancelling:text('正在取消','Cancelling'),completed:text('已加入正则集','Added to regularization data'),failed:text('失败','Failed'),cancelled:text('已取消','Cancelled')}[status] || status);
   const logText = (message: string) => {
     const fixed: Record<string, string> = {
@@ -192,6 +230,9 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
           options={[{value:'ai',label:text('本地底模生成','Generate with base model')},{value:'danbooru',label:'Danbooru'},{value:'gelbooru',label:'Gelbooru'},{value:'e621',label:'e621'},{value:'rule34',label:'Rule34'}]}/></label>
         <label>{fromTraining?text('本批最多生成','Maximum images this batch'):matching?text('本批最多收集','Maximum images this batch'):text('图片数量','Image count')}<input type="number" min={1} max={200} step={1} value={count} disabled={locked} onChange={event=>setCount(Number(event.target.value))}/></label>
       </div>
+      {source === 'ai' && (modelQuery.error ? <div role="alert" className="reg-error">{formatApiError(modelQuery.error)}<button type="button" className="ui-btn ui-btn-sm" onClick={()=>void modelQuery.refetch()}>{text('重试', 'Retry')}</button></div>
+        : !modelQuery.data || !generationModel ? <p className="reg-note" role="status"><Loader2 size={14} className="animate-spin"/>{text('读取生成模型…', 'Loading generation models…')}</p>
+          : <RegularizationModelFields model={generationModel} families={modelQuery.data.families} assets={modelQuery.data.assets} disabled={locked} onChange={value=>setModelDraft({scope:endpoint,value})}/>)}
       {source === 'ai' ? <label>{text('提示词来源','Prompt source')}<StudioSelect aria-label={text('提示词来源','Prompt source')} value={promptSource} disabled={locked} onValueChange={value=>setPromptSource(value as 'manual'|'training_tags')} options={[{value:'manual',label:text('手动填写类别提示词','Enter class prompts')},{value:'training_tags',label:text('按训练图片标签逐张生成','One prior per training image caption')}]}/></label>
         : <label>{text('检索方式','Search method')}<StudioSelect aria-label={text('检索方式','Search method')} value={siteMode} disabled={locked} onValueChange={value=>setSiteMode(value as 'manual'|'training_tags')} options={[{value:'training_tags',label:text('按训练标签自动匹配','Follow the training tags')},{value:'manual',label:text('手动输入检索标签','Enter search tags')}]}/></label>}
       {!fromTraining && !matching && <>      <label className="reg-prompt">{source === 'ai' ? text('类别提示词','Class prompt') : text('站点检索标签','Site search tags')}
@@ -234,7 +275,7 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
           {!!plan.data.examples.length && <details><summary>{text('查看生成提示词示例','Preview generation prompts')}</summary><ul>{plan.data.examples.map((item,index)=><li key={index}><strong>{plan.data!.sources.find(source=>source.id===item.source_id)?.name}/{item.rel_path}</strong><p>{item.prompt}</p></li>)}</ul></details>}</>}
         </div>
       </div>}
-      <p className="reg-note">{source === 'ai' ? text('使用本版本底模，不加载 LoRA；请先在训练参数中设置模型。','Uses this version’s base model without LoRA. Select the model in training settings first.') : matching ? text('按训练标签的占比检索站点标记为全年龄的图片，优先挑选宽高比和尺寸接近训练图片的；不下载带排除标签的图片、训练图片本身和已收集过的图片。','Searches safe-rated images in proportion to the training tags, preferring shapes and sizes close to the training images; skips images with excluded tags, the training images themselves and images already collected.') : text('仅收集站点标记为全年龄的图片，保留原标签并去重；已收集过的图片不会重复下载。','Collects images rated safe by the site, keeps source tags and skips duplicates; images already collected are not downloaded again.')}</p>
+      {source !== 'ai' && <p className="reg-note">{matching ? text('按训练标签的占比检索站点标记为全年龄的图片，优先挑选宽高比和尺寸接近训练图片的；不下载带排除标签的图片、训练图片本身和已收集过的图片。','Searches safe-rated images in proportion to the training tags, preferring shapes and sizes close to the training images; skips images with excluded tags, the training images themselves and images already collected.') : text('仅收集站点标记为全年龄的图片，保留原标签并去重；已收集过的图片不会重复下载。','Collects images rated safe by the site, keeps source tags and skips duplicates; images already collected are not downloaded again.')}</p>}
       <details className="reg-options"><summary>{text('生成与训练选项','Generation and training options')}</summary><div className="reg-form-grid reg-grid-three">
         {source === 'ai' && <>
           <label>{text('宽度','Width')}<input type="number" min={64} max={2048} step={32} value={width} disabled={locked} onChange={event=>setWidth(Number(event.target.value))}/></label>
@@ -248,9 +289,12 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
       </div>
         {source === 'ai' ? <label>{text('负面提示词','Negative prompt')}<input value={negative} disabled={locked} onChange={event=>setNegative(event.target.value)}/></label> : manualSite && <label>{text('排除标签','Excluded tags')}<input value={excluded} disabled={locked} onChange={event=>setExcluded(event.target.value)} placeholder={text('用逗号分隔','Separate with commas')}/></label>}
         <p className="reg-note">{text('正则图不参与自动验证集划分。','Regularization images are excluded from automatic validation splits.')}</p>
+        <div className="reg-actions"><span>{readOnly ? text('当前版本只读','This version is read-only') : text('完成后自动加入正则集。','Added to regularization data when complete.')}</span><div className="reg-action-buttons">
+          {source === 'ai' && <button type="button" className="ui-btn" disabled={readOnly || submitting || releasing || current?.source !== 'ai' || !current.can_cancel} title={current?.source === 'ai' ? text('停止当前生成并释放显存', 'Stop the current generation and free VRAM') : text('当前没有正在生成的正则图', 'No regularization generation is running')} onClick={()=>void release()}>{releasing ? <Loader2 size={14} className="animate-spin"/> : <MemoryStick size={14}/>} {releasing ? text('释放中…', 'Releasing…') : text('释放显存', 'Free VRAM')}</button>}
+          <button type="submit" className="ui-btn ui-btn-primary" disabled={!ready}>{submitting || current ? <Loader2 size={14} className="animate-spin"/> : <ImagePlus size={14}/>} {source === 'ai' ? text('生成正则图','Generate images') : text('收集正则图','Collect images')}</button>
+        </div></div>
       </details>
       {source !== 'ai' && <div className="reg-options"><p className="reg-note" role="status">{credentials.error ? text('无法读取站点密钥状态。','Could not load site-key status.') : credentials.isPending ? <><Loader2 size={13} className="animate-spin reg-note-spinner" aria-hidden="true"/>{text('读取站点密钥状态…','Loading site-key status…')}</> : credentials.data?.[source]?.configured ? text(`${source} 访问密钥已配置`,`${source} access keys configured`) : ['gelbooru', 'rule34'].includes(source) ? text(`${source === 'rule34' ? 'Rule34' : 'Gelbooru'} 需要先配置用户 ID 和 API Key。`, 'Configure the user ID and API key first.') : text(`${source === 'e621' ? 'e621' : 'Danbooru'} 将使用匿名访问。`, 'Anonymous access will be used.')}</p><Link className="ui-link" state={{ backgroundLocation: location.state?.backgroundLocation ?? location }} to={`/settings/environment?tab=credentials#credentials-${source}`}>{text('管理访问密钥','Manage access keys')}</Link>{credentials.error && <button type="button" className="ui-link ml-3" onClick={()=>void credentials.refetch()}>{text('重试','Retry')}</button>}</div>}
-      <div className="reg-actions"><span>{readOnly ? text('当前版本只读','This version is read-only') : text('完成后自动加入正则集。','Added to regularization data when complete.')}</span><button type="submit" className="ui-btn ui-btn-primary" disabled={!ready}>{submitting || current ? <Loader2 size={14} className="animate-spin"/> : <ImagePlus size={14}/>} {source === 'ai' ? text('生成正则图','Generate images') : text('收集正则图','Collect images')}</button></div>
     </form>
     {query.data?.operations.slice(0,3).map(task=><article className="reg-task" key={task.id} aria-label={task.id}>
       <div className="reg-task-heading"><strong>{task.source === 'ai' ? text('底模生成','Base model generation') : task.source}</strong><code>{task.id}</code><span className={task.status === 'failed' ? 'reg-failed' : ''}>{statusName(task.status)}</span>{task.can_cancel && <button type="button" className="ui-btn ui-btn-sm" disabled={submitting || readOnly} onClick={()=>void cancel(task.id)} aria-label={text(`取消 ${task.id}`,`Cancel ${task.id}`)}><X size={14}/>{text('取消','Cancel')}</button>}</div>

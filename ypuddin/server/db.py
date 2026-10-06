@@ -85,6 +85,7 @@ class Database:
                     ("projects", "category", "TEXT"),
                     ("projects", "cover_key", "TEXT"),
                     ("project_versions", "number", "INTEGER"),
+                    ("project_versions", "display_family", "TEXT"),
                     ("jobs", "samples_dir", "TEXT"),
                     ("jobs", "gpu_devices_json", "TEXT NOT NULL DEFAULT '[]'"),
                     ("jobs", "archived_at", "REAL"),
