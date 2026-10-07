@@ -6,7 +6,7 @@ import { apiClient } from '../../api/client';
 import { Job, JobMetrics, JobSample, JobCheckpoint, ValidationPoint } from '../../api/types';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
-import { Activity, Archive, ArchiveRestore, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Minus } from 'lucide-react';
+import { Activity, Archive, ArchiveRestore, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Minus, AudioLines } from 'lucide-react';
 import { mergeValidationPoint, appendMetricStep } from '../../utils/metrics';
 import { formatEta, formatTime } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
@@ -28,6 +28,10 @@ import JobStepper from './JobStepper';
 import { SlidingIndicator } from '../../components/motion';
 import { useEnterAnimation } from '../../utils/motion';
 import TopbarBreadcrumb from '../../components/TopbarBreadcrumb';
+import { isTtsJob } from '../../api/tts';
+import TtsJobOutputs from '../Tts/TtsJobOutputs';
+import { ttsAction, ttsJobError } from '../Tts/ttsJobActions';
+import { TtsJobLineage } from '../Tts/TtsTaskActions';
 
 type VersionedJob = Job & { version_id?: string | null; latest: Job['latest'] & {loss_mean?:number|null; loss_count?:number|null; loss_mean_scope?:string|null} };
 type PendingMetrics = { id: string; pending: boolean; steps: Record<string, any>[]; validation: ValidationPoint[] };
@@ -129,12 +133,26 @@ export default function JobDetail() {
   const [resuming, setResuming] = React.useState(false);
 
   const [job, setJob] = React.useState<VersionedJob | null>(null);
+  const jobKind = React.useRef<{ id: string; type: string } | null>(null);
+  const ttsProjectionRequest = React.useRef<AbortController | null>(null);
+  React.useEffect(() => () => ttsProjectionRequest.current?.abort(), [id]);
+  const refreshTtsProjection = () => {
+    if (!id) return;
+    ttsProjectionRequest.current?.abort();
+    const controller = new AbortController(); ttsProjectionRequest.current = controller;
+    setJob(previous => previous?.id === id ? { ...previous, allowed_actions: undefined, action_reasons: undefined } : previous);
+    void apiClient.get<VersionedJob>(`/jobs/${encodeURIComponent(id)}`, { silent: true, signal: controller.signal }).then(updated => {
+      if (!controller.signal.aborted && updated.id === id) setJob(previous => previous?.id === id ? updated : previous);
+    }).catch(() => {});
+  };
   const [restoring, setRestoring] = React.useState(false);
   const restore = async () => {
-    if (!job) return;
+    if (!job || restoring) return;
+    const permission = ttsAction(job, 'unarchive', text);
+    if (!permission.allowed) { setActionError(permission.reason); return; }
     setRestoring(true); setActionError('');
-    try { await apiClient.patch(`/jobs/${encodeURIComponent(job.id)}`, { archived: false }, { silent: true }); setJob(current => current && { ...current, archived_at: null }); }
-    catch (failure) { setActionError(formatApiError(failure)); }
+    try { const updated = await apiClient.patch<Job>(`/jobs/${encodeURIComponent(job.id)}`, { archived: false }, { silent: true }); if (isTtsJob(job)) ttsProjectionRequest.current?.abort(); setJob(current => current?.id === job.id ? isTtsJob(job) ? updated : { ...current, archived_at: null } : current); }
+    catch (failure) { setActionError(isTtsJob(job) ? ttsJobError(failure) : formatApiError(failure)); }
     finally { setRestoring(false); }
   };
   const [clock, setClock] = React.useState(() => Date.now() / 1000);
@@ -161,14 +179,14 @@ export default function JobDetail() {
   const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
   const requestedTab = params.get('tab') || '';
-  const allowedTabs = job?.type === 'xyz' ? ['logs', 'config'] : ['metrics', 'samples', 'checkpoints', 'states', 'logs', 'config'];
-  const activeTab = allowedTabs.includes(requestedTab) ? requestedTab : job?.type === 'xyz' ? 'logs' : 'metrics';
+  const allowedTabs = job?.type === 'tts_sample' ? ['audio', 'logs', 'config'] : job?.type === 'tts_train' ? ['metrics', 'audio', 'logs', 'config'] : job?.type === 'xyz' ? ['logs', 'config'] : ['metrics', 'samples', 'checkpoints', 'states', 'logs', 'config'];
+  const activeTab = allowedTabs.includes(requestedTab) ? requestedTab : job?.type === 'tts_sample' ? 'audio' : job?.type === 'xyz' ? 'logs' : 'metrics';
   const tabPanel = useEnterAnimation<HTMLDivElement>(activeTab, { skipFirst: true });
   // Tabs replace the entry so Back leaves the job instead of stepping through tabs.
   const setActiveTab = (tab: string) => { const next = new URLSearchParams(params); next.set('tab', tab); setParams(next, { replace: true, state: location.state }); };
   const samplesRequestRef = React.useRef<AbortController | null>(null);
   const refreshSamples = React.useCallback(async () => {
-    if (!id) return;
+    if (!id || jobKind.current?.id === id && isTtsJob(jobKind.current)) return;
     samplesRequestRef.current?.abort();
     const controller = new AbortController(); samplesRequestRef.current = controller;
     try {
@@ -195,13 +213,19 @@ export default function JobDetail() {
       setMetrics(next);
     };
     setDataError(''); setJob(null); setMetrics(null); setSamples([]); setSamplesLoaded(false); setSelectedSample(null); setCheckpoints([]); setCheckpointsLoaded(false); setConfigSnapshot(null); setSampleProgress(null);
-    apiClient.get<VersionedJob>(`/jobs/${id}`, options).then(setJob).catch(ignoreAbort);
+    jobKind.current = null;
+    apiClient.get<VersionedJob>(`/jobs/${id}`, options).then(loaded => {
+      if (controller.signal.aborted) return;
+      jobKind.current = { id: loaded.id, type: loaded.type }; setJob(loaded);
+      if (!isTtsJob(loaded)) {
+        void refreshSamples();
+        void apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`, options).then(setCheckpoints).catch(ignoreAbort).finally(() => { if (!controller.signal.aborted) setCheckpointsLoaded(true); });
+      }
+    }).catch(ignoreAbort);
     apiClient.get<JobMetrics>(`/jobs/${id}/metrics`, options).then(finishMetrics).catch(error => {
       ignoreAbort(error);
       finishMetrics({ steps: [], loss: [], loss_ema: [], lr: {}, grad_norm: [], vram_mb: [], it_s: [], validation: [] });
     });
-    void refreshSamples();
-    apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`, options).then(setCheckpoints).catch(ignoreAbort).finally(() => { if (!controller.signal.aborted) setCheckpointsLoaded(true); });
     apiClient.get<any>(`/jobs/${id}/config`, options).then(setConfigSnapshot).catch(ignoreAbort);
     return () => { controller.abort(); samplesRequestRef.current?.abort(); };
   }, [id, refreshSamples]);
@@ -234,13 +258,19 @@ export default function JobDetail() {
   // 2. SSE 增量监听
   useEventStream(EVENT_TYPES.JOB_STATE, (data: any) => {
     if (data.job_id === id) {
-      setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
+      setJob((prev) => prev ? isTtsJob(prev) ? { ...mergeJobEvent(prev, data), allowed_actions: undefined, action_reasons: undefined } : mergeJobEvent(prev, data) : null);
       // A resumed run also brings its pause history.
-      if (['completed', 'failed', 'cancelled', 'paused', 'running'].includes(data.status)) {
+      if (isTtsJob(jobKind.current)) refreshTtsProjection();
+      else if (['completed', 'failed', 'cancelled', 'paused', 'running'].includes(data.status)) {
         void refreshSamples();
         void apiClient.get<VersionedJob>(`/jobs/${id}`, {silent:true}).then(updated => setJob(previous => previous?.id === updated.id ? updated : previous)).catch(() => {});
       }
     }
+  });
+
+  useEventStream(EVENT_TYPES.QUEUE_CHANGED, () => {
+    if (!id || !isTtsJob(jobKind.current)) return;
+    refreshTtsProjection();
   });
 
   useEventStream(EVENT_TYPES.JOB_STEP, (data: any) => {
@@ -257,10 +287,11 @@ export default function JobDetail() {
     if (data.job_id === id) setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
   });
   useEventStream(EVENT_TYPES.JOB_CHECKPOINT, (data: any) => {
-    if (data.job_id === id) apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`).then(setCheckpoints).catch(console.error);
+    if (data.job_id === id && !isTtsJob(jobKind.current)) apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`).then(setCheckpoints).catch(console.error);
   });
 
   useEventStream(EVENT_TYPES.JOB_SAMPLE, (sample: JobSample & { job_id?: string; ts?: number }) => {
+    if (isTtsJob(jobKind.current)) return;
     if (sample.job_id && sample.job_id !== id) return;
     setSamples(previous => mergeSamples(previous, [{ ...sample, created_at: sample.created_at ?? sample.ts ?? Date.now() / 1000 }]));
   });
@@ -330,6 +361,7 @@ export default function JobDetail() {
 
   const tabs = [
     { key: 'metrics', icon: Activity, label: t('job.tabMetrics') },
+    { key: 'audio', icon: AudioLines, label: job?.type === 'tts_train' ? text('权重与试听', 'Weights and preview') : text('试听音频', 'Preview audio') },
     { key: 'samples', icon: ImageIcon, label: `${t('job.tabSamples')} (${samples.length})` },
     { key: 'checkpoints', icon: Layers, label: `${t('job.tabCheckpoints')} (${outputs.length})` },
     { key: 'states', icon: History, label: `${text('恢复点', 'Resume points')} (${resumePoints.length})` },
@@ -368,7 +400,9 @@ export default function JobDetail() {
   // Two rows; groups are listed by name, so a DoRA rate sits alone above the w1 / w2 (or down / up) pair.
   const rateSplit = Math.floor(learningRates.length / 2);
   const learningRateRows = [learningRates.slice(0, rateSplit), learningRates.slice(rateSplit)];
-  const epochProgress = stepsPerEpoch && job?.progress?.step != null ? (job.progress.step / stepsPerEpoch).toFixed(2).replace(/\.00$/, '') : job?.progress?.epoch != null ? String(job.progress.epoch + 1) : '—';
+  const epochProgress = isTtsJob(job)
+    ? typeof job?.progress?.epoch === 'number' && Number.isFinite(job.progress.epoch) ? String(Number(job.progress.epoch.toFixed(2))) : '—'
+    : stepsPerEpoch && job?.progress?.step != null ? (job.progress.step / stepsPerEpoch).toFixed(2).replace(/\.00$/, '') : job?.progress?.epoch != null ? String(job.progress.epoch + 1) : '—';
   const totalEpochs = stepsPerEpoch && job?.progress?.total_steps != null ? Math.ceil(job.progress.total_steps / stepsPerEpoch) : configSnapshot?.loop?.epochs;
   const elapsed = job?.started_at != null ? Math.max(0, (job.finished_at ?? (['running','pausing','cancelling'].includes(job.status) ? clock : job.started_at)) - job.started_at) : null;
   const configurationName = job?.version_name || versionName || job?.name;
@@ -379,12 +413,13 @@ export default function JobDetail() {
         <TopbarBreadcrumb>
           <nav className="job-monitor-breadcrumb" aria-label={text('当前位置', 'Current location')}>
             <Link to="/queue">{text('任务队列', 'Job queue')}</Link>
+            {isTtsJob(job) && <><span aria-hidden="true">/</span><Link to="/projects">{text('语音训练', 'Speech training')}</Link></>}
             {job?.project_id && <><span aria-hidden="true">/</span><Link to={resultsUrl} title={text('打开版本训练结果', 'Open version results')}>{job.project_name || job.project_id}{versionLabel && <span className="job-monitor-version"> · {versionLabel}</span>}</Link></>}
           </nav>
         </TopbarBreadcrumb>
         <div className="job-monitor-identity">
           <div className="job-monitor-title"><button type="button" className="ui-btn ui-btn-sm job-monitor-back" onClick={goBack}><ArrowLeft size={14}/>{text('返回', 'Back')}</button><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1>{job && <JobStatus status={job.status}/>}</div>
-          {job && <JobActions key={job.id} job={job} onUpdated={updated => { if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`, { replace: true, state: location.state }); }}/>}
+          {job && <JobActions key={job.id} job={job} onUpdated={updated => { if (isTtsJob(job)) ttsProjectionRequest.current?.abort(); if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`, { replace: true, state: location.state }); }}/>}
         </div>
       </header>
       <dl className="job-run-metadata" aria-label={text('运行信息','Run information')}>
@@ -393,18 +428,19 @@ export default function JobDetail() {
         <div><dt>{job?.type === 'train' ? text('训练时长','Training elapsed') : text('运行时长','Elapsed')}</dt><dd>{formatEta(elapsed)}</dd></div>
         <div><dt>{job?.type === 'train' ? text('训练配置','Training configuration') : text('任务配置','Task configuration')}</dt><dd>{configurationName ? `${configurationName} · ${text('参数快照','snapshot')}` : '—'}</dd></div>
         <div><dt>{text('运行 ID','Run ID')}</dt><dd><code>{job?.id || id}</code></dd></div>
+        {job && isTtsJob(job) && <TtsJobLineage key={job.id} job={job}/>}
       </dl>
       {dataError && <div className="task-error" role="alert">{dataError}</div>}
       {actionError && <div role="alert" className="task-error">{actionError}</div>}
       {job?.archived_at != null && <div className="job-archived" role="status"><Archive size={15} aria-hidden="true"/><span>{text('此任务已归档，不再显示在队列和项目结果中，权重和记录仍保留。', 'This job is archived: it is hidden from the queue and project results; its weights and records are kept.')}</span>
-        <button type="button" className="ui-btn ui-btn-sm" disabled={restoring} onClick={() => void restore()}><ArchiveRestore size={14}/>{text('恢复到训练历史', 'Restore to History')}</button></div>}
+        <button type="button" className="ui-btn ui-btn-sm" disabled={restoring || !ttsAction(job, 'unarchive', text).allowed} title={ttsAction(job, 'unarchive', text).reason || undefined} onClick={() => void restore()}><ArchiveRestore size={14}/>{text('恢复到训练历史', 'Restore to History')}</button>{!ttsAction(job, 'unarchive', text).allowed && <span>{ttsAction(job, 'unarchive', text).reason}</span>}</div>}
       {job?.error && <div role="alert" className="job-failure"><div><strong>{job.type === 'train' ? text('训练失败', 'Training failed') : text('任务失败', 'Job failed')}</strong><p>{job.error}</p></div>{activeTab !== 'logs' && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setActiveTab('logs')}><Terminal size={14}/>{text('查看日志', 'Open log')}</button>}</div>}
       {/* 1. 头部指标与阶段时间线 */}
-      {job?.type !== 'xyz' && <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
+      {job?.type !== 'xyz' && job?.type !== 'tts_sample' && <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
         <OverflowStrip snap role="group" label={text('训练核心指标','Training metrics')} containerClassName="job-stat-strip" className="job-stat-grid"
           pageLabels={{ previous: text('上一组指标', 'Previous metrics'), next: text('下一组指标', 'Next metrics') }}>
           <StatCard label={text('步数','Steps')} value={`${job?.progress?.step ?? '—'} / ${job?.progress?.total_steps ?? '—'}`}/>
-          <StatCard label={text('轮次','Epochs')} value={`${epochProgress} / ${totalEpochs ?? '—'}`}/>
+          <StatCard label={text('轮次','Epochs')} value={isTtsJob(job) && totalEpochs == null ? epochProgress : `${epochProgress} / ${totalEpochs ?? '—'}`}/>
           <StatCard label="Loss" value={lossNumber(job?.latest?.loss)} detail={<StepChange delta={lossChange} text={text}/>}/>
           <StatCard label={text('平均 Loss','Mean loss')} value={lossNumber(meanLoss)} hint={meanScope} detail={<StepChange delta={meanChange} text={text}/>}/>
           <StatCard label={text('学习率','Learning rate')} hint={learningRates.length ? learningRateHelp(learningRates.map(([name]) => name), configSnapshot?.adapter?.algo, configSnapshot?.optimizer?.type, text) : undefined}
@@ -413,7 +449,7 @@ export default function JobDetail() {
           <StatCard label={t('job.eta')} value={job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s)}/>
         </OverflowStrip>
 
-        {job && <JobStepper status={job.status} phase={job.progress?.phase || ''} progress={job.progress}/>}
+        {job && !isTtsJob(job) && <JobStepper status={job.status} phase={job.progress?.phase || ''} progress={job.progress}/>}
 
         {/* 采样预览进度（job.sample_progress SSE） */}
         {sampleProgress && (
@@ -455,6 +491,8 @@ export default function JobDetail() {
       {/* 3. 详细内容区域 */}
       <div ref={tabPanel} role="tabpanel" id={`job-panel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`}>
       {activeTab === 'metrics' && <JobMetricsPanel metrics={metrics} stepsPerEpoch={stepsPerEpoch} vramMetric={job?.progress?.vram_metric} device={job?.progress?.device} status={job?.status}/>}
+
+      {activeTab === 'audio' && job && <TtsJobOutputs key={job.id} jobId={job.id} training={job.type === 'tts_train'} live={['queued', 'scheduled', 'running', 'cancelling'].includes(job.status)}/>}
 
       {activeTab === 'samples' && <SampleViewer samples={samples} stepsPerEpoch={stepsPerEpoch} loaded={samplesLoaded} selected={selectedSample} onSelect={setSelectedSample}/>}
 

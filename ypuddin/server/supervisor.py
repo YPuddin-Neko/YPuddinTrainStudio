@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,13 +51,22 @@ OUTPUT_DRAIN_SECONDS = 2.0
 
 # Writes start failing well before a volume reports exactly zero free bytes.
 LOW_DISK_BYTES = 64 * 2**20
-EXIT_LABELS = {"train": "训练", "cache": "缓存", "xyz": "模型测试"}
+EXIT_LABELS = {"train": "训练", "cache": "缓存", "xyz": "模型测试", "tts_train": "语音训练", "tts_sample": "语音试听"}
+TTS_JOBS = frozenset({"tts_train", "tts_sample"})
 # torchrun's summary of a failed rank names the rank, not the cause.
 _LAUNCHER = re.compile(r"torch[/\\.]distributed[/\\.]elastic")
 
 
 def _launcher_line(line: dict[str, Any]) -> bool:
     return "ChildFailedError" in line["msg"] or bool(_LAUNCHER.search(line["source"] or ""))
+
+
+def tts_device_error(inventory: list[dict[str, Any]]) -> str | None:
+    if current_profile().endswith("-cpu") or current_profile() == "linux-dtk":
+        return "语音任务需要在 NVIDIA CUDA 环境运行，请检查服务运行环境。"
+    if not any(str(gpu.get("device", "")).startswith("cuda:") for gpu in inventory):
+        return "当前服务没有可分配的 NVIDIA CUDA 显卡。"
+    return None
 
 
 def _exit_error(job: dict[str, Any], code: int | None, *, completed: bool = False) -> str:
@@ -241,8 +251,9 @@ class JobSupervisor:
                 self._pump_events(job_id)
                 job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
                 if job and job["status"] in ("running", "pausing") and job_id not in self._outcome_seen:
-                    self._control_file(job, "pause")
-                    self._set_status(job_id, "pausing")
+                    cancellable = job["type"] in TTS_JOBS
+                    self._control_file(job, "stop" if cancellable else "pause")
+                    self._set_status(job_id, "cancelling" if cancellable else "pausing")
         deadline = asyncio.get_running_loop().time() + 20
         while self._procs and asyncio.get_running_loop().time() < deadline:
             for job_id, proc in list(self._procs.items()):
@@ -372,6 +383,18 @@ class JobSupervisor:
         count = self._gpu_count(job)
         requested = json.loads(job.get("gpu_devices_json") or "[]")
         inventory = [] if current_profile().endswith("-cpu") else gpu_info()
+        if job["type"] in TTS_JOBS and (error := tts_device_error(inventory)):
+            self._publish_admission(job, error=error)
+            return None
+        if job["type"] in TTS_JOBS:
+            inventory = [gpu for gpu in inventory if str(gpu.get("device", "")).startswith("cuda:")]
+            from .tts_gpu import eligible_inventory
+
+            try:
+                inventory = eligible_inventory(job, inventory)
+            except (OSError, ValueError, KeyError) as exc:
+                self._publish_admission(job, error=str(exc))
+                return None
         if error := selection_error(requested, count, inventory):
             self._publish_admission(job, error=error)
             return None
@@ -474,6 +497,18 @@ class JobSupervisor:
         requested = json.loads(job.get("gpu_devices_json") or "[]")
         cpu = current_profile().endswith("-cpu")
         inventory = [] if cpu else gpu_info()
+        if job["type"] in TTS_JOBS and (error := tts_device_error(inventory)):
+            self._publish_admission(job, error=error)
+            return None
+        if job["type"] in TTS_JOBS:
+            inventory = [gpu for gpu in inventory if str(gpu.get("device", "")).startswith("cuda:")]
+            from .tts_gpu import eligible_inventory
+
+            try:
+                inventory = eligible_inventory(job, inventory)
+            except (OSError, ValueError, KeyError) as exc:
+                self._publish_admission(job, error=str(exc))
+                return None
         if error := selection_error(requested, count, inventory):
             self._publish_admission(job, error=error)
             return None
@@ -508,6 +543,27 @@ class JobSupervisor:
             allocation = requested or free[:count]
             return allocation[0] if count == 1 else tuple(allocation)
         # Explicit cards must all be released; otherwise enough candidate cards for the run.
+        if job["type"] in TTS_JOBS:
+            from .errors import ApiError
+            from .tts_job_actions import dependency_issue, owner_issue
+
+            with self.db.lock:
+                current = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job["id"],))
+                if (not current or current["status"] != "queued" or job["id"] in self._procs
+                        or job["id"] in deleting_jobs or current.get("archived_at") is not None
+                        or any(current.get(key) != job.get(key) for key in ("gpu_devices_json", "config_json", "forced_at", "archived_at"))):
+                    return None
+                try:
+                    self._check_job_version(current)
+                    if context := getattr(self, "context", None):
+                        problem = owner_issue(context, current) or dependency_issue(context, current)
+                        if problem:
+                            raise ValueError(problem.message)
+                except (ApiError, ValueError) as exc:
+                    self._publish_admission(current, error=str(exc))
+                    return None
+                self._make_room(current, set(requested or candidates), len(requested) or count - len(free), not slot_free)
+            return None
         self._make_room(job, set(requested or candidates), len(requested) or count - len(free), not slot_free)
         return None
 
@@ -549,12 +605,14 @@ class JobSupervisor:
             if jid in pausable - stopping:
                 self._preempt(jid, job["name"])
         names = "、".join(f"「{holders[jid]['name']}」" for jid in chosen if jid in holders)
+        waiting_tts = any(row.get("type") in TTS_JOBS for row in holders.values())
         if any(jid not in stopping | pausable for jid in chosen):
-            reason = f"强制开始：等待模型测试{names}结束"
+            label = "任务" if waiting_tts else "模型测试"
+            reason = f"强制开始：等待{label}{names}结束"
         elif names:
             reason = f"强制开始：等待{names}{'让出显卡' if devices else '暂停'}"
         else:
-            reason = "强制开始：等待正在运行的模型测试结束"
+            reason = "强制开始：等待正在运行的语音任务结束" if waiting_tts else "强制开始：等待正在运行的模型测试结束"
         self._publish_admission(job, progress={"phase": "waiting_for_device", "wait_reason": reason})
 
     def _preempt(self, job_id: str, forced_by: str) -> None:
@@ -659,6 +717,17 @@ class JobSupervisor:
                     shutil.rmtree(resident_control, ignore_errors=True)
                     resident_control.mkdir(parents=True)
                     cmd += ["--resident", str(resident_control)]
+        elif job["type"] in TTS_JOBS:
+            from .routes_tts import launch_payload
+
+            payload = launch_payload(job, worker_device)
+            cfg_path = run_dir / "tts-request.json"
+            cfg_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            mode = "train" if job["type"] == "tts_train" else "sample"
+            cmd = [self.python, "-m", "ypuddin.tts.worker", "--config", str(cfg_path), "--mode", mode]
+            # The service may be running from an isolated worktree while its interpreter is shared.
+            source = str(Path(__file__).resolve().parents[2])
+            env["PYTHONPATH"] = os.pathsep.join(filter(None, (source, env.get("PYTHONPATH"))))
         else:
             payload = json.loads(job["config_json"])
             # New queue snapshots include the switch. Existing immutable jobs
@@ -875,6 +944,12 @@ class JobSupervisor:
 
     # ----------------------------------------------------------------- events
     def _publish(self, type_: str, data: dict[str, Any]) -> None:
+        if type_ in {"job.state", "job.phase", "job.checkpoint", "job.tts_sample"} and data.get("job_id"):
+            row = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (data["job_id"],))
+            if row and row["type"] in TTS_JOBS:
+                payload = json.loads(row["config_json"] or "{}")
+                data = {**data, "project_id": row.get("project_id"), "version_id": row.get("version_id"),
+                        "source_job_id": (payload.get("tts_sample") or {}).get("source_job_id")}
         pending = self._pending_events.get()
         if pending is None:
             self.bus.publish(type_, data)
@@ -1015,9 +1090,12 @@ class JobSupervisor:
                 },
             )
         elif t == "checkpoint.saved":
-            if ev.get("kind") in {"weights", "model"}:
+            job = self.db.fetchone("SELECT type FROM jobs WHERE id=?", (job_id,))
+            if ev.get("kind") in {"weights", "model"} and job and job["type"] not in TTS_JOBS:
                 self._register_artifact(job_id, ev)
             self._publish("job.checkpoint", data)
+        elif t == "tts.sample.saved":
+            self._publish("job.tts_sample", data)
         elif t == "warning":
             self._publish("job.warning", data)
         elif t in ("run.finished", "run.paused", "run.stopped", "run.failed"):
@@ -1187,8 +1265,16 @@ class JobSupervisor:
         job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
         if not job:
             raise KeyError(job_id)
+        if job["type"] in TTS_JOBS and getattr(self, "context", None) is not None:
+            from .tts_job_actions import assert_action
+
+            assert_action(self.context, job, command)
+            if command == "retry":
+                raise ValueError("语音重试需要通过带请求标识的任务接口创建。")
         if job["type"] == "xyz" and command not in {"cancel", "retry", "force"}:
             raise ValueError("模型测试支持取消、重试和强制开始，不能执行训练任务的暂停、恢复或保存操作。")
+        if job["type"] in TTS_JOBS and command not in {"cancel", "retry", "force"}:
+            raise ValueError("语音任务支持取消、重试和强制开始，不支持暂停、恢复或手动保存。")
         if command in {"resume", "retry", "force"}:
             # The delete routes add the job under the same lock and remove its folders outside it.
             if job_id in deleting_jobs:
@@ -1306,6 +1392,12 @@ class JobSupervisor:
         from .job_layout import makes_products, renamed_for_job
 
         self._check_job_version(job)
+        if job["type"] in TTS_JOBS and getattr(self, "context", None) is not None:
+            raise ValueError("语音重试需要通过带请求标识的任务接口创建。")
+        if job["type"] in TTS_JOBS:
+            from .routes_tts import launch_payload
+
+            launch_payload(job)
         if job["type"] == "xyz":
             payload = json.loads(job["config_json"])
             source_id = payload["xyz"]["source_job_id"]
@@ -1338,32 +1430,38 @@ class JobSupervisor:
         if job["type"] in {"train", "cache"}:
             cfg["logging"]["level"] = "debug"
         cfg.setdefault("sampling", {})["output_dir"] = str(samples_dir)
-        self.db.insert(
-            "jobs",
-            {
-                "id": new,
-                "type": job["type"],
-                "name": job["name"] + " (retry)",
-                "project_id": job["project_id"],
-                "version_id": job.get("version_id"),
-                "status": "queued",
-                "priority": job["priority"],
-                "gpu_devices_json": job.get("gpu_devices_json") or "[]",
-                "created_at": now(),
-                "run_dir": str(run_dir),
-                "samples_dir": str(samples_dir),
-                "config_json": json.dumps(cfg),
-                "progress_json": json.dumps(
-                    {
-                        "estimated_peak_mb": json.loads(job.get("progress_json") or "{}").get(
-                            "estimated_peak_mb"
-                        ),
-                        "estimated_host_mb": json.loads(job.get("progress_json") or "{}").get("estimated_host_mb"),
-                    }
-                ),
-                "latest_json": "{}",
-            },
-        )
+        manifests = nullcontext()
+        if job["type"] == "tts_train":
+            from .routes_tts import cloned_manifests
+
+            manifests = cloned_manifests(cfg, run_dir)
+        with manifests:
+            self.db.insert(
+                "jobs",
+                {
+                    "id": new,
+                    "type": job["type"],
+                    "name": job["name"] + " (retry)",
+                    "project_id": job["project_id"],
+                    "version_id": job.get("version_id"),
+                    "status": "queued",
+                    "priority": job["priority"],
+                    "gpu_devices_json": job.get("gpu_devices_json") or "[]",
+                    "created_at": now(),
+                    "run_dir": str(run_dir),
+                    "samples_dir": str(samples_dir),
+                    "config_json": json.dumps(cfg),
+                    "progress_json": json.dumps(
+                        {
+                            "estimated_peak_mb": json.loads(job.get("progress_json") or "{}").get(
+                                "estimated_peak_mb"
+                            ),
+                            "estimated_host_mb": json.loads(job.get("progress_json") or "{}").get("estimated_host_mb"),
+                        }
+                    ),
+                    "latest_json": "{}",
+                },
+            )
         self._publish("queue.changed", {})
         return self.db.fetchone("SELECT * FROM jobs WHERE id=?", (new,))
 

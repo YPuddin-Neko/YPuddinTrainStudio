@@ -271,6 +271,7 @@ class SiteDownloadManager:
         }
 
     def snapshot(self, pid, vid):
+        self.c.require_project_type(pid, "image")
         self.c.resolve_version(pid, vid)
         rows = self.c.db.fetchall(
             "SELECT id FROM site_downloads WHERE project_id=? AND version_id=? ORDER BY created_at DESC LIMIT 20",
@@ -378,6 +379,7 @@ class SiteDownloadManager:
         )
 
     def estimate(self, pid, vid, request):
+        self.c.require_project_type(pid, "image")
         self.c.resolve_version(pid, vid)
         client = self._preview(request.source)
         search = self._search(client, request.model_dump())
@@ -433,6 +435,7 @@ class SiteDownloadManager:
     def start(self, pid, vid, request):
         from .routes_work import _get_dataset, _validate_caption_extension, get_project_config
 
+        self.c.require_project_type(pid, "image")
         search_tags(request.tags)
         excluded_tags(request.excluded_tags)
         credentials = self.credentials.site(request.source)

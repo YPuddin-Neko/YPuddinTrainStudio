@@ -1,0 +1,29 @@
+.tts-training-content { min-width:0; }
+.tts-training-progress { display:flex; align-items:center; gap:8px; margin:0 0 16px; color:var(--studio-dim); }
+.tts-training-progress svg { flex-shrink:0; }
+.tts-training-note { color:var(--studio-dim); margin:0 0 16px; line-height:1.6; }
+.tts-training-report h3 { font-size:13px; font-weight:600; margin:20px 0 8px; }
+.tts-training-result { font-weight:500; margin:0 0 12px; }
+.tts-training-result[data-valid=true],.tts-training-checks [data-state=available] { color:var(--studio-success); }
+.tts-training-issues { list-style:disc; padding-left:20px; margin:6px 0 10px; line-height:1.6; overflow-wrap:anywhere; }
+.tts-training-issue-location { display:block; font-size:12px; color:var(--studio-dim); }
+.tts-training-issues [data-severity=error],.tts-training-checks [data-state=unavailable] { color:var(--studio-danger); }
+.tts-training-checks { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 24px; }
+.tts-training-checks > li > div { display:flex; justify-content:space-between; gap:12px; }
+.tts-training-checks strong { font-size:12px; font-weight:500; }
+.tts-training-checks .tts-training-issues { font-size:12px; }
+.tts-training-table { overflow-x:auto; }
+.tts-training-table table { width:100%; min-width:440px; table-layout:fixed; border-collapse:collapse; font-size:12px; font-variant-numeric:tabular-nums; }
+.tts-training-table th,.tts-training-table td { border-bottom:1px solid var(--studio-line); text-align:left; vertical-align:top; padding:7px 8px; overflow-wrap:anywhere; }
+.tts-training-table th { font-weight:500; }
+.tts-training-table thead { color:var(--studio-dim); }
+.tts-training-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 24px; margin:0; font-size:12px; }
+.tts-training-facts > div { display:flex; justify-content:space-between; gap:12px; }
+.tts-training-facts dt { color:var(--studio-dim); }
+.tts-training-facts dd { margin:0; font-variant-numeric:tabular-nums; }
+.tts-training-inputs { display:flex; align-items:flex-end; flex-wrap:wrap; gap:16px; margin-top:20px; }
+.tts-training-name { flex:1; min-width:180px; display:flex; flex-direction:column; gap:6px; font-size:12px; }
+.tts-training-name input { width:100%; min-height:32px; padding:6px 10px; font-size:13px; }
+.tts-training-label { display:block; font-size:12px; margin-bottom:6px; }
+.tts-training-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:20px; }
+@media(max-width:600px) { .tts-training-checks,.tts-training-facts { grid-template-columns:1fr; } .tts-training-table th,.tts-training-table td { padding:6px 4px; } }

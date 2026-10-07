@@ -50,6 +50,8 @@ export function artifactKindLabel(kind: string, text: Text): string {
 }
 
 export function jobTypeLabel(job: Pick<Job, 'type' | 'training_mode'>, text: Text): string {
+  if (job.type === 'tts_train') return text('语音 LoRA 训练', 'Speech LoRA training');
+  if (job.type === 'tts_sample') return text('语音试听', 'Speech preview');
   if (job.type === 'xyz') return text('模型测试', 'Model testing');
   if (job.type === 'cache') return text('缓存', 'Cache');
   if (job.training_mode === 'full') return text('全量微调', 'Full fine-tuning');

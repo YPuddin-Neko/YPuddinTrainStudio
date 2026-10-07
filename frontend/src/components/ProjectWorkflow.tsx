@@ -6,12 +6,13 @@ import '../styles/project-workspace.css';
 
 export type WorkspaceStep = 'overview' | 'data' | 'train' | 'results';
 
-export function ProjectWorkflow({ projectId, versionId, active, sidebar = false }: { projectId: string; versionId?: string | null; active?: WorkspaceStep; sidebar?: boolean }) {
+export function ProjectWorkflow({ projectId, versionId, projectType = 'image', active, sidebar = false }: { projectId: string; versionId?: string | null; projectType?: 'image' | 'tts'; active?: WorkspaceStep; sidebar?: boolean }) {
   const text = useWorkspaceText();
+  const speech = projectType === 'tts';
   const steps = [
-    { key: 'data', label: text('训练数据', 'Training data'), detail: text('上传图片与标签', 'Images and captions'), icon: Database, url: projectUrl(projectId, versionId, 'data') },
+    { key: 'data', label: text('训练数据', 'Training data'), detail: speech ? text('录音与对应文本', 'Recordings and transcripts') : text('上传图片与标签', 'Images and captions'), icon: Database, url: projectUrl(projectId, versionId, 'data') },
     { key: 'train', label: text('训练参数', 'Training parameters'), detail: text('设置参数，检查并启动', 'Configure, validate and start'), icon: SlidersHorizontal, url: projectUrl(projectId, versionId, 'train') },
-    { key: 'results', label: text('训练结果', 'Training results'), detail: text('本版本的产物、采样与训练记录', 'Outputs, samples and training history in this version'), icon: Activity, url: projectUrl(projectId, versionId, 'results') },
+    { key: 'results', label: text('训练结果', 'Training results'), detail: speech ? text('本版本的训练记录', 'Training history in this version') : text('本版本的产物、采样与训练记录', 'Outputs, samples and training history in this version'), icon: Activity, url: projectUrl(projectId, versionId, 'results') },
   ];
   const currentIndex = steps.findIndex(step => step.key === active);
   return <div className={`project-stage-navigation${sidebar ? ' sidebar-project-stages' : ''}`}><nav aria-label={text('项目训练步骤', 'Project training steps')} className="project-workflow">

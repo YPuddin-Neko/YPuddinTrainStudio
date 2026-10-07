@@ -12,9 +12,22 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ypuddin.tts.issues import TtsIssue
+
 
 class _Out(BaseModel):
     model_config = ConfigDict(extra="allow")
+
+
+class ApiErrorBody(_Out):
+    code: str
+    message: str
+    trace_id: str
+    details: dict[str, Any]
+
+
+class ApiErrorResponse(_Out):
+    error: ApiErrorBody
 
 
 class ModelBrowseRoot(_Out):
@@ -640,6 +653,17 @@ class ProjectActivity(_Out):
     error: str | None = None
 
 
+class AudioSplitSummary(_Out):
+    state: Literal["missing", "unchecked", "checking", "valid", "invalid", "stale", "error"]
+    clips_count: int | None = None
+    duration_seconds: float | None = None
+
+
+class AudioStats(_Out):
+    train: AudioSplitSummary
+    validation: AudioSplitSummary | None = None
+
+
 class Project(_Out):
     id: str
     name: str
@@ -660,6 +684,9 @@ class Project(_Out):
     cover_url: str | None = None
     active_family: str | None = None
     active_display_family: str | None = None
+    project_type: Literal["image", "tts"] = "image"
+    active_engine: Literal["voxcpm1.5"] | None = None
+    audio_stats: AudioStats | None = None
 
 
 class ProjectPage(_Out):
@@ -703,7 +730,7 @@ class VersionPaths(_Out):
 
 class VersionStats(_Out):
     datasets: int
-    images: int
+    images: int | None
     jobs: int
     artifacts: int
 
@@ -727,6 +754,9 @@ class ProjectVersion(_Out):
     progress: VersionProgress
     family: str | None = None
     display_family: str | None = None
+    project_type: Literal["image", "tts"] = "image"
+    engine: Literal["voxcpm1.5"] | None = None
+    audio_stats: AudioStats | None = None
 
 
 class DatasetSource(_Out):
@@ -895,7 +925,7 @@ class JobProgress(_Out):
     step: int | None = None
     total_steps: int | None = None
     steps_per_epoch: int | None = None
-    epoch: int | None = None
+    epoch: int | float | None = None
     eta_s: float | None = None
     it_s: float | None = None
     vram_peak_mb: float | None = None
@@ -924,6 +954,12 @@ class JobLatest(_Out):
     lr: dict[str, float] | None = None
 
 
+JobAction = Literal[
+    "cancel", "retry", "force", "pause", "resume", "save",
+    "archive", "unarchive", "delete", "change_gpu", "change_priority",
+]
+
+
 class Job(_Out):
     id: str
     type: str
@@ -943,6 +979,10 @@ class Job(_Out):
     finished_at: float | None
     run_dir: str | None
     samples_dir: str | None = None
+    source_job_id: str | None = None
+    retry_of_job_id: str | None = None
+    allowed_actions: list[JobAction] = Field(default_factory=list)
+    action_reasons: dict[JobAction, TtsIssue] = Field(default_factory=dict)
     # Set when the job was moved to the archive; its files stay until it is deleted there.
     archived_at: float | None = None
     # Set while a forced start waits for its device; cleared when the job launches.

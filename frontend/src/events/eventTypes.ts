@@ -15,6 +15,7 @@ export const EVENT_TYPES = {
   JOB_LOG: 'job.log',
   QUEUE_CHANGED: 'queue.changed',
   DATASET_CHANGED: 'dataset.changed',
+  TTS_SOURCE_CHANGED: 'tts.source.changed',
   ARTIFACT_CREATED: 'artifact.created',
   BACKGROUND_CHANGED: 'background.changed',
 } as const;

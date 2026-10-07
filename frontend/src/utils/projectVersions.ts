@@ -1,18 +1,9 @@
 import { apiClient } from '../api/client';
 import type { Project } from '../api/types';
+import type { components } from '../api/generated';
 
 export type VersionedProject = Project & { active_version_id?: string | null; version_count?: number; layout_version?: number };
-export interface ProjectVersion {
-  id: string; project_id: string; number?: number; name: string; note: string; archived: boolean;
-  family?: string;
-  display_family?: string | null;
-  parent_version_id?: string | null; status: 'copying' | 'ready' | 'failed';
-  created_at: number; updated_at: number; dataset_ids: string[]; busy?: boolean;
-  progress?: { phase: string; files_done: number; files_total: number; bytes_done: number; bytes_total: number };
-  error?: string | null;
-  stats: { datasets: number; images: number; jobs: number; artifacts: number };
-  paths: { root: string; config: string; datasets: string; runs: string; cache: string; traindata?: string; reg?: string; samples?: string; output?: string; jobs?: string | null };
-}
+export type ProjectVersion = components['schemas']['ProjectVersion'];
 export function projectUrl(projectId: string, versionId?: string | null, step?: string) {
   const base = `/projects/${encodeURIComponent(projectId)}${versionId ? `/v/${encodeURIComponent(versionId)}` : ''}`;
   return step === 'train' ? `${base}/train` : step ? `${base}?step=${step}` : base;

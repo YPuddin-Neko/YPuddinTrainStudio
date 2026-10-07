@@ -37,6 +37,7 @@ RECORD_NAMES = frozenset(
         "events.jsonl",
         "control",
         "xyz-request.json",
+        "tts-request.json",
         "tensorboard",
         "wandb",
     }
@@ -57,7 +58,7 @@ def samples_dir(version: Path, job_id: str) -> Path:
 
 
 def makes_products(job_type: str) -> bool:
-    return job_type == "train"
+    return job_type in {"train", "tts_train"}
 
 
 def renamed_for_job(path: Path, old_id: str, new_id: str) -> Path | None:

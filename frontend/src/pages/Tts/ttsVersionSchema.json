@@ -1,0 +1,238 @@
+{
+  "properties": {
+    "engine": {
+      "type": "string",
+      "const": "voxcpm1.5",
+      "title": "Engine",
+      "default": "voxcpm1.5"
+    },
+    "python_path": {
+      "type": "string",
+      "title": "Python Path",
+      "default": ""
+    },
+    "trainer_path": {
+      "type": "string",
+      "title": "Trainer Path",
+      "default": ""
+    },
+    "model_path": {
+      "type": "string",
+      "title": "Model Path",
+      "default": ""
+    },
+    "batch_size": {
+      "type": "integer",
+      "maximum": 1024,
+      "minimum": 1,
+      "title": "Batch Size",
+      "default": 1
+    },
+    "grad_accum_steps": {
+      "type": "integer",
+      "maximum": 1024,
+      "minimum": 1,
+      "title": "Grad Accum Steps",
+      "default": 1
+    },
+    "num_workers": {
+      "type": "integer",
+      "maximum": 64,
+      "minimum": 0,
+      "title": "Num Workers",
+      "default": 0
+    },
+    "preprocessing_num_workers": {
+      "type": "integer",
+      "maximum": 64,
+      "minimum": 1,
+      "title": "Preprocessing Num Workers",
+      "default": 1
+    },
+    "max_batch_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "title": "Max Batch Tokens",
+      "default": 0
+    },
+    "num_iters": {
+      "type": "integer",
+      "maximum": 10000000,
+      "minimum": 1,
+      "title": "Num Iters",
+      "default": 1000
+    },
+    "learning_rate": {
+      "type": "number",
+      "maximum": 1,
+      "exclusiveMinimum": 0,
+      "title": "Learning Rate",
+      "default": 0.0001
+    },
+    "warmup_steps": {
+      "type": "integer",
+      "maximum": 10000000,
+      "minimum": 0,
+      "title": "Warmup Steps",
+      "default": 100
+    },
+    "weight_decay": {
+      "type": "number",
+      "minimum": 0,
+      "title": "Weight Decay",
+      "default": 0.01
+    },
+    "max_grad_norm": {
+      "type": "number",
+      "minimum": 0,
+      "title": "Max Grad Norm",
+      "default": 0
+    },
+    "max_steps": {
+      "type": "integer",
+      "maximum": 10000000,
+      "minimum": 0,
+      "title": "Max Steps",
+      "default": 0
+    },
+    "loss_diff_weight": {
+      "type": "number",
+      "minimum": 0,
+      "title": "Loss Diff Weight",
+      "default": 1
+    },
+    "loss_stop_weight": {
+      "type": "number",
+      "minimum": 0,
+      "title": "Loss Stop Weight",
+      "default": 1
+    },
+    "save_interval": {
+      "type": "integer",
+      "maximum": 10000000,
+      "minimum": 1,
+      "title": "Save Interval",
+      "default": 100
+    },
+    "valid_interval": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "maximum": 10000000,
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Valid Interval"
+    },
+    "log_interval": {
+      "type": "integer",
+      "maximum": 10000000,
+      "minimum": 1,
+      "title": "Log Interval",
+      "default": 1
+    },
+    "lora_rank": {
+      "type": "integer",
+      "maximum": 512,
+      "minimum": 1,
+      "title": "Lora Rank",
+      "default": 32
+    },
+    "lora_alpha": {
+      "type": "integer",
+      "maximum": 4096,
+      "minimum": 1,
+      "title": "Lora Alpha",
+      "default": 16
+    },
+    "lora_dropout": {
+      "type": "number",
+      "exclusiveMaximum": 1,
+      "minimum": 0,
+      "title": "Lora Dropout",
+      "default": 0
+    },
+    "lora_enable_lm": {
+      "type": "boolean",
+      "title": "Lora Enable Lm",
+      "default": true
+    },
+    "lora_target_modules_lm": {
+      "items": {
+        "type": "string",
+        "enum": [
+          "q_proj",
+          "v_proj",
+          "k_proj",
+          "o_proj"
+        ]
+      },
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
+      "title": "Lora Target Modules Lm",
+      "default": [
+        "q_proj",
+        "v_proj",
+        "k_proj",
+        "o_proj"
+      ]
+    },
+    "lora_enable_dit": {
+      "type": "boolean",
+      "title": "Lora Enable Dit",
+      "default": true
+    },
+    "lora_target_modules_dit": {
+      "items": {
+        "type": "string",
+        "enum": [
+          "q_proj",
+          "v_proj",
+          "k_proj",
+          "o_proj"
+        ]
+      },
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
+      "title": "Lora Target Modules Dit",
+      "default": [
+        "q_proj",
+        "v_proj",
+        "k_proj",
+        "o_proj"
+      ]
+    },
+    "lora_enable_proj": {
+      "type": "boolean",
+      "title": "Lora Enable Proj",
+      "default": false
+    },
+    "lora_target_proj_modules": {
+      "items": {
+        "type": "string",
+        "enum": [
+          "enc_to_lm_proj",
+          "lm_to_dit_proj",
+          "res_to_dit_proj"
+        ]
+      },
+      "type": "array",
+      "maxItems": 3,
+      "uniqueItems": true,
+      "title": "Lora Target Proj Modules",
+      "default": [
+        "enc_to_lm_proj",
+        "lm_to_dit_proj",
+        "res_to_dit_proj"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "title": "TtsVersionConfig"
+}

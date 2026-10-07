@@ -1,7 +1,8 @@
 import React from 'react';
-import { Crop, FolderOpen, ImagePlus, Loader2, X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { ArrowLeft, AudioLines, Crop, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
-import { useFamilies } from '../../api/hooks/useFamilies';
+import type { FamilyInfo } from '../../api/types';
 import Dialog from '../../components/Dialog';
 import { LazyImage } from '../../components/Loading';
 import StudioSelect from '../../components/StudioSelect';
@@ -28,7 +29,18 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
   const text = useWorkspaceText();
   const { i18n } = useTranslation();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
-  const { data: families = [], isError: familiesError, refetch: reloadFamilies } = useFamilies();
+  const [projectType, setProjectType] = React.useState<'image' | 'tts'>(project?.project_type === 'tts' ? 'tts' : 'image');
+  const [choosingType, setChoosingType] = React.useState(!project);
+  const stepFocus = React.useRef(false);
+  const nameInput = React.useRef<HTMLInputElement>(null);
+  const typeButtons = React.useRef<Partial<Record<'image' | 'tts', HTMLButtonElement | null>>>({});
+  const typeId = React.useId();
+  const { data: families = [], isError: familiesError, refetch: reloadFamilies } = useQuery({
+    queryKey: ['families'],
+    queryFn: () => apiClient.get<FamilyInfo[]>('/families', { silent: true }),
+    staleTime: 5 * 60 * 1000,
+    enabled: !project && !choosingType && projectType === 'image',
+  });
   const [name, setName] = React.useState(project?.name || '');
   const [id, setId] = React.useState(project?.id || '');
   const [note, setNote] = React.useState(project?.note || '');
@@ -50,12 +62,23 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
   const [partial, setPartial] = React.useState(false);
   const savedMetadata = React.useRef<string | null>(null);
   const uploadInput = React.useRef<HTMLInputElement>(null);
+  React.useLayoutEffect(() => {
+    if (!stepFocus.current) return;
+    stepFocus.current = false;
+    (choosingType ? typeButtons.current[projectType] : nameInput.current)?.focus();
+  }, [choosingType, projectType]);
+  const chooseType = (type: 'image' | 'tts') => {
+    if (busyRef.current || savedProject) return;
+    stepFocus.current = true;
+    setProjectType(type); setChoosingType(false); setError('');
+  };
   React.useEffect(() => {
     if (!file) { setPreview(null); return; }
     const url = URL.createObjectURL(file); setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
   const idError = !id ? text('请填写项目 ID。', 'Enter a project ID.') : id.length > 64 ? text('项目 ID 最多 64 个字符。', 'Project ID must be at most 64 characters.') : !/^[A-Za-z0-9_]+$/.test(id) ? text('项目 ID 只能包含英文字母、数字和下划线。', 'Use only ASCII letters, digits and underscores in the project ID.') : '';
+  const creationBlocked = !savedProject && (!!idError || (projectType === 'image' && !familyAvailable));
   const categoryOptions = [...new Set([...PROJECT_CATEGORIES, ...categories, ...(project?.category ? [project.category] : [])])];
   const categoryChoices = [{ value: '', label: text('未分类', 'Uncategorized') }, ...categoryOptions.map(value => ({ value: `category:${value}`, label: categoryLabel(value, english) })), { value: 'custom', label: text('自定义分类…', 'Custom category…') }];
   const categoryBox = React.useRef<HTMLDivElement>(null);
@@ -94,14 +117,15 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
   };
   const save = async () => {
     setIdTouched(true);
-    if (busyRef.current || !name.trim() || (!project && (idError || !familyAvailable)) || category.trim().length > 64 || (customCategory && !category.trim())) return;
+    if (choosingType || busyRef.current || !name.trim() || creationBlocked || category.trim().length > 64 || (customCategory && !category.trim())) return;
     busyRef.current = true; setBusy(true); setError('');
     let currentProject = savedProject;
     const metadata = { name: name.trim(), note: note.trim(), category: category.trim() || null };
     const signature = JSON.stringify(metadata);
     try {
       if (!currentProject) {
-        currentProject = await apiClient.post<GalleryProject>('/projects', { id, ...metadata, family }, { silent: true });
+        const model = projectType === 'tts' ? { project_type: 'tts' as const, engine: 'voxcpm1.5' as const } : { family };
+        currentProject = await apiClient.post<GalleryProject>('/projects', { id, ...metadata, ...model }, { silent: true });
         setSavedProject(currentProject); savedMetadata.current = signature;
       } else if (savedMetadata.current !== signature) {
         currentProject = await apiClient.patch<GalleryProject>(`/projects/${currentProject.id}`, metadata, { silent: true });
@@ -128,8 +152,18 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
       setFile(candidate.file); setCrop(selectedCrop); setRemoveCover(false); setCandidate(null); setError('');
     }}/>
   </Dialog>;
-  return <Dialog key="editor" title={project ? text('编辑项目', 'Edit project') : text('新建项目', 'New project')} onClose={onClose} closeDisabled={busy}>
-    <form className="project-editor" onSubmit={event => { event.preventDefault(); void save(); }} data-testid={project ? 'edit-project-modal' : 'create-project-modal'} aria-busy={busy}>
+  return <Dialog key="editor" title={project ? text('编辑项目', 'Edit project') : choosingType ? text('新建项目', 'New project') : projectType === 'tts' ? text('新建语音项目', 'New speech project') : text('新建图像项目', 'New image project')} onClose={onClose} closeDisabled={busy}>
+    {choosingType ? <div className="project-type-choices" role="group" aria-label={text('项目类型', 'Project type')}>
+      {([
+        { type: 'image', Icon: ImageIcon, label: text('图像', 'Image'), description: text('使用图片训练图像生成模型', 'Train image generation models with images') },
+        { type: 'tts', Icon: AudioLines, label: text('语音', 'Speech'), description: text('使用录音与转写训练语音模型', 'Train speech models with recordings and transcripts') },
+      ] as const).map(({ type, Icon, label, description }) => <button key={type} ref={element => { typeButtons.current[type] = element; }} type="button" className="project-type-choice"
+        aria-labelledby={`${typeId}-${type}`} aria-describedby={`${typeId}-${type}-description`} onClick={() => chooseType(type)}>
+        <Icon size={34} strokeWidth={1.6} aria-hidden="true"/>
+        <strong id={`${typeId}-${type}`}>{label}</strong>
+        <span id={`${typeId}-${type}-description`}>{description}</span>
+      </button>)}
+    </div> : <form className="project-editor" onSubmit={event => { event.preventDefault(); void save(); }} data-testid={project ? 'edit-project-modal' : 'create-project-modal'} aria-busy={busy}>
       {error && <p role="alert" className="project-editor-error">{error}</p>}
       {partial && !project && <p role="status" className="project-editor-note">{text(`项目 ${savedProject?.id} 已创建；关闭窗口会保留此项目，重试不会重复创建。`, `Project ${savedProject?.id} exists. Closing keeps it; retrying will not create a duplicate.`)}</p>}
       <fieldset disabled={busy} className="project-editor-fields">
@@ -143,7 +177,7 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
             {removeCover && savedProject?.cover_url && <button type="button" className="ui-btn" onClick={() => setRemoveCover(false)}>{text('保留原封面', 'Keep current cover')}</button>}</div>
           <small title={text('文件上限 8,388,608 字节（8 MiB）', 'File limit: 8,388,608 bytes (8 MiB)')}>JPEG / PNG / WebP · ≤ 8 MB</small>{file && <span className="project-cover-filename" title={file.name}>{file.name}</span>}
         </div></div>
-        <label className="project-editor-field"><span>{text('项目名称', 'Project name')}</span><input required type="text" value={name} onChange={event => setName(event.target.value)} data-testid="project-name-input" placeholder={text('支持中文及其他语言', 'Any language supported')}/></label>
+        <label className="project-editor-field"><span>{text('项目名称', 'Project name')}</span><input ref={nameInput} required type="text" value={name} onChange={event => setName(event.target.value)} data-testid="project-name-input" placeholder={text('支持中文及其他语言', 'Any language supported')}/></label>
         {!project && <div className="project-editor-field"><label htmlFor="project-id-input">{text('项目 ID', 'Project ID')}</label><input id="project-id-input" required maxLength={64} value={id} onChange={event => { setId(event.target.value); setIdTouched(true); setError(''); }} onBlur={() => setIdTouched(true)} disabled={busy || !!savedProject}
           aria-invalid={idTouched && !!idError} aria-describedby="project-id-help" autoComplete="off" spellCheck={false} placeholder="my_project_01" data-testid="project-id-input"/>
           <small id="project-id-help">{text('仅 A–Z、a–z、0–9 和下划线，创建后不可修改。', 'Only A–Z, a–z, 0–9 and underscores; permanent after creation.')}</small>{idTouched && idError && <span role="alert" className="project-editor-error">{idError}</span>}
@@ -153,11 +187,16 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
             <input id="project-category" maxLength={64} required autoComplete="off" value={category} onChange={event => setCategory(event.target.value)} placeholder={text('自定义，例如：产品 LoRA', 'Custom, e.g. Product LoRA')}/>
             <StudioSelect className="project-category-toggle" anchorRef={categoryBox} aria-label={text('选择项目分类', 'Choose a project category')} disabled={busy} value="custom" options={categoryChoices} onValueChange={chooseCategory}/>
           </div> : <StudioSelect id="project-category" aria-label={text('项目分类', 'Project category')} disabled={busy} value={category ? `category:${category}` : ''} options={categoryChoices} onValueChange={chooseCategory}/>}</div>
-          {!project && <div className="project-editor-field"><label htmlFor="project-family">{text('初始模型类型', 'Initial model family')}</label><StudioSelect id="project-family" disabled={busy || !!savedProject} aria-label={text('初始模型类型', 'Initial model family')} value={family}
-            options={familyOptions} onValueChange={setFamily}/>{familiesError && <p role="alert" className="project-editor-error">{text('无法读取可用模型类型。', 'Could not load model families.')}<button type="button" className="ui-link" onClick={() => void reloadFamilies()}>{text('重试', 'Retry')}</button></p>}</div>}</div>
+          {!project && (projectType === 'tts'
+            ? <div className="project-editor-field"><label htmlFor="project-engine">{text('训练模型', 'Training model')}</label><StudioSelect id="project-engine" disabled aria-label={text('训练模型', 'Training model')} value="voxcpm1.5" options={[{ value: 'voxcpm1.5', label: 'VoxCPM 1.5' }]} onValueChange={() => {}}/></div>
+            : <div className="project-editor-field"><label htmlFor="project-family">{text('初始模型类型', 'Initial model family')}</label><StudioSelect id="project-family" disabled={busy || !!savedProject} aria-label={text('初始模型类型', 'Initial model family')} value={family}
+              options={familyOptions} onValueChange={setFamily}/>{familiesError && <p role="alert" className="project-editor-error">{text('无法读取可用模型类型。', 'Could not load model families.')}<button type="button" className="ui-link" onClick={() => void reloadFamilies()}>{text('重试', 'Retry')}</button></p>}</div>)}</div>
         <label className="project-editor-field"><span>{text('备注（可选）', 'Notes (optional)')}</span><textarea rows={2} value={note} onChange={event => setNote(event.target.value)}/></label>
       </fieldset>
-      <div className="project-editor-footer"><button type="button" className="ui-btn" disabled={busy} onClick={onClose}>{partial ? text('关闭', 'Close') : text('取消', 'Cancel')}</button><button type="submit" className="ui-btn ui-btn-primary" disabled={busy || !name.trim() || (!project && (!!idError || !familyAvailable)) || (customCategory && !category.trim()) || category.trim().length > 64}>{busy && <Loader2 size={14} className="animate-spin"/>}{busy ? text('保存中…', 'Saving…') : project || partial ? text('保存', 'Save') : text('创建', 'Create')}</button></div>
-    </form>
+      <div className="project-editor-footer">{!project && <button type="button" className="ui-btn ui-btn-quiet project-type-back" disabled={busy || !!savedProject} onClick={() => {
+        if (busyRef.current || savedProject) return;
+        stepFocus.current = true; setChoosingType(true); setError('');
+      }}><ArrowLeft size={14} aria-hidden="true"/>{text('选择类型', 'Choose type')}</button>}<button type="button" className="ui-btn" disabled={busy} onClick={onClose}>{partial ? text('关闭', 'Close') : text('取消', 'Cancel')}</button><button type="submit" className="ui-btn ui-btn-primary" disabled={busy || !name.trim() || creationBlocked || (customCategory && !category.trim()) || category.trim().length > 64}>{busy && <Loader2 size={14} className="animate-spin"/>}{busy ? text('保存中…', 'Saving…') : project || partial ? text('保存', 'Save') : text('创建', 'Create')}</button></div>
+    </form>}
   </Dialog>;
 }

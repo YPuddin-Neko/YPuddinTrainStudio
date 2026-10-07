@@ -4,6 +4,8 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Activity, Archive, ArchiveRestore, CircleAlert, Clock3, History, SlidersHorizontal, PauseCircle, Play, Search, RefreshCw, Trash2, Inbox, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { Job, JobListResponse, Project, QueueSettings } from '../../api/types';
+import { isTtsJob } from '../../api/tts';
+import { ttsAction, ttsJobError } from '../Tts/ttsJobActions';
 import StudioSelect from '../../components/StudioSelect';
 import ConfigHelp from '../../components/ConfigHelp';
 import ProgressBar from '../../components/ProgressBar';
@@ -64,6 +66,7 @@ export default function Queue() {
   const request = React.useRef<AbortController | null>(null);
   const countRequest = React.useRef<AbortController | null>(null);
   const refreshTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingActions = React.useRef(new Set<string>());
   const change = (patch: Record<string, string | null>, replace = false) => {
     const next = new URLSearchParams(params); next.delete('page');
     if (['history', 'archive'].includes(patch.view || '') && next.get('type') === 'xyz') next.delete('type');
@@ -93,8 +96,16 @@ export default function Queue() {
   }, []);
   const refresh = () => { void fetchJobs(); void fetchCounts(); gpuStatus.refresh(); };
   const queueRefresh = () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); refreshTimer.current = setTimeout(refresh, 180); };
-  useEventStream(EVENT_TYPES.JOB_STATE, queueRefresh);
-  useEventStream(EVENT_TYPES.QUEUE_CHANGED, queueRefresh);
+  useEventStream(EVENT_TYPES.JOB_STATE, event => {
+    request.current?.abort();
+    setJobs(rows => rows.map(job => isTtsJob(job) && job.id === event.job_id ? { ...mergeJobEvent(job, event), allowed_actions: undefined, action_reasons: undefined } : job));
+    queueRefresh();
+  });
+  useEventStream(EVENT_TYPES.QUEUE_CHANGED, () => {
+    request.current?.abort();
+    setJobs(rows => rows.map(job => isTtsJob(job) ? { ...job, allowed_actions: undefined, action_reasons: undefined } : job));
+    queueRefresh();
+  });
   useEventStream(EVENT_TYPES.JOB_STEP, event => setJobs(rows => rows.map(job => mergeJobEvent(job, event))));
   useEventStream(EVENT_TYPES.JOB_PHASE, event => setJobs(rows => rows.map(job => mergeJobEvent(job, event))));
   useEventStream(EVENT_TYPES.JOB_XYZ_PROGRESS, event => setJobs(rows => rows.map(job => mergeJobEvent(job, event))));
@@ -105,16 +116,26 @@ export default function Queue() {
     finally { setSettingBusy(false); }
   };
   const updatePriority = async (job: Job, raw: string) => {
+    if (pendingActions.current.has(job.id)) return;
+    const permission = ttsAction(job, 'change_priority', text);
+    if (!permission.allowed) { setError(permission.reason); return; }
     const priority = Number(raw); if (!raw.trim() || !Number.isSafeInteger(priority)) { setError(text('优先级必须是整数。', 'Priority must be an integer.')); return; }
     if (priority === job.priority) return;
+    pendingActions.current.add(job.id);
     try { await apiClient.patch(`/jobs/${job.id}`, { priority }, { silent: true }); refresh(); }
-    catch (failure) { setError(formatApiError(failure)); }
+    catch (failure) { setError(isTtsJob(job) ? ttsJobError(failure) : formatApiError(failure)); }
+    finally { pendingActions.current.delete(job.id); }
   };
   // Deleting from history only archives: the files stay until the job is deleted in the archive.
   const archive = async (job: Job, value: boolean) => {
+    if (pendingActions.current.has(job.id)) return;
+    const permission = ttsAction(job, value ? 'archive' : 'unarchive', text);
+    if (!permission.allowed) { setError(permission.reason); return; }
+    pendingActions.current.add(job.id);
     setError('');
-    try { await apiClient.patch(`/jobs/${encodeURIComponent(job.id)}`, { archived: value }, { silent: true }); setArchived(value ? job : null); refresh(); }
-    catch (failure) { setError(formatApiError(failure)); }
+    try { const updated = await apiClient.patch<Job>(`/jobs/${encodeURIComponent(job.id)}`, { archived: value }, { silent: true }); setArchived(value ? isTtsJob(job) ? updated : job : null); refresh(); }
+    catch (failure) { setError(isTtsJob(job) ? ttsJobError(failure) : formatApiError(failure)); }
+    finally { pendingActions.current.delete(job.id); }
   };
   const visibleJobs = scope === loadedScope ? jobs : [];
   const pages = Math.max(1, Math.ceil(total / pageSize));
@@ -169,11 +190,11 @@ export default function Queue() {
     <div className="queue-board">
       <div className="queue-board-head" data-testid="queue-controls">
         <div className="queue-navigation"><OverflowStrip className="task-tabs ui-tabs" label={text('队列分区', 'Queue views')} activeKey={group}>{groups.map((value, index) => { const Icon = groupIcons[value]; const last = groups.length - 1; return <button key={value} id={`queue-tab-${value}`} role="tab" aria-controls="queue-job-view" tabIndex={group === value ? 0 : -1} aria-selected={group === value} onKeyDown={event => { const next = event.key === 'ArrowRight' ? (index + 1) % groups.length : event.key === 'ArrowLeft' ? (index + last) % groups.length : event.key === 'Home' ? 0 : event.key === 'End' ? last : -1; if (next >= 0) { event.preventDefault(); change({ view: groups[next], status: null }); document.getElementById(`queue-tab-${groups[next]}`)?.focus(); } }} onClick={() => { setArchived(null); change({ view: value, status: null }); }}><Icon size={15}/>{groupLabels[value]}<span>{counts[value] ?? '—'}</span></button>; })}<SlidingIndicator className="ui-tabs-indicator"/></OverflowStrip></div>
-        <div className="queue-filters"><label className="queue-search"><Search size={15}/><input aria-label={text('搜索任务', 'Search jobs')} placeholder={text('任务、项目或版本名称', 'Job, project or version name')} value={query} onChange={event => change({ q: event.target.value || null }, true)}/></label><StudioSelect aria-label={text('项目筛选', 'Project filter')} value={project} onValueChange={value => change({ project_id: value })} options={[{ value: '', label: text('所有项目', 'All projects') }, ...projects.map(item => ({ value: item.id, label: item.name }))]}/><StudioSelect aria-label={text('任务类型', 'Job type')} value={typeSelection} onValueChange={value => change({ type: value.startsWith('train:') ? 'train' : value, training_mode: value.startsWith('train:') ? value.slice(6) : null })} options={[{ value: '', label: text('所有类型', 'All job types') }, { value: 'train', label: text('全部训练', 'All training') }, { value: 'train:adapter', label: text('LoRA 训练', 'LoRA training') }, { value: 'train:full', label: text('全量微调', 'Full fine-tuning') }, { value: 'cache', label: text('缓存准备', 'Cache preparation') }, ...(['active', 'waiting'].includes(group) ? [{ value: 'xyz', label: text('模型测试', 'Model testing') }] : [])]}/><StudioSelect aria-label={text('状态筛选', 'Status filter')} value={status} onValueChange={value => change({ status: value })} options={[{ value: '', label: text('所有状态', 'All statuses') }, ...statuses[group].map(value => ({ value, label: statusLabels[value] }))]}/>{filtered && <button type="button" className="ui-btn ui-btn-quiet queue-clear" onClick={() => change({ q: null, project_id: null, type: null, training_mode: null, status: null })}><X size={14}/>{text('清除筛选', 'Clear filters')}</button>}</div>
+        <div className="queue-filters"><label className="queue-search"><Search size={15}/><input aria-label={text('搜索任务', 'Search jobs')} placeholder={text('任务、项目或版本名称', 'Job, project or version name')} value={query} onChange={event => change({ q: event.target.value || null }, true)}/></label><StudioSelect aria-label={text('项目筛选', 'Project filter')} value={project} onValueChange={value => change({ project_id: value })} options={[{ value: '', label: text('所有项目', 'All projects') }, ...projects.map(item => ({ value: item.id, label: item.name }))]}/><StudioSelect aria-label={text('任务类型', 'Job type')} value={typeSelection} onValueChange={value => change({ type: value.startsWith('train:') ? 'train' : value, training_mode: value.startsWith('train:') ? value.slice(6) : null })} options={[{ value: '', label: text('所有类型', 'All job types') }, { value: 'train', label: text('全部训练', 'All training') }, { value: 'train:adapter', label: text('LoRA 训练', 'LoRA training') }, { value: 'train:full', label: text('全量微调', 'Full fine-tuning') }, { value: 'cache', label: text('缓存准备', 'Cache preparation') }, { value: 'tts_train', label: text('语音 LoRA 训练', 'Speech LoRA training') }, { value: 'tts_sample', label: text('语音试听', 'Speech preview') }, ...(['active', 'waiting'].includes(group) ? [{ value: 'xyz', label: text('模型测试', 'Model testing') }] : [])]}/><StudioSelect aria-label={text('状态筛选', 'Status filter')} value={status} onValueChange={value => change({ status: value })} options={[{ value: '', label: text('所有状态', 'All statuses') }, ...statuses[group].map(value => ({ value, label: statusLabels[value] }))]}/>{filtered && <button type="button" className="ui-btn ui-btn-quiet queue-clear" onClick={() => change({ q: null, project_id: null, type: null, training_mode: null, status: null })}><X size={14}/>{text('清除筛选', 'Clear filters')}</button>}</div>
       </div>
       {error && <div className="task-error" role="alert">{error}<button type="button" className="ui-btn ui-btn-sm" onClick={refresh}>{text('重试', 'Retry')}</button></div>}
-      {archived && <p className="task-notice queue-notice" role="status"><span>{text(`已将“${archived.name}”移到归档，权重和记录仍保留。`, `Moved “${archived.name}” to the archive; its weights and records are kept.`)}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void archive(archived, false)}>{text('撤销', 'Undo')}</button><button type="button" className="ui-btn ui-btn-sm ui-btn-quiet ui-btn-icon" onClick={() => setArchived(null)} aria-label={text('关闭提示', 'Dismiss')}><X size={13}/></button></p>}
-      {group === 'archive' && <p className="queue-archive-note">{text('归档的任务不再出现在队列和项目结果里，文件保留。恢复后回到训练历史；在这里删除会移除任务的所有文件。', 'Archived jobs leave the queue and project results but keep their files. Restore returns a job to History; deleting here removes all of its files.')}</p>}
+      {archived && <p className="task-notice queue-notice" role="status"><span>{text(`已将“${archived.name}”移到归档，权重和记录仍保留。`, `Moved “${archived.name}” to the archive; its weights and records are kept.`)}</span><button type="button" className="ui-btn ui-btn-sm" disabled={!ttsAction(archived, 'unarchive', text).allowed} title={ttsAction(archived, 'unarchive', text).reason || undefined} onClick={() => void archive(archived, false)}>{text('撤销', 'Undo')}</button>{!ttsAction(archived, 'unarchive', text).allowed && <span>{ttsAction(archived, 'unarchive', text).reason}</span>}<button type="button" className="ui-btn ui-btn-sm ui-btn-quiet ui-btn-icon" onClick={() => setArchived(null)} aria-label={text('关闭提示', 'Dismiss')}><X size={13}/></button></p>}
+      {group === 'archive' && <p className="queue-archive-note">{visibleJobs.some(isTtsJob) || type.startsWith('tts_') ? text('归档的任务不再出现在队列和项目结果里，文件保留。恢复后回到训练历史；语音任务删除时可选择保留文件，图像任务删除时会移除所有任务文件。', 'Archived jobs leave the queue and project results but keep their files. Restore returns a job to History. Speech jobs can keep files when deleted; deleting an image job removes all its job files.') : text('归档的任务不再出现在队列和项目结果里，文件保留。恢复后回到训练历史；在这里删除会移除任务的所有文件。', 'Archived jobs leave the queue and project results but keep their files. Restore returns a job to History; deleting here removes all of its files.')}</p>}
       <div className="queue-list" id="queue-job-view" role="tabpanel" aria-labelledby={`queue-tab-${group}`} aria-busy={loading}>
         {visibleJobs.length > 0 && <table className="queue-table" data-testid="jobs-table"><thead><tr><th>{text('任务', 'Job')}</th><th>{text('项目 / 版本', 'Project / version')}</th><th>{text('状态', 'Status')}</th><th>{text('显卡', 'GPU')}</th>{group === 'waiting' && <th><span className="queue-th-help">{text('优先级', 'Priority')}<ConfigHelp label={text('优先级 · 说明', 'Priority help')}>{text('数值高的任务先启动，同级按创建顺序；已排期的任务到点后参与调度。', 'Higher values start first, then creation order. Scheduled jobs become eligible at their start time.')}</ConfigHelp></span></th>}<th>{group === 'waiting' ? text('创建 / 排期', 'Created / scheduled') : text('创建时间', 'Created')}</th><th className="queue-action-head"><span className="sr-only">{text('操作', 'Actions')}</span></th></tr></thead>
           <tbody>{visibleJobs.map(job => <tr key={job.id} data-testid={`job-row-${job.id}`} data-status={job.status}>
@@ -181,16 +202,16 @@ export default function Queue() {
             <td><JobContext job={job}/></td>
             <td className="queue-status-cell"><JobStatus status={job.status}/><JobProgressSummary job={job}/></td>
             <td className="queue-device-cell"><DeviceCell job={job}/></td>
-            {group === 'waiting' && <td className="queue-priority-cell" data-label={text('优先级', 'Priority')}><input aria-label={`${text('优先级', 'Priority')}: ${job.name}`} type="number" key={`${job.id}-${job.priority}`} defaultValue={job.priority} onBlur={event => void updatePriority(job, event.target.value)}/></td>}
+            {group === 'waiting' && <td className="queue-priority-cell" data-label={text('优先级', 'Priority')}><input aria-label={`${text('优先级', 'Priority')}: ${job.name}`} type="number" key={`${job.id}-${job.priority}`} defaultValue={job.priority} disabled={!ttsAction(job, 'change_priority', text).allowed} title={ttsAction(job, 'change_priority', text).reason || undefined} onBlur={event => void updatePriority(job, event.target.value)}/>{!ttsAction(job, 'change_priority', text).allowed && <small className="queue-status-note">{ttsAction(job, 'change_priority', text).reason}</small>}</td>}
             <td className="queue-time-cell"><time dateTime={new Date(job.created_at * 1000).toISOString()} title={new Date(job.created_at * 1000).toLocaleString()}>{shortTime(job.created_at)}</time>{job.scheduled_at != null && <small>{text('排期', 'Scheduled')} {shortTime(job.scheduled_at)}</small>}</td>
             <td className="queue-action-cell"><div>{group === 'archive' ? <>
-              <button type="button" className="ui-btn ui-btn-sm" onClick={() => void archive(job, false)} aria-label={`${text('恢复', 'Restore')}: ${job.name}`} title={text('移回训练历史', 'Move back to History')}><ArchiveRestore size={13}/>{text('恢复', 'Restore')}</button>
-              <button type="button" className="ui-btn ui-btn-sm ui-btn-danger" onClick={() => setDeleting(job)} aria-label={`${text('彻底删除', 'Delete permanently')}: ${job.name}`} title={text('删除任务和它的所有文件', 'Delete the job and all of its files')}><Trash2 size={13}/>{text('删除', 'Delete')}</button>
-            </> : <><JobActions job={job} onUpdated={refresh}/>{group === 'history' && <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" onClick={() => void archive(job, true)} aria-label={`${text('归档', 'Archive')}: ${job.name}`} title={text('移到归档，文件保留', 'Move to the archive; files are kept')}><Archive size={13}/></button>}</>}</div></td>
+              <button type="button" className="ui-btn ui-btn-sm" disabled={!ttsAction(job, 'unarchive', text).allowed} onClick={() => void archive(job, false)} aria-label={`${text('恢复', 'Restore')}: ${job.name}`} title={ttsAction(job, 'unarchive', text).reason || text('移回训练历史', 'Move back to History')}><ArchiveRestore size={13}/>{text('恢复', 'Restore')}</button>
+              <button type="button" className="ui-btn ui-btn-sm ui-btn-danger" disabled={!ttsAction(job, 'delete', text).allowed} onClick={() => setDeleting(job)} aria-label={`${text('彻底删除', 'Delete permanently')}: ${job.name}`} title={ttsAction(job, 'delete', text).reason || (isTtsJob(job) ? text('删除任务，选择保留或删除文件', 'Delete the job and choose whether to keep files') : text('删除任务和它的所有文件', 'Delete the job and all of its files'))}><Trash2 size={13}/>{text('删除', 'Delete')}</button>{['unarchive', 'delete'].map(action => { const permission = ttsAction(job, action as 'unarchive' | 'delete', text); return !permission.allowed ? <small key={action} className="queue-status-note">{permission.reason}</small> : null; })}
+            </> : <><JobActions job={job} onUpdated={refresh}/>{group === 'history' && <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" disabled={!ttsAction(job, 'archive', text).allowed} onClick={() => void archive(job, true)} aria-label={`${text('归档', 'Archive')}: ${job.name}`} title={ttsAction(job, 'archive', text).reason || text('移到归档，文件保留', 'Move to the archive; files are kept')}><Archive size={13}/></button>}{group === 'history' && !ttsAction(job, 'archive', text).allowed && <small className="queue-status-note">{ttsAction(job, 'archive', text).reason}</small>}</>}</div></td>
           </tr>)}</tbody></table>}
         {!visibleJobs.length && !error && <div className="queue-empty" data-testid="queue-empty"><Inbox size={26} aria-hidden="true"/><strong>{emptyTitle}</strong>{!loading && (filtered ? <button type="button" className="ui-btn ui-btn-sm" onClick={() => change({ q: null, project_id: null, type: null, training_mode: null, status: null })}>{text('清除筛选', 'Clear filters')}</button> : group === 'archive' ? <span>{text('在训练历史里归档的任务会出现在这里。', 'Jobs archived from History appear here.')}</span> : group !== 'history' && <Link className="ui-btn ui-btn-sm" to="/projects">{text('打开项目', 'Open projects')}</Link>)}</div>}
       </div>
-      {deleting && <JobDeleteDialog job={deleting} onClose={() => setDeleting(null)} onDeleted={() => { setDeleting(null); refresh(); }}/>}
+      {deleting && <JobDeleteDialog job={isTtsJob(deleting) ? jobs.find(job => job.id === deleting.id) || { ...deleting, allowed_actions: undefined, action_reasons: undefined } : deleting} onClose={() => setDeleting(null)} onDeleted={() => { setDeleting(null); refresh(); }}/>}
       {(total > 0 || page > 1) && <nav className="queue-footer" data-testid="queue-pagination" aria-label={text('任务分页', 'Job pagination')}><span>{text(`共 ${total} 个任务`, `${total} jobs`)}</span><div className="queue-pages"><StudioSelect aria-label={text('每页任务数', 'Jobs per page')} value={String(pageSize)} options={[20, 50, 100].map(value => ({ value: String(value), label: text(`${value} 个 / 页`, `${value} / page`) }))} onValueChange={value => change({ size: value })}/><button type="button" className="ui-btn ui-btn-sm" disabled={loading || page <= 1} onClick={() => change({ page: String(page - 1) })}>{text('上一页', 'Previous')}</button><span className="queue-page-number">{page} / {pages}</span><button type="button" className="ui-btn ui-btn-sm" disabled={loading || page >= pages} onClick={() => change({ page: String(page + 1) })}>{text('下一页', 'Next')}</button></div></nav>}
     </div>
   </section>;

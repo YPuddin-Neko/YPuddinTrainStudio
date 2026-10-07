@@ -61,6 +61,7 @@ class ServiceContext:
     allowed_roots: list[Path] = field(default_factory=list)
     _settings_lock: Any = field(default_factory=threading.RLock, init=False, repr=False)
     versions: Any = field(default=None, init=False, repr=False)
+    tts_sources: Any = field(default=None, init=False, repr=False)
     import_progress: ImportProgressStore = field(default_factory=ImportProgressStore, init=False, repr=False)
     upload_sessions: Any = field(default=None, init=False, repr=False)
     background_tasks: Any = field(default=None, init=False, repr=False)
@@ -90,6 +91,7 @@ class ServiceContext:
 
     def __post_init__(self) -> None:
         from .thumbnail_cache import ThumbnailCache
+        from .tts_sources import TtsSources
         from .upload_sessions import UploadSessionStore
         from .versions import VersionManager
 
@@ -97,6 +99,8 @@ class ServiceContext:
         self.versions = VersionManager(self)
         self.upload_sessions = UploadSessionStore(self.data_root / ".upload-sessions", self.import_progress)
         self._onboarding_completed = self._decide_onboarding()
+        self.tts_sources = TtsSources(self)
+        self.supervisor.context = self
 
     def _decide_onboarding(self) -> bool:
         """New installs start with onboarding; installs with earlier work skip it.
@@ -323,6 +327,16 @@ class ServiceContext:
         project = self.db.fetchone("SELECT layout_version FROM projects WHERE id=?", (project_id,))
         return project["layout_version"] if project else 1
 
+    def require_project_type(self, project_id: str, expected: str) -> dict[str, Any]:
+        from .errors import ApiError, NotFound
+
+        project = self.db.fetchone("SELECT * FROM projects WHERE id=?", (project_id,))
+        if not project:
+            raise NotFound("项目不存在。", code="project.not_found")
+        if project["project_type"] != expected:
+            raise ApiError("此接口不适用于该项目类型。", code="project.type_mismatch", status=409)
+        return project
+
     def resolve_version(self, project_id: str, version_id: str | None = None) -> dict[str, Any]:
         from .errors import NotFound
 
@@ -475,6 +489,7 @@ class ServiceContext:
         return self.cache_dir(project_id, version_id)
 
     def config_path(self, project_id: str, version_id: str | None = None) -> Path:
+        self.require_project_type(project_id, "image")
         version = self.resolve_version(project_id, version_id)
         root = (
             self.project_dir(project_id)
@@ -482,6 +497,10 @@ class ServiceContext:
             else self.version_dir(project_id, version["id"])
         )
         return root / "config.json"
+
+    def tts_config_path(self, project_id: str, version_id: str) -> Path:
+        self.require_project_type(project_id, "tts")
+        return self.version_dir(project_id, version_id) / "tts-config.json"
 
     def runs_dir(self, project_id: str | None, version_id: str | None = None) -> Path:
         paths = self.settings()["paths"]

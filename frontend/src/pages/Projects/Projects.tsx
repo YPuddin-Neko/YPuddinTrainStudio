@@ -118,7 +118,9 @@ export default function Projects() {
     return <time dateTime={valid ? date.toISOString() : undefined}>{valid ? date.toLocaleDateString(i18n.resolvedLanguage || 'zh-CN', { month: 'short', day: 'numeric' }) : '—'}</time>;
   };
   const counts = (project: GalleryProject) => [
-    { key: 'images', label: text('训练图片', 'Training images'), value: project.image_count, unit: text('张图片', 'images') },
+    project.project_type === 'tts'
+      ? { key: 'audio', label: text('训练音频', 'Training audio'), value: project.audio_stats?.train.clips_count, unit: text('段音频', 'clips') }
+      : { key: 'images', label: text('训练图片', 'Training images'), value: project.image_count, unit: text('张图片', 'images') },
     { key: 'versions', label: text('版本', 'Versions'), value: project.version_count, unit: text('个版本', 'versions') },
     { key: 'outputs', label: t('projects.artifacts'), value: project.stats?.artifacts, unit: text('个产物', 'outputs') },
   ];
@@ -130,7 +132,11 @@ export default function Projects() {
   const open = (project: GalleryProject) => `/projects/${encodeURIComponent(project.id)}?step=overview`;
   const menu = (project: GalleryProject) => <ProjectCardMenu name={project.name} archived={project.archived} busy={!!pending || project.deletion?.state === 'deleting'} onEdit={() => setEditor(project)} onArchive={() => void mutate(project.id, () => apiClient.patch(`/projects/${project.id}`, { archived: !project.archived }))} onDelete={() => remove(project)}/>;
   const activity = (project: GalleryProject) => project.deletion ? <ProjectDeletionLine deletion={project.deletion}/> : <ProjectActivityLine job={project.latest_job}/>;
-  const meta = (project: GalleryProject) => [project.category ? categoryLabel(project.category, english) : text('未分类', 'Uncategorized'), familyLabel(project.active_display_family ?? project.active_family), versionLabel(project)].filter(Boolean);
+  const modelLabel = (project: GalleryProject) => project.project_type === 'tts'
+    ? [text('语音', 'Speech'), project.active_engine === 'voxcpm1.5' ? 'VoxCPM 1.5' : project.active_engine].filter(Boolean).join(' · ')
+    : familyLabel(project.active_display_family ?? project.active_family);
+  const meta = (project: GalleryProject) => [project.category ? categoryLabel(project.category, english) : text('未分类', 'Uncategorized'), modelLabel(project), versionLabel(project)].filter(Boolean);
+  const mixedDataTypes = pageProjects.some(project => project.project_type === 'tts') && pageProjects.some(project => project.project_type !== 'tts');
 
   return <div className="projects-workspace" data-testid="projects-page">
     <header className="projects-toolbar">
@@ -165,7 +171,7 @@ export default function Projects() {
           {menu(project)}
         </article>)}</div>
         : <div className="projects-rows" role="list" aria-label={text('项目列表', 'Project list')}>
-          <div className="project-row-head" aria-hidden="true"><span/><span>{text('项目', 'Project')}</span><span>{text('分类与模型', 'Category & model')}</span><span>{text('最近训练', 'Latest training')}</span>{counts(pageProjects[0]).map(item => <span key={item.key} className="project-row-number">{item.label}</span>)}<span>{text('更新', 'Updated')}</span><span/></div>
+          <div className="project-row-head" aria-hidden="true"><span/><span>{text('项目', 'Project')}</span><span>{text('分类与模型', 'Category & model')}</span><span>{text('最近训练', 'Latest training')}</span>{counts(pageProjects[0]).map((item, index) => <span key={item.key} className="project-row-number">{index === 0 && mixedDataTypes ? text('训练数据', 'Training data') : item.label}</span>)}<span>{text('更新', 'Updated')}</span><span/></div>
           {pageProjects.map(project => <article key={project.id} role="listitem" className="project-row" data-archived={project.archived || undefined} data-testid={`project-card-${project.id}`}>
             <Link to={open(project)} className="project-row-link" aria-label={text(`打开项目：${project.name}`, `Open project: ${project.name}`)}>
               <div className="project-row-thumb"><ProjectArtwork name={project.name} coverUrl={project.cover_url}/></div>

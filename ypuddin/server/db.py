@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS models (
   dtype TEXT, is_default INTEGER DEFAULT 0, created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tts_requests (
+  id TEXT PRIMARY KEY, scope TEXT NOT NULL, action TEXT NOT NULL, request_key TEXT NOT NULL,
+  request_hash TEXT NOT NULL, state TEXT NOT NULL, job_id TEXT,
+  created_at REAL NOT NULL, updated_at REAL NOT NULL,
+  UNIQUE(scope, action, request_key)
+);
 """
 
 
@@ -57,6 +63,14 @@ class Database:
         self.conn.executescript(SCHEMA)
         self.lock = threading.RLock()
         self._migrate_versions()
+        from .tts_sources import SCHEMA_SQL
+
+        self.conn.executescript(SCHEMA_SQL)
+        from .tts_results import SCHEMA_SQL as RESULTS_SCHEMA_SQL
+
+        self.conn.executescript(RESULTS_SCHEMA_SQL)
+        if "target_job_id" not in {row[1] for row in self.conn.execute("PRAGMA table_info(tts_requests)")}:
+            self.conn.execute("ALTER TABLE tts_requests ADD COLUMN target_job_id TEXT")
 
     def _migrate_versions(self) -> None:
         """Attach old rows without changing their paths or immutable job snapshots."""
@@ -84,7 +98,9 @@ class Database:
                     ("projects", "layout_version", "INTEGER NOT NULL DEFAULT 1"),
                     ("projects", "category", "TEXT"),
                     ("projects", "cover_key", "TEXT"),
+                    ("projects", "project_type", "TEXT NOT NULL DEFAULT 'image'"),
                     ("project_versions", "number", "INTEGER"),
+                    ("project_versions", "data_revision", "INTEGER NOT NULL DEFAULT 1"),
                     ("project_versions", "display_family", "TEXT"),
                     ("jobs", "samples_dir", "TEXT"),
                     ("jobs", "gpu_devices_json", "TEXT NOT NULL DEFAULT '[]'"),

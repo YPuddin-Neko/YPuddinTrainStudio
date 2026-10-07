@@ -142,6 +142,9 @@
 .job-delete-loading { display:grid; gap:8px; }
 .job-delete-loading .ui-skeleton { height:54px; border-radius:8px; }
 .job-delete-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:4px; }
+.tts-job-delete-options { display:grid; gap:8px; min-width:0; margin:0; padding:0; border:0; }
+.tts-job-delete-options legend { margin-bottom:8px; padding:0; font-weight:550; }
+.tts-job-delete-options label { display:flex; align-items:center; gap:8px; }
 
 @container (max-width:860px) {
   .queue-table thead { display:none; }
@@ -172,3 +175,7 @@
   .queue-device-memory { grid-column:1 / -1; }
 }
 @media (pointer:coarse) { .queue-search { height:var(--control-h-lg); } }
+
+.queue-action-cell .tts-task-actions { width:228px; max-width:228px; }
+.queue-action-cell .tts-task-actions .task-actions { flex-wrap:wrap; }
+.queue-action-cell .tts-task-actions .queue-status-note { max-width:228px; }

@@ -31,6 +31,11 @@ from . import (
     routes_model_recommendations,
     routes_regularization,
     routes_site_downloads,
+    routes_tts,
+    routes_tts_projects,
+    routes_tts_results,
+    routes_tts_sources,
+    routes_tts_training,
     routes_updates,
     routes_uploads,
     routes_vision,
@@ -75,6 +80,9 @@ def create_app(
     bus = EventBus()
     supervisor = JobSupervisor(db, bus, root, poll_interval=poll_interval)
     context = ServiceContext(data_root=root, db=db, bus=bus, supervisor=supervisor)
+    from .tts_requests import recover_pending
+
+    recover_pending(context)
     context.background_tasks = BackgroundTasks(bus)
     trainer_updates = TrainerUpdates(context)
     model_downloads = ModelDownloads(context)
@@ -149,6 +157,7 @@ def create_app(
             await asyncio.to_thread(context.dataset_refresh.close)
             await asyncio.to_thread(dataset_pipeline.close)
             await asyncio.to_thread(context.versions.close)
+            await asyncio.to_thread(context.tts_sources.close)
             await asyncio.to_thread(family_geometry.close)
             db.close()
 
@@ -218,6 +227,14 @@ def create_app(
     app.include_router(routes_background.router, prefix="/api")
     app.include_router(routes_xyz.router, prefix="/api")
     app.include_router(routes_work.router, prefix="/api")
+    app.include_router(routes_tts.router, prefix="/api")
+    app.include_router(routes_tts_projects.router, prefix="/api")
+    app.include_router(routes_tts_sources.router, prefix="/api")
+    app.include_router(routes_tts_training.router, prefix="/api")
+    app.include_router(routes_tts_results.router, prefix="/api")
+    from .tts_openapi import install as install_tts_openapi
+
+    install_tts_openapi(app)
     app.include_router(routes_model_downloads.router, prefix="/api")
     app.include_router(routes_model_recommendations.router, prefix="/api")
     app.include_router(routes_dataset_masks.router, prefix="/api")

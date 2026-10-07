@@ -4,7 +4,7 @@
 
 # YPuddin Train Studio
 
-一个本地运行的 LoRA / LoKr 训练器，支持 Anima、SDXL、Krea 2 与 FLUX.2 Klein
+一个本地运行的训练工作台，支持 Anima、SDXL、Krea 2、FLUX.2 Klein 图像训练与 VoxCPM 1.5 语音 LoRA 微调
 
 [![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#支持的模型与平台) [![Version](https://img.shields.io/badge/Version-v0.6.0-orange)](CHANGELOG.md) [![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB)](#快速开始) [![PyTorch](https://img.shields.io/badge/PyTorch-2.4%2B-EE4C2C)](docs/RUNTIME.md) [![React](https://img.shields.io/badge/React-18-61DAFB)](frontend/package.json)
 
@@ -16,9 +16,10 @@
 
 - **整理训练数据**：导入与筛选图片，使用 Tagger 或视觉大模型打标，编辑 TXT / JSON 标签，制作遮罩和准备正则图片。
 - **配置训练**：支持 LoRA、LoKr、LoHa、OrthoLoRA、T-LoRA、LyCORIS Full 与全量微调；可选择分桶或原生分辨率，查看图片尺寸变化和显存估算。
-- **安排显卡与任务**：不同显卡可同时运行不同任务，也可通过 DDP / FSDP 共同训练一个模型；训练支持暂停、保存恢复点和继续训练。
+- **安排显卡与任务**：不同显卡可同时运行不同任务；图像训练可通过 DDP / FSDP 共同训练一个模型，支持暂停、保存恢复点和继续训练。
 - **查看训练过程**：实时日志、损失与硬件曲线、定期预览，以及按任务管理的权重和恢复点。
 - **测试训练结果**：选择保存的权重，对比模型版本、强度和采样参数；保留生成记录，放大或下载图片。OrthoLoRA 和 T-LoRA 导出为通用 LoRA，适配器兼容范围见[内置适配器](docs/ADAPTERS.md)。
+- **训练语音**：创建语音项目，按版本配置 VoxCPM 1.5 的独立环境、WAV 与文本清单和 LoRA 参数，排队训练并生成试听音频。配置方式见 [语音训练](docs/TTS.md)。
 
 ## 支持的模型与平台
 
@@ -40,6 +41,8 @@ Krea 2 Turbo 用于采样。Klein 蒸馏版、KV 版及 FLUX.2 dev 不用于训�
 | Windows / Linux / macOS，无 GPU | CPU | 不支持 |
 
 多卡的精度、优化器和训练对象限制见 [多卡训练](docs/MULTI_GPU.md)。
+
+以上模型与平台表适用于图像训练。语音训练使用独立的 VoxCPM 1.5 环境和完整预训练模型目录，当前接入单卡 CUDA LoRA 微调及排队试听；任务支持取消和重新训练，不支持暂停恢复或多卡训练。音频格式、环境安装和源码版本要求见 [语音训练](docs/TTS.md)。
 
 ## 快速开始
 
@@ -91,6 +94,7 @@ cd YPuddinTrainStudio
 - [安装与部署](docs/INSTALLATION.md) · [运行环境](docs/RUNTIME.md) · [海光 DTK](docs/RUNTIME_DTK.md)
 - [模型配置](docs/MODELS.md) · [数据集管理](docs/DATASETS.md) · [JSON 标签](docs/JSON_CAPTIONS.md)
 - [训练配置](docs/TRAINING.md) · [原生分辨率](docs/NATIVE_RESOLUTION.md) · [多卡训练](docs/MULTI_GPU.md)
+- [语音训练](docs/TTS.md)
 - [注意力后端](docs/ATTENTION.md) · [模型测试](docs/MODEL_TESTING.md) · [存储与备份](docs/STORAGE.md)
 - [开发指南](docs/DEVELOPMENT.md) · [架构](docs/ARCHITECTURE.md) · [更新记录](CHANGELOG.md)
 

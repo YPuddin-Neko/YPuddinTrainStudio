@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Any, Literal
 
 import psutil
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 from starlette.background import BackgroundTask
 
 from ypuddin.config import DatasetSourceConfig, TrainConfig, deep_merge
@@ -64,12 +65,11 @@ def _page(items: list[Any], page: int, page_size: int) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- projects
-class ProjectBody(BaseModel):
+class ProjectFields(BaseModel):
     id: str | None = Field(None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_]+$")
     name: str
     note: str = ""
     category: str | None = Field(None, max_length=64)
-    family: Literal["anima", "krea2", "sdxl", "flux2", "toy"] = "anima"
 
     @field_validator("category", mode="before")
     @classmethod
@@ -84,7 +84,19 @@ class ProjectBody(BaseModel):
         return value
 
 
+class ProjectBody(ProjectFields):
+    project_type: Literal["image"] = "image"
+    family: Literal["anima", "krea2", "sdxl", "flux2", "toy"] = "anima"
+
+
+class TtsProjectBody(ProjectFields):
+    model_config = ConfigDict(extra="forbid")
+    project_type: Literal["tts"]
+    engine: Literal["voxcpm1.5"] = "voxcpm1.5"
+
+
 class ProjectPatch(BaseModel):
+    project_type: Literal["image", "tts"] | None = None
     name: str | None = None
     note: str | None = None
     archived: bool | None = None
@@ -119,14 +131,14 @@ def _training_images(datasets: list[dict[str, Any]]) -> int | None:
     return total
 
 
-def _latest_training(c: ServiceContext, project_id: str) -> dict[str, Any] | None:
+def _latest_training(c: ServiceContext, project_id: str, project_type: str = "image") -> dict[str, Any] | None:
     """The run a project card reports: an active one first, then waiting, then the newest."""
     job = c.db.fetchone(
         "SELECT id,name,status,progress_json,created_at,finished_at,error FROM jobs"
-        " WHERE project_id=? AND type='train' ORDER BY CASE"
+        " WHERE project_id=? AND type=? ORDER BY CASE"
         " WHEN status IN ('running','pausing','cancelling') THEN 0 WHEN status='paused' THEN 1"
         " WHEN status IN ('queued','scheduled') THEN 2 ELSE 3 END, created_at DESC, id DESC LIMIT 1",
-        (project_id,),
+        (project_id, "tts_train" if project_type == "tts" else "train"),
     )
     if not job:
         return None
@@ -148,6 +160,7 @@ def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     from .family_config import version_family
     from .project_deletion import public_state
 
+    speech = r["project_type"] == "tts"
     ds = c.db.fetchall(
         "SELECT id,is_reg,stats_json,index_status FROM datasets WHERE version_id=?", (r["active_version_id"],)
     )
@@ -162,18 +175,20 @@ def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         **{key: value for key, value in r.items() if key != "cover_key"},
         "category": r.get("category"),
         "cover_url": cover_url(c, r),
-        "active_family": version_family(c, c.resolve_version(r["id"], r["active_version_id"])),
-        "active_display_family": version["display_family"] if version else None,
+        "active_family": None if speech else version_family(c, c.resolve_version(r["id"], r["active_version_id"])),
+        "active_display_family": version["display_family"] if version and not speech else None,
+        "active_engine": "voxcpm1.5" if speech else None,
+        "audio_stats": c.tts_sources.audio_stats(r["id"], r["active_version_id"]) if speech else None,
         "active_version_name": version["name"] if version else None,
         "active_version_number": version["number"] if version else None,
         "archived": bool(r["archived"]),
         "dataset_ids": [d["id"] for d in ds],
-        "image_count": _training_images(ds),
+        "image_count": None if speech else _training_images(ds),
         "version_count": c.db.fetchone(
             "SELECT count(*) n FROM project_versions WHERE project_id=?", (r["id"],)
         )["n"],
         "stats": {"jobs": jobs, "artifacts": arts},
-        "latest_job": _latest_training(c, r["id"]),
+        "latest_job": _latest_training(c, r["id"], r["project_type"]),
         # A deletion running in the background, or one that stopped and can be retried.
         "deletion": public_state(c, r["id"]),
     }
@@ -188,9 +203,13 @@ def list_projects(
     archived: bool | None = None,
     page: int | None = Query(None, ge=1),
     page_size: int = Query(24, ge=1, le=200),
+    project_type: Literal["image", "tts"] | None = None,
     c: ServiceContext = Depends(ctx),
 ) -> list[dict[str, Any]] | dict[str, Any]:
     where, values = [], []
+    if project_type is not None:
+        where.append("project_type=?")
+        values.append(project_type)
     if archived is not None or not include_archived:
         where.append("archived=?")
         values.append(int(bool(archived)))
@@ -237,8 +256,11 @@ def project_categories(c: ServiceContext = Depends(ctx)) -> dict:
         }
 
 
-@router.post("/projects", status_code=201, response_model=m.Project, response_model_exclude_unset=True)
-def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+@router.post(
+    "/projects", status_code=201, response_model=m.Project, response_model_exclude_unset=True,
+    responses={code: {"model": m.ApiErrorResponse} for code in (400, 409, 422)},
+)
+def create_project(body: ProjectBody | TtsProjectBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     with c.db.lock:
         pid = body.id or new_id("p")
         container = c.data_root / "project"
@@ -262,6 +284,7 @@ def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[
                     "name": body.name,
                     "note": body.note,
                     "category": body.category,
+                    "project_type": body.project_type,
                     "archived": 0,
                     "layout_version": 2,
                     "created_at": t,
@@ -289,15 +312,20 @@ def create_project(body: ProjectBody, c: ServiceContext = Depends(ctx)) -> dict[
                 (root / name).mkdir(parents=True, exist_ok=True)
             from .family_config import initial_family_config
 
-            initial = initial_family_config(c, body.family)
-            initial = deep_merge(
-                initial,
-                {
-                    "checkpoint": {"output_dir": str(c.default_runs_dir(pid, vid))},
-                    "dataset": {"cache_dir": str(c.version_dir(pid, vid) / "cache")},
-                },
-            )
-            _write_project_config(c, pid, initial, vid)
+            if body.project_type == "tts":
+                from ypuddin.tts.version_config import TtsConfigEnvelope, TtsVersionConfig, write_envelope
+
+                write_envelope(c.tts_config_path(pid, vid), TtsConfigEnvelope(revision=1, config=TtsVersionConfig()))
+            else:
+                initial = initial_family_config(c, body.family)
+                initial = deep_merge(
+                    initial,
+                    {
+                        "checkpoint": {"output_dir": str(c.default_runs_dir(pid, vid))},
+                        "dataset": {"cache_dir": str(c.version_dir(pid, vid) / "cache")},
+                    },
+                )
+                _write_project_config(c, pid, initial, vid)
             c.db.execute("RELEASE SAVEPOINT create_project")
         except BaseException:
             c.db.execute("ROLLBACK TO SAVEPOINT create_project")
@@ -327,11 +355,26 @@ def get_project(pid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return _project_row(c, _get_project(c, pid))
 
 
-@router.patch("/projects/{pid}", response_model=m.Project, response_model_exclude_unset=True)
+@router.patch(
+    "/projects/{pid}", response_model=m.Project, response_model_exclude_unset=True,
+    responses={code: {"model": m.ApiErrorResponse} for code in (404, 409, 422)},
+)
 def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    if "project_type" in body.model_fields_set:
+        raise ApiError("创建后不能修改项目类型。", code="project.type_immutable", status=422)
     with c.db.lock:
         _get_project(c, pid)
         _assert_not_deleting(c, pid)
+        if body.archived and _get_project(c, pid)["project_type"] == "tts" and c.db.fetchone(
+            "SELECT id FROM tts_sources WHERE project_id=? AND state='checking'", (pid,)
+        ):
+            raise ApiError("请等待语音数据检查完成后再归档项目。", code="project.busy", status=409)
+        if body.archived and _get_project(c, pid)["project_type"] == "tts":
+            if c.db.fetchone("SELECT id FROM project_versions WHERE project_id=? AND (status='copying' OR busy IS NOT NULL)", (pid,)):
+                raise ApiError("请等待版本复制或处理完成后再归档项目。", code="project.busy", status=409)
+            jobs = c.db.fetchall("SELECT * FROM jobs WHERE project_id=?", (pid,))
+            if any(row["status"] in {"queued", "scheduled", "running", "cancelling", "pausing"} or c.supervisor.is_running(row["id"]) for row in jobs):
+                raise ApiError("请先等待语音任务结束或取消任务。", code="project.jobs_busy", status=409)
         fields = {
             k: (int(v) if isinstance(v, bool) else v) for k, v in body.model_dump().items() if v is not None
         }
@@ -452,6 +495,8 @@ def delete_project(
         if error := _project_busy(c, pid, project):
             raise error
         records = [_records_path(c, row["id"]) for row in c.db.fetchall("SELECT id FROM datasets WHERE project_id=?", (pid,))]
+        for source in c.db.fetchall("SELECT * FROM jobs WHERE project_id=? AND type='tts_train'", (pid,)):
+            _preserve_tts_source(c, source)
         c.db.execute("DELETE FROM jobs WHERE project_id=?", (pid,))
         c.db.execute("DELETE FROM artifacts WHERE project_id=?", (pid,))
         c.db.execute("DELETE FROM project_deletions WHERE project_id=?", (pid,))
@@ -465,6 +510,7 @@ def delete_project(
 def get_project_config(
     pid: str, c: ServiceContext = Depends(ctx), version_id: str | None = None
 ) -> dict[str, Any]:
+    c.require_project_type(pid, "image")
     version = c.resolve_version(pid, version_id)
     if version["status"] != "ready":
         raise ApiError("version configuration is not ready", code="version.not_ready", status=409)
@@ -491,6 +537,7 @@ def get_project_config(
 def put_project_config(
     pid: str, body: dict[str, Any], c: ServiceContext = Depends(ctx), version_id: str | None = None
 ) -> dict[str, Any]:
+    c.require_project_type(pid, "image")
     from ypuddin.train.native_resolution import clear_native_vram_resolution
 
     body = normalize_legacy_intervals(clear_native_vram_resolution(body))
@@ -568,6 +615,7 @@ def project_source_roles(
 ) -> list[dict]:
     from .source_roles import describe_source_roles
 
+    c.require_project_type(pid, "image")
     return describe_source_roles(c, pid, body.config, version_id)
 
 
@@ -584,6 +632,7 @@ def project_output_binding(
 ) -> dict[str, Any]:
     from .output_binding import output_binding
 
+    c.require_project_type(pid, "image")
     return output_binding(c, pid, body.config, version_id)
 
 
@@ -628,6 +677,8 @@ def _write_project_config(
 
 # --------------------------------------------------------------------------- datasets
 class VersionBody(BaseModel):
+    # Keep extra keys for owner-specific checks; image copies still ignore them.
+    model_config = ConfigDict(extra="allow")
     name: str = Field(min_length=1, max_length=100, pattern=r".*\S.*")
     note: str = Field("", max_length=4000)
     source_version_id: str | None = None
@@ -637,6 +688,7 @@ class VersionBody(BaseModel):
 
 
 class VersionPatch(BaseModel):
+    project_type: Literal["image", "tts"] | None = None
     name: str | None = Field(None, min_length=1, max_length=100, pattern=r".*\S.*")
     note: str | None = Field(None, max_length=4000)
     archived: bool | None = None
@@ -652,8 +704,13 @@ def list_versions(pid: str, include_archived: bool = True, c: ServiceContext = D
     return [version_row(c, r) for r in c.db.fetchall(sql + " ORDER BY created_at", (pid,))]
 
 
-@router.post("/projects/{pid}/versions", status_code=202, response_model=m.ProjectVersion)
+@router.post(
+    "/projects/{pid}/versions", status_code=202, response_model=m.ProjectVersion,
+    responses={code: {"model": m.ApiErrorResponse} for code in (400, 404, 409, 422)},
+)
 def create_version(pid: str, body: VersionBody, c: ServiceContext = Depends(ctx)) -> dict:
+    if _get_project(c, pid)["project_type"] == "tts" and {"family", "display_family"} & body.model_fields_set:
+        raise ApiError("语音版本不能设置图像模型类型。", code="project.type_mismatch", status=409)
     return c.versions.create(
         pid,
         body.name.strip(),
@@ -670,10 +727,21 @@ def get_version(pid: str, vid: str, c: ServiceContext = Depends(ctx)) -> dict:
     return version_row(c, c.resolve_version(pid, vid))
 
 
-@router.patch("/projects/{pid}/versions/{vid}", response_model=m.ProjectVersion)
+@router.patch(
+    "/projects/{pid}/versions/{vid}", response_model=m.ProjectVersion,
+    responses={code: {"model": m.ApiErrorResponse} for code in (400, 404, 409, 422)},
+)
 def patch_version(pid: str, vid: str, body: VersionPatch, c: ServiceContext = Depends(ctx)) -> dict:
     with c.db.lock:
         row = c.resolve_version(pid, vid)
+        if "project_type" in body.model_fields_set:
+            raise ApiError("版本类型由项目决定。", code="project.type_immutable", status=422)
+        project = _get_project(c, pid)
+        if project["project_type"] == "tts":
+            if "display_family" in body.model_fields_set:
+                raise ApiError("语音版本不能设置图像模型类型。", code="project.type_mismatch", status=409)
+            if project["archived"]:
+                raise ApiError("项目已归档，请先恢复项目再修改版本。", code="project.archived", status=409)
         if row["busy"] or row["status"] == "copying":
             raise ApiError("wait for version copy to finish", code="version.busy", status=409)
         fields = {
@@ -690,8 +758,14 @@ def patch_version(pid: str, vid: str, body: VersionPatch, c: ServiceContext = De
             raise ApiError("a version with this name already exists", code="version.duplicate", status=409)
         next_active = None
         if body.archived:
+            if c.db.fetchone("SELECT id FROM tts_sources WHERE version_id=? AND state='checking'", (vid,)):
+                raise ApiError("请等待语音数据检查完成后再归档版本。", code="version.busy", status=409)
             if c.db.fetchone(f"SELECT id FROM jobs WHERE version_id=? AND status IN {ACTIVE_JOBS}", (vid,)):
                 raise ApiError("version has queued or running jobs", code="version.jobs_busy", status=409)
+            if _get_project(c, pid)["project_type"] == "tts" and any(
+                c.supervisor.is_running(item["id"]) for item in c.db.fetchall("SELECT id FROM jobs WHERE version_id=?", (vid,))
+            ):
+                raise ApiError("请等待语音任务进程退出。", code="version.jobs_busy", status=409)
             if _get_project(c, pid)["active_version_id"] == vid:
                 fallback = c.db.fetchone(
                     "SELECT id FROM project_versions WHERE project_id=? AND id<>? AND archived=0 "
@@ -1243,6 +1317,7 @@ def list_datasets(
     include_cache: bool = True,
     refresh: bool = Query(False, description="Check the folders for changes now instead of when next due."),
 ) -> list[dict[str, Any]]:
+    c.require_project_type(pid, "image")
     version = c.resolve_version(pid, version_id)
     return [
         _dataset_row(c, _refresh_dataset(c, r, force=refresh), include_cache=include_cache)
@@ -1266,6 +1341,7 @@ def add_dataset(
     version_id: str | None = None,
     progress_id: str | None = None,
 ) -> dict[str, Any]:
+    c.require_project_type(pid, "image")
     with c.import_admission(), c.import_progress.track(pid, progress_id, "validating") as progress:
         version = c.resolve_version(pid, version_id or body.version_id)
         did = c.versions.import_directory(pid, version["id"], body, progress=progress)
@@ -1315,6 +1391,7 @@ async def upload_dataset(
     version_id: str | None = None,
     progress_id: str | None = None,
 ) -> dict[str, Any]:
+    c.require_project_type(pid, "image")
     with c.import_admission(), c.import_progress.track(pid, progress_id, "receiving") as progress:
         version = await run_in_threadpool(assert_version_writable, c, pid, version_id, data=True)
         async with read_upload(request, progress) as batch:
@@ -1334,6 +1411,7 @@ def _get_dataset(c: ServiceContext, did: str) -> dict[str, Any]:
 
 
 def _assert_upload_session_target(c: ServiceContext, session: UploadSession) -> None:
+    c.require_project_type(session.pid, "image")
     assert_version_writable(c, session.pid, session.vid, data=True)
     if session.body.target_dataset_id:
         row = _get_dataset(c, session.body.target_dataset_id)
@@ -1343,6 +1421,7 @@ def _assert_upload_session_target(c: ServiceContext, session: UploadSession) -> 
 
 @router.post("/projects/{pid}/datasets/upload-sessions", response_model=m.DatasetUploadSession)
 def create_upload_session(pid: str, body: UploadSessionBody, c: ServiceContext = Depends(ctx)) -> dict:
+    c.require_project_type(pid, "image")
     with c.import_admission():
         vid = body.version_id
         if body.target_dataset_id:
@@ -1957,7 +2036,8 @@ class JobBody(GpuSelection):
 
 
 class JobPatch(GpuSelection):
-    priority: int | None = None
+    # Validation depends on the saved job type; image coercion remains unchanged.
+    priority: Any = Field(None, json_schema_extra={"anyOf": [{"type": "integer"}, {"type": "null"}]})
     name: str | None = None
     # True moves a finished job to the archive and keeps its files; False brings it back.
     archived: bool | None = None
@@ -1996,7 +2076,7 @@ _JOB_TRAINING_MODE_SQL = """CASE
 END"""
 
 
-def _job_row(r: dict[str, Any]) -> dict[str, Any]:
+def _job_row(r: dict[str, Any], c: ServiceContext | None = None) -> dict[str, Any]:
     out = dict(r)
     out["training_mode"] = _job_training_mode(r)
     out["progress"] = json.loads(r.get("progress_json") or "{}")
@@ -2005,6 +2085,10 @@ def _job_row(r: dict[str, Any]) -> dict[str, Any]:
     out.pop("progress_json", None)
     out.pop("latest_json", None)
     out.pop("config_json", None)
+    if c is not None and r.get("type") in {"tts_train", "tts_sample"}:
+        from .tts_job_actions import present
+
+        out.update(present(c, r))
     return out
 
 
@@ -2017,7 +2101,7 @@ def list_jobs(
     page_size: int = 50,
     c: ServiceContext = Depends(ctx),
     group: Literal["active", "waiting", "history", "archive"] | None = None,
-    type: Literal["train", "cache", "xyz"] | None = None,
+    type: Literal["train", "cache", "xyz", "tts_train", "tts_sample"] | None = None,
     training_mode: Literal["adapter", "full"] | None = None,
     q: str | None = None,
 ) -> dict[str, Any]:
@@ -2076,13 +2160,15 @@ def list_jobs(
         + " LIMIT ? OFFSET ?",
         (*params, page_size, (page - 1) * page_size),
     )
-    return {"items": [_job_row(r) for r in rows], "total": total, "page": page, "page_size": page_size}
+    return {"items": [_job_row(r, c) for r in rows], "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/jobs", status_code=201, response_model=m.Job, response_model_exclude_unset=True)
 def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     if body.type not in ("train", "cache"):
         raise ApiError(f"unsupported job type {body.type}", code="job.bad_type")
+    if body.project_id:
+        c.require_project_type(body.project_id, "image")
     version = assert_version_writable(c, body.project_id, body.version_id) if body.project_id else None
     if body.version_id and not body.project_id:
         raise ApiError("version_id requires project_id", code="version.project_required")
@@ -2307,7 +2393,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     c.bus.publish("queue.changed", {})
     row = c.db.fetchone("SELECT * FROM jobs WHERE id=?", (jid,))
     c.bus.publish("job.state", {"job_id": jid, "status": status})
-    return _job_row(row)
+    return _job_row(row, c)
 
 
 def _get_job(c: ServiceContext, jid: str) -> dict[str, Any]:
@@ -2328,18 +2414,62 @@ def get_job(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     )
     if not row:
         raise NotFound(f"job {jid} not found", code="job.not_found")
-    return _job_row(row)
+    return _job_row(row, c)
 
 
-@router.patch("/jobs/{jid}", response_model=m.Job, response_model_exclude_unset=True)
+@router.patch("/jobs/{jid}", response_model=m.Job, response_model_exclude_unset=True,
+              responses={code: {"model": m.ApiErrorResponse} for code in (403, 404, 409, 422)})
 def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     from .job_paths import deleting_jobs
 
+    inspected = None
+    if body.gpu_devices is not None and "gpu_devices" in body.model_fields_set:
+        with c.db.lock:
+            selected_job = _get_job(c, jid)
+            if selected_job["type"] in {"tts_train", "tts_sample"}:
+                from .tts_job_actions import assert_action
+
+                if jid in deleting_jobs:
+                    raise ApiError("这个任务正在删除。", code="job.deleting", status=409)
+                assert_action(c, selected_job, "change_gpu")
+                inspected = selected_job
+        if inspected is not None:
+            from .routes_tts import _devices
+            from .tts_sample_jobs import _check_environment
+
+            devices = _devices(body.gpu_devices)
+            _check_environment(c, json.loads(inspected["config_json"])["tts"],
+                               sample=inspected["type"] == "tts_sample", gpu_devices=devices)
     with c.db.lock:
         job = _get_job(c, jid)
+        if inspected is not None and any(job.get(key) != inspected.get(key) for key in ("config_json", "gpu_devices_json", "status", "archived_at")):
+            raise ApiError("任务在显卡检查期间发生变化，请重新操作。", code="job.changed", status=409)
         if jid in deleting_jobs:
             raise ApiError("这个任务正在删除。", code="job.deleting", status=409)
         patch = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+        speech = job["type"] in {"tts_train", "tts_sample"}
+        if "priority" in patch:
+            if speech:
+                value = patch["priority"]
+                if type(value) is not int or not -(2**53 - 1) <= value <= 2**53 - 1:
+                    from ypuddin.tts.issues import TtsIssue
+
+                    issue = TtsIssue(code="tts.priority_invalid", loc=["priority"], message="优先级须为安全范围内的整数。")
+                    raise ApiError(issue.message, code=issue.code, status=422, details={"issues": [issue.model_dump()]})
+            else:
+                try:
+                    patch["priority"] = TypeAdapter(int).validate_python(patch["priority"])
+                except ValidationError as exc:
+                    errors = [{**item, "loc": ("body", "priority")} for item in exc.errors()]
+                    raise RequestValidationError(errors) from exc
+        if speech:
+            from .tts_job_actions import assert_action
+
+            for field, action in (("priority", "change_priority"), ("gpu_devices", "change_gpu")):
+                if field in patch:
+                    assert_action(c, job, action)
+            if "archived" in patch:
+                assert_action(c, job, "archive" if patch["archived"] else "unarchive")
         if "gpu_devices" in patch:
             if job["status"] not in {
                 "queued",
@@ -2351,6 +2481,10 @@ def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dic
                 raise ApiError("请先暂停或取消任务，再更换显卡。", code="job.running", status=409)
             if error := selection_error(body.gpu_devices, c.supervisor._gpu_count(job), gpu_info()):
                 raise ApiError(error, code="job.gpu_selection", status=422)
+            if job["type"] in {"tts_train", "tts_sample"}:
+                from .routes_tts import _devices
+
+                _devices(body.gpu_devices)
             patch["gpu_devices_json"] = json.dumps(patch.pop("gpu_devices"))
         if "archived" in patch:
             archived = patch.pop("archived")
@@ -2361,7 +2495,7 @@ def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dic
             patch["archived_at"] = (job.get("archived_at") or now()) if archived else None
         c.db.update("jobs", jid, patch)
     c.bus.publish("queue.changed", {})
-    return _job_row(_get_job(c, jid))
+    return _job_row(_get_job(c, jid), c)
 
 
 def _jobs_using(
@@ -2387,6 +2521,14 @@ def _jobs_using(
         f" WHERE ({column} IS NULL OR {column}!=?) AND status IN {ACTIVE_JOBS[:-1]},'paused')",
         (owner_id,),
     )
+    known = {row["id"] for row in rows}
+    rows += [
+        row for row in c.db.fetchall(
+            "SELECT id, name, config_json, resume_from FROM jobs"
+            f" WHERE ({column} IS NULL OR {column}!=?) AND type IN ('tts_train','tts_sample')", (owner_id,)
+        )
+        if row["id"] not in known and c.supervisor.is_running(row["id"])
+    ]
     return [row for row in rows if uses(row["resume_from"]) or uses(json.loads(row["config_json"] or "{}"))]
 
 
@@ -2439,10 +2581,20 @@ def job_storage(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     return {"folders": folders, "total_bytes": sum(f["bytes"] for f in folders), "artifacts": artifacts}
 
 
-@router.delete("/jobs/{jid}", response_model=m.Ok, response_model_exclude_unset=True)
+def _preserve_tts_source(c: ServiceContext, source: dict) -> None:
+    if source["type"] != "tts_train":
+        return
+    key = "tts.source_summary:" + source["id"]
+    if c.db.get_kv(key, None) is None:
+        c.db.set_kv(key, {"job_id": source["id"], "name": source["name"]})
+
+
+@router.delete("/jobs/{jid}", response_model=m.Ok, response_model_exclude_unset=True,
+               responses={code: {"model": m.ApiErrorResponse} for code in (403, 404, 409, 500)})
 def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     from .job_paths import deleting_jobs, removal_problem
     from .project_deletion import deleting
+    from .tts_references import reject_job_file_references
     from .xyz import dependent_tests, preserve_source
 
     folders: list[Path] = []
@@ -2454,8 +2606,13 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
             raise ApiError("任务目录不在允许访问的范围内。", code="job.path", status=403)
         if problem == "shared":
             raise ApiError("目录中包含其他任务的文件，无法删除。", code="job.files_in_use", status=409)
+        reject_job_file_references(c, folders)
     with c.db.lock:
         r = _get_job(c, jid)
+        if r["type"] in {"tts_train", "tts_sample"}:
+            from .tts_job_actions import assert_action
+
+            assert_action(c, r, "delete")
         if jid in deleting_jobs:
             raise ApiError("这个任务正在删除。", code="job.deleting", status=409)
         if r["status"] in ("running", "pausing", "cancelling") or c.supervisor.is_running(jid):
@@ -2468,6 +2625,7 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
         if not delete_files:
             # Written only once nothing can refuse the deletion.
             preserve_source(c, r, tests)
+            _preserve_tts_source(c, r)
             c.db.delete("jobs", jid)
         else:
             if users := _jobs_using(c, jid, folders):
@@ -2477,6 +2635,7 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
                     status=409,
                     details={"jobs": [row["id"] for row in users]},
                 )
+            reject_job_file_references(c, folders)
             # Its products go with its folders; a comparison started from now on no longer finds them.
             c.db.execute("DELETE FROM artifacts WHERE job_id=?", (jid,))
             deleting_jobs.add(jid)
@@ -2504,17 +2663,32 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
                     )
                 # Written only once nothing can refuse the deletion.
                 preserve_source(c, current, tests)
+                _preserve_tts_source(c, current)
                 c.db.delete("jobs", jid)
     c.bus.publish("queue.changed", {})
     return {"ok": True}
 
 
-@router.post("/jobs/{jid}/{command}", response_model=m.Job, response_model_exclude_unset=True)
-def job_command(jid: str, command: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+@router.post("/jobs/{jid}/{command}", response_model=m.Job, response_model_exclude_unset=True,
+             responses={201: {"model": m.Job}, **{code: {"model": m.ApiErrorResponse} for code in (403, 404, 409, 410, 422)}})
+def job_command(
+    jid: str, command: str, response: Response,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key", description="Required UUID for TTS retry; replays return the original job."),
+    c: ServiceContext = Depends(ctx),
+) -> dict[str, Any]:
     if command not in ("pause", "resume", "cancel", "save", "retry", "force"):
         raise NotFound("unknown command", code="job.bad_command")
+    job = c.db.fetchone("SELECT * FROM jobs WHERE id=?", (jid,))
+    speech = job is not None and job["type"] in {"tts_train", "tts_sample"}
+    if command == "retry" and (speech or (job is None and c.db.fetchone(
+        "SELECT id FROM tts_requests WHERE action='retry' AND target_job_id=?", (jid,)
+    ))):
+        from .tts_sample_jobs import retry_job
+
+        result, response.status_code = retry_job(c, jid, idempotency_key)
+        return result
     try:
-        return _job_row(c.supervisor.request(jid, command))
+        return _job_row(c.supervisor.request(jid, command), c)
     except KeyError as e:
         raise NotFound(f"job {jid} not found", code="job.not_found") from e
     except ValueError as e:
@@ -2654,6 +2828,8 @@ def job_checkpoints(jid: str, c: ServiceContext = Depends(ctx)) -> list[dict[str
 def delete_job_checkpoint(jid: str, path: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     """Delete a saved output or resume point of this job from disk."""
     job = _get_job(c, jid)
+    if job["type"] in {"tts_train", "tts_sample"}:
+        raise ApiError("语音检查点随任务文件管理，请先归档任务。", code="tts.checkpoint_delete", status=409)
     saved = next(
         (
             ev

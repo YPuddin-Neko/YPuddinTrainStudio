@@ -1,0 +1,15 @@
+.tts-legacy-import { font-size:13px; line-height:1.55; }
+.tts-legacy-import > p { margin:0 0 12px; }
+.tts-legacy-target { color:var(--studio-dim); overflow-wrap:anywhere; }
+.tts-legacy-step { border-bottom:1px solid var(--studio-line); padding:14px 0; }
+.tts-legacy-step > label { display:flex; align-items:center; gap:8px; }
+.tts-legacy-step > label > span { margin-left:auto; color:var(--studio-dim); font-size:12px; }
+.tts-legacy-step .tts-conflict-table { margin-top:10px; max-height:240px; }
+.tts-legacy-step dl { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 12px; margin:10px 0 0; }
+.tts-legacy-step dt { color:var(--studio-dim); }
+.tts-legacy-step dd { margin:0; overflow-wrap:anywhere; }
+.tts-legacy-step p { margin:8px 0 0; color:var(--studio-dim); font-size:12px; }
+.tts-legacy-entry { max-width:720px; }
+.tts-legacy-entry p { color:var(--studio-dim); line-height:1.7; }
+.tts-legacy-entry nav { display:flex; flex-wrap:wrap; gap:10px; margin-top:20px; }
+.tts-legacy-entry h1 { font-size:22px; line-height:1.3; font-weight:650; margin:0 0 16px; }

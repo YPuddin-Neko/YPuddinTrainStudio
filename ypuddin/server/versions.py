@@ -47,31 +47,62 @@ def assert_version_writable(c: Any, pid: str, vid: str | None, *, data: bool = F
     return row
 
 
+def _failed_speech_paths(c: Any, row: dict) -> dict[str, str]:
+    """A failed copy remains readable even if its destination was replaced externally."""
+    pid, vid = row["project_id"], row["id"]
+    modern = c.project_layout(pid) >= 2
+    label = f"v{row['number']}" if modern else vid
+    root = c.project_dir(pid) / label if modern else c.project_dir(pid) / "versions" / vid
+    configured = c.settings()["paths"]
+    output = Path(configured["output_dir"]) / pid / label if configured["output_mode"] == "custom" else root / ("output" if modern else "runs")
+    cache = Path(configured["cache_dir"])
+    cache = cache / pid / vid if cache.resolve() != (c.data_root / "cache").resolve() else root / "cache"
+    data = root / ("traindata" if modern else "datasets")
+    return {"root": str(root), "config": str(root / "tts-config.json"), "datasets": str(data),
+            "traindata": str(data), "runs": str(output), "output": str(output), "cache": str(cache),
+            "reg": str(root / "reg"), "samples": str(root / "samples"), "jobs": str(root / "jobs")}
+
+
 def version_row(c: Any, row: dict) -> dict:
     from .artifact_inventory import artifact_count
+
     pid, vid = row["project_id"], row["id"]
-    datasets = c.db.fetchall(
+    project = c.db.fetchone("SELECT project_type FROM projects WHERE id=?", (pid,))
+    if project is None:
+        raise NotFound("project not found", code="project.not_found")
+    is_tts = project["project_type"] == "tts"
+    audio_stats = None
+    if is_tts:
+        audio_stats = c.tts_sources.audio_stats(pid, vid)
+    datasets = [] if is_tts else c.db.fetchall(
         "SELECT id,stats_json FROM datasets WHERE version_id=? ORDER BY created_at", (vid,)
     )
-    data_root = c.project_dir(pid) if row["legacy_layout"] else c.version_dir(pid, vid)
+    failed_paths = _failed_speech_paths(c, row) if is_tts and row["status"] == "failed" else None
+    data_root = Path(failed_paths["root"]) if failed_paths else c.project_dir(pid) if row["legacy_layout"] and not is_tts else c.version_dir(pid, vid)
     return {
         **{k: v for k, v in row.items() if k not in {"progress_json", "legacy_layout", "busy"}},
         "archived": bool(row["archived"]),
         "busy": bool(row["busy"]),
-        "family": version_family(c, row),
+        "project_type": project["project_type"],
+        "engine": "voxcpm1.5" if is_tts else None,
+        "audio_stats": audio_stats,
+        "family": None if is_tts else version_family(c, row),
+        "display_family": None if is_tts else row.get("display_family"),
         "progress": json.loads(row["progress_json"] or "{}"),
         "dataset_ids": [r["id"] for r in datasets],
         "stats": {
             "datasets": len(datasets),
-            "images": sum(json.loads(r["stats_json"] or "{}").get("images", 0) for r in datasets),
+            "images": None if is_tts else sum(
+                json.loads(r["stats_json"] or "{}").get("images", 0) for r in datasets
+            ),
             "jobs": c.db.fetchone(
                 "SELECT count(*) n FROM jobs WHERE version_id=? AND archived_at IS NULL", (vid,)
             )["n"],
             "artifacts": artifact_count(c.db, version_id=vid),
         },
-        "paths": {
+        "paths": failed_paths or {
             "root": str(data_root),
-            "config": str(c.config_path(pid, vid)),
+            "config": str(c.tts_config_path(pid, vid) if is_tts else c.config_path(pid, vid)),
             "datasets": str(data_root / "datasets") if row["legacy_layout"] else str(c.dataset_dir(pid, vid)),
             "runs": str(c.runs_dir(pid, vid)),
             "cache": str(c.cache_dir(pid, vid)),
@@ -189,9 +220,15 @@ class VersionManager:
         *,
         family: str | None = None,
     ) -> dict:
+        c = self.c
+        project = c.db.fetchone("SELECT project_type FROM projects WHERE id=?", (pid,))
+        if project and project["project_type"] == "tts":
+            from .tts_versions import create_version
+
+            return create_version(self, pid, name, note, source_id, data_mode, copy_config, family=family)
+
         from .routes_work import get_project_config
 
-        c = self.c
         with c.db.lock:
             source = assert_version_writable(c, pid, source_id)
             if c.db.fetchone("SELECT id FROM project_versions WHERE project_id=? AND name=?", (pid, name)):

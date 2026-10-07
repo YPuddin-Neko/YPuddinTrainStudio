@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Pause, Play, Save, RotateCcw, XCircle, Loader2, Zap } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { Job } from '../../api/types';
+import { isTtsJob } from '../../api/tts';
 import ProgressBar from '../../components/ProgressBar';
 import { useConfirmation } from '../../components/useConfirmation';
 import { formatApiError } from '../../utils/errors';
@@ -11,6 +12,7 @@ import { formatEta } from '../../utils/format';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { projectUrl } from '../../utils/projectVersions';
 import { shortTime } from '../../utils/jobs';
+import { TtsTaskActions } from '../Tts/TtsTaskActions';
 
 const DEVICE_WAIT = 'waiting for a free accelerator with enough memory';
 
@@ -48,7 +50,7 @@ export function JobProgressSummary({ job }: { job: Job }) {
 export type ContextJob = Job & { project_name?: string | null; version_name?: string | null; version_number?: number | null };
 export function JobContext({ job }: { job: ContextJob }) {
   const text = useWorkspaceText();
-  if (!job.project_id) return <span className="task-muted">{text('独立任务', 'Standalone job')}</span>;
+  if (!job.project_id) return <span className="task-muted">{isTtsJob(job) ? text('历史语音任务', 'Legacy speech job') : text('独立任务', 'Standalone job')}</span>;
   const number = job.version_number ? `v${job.version_number}` : '';
   const name = job.version_name?.trim() || '';
   const includesNumber = number && new RegExp(`^${number}(?:$|[\\s·:：-])`, 'i').test(name);
@@ -64,6 +66,9 @@ export function JobStatus({ status }: { status: string }) {
   return <span className="task-status" data-status={status}><span className="task-status-dot" aria-hidden="true"/>{labels[status] ? text(...labels[status]) : status}</span>;
 }
 export function JobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: Job) => void }) {
+  return isTtsJob(job) ? <TtsTaskActions job={job} onUpdated={onUpdated}/> : <ImageJobActions job={job} onUpdated={onUpdated}/>;
+}
+function ImageJobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: Job) => void }) {
   const text = useWorkspaceText();
   const { confirm, confirmation } = useConfirmation();
   const [busy, setBusy] = React.useState('');
@@ -75,8 +80,8 @@ export function JobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: 
     pending.current = true;
     const id = job.id; setBusy(action); setError('');
     try {
-      if (action === 'cancel' && !await confirm({ title: text('取消任务', 'Cancel job'), message: text(`取消任务“${job.name}”？任务将在安全位置停止。已有产物会保留。`, `Cancel “${job.name}”? It will stop at a safe point. Existing outputs are kept.`), confirmLabel: text('取消任务', 'Cancel job'), danger: true })) return;
-      if (action === 'force' && !await confirm({ title: text('强制开始', 'Force start'), message: text(`强制开始“${job.name}”？将跳过显存估算立即开始；没有空闲显卡时，最早开始运行的任务会保存状态并暂停。`, `Force-start “${job.name}”? It starts now without the memory estimate. If no GPU is free, the job that started earliest saves its state and pauses.`), confirmLabel: text('强制开始', 'Force start') })) return;
+      if (action === 'cancel' && !await confirm({ title: text('取消任务', 'Cancel job'), message: isTtsJob(job) ? text(`取消任务“${job.name}”？进程将停止，已保存的产物会保留，尚未保存的进度会丢失。`, `Cancel “${job.name}”? The process will stop. Saved outputs are kept; unsaved progress is lost.`) : text(`取消任务“${job.name}”？任务将在安全位置停止。已有产物会保留。`, `Cancel “${job.name}”? It will stop at a safe point. Existing outputs are kept.`), confirmLabel: text('取消任务', 'Cancel job'), danger: true })) return;
+      if (action === 'force' && !await confirm({ title: text('强制开始', 'Force start'), message: text(`强制开始“${job.name}”？将跳过显存估算并优先调度；没有空闲显卡时，可暂停的任务会保存状态后让出显卡，语音任务需结束或取消后让出显卡。`, `Force-start “${job.name}”? Skip the memory estimate and prioritize this job. If no GPU is free, pausable jobs save and yield their GPU; speech jobs must finish or be cancelled first.`), confirmLabel: text('强制开始', 'Force start') })) return;
       if (current.current !== id) return;
       const result = await apiClient.post<Job>(`/jobs/${id}/${action}`, {}, { silent: true }); if (current.current === id) onUpdated(result);
     }
@@ -84,11 +89,11 @@ export function JobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: 
     finally { pending.current = false; setBusy(''); }
   };
   const actions: { key: string; label: string; Icon: typeof Play }[] = [];
-  if (job.type !== 'xyz' && ['running', 'queued', 'scheduled'].includes(job.status)) actions.push({ key: 'pause', label: text('暂停', 'Pause'), Icon: Pause });
-  if (job.type !== 'xyz' && job.status === 'paused') actions.push({ key: 'resume', label: text('继续', 'Resume'), Icon: Play });
-  if (job.forced_at == null && (['queued', 'scheduled'].includes(job.status) || job.type !== 'xyz' && job.status === 'paused')) actions.push({ key: 'force', label: text('强制开始', 'Force start'), Icon: Zap });
+  if (!isTtsJob(job) && job.type !== 'xyz' && ['running', 'queued', 'scheduled'].includes(job.status)) actions.push({ key: 'pause', label: text('暂停', 'Pause'), Icon: Pause });
+  if (!isTtsJob(job) && job.type !== 'xyz' && job.status === 'paused') actions.push({ key: 'resume', label: text('继续', 'Resume'), Icon: Play });
+  if (job.forced_at == null && (['queued', 'scheduled'].includes(job.status) || !isTtsJob(job) && job.type !== 'xyz' && job.status === 'paused')) actions.push({ key: 'force', label: text('强制开始', 'Force start'), Icon: Zap });
   if (job.status === 'running' && job.type === 'train') actions.push({ key: 'save', label: text('保存检查点', 'Save checkpoint'), Icon: Save });
   if (['running', 'queued', 'scheduled', 'paused', 'pausing'].includes(job.status)) actions.push({ key: 'cancel', label: text('取消', 'Cancel'), Icon: XCircle });
-  if (['failed', 'cancelled', 'completed'].includes(job.status)) actions.push({ key: 'retry', label: job.type === 'xyz' ? text('重新生成', 'Generate again') : job.type === 'cache' ? text('重新准备', 'Prepare again') : text('重新训练', 'Run again'), Icon: RotateCcw });
+  if (['failed', 'cancelled', 'completed'].includes(job.status)) actions.push({ key: 'retry', label: job.type === 'xyz' || job.type === 'tts_sample' ? text('重新生成', 'Generate again') : job.type === 'cache' ? text('重新准备', 'Prepare again') : text('重新训练', 'Run again'), Icon: RotateCcw });
   return <div className="task-actions-wrap"><div className="task-actions">{actions.map(({ key, label, Icon }) => <button key={key} type="button" className="ui-btn ui-btn-sm" disabled={!!busy} data-testid={`job-${key}-${job.id}`} onClick={() => void run(key)}>{busy === key ? <Loader2 size={13} className="animate-spin"/> : <Icon size={13}/>}<span>{label}</span></button>)}</div>{error && <p className="task-inline-error" role="alert">{error}</p>}{confirmation}</div>;
 }

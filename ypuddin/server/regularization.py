@@ -247,6 +247,7 @@ class RegularizationManager:
         }
 
     def snapshot(self, pid, vid):
+        self.c.require_project_type(pid, "image")
         self.c.resolve_version(pid, vid)
         root = self.c.reg_dir(pid, vid)
         operations = [
@@ -278,6 +279,7 @@ class RegularizationManager:
         from .regularization_plan import training_plan
         from .routes_work import get_project_config
 
+        self.c.require_project_type(pid, "image")
         if request.source != "ai" or request.prompt_source != "training_tags":
             raise ApiError("请先选择按训练标签生成", status=422, code="regularization.source")
         return training_plan(self.c, pid, vid, request, get_project_config(pid, self.c, vid))[0]
@@ -310,6 +312,7 @@ class RegularizationManager:
 
     def estimate(self, pid, vid, request):
         """How many safe posts a manual search finds, and how it is sent within the account's limit."""
+        self.c.require_project_type(pid, "image")
         self.c.resolve_version(pid, vid)
         if request.source == "ai":
             raise ApiError("Only site searches can be estimated", status=422, code="regularization.source")
@@ -331,6 +334,7 @@ class RegularizationManager:
         from .regularization_match import build_profile, plan
         from .routes_work import get_project_config
 
+        self.c.require_project_type(pid, "image")
         if request.source == "ai":
             raise ApiError(
                 "Only site collection follows the training tags", status=422, code="regularization.source"
@@ -349,6 +353,7 @@ class RegularizationManager:
     def start(self, pid, vid, request):
         from .routes_work import get_project_config
 
+        self.c.require_project_type(pid, "image")
         prompts = [line.strip() for line in request.prompt.splitlines() if line.strip()]
         excluded = {tag.strip().replace("_", " ").lower() for tag in request.excluded_tags}
         prompts = [

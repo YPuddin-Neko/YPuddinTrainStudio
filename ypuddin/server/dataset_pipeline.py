@@ -428,6 +428,7 @@ class DatasetPipeline:
         return inspection
 
     def snapshot(self, pid: str, vid: str) -> dict:
+        self.c.require_project_type(pid, "image")
         version = self.c.resolve_version(pid, vid)
         operations = [
             self.operation(row["id"])
@@ -546,6 +547,7 @@ class DatasetPipeline:
             raise PipelineCancelled("Operation cancelled; original files were preserved")
 
     def start(self, pid: str, vid: str, request: dict) -> dict:
+        self.c.require_project_type(pid, "image")
         # Historic automatic-tagging operations remain readable/undoable, but
         # retry must not resurrect a removed inference capability.
         if request["action"] == "paint":

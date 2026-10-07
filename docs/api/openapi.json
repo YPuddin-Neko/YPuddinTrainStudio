@@ -2003,6 +2003,26 @@
               "default": 24,
               "title": "Page Size"
             }
+          },
+          {
+            "name": "project_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "image",
+                    "tts"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Type"
+            }
           }
         ],
         "responses": {
@@ -2047,7 +2067,15 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ProjectBody"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProjectBody"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TtsProjectBody"
+                  }
+                ],
+                "title": "Body"
               }
             }
           }
@@ -2063,15 +2091,35 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           }
         }
       }
@@ -2167,15 +2215,35 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "404": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           }
         }
       },
@@ -2765,15 +2833,45 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           }
         }
       }
@@ -2869,15 +2967,45 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           }
         }
       }
@@ -4300,7 +4428,9 @@
                   "enum": [
                     "train",
                     "cache",
-                    "xyz"
+                    "xyz",
+                    "tts_train",
+                    "tts_sample"
                   ],
                   "type": "string"
                 },
@@ -4481,15 +4611,45 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "403": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
-            }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           }
         }
       },
@@ -4527,6 +4687,46 @@
                 }
               }
             }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
           },
           "422": {
             "description": "Validation Error",
@@ -4603,6 +4803,24 @@
               "type": "string",
               "title": "Command"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required UUID for TTS retry; replays return the original job.",
+              "title": "Idempotency-Key"
+            },
+            "description": "Required UUID for TTS retry; replays return the original job."
           }
         ],
         "responses": {
@@ -4616,15 +4834,65 @@
               }
             }
           },
-          "422": {
-            "description": "Validation Error",
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Job"
                 }
               }
-            }
+            },
+            "description": "Created"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           }
         }
       }
@@ -5341,6 +5609,3033 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/tts/config": {
+      "get": {
+        "summary": "Get Config",
+        "operationId": "get_config_api_tts_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsConfig"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Put Config",
+        "operationId": "put_config_api_tts_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts/validate": {
+      "post": {
+        "summary": "Validate Config",
+        "operationId": "validate_config_api_tts_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Validate Config Api Tts Validate Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts/jobs": {
+      "post": {
+        "summary": "Create Training",
+        "operationId": "create_training_api_tts_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Create Training Api Tts Jobs Post"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/config": {
+      "get": {
+        "summary": "Read Version Config",
+        "operationId": "read_version_config_api_tts_projects__pid__versions__vid__config_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsConfigResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      },
+      "put": {
+        "summary": "Save Version Config",
+        "operationId": "save_version_config_api_tts_projects__pid__versions__vid__config_put",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsConfigSaveBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsConfigResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/sources": {
+      "get": {
+        "summary": "List Sources",
+        "operationId": "list_sources_api_tts_projects__pid__versions__vid__sources_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsSourcesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/sources/{split}": {
+      "put": {
+        "summary": "Put Source",
+        "operationId": "put_source_api_tts_projects__pid__versions__vid__sources__split__put",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          },
+          {
+            "name": "split",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "train",
+                "validation"
+              ],
+              "type": "string",
+              "title": "Split"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsSourcePutBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsSourcesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove Source",
+        "operationId": "remove_source_api_tts_projects__pid__versions__vid__sources__split__delete",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          },
+          {
+            "name": "split",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "train",
+                "validation"
+              ],
+              "type": "string",
+              "title": "Split"
+            }
+          },
+          {
+            "name": "expected_data_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Expected Data Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsSourcesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/sources/{source_id}": {
+      "get": {
+        "summary": "Read Source",
+        "operationId": "read_source_api_tts_projects__pid__versions__vid__sources__source_id__get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          },
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsSource"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/sources/{source_id}/check": {
+      "post": {
+        "summary": "Check Source",
+        "operationId": "check_source_api_tts_projects__pid__versions__vid__sources__source_id__check_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          },
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsSourceCheckBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsSource"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/sources/{source_id}/rows": {
+      "get": {
+        "summary": "Source Rows",
+        "operationId": "source_rows_api_tts_projects__pid__versions__vid__sources__source_id__rows_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          },
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "snapshot_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Snapshot Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsRowsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/sources/{source_id}/rows/{row_id}/audio": {
+      "get": {
+        "summary": "Source Audio",
+        "operationId": "source_audio_api_tts_projects__pid__versions__vid__sources__source_id__rows__row_id__audio_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          },
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Id"
+            }
+          },
+          {
+            "name": "row_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Row Id"
+            }
+          },
+          {
+            "name": "snapshot_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Snapshot Id"
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "audio",
+                "ref_audio"
+              ],
+              "type": "string",
+              "default": "audio",
+              "title": "Role"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "audio/wav": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "206": {
+            "content": {
+              "audio/wav": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "description": "Partial Content"
+          }
+        }
+      }
+    },
+    "/api/tts/capabilities": {
+      "get": {
+        "summary": "Capabilities",
+        "operationId": "capabilities_api_tts_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsCapabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Requested Range Not Satisfiable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts/schema/train": {
+      "get": {
+        "summary": "Training Schema",
+        "operationId": "training_schema_api_tts_schema_train_get",
+        "parameters": [
+          {
+            "name": "engine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "const": "voxcpm1.5",
+              "type": "string",
+              "default": "voxcpm1.5",
+              "title": "Engine"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsTrainSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/validate": {
+      "post": {
+        "summary": "Validate",
+        "operationId": "validate_api_tts_projects__pid__versions__vid__validate_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsValidationBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsValidationReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/jobs": {
+      "post": {
+        "summary": "Launch",
+        "operationId": "launch_api_tts_projects__pid__versions__vid__jobs_post",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsTrainingBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/tts/jobs/{jid}/checkpoints": {
+      "get": {
+        "summary": "Checkpoints",
+        "operationId": "checkpoints_api_tts_jobs__jid__checkpoints_get",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TtsCheckpoint"
+                  },
+                  "title": "Response Checkpoints Api Tts Jobs  Jid  Checkpoints Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/checkpoints": {
+      "get": {
+        "summary": "Version Checkpoints",
+        "operationId": "version_checkpoints_api_tts_projects__pid__versions__vid__checkpoints_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsCheckpointPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/jobs/{jid}/checkpoints/{cid}/files/{file_id}": {
+      "get": {
+        "summary": "Checkpoint File",
+        "operationId": "checkpoint_file_api_tts_jobs__jid__checkpoints__cid__files__file_id__get",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          },
+          {
+            "name": "cid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Cid"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/jobs/{jid}/samples": {
+      "post": {
+        "summary": "Launch Sample",
+        "operationId": "launch_sample_api_tts_jobs__jid__samples_post",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsSampleBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "summary": "Samples",
+        "operationId": "samples_api_tts_jobs__jid__samples_get",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TtsAudio"
+                  },
+                  "title": "Response Samples Api Tts Jobs  Jid  Samples Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/jobs/{source_jid}/sample-jobs": {
+      "get": {
+        "summary": "Source Samples",
+        "operationId": "source_samples_api_tts_jobs__source_jid__sample_jobs_get",
+        "parameters": [
+          {
+            "name": "source_jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Jid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsSampleJobPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/projects/{pid}/versions/{vid}/sample-jobs": {
+      "get": {
+        "summary": "Version Samples",
+        "operationId": "version_samples_api_tts_projects__pid__versions__vid__sample_jobs_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsSampleJobPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/sample-jobs/{sample_job_id}": {
+      "get": {
+        "summary": "Sample Job",
+        "operationId": "sample_job_api_tts_sample_jobs__sample_job_id__get",
+        "parameters": [
+          {
+            "name": "sample_job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sample Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsSampleJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/tts/jobs/{jid}/audio/{filename}": {
+      "get": {
+        "summary": "Audio",
+        "operationId": "audio_api_tts_jobs__jid__audio__filename__get",
+        "parameters": [
+          {
+            "name": "jid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jid"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Requested Range Not Satisfiable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
           }
         }
       }
@@ -9517,6 +12812,49 @@
         ],
         "title": "AdapterRule"
       },
+      "ApiErrorBody": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "trace_id": {
+            "type": "string",
+            "title": "Trace Id"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "trace_id",
+          "details"
+        ],
+        "title": "ApiErrorBody"
+      },
+      "ApiErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorBody"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ApiErrorResponse"
+      },
       "Artifact": {
         "properties": {
           "id": {
@@ -9715,6 +13053,74 @@
           "count"
         ],
         "title": "AspectCount"
+      },
+      "AudioSplitSummary": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "unchecked",
+              "checking",
+              "valid",
+              "invalid",
+              "stale",
+              "error"
+            ],
+            "title": "State"
+          },
+          "clips_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clips Count"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "AudioSplitSummary"
+      },
+      "AudioStats": {
+        "properties": {
+          "train": {
+            "$ref": "#/components/schemas/AudioSplitSummary"
+          },
+          "validation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioSplitSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "train"
+        ],
+        "title": "AudioStats"
       },
       "AutoMaskOptions": {
         "properties": {
@@ -15067,6 +18473,70 @@
             ],
             "title": "Samples Dir"
           },
+          "source_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Job Id"
+          },
+          "retry_of_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Of Job Id"
+          },
+          "allowed_actions": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "cancel",
+                "retry",
+                "force",
+                "pause",
+                "resume",
+                "save",
+                "archive",
+                "unarchive",
+                "delete",
+                "change_gpu",
+                "change_priority"
+              ]
+            },
+            "type": "array",
+            "title": "Allowed Actions"
+          },
+          "action_reasons": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "propertyNames": {
+              "enum": [
+                "cancel",
+                "retry",
+                "force",
+                "pause",
+                "resume",
+                "save",
+                "archive",
+                "unarchive",
+                "delete",
+                "change_gpu",
+                "change_priority"
+              ]
+            },
+            "type": "object",
+            "title": "Action Reasons"
+          },
           "archived_at": {
             "anyOf": [
               {
@@ -15846,6 +19316,9 @@
             "anyOf": [
               {
                 "type": "integer"
+              },
+              {
+                "type": "number"
               },
               {
                 "type": "null"
@@ -20693,6 +24166,37 @@
               }
             ],
             "title": "Active Display Family"
+          },
+          "project_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "tts"
+            ],
+            "title": "Project Type",
+            "default": "image"
+          },
+          "active_engine": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "voxcpm1.5"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Engine"
+          },
+          "audio_stats": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioStats"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -20818,6 +24322,12 @@
               }
             ],
             "title": "Category"
+          },
+          "project_type": {
+            "type": "string",
+            "const": "image",
+            "title": "Project Type",
+            "default": "image"
           },
           "family": {
             "type": "string",
@@ -20981,6 +24491,21 @@
       },
       "ProjectPatch": {
         "properties": {
+          "project_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "tts"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Type"
+          },
           "name": {
             "anyOf": [
               {
@@ -21304,6 +24829,37 @@
               }
             ],
             "title": "Display Family"
+          },
+          "project_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "tts"
+            ],
+            "title": "Project Type",
+            "default": "image"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "voxcpm1.5"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "audio_stats": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioStats"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -25459,6 +29015,36 @@
         ],
         "title": "TrainerUpdateStatus"
       },
+      "TrainingBody": {
+        "properties": {
+          "gpu_devices": {
+            "items": {
+              "type": "string",
+              "pattern": "^(cuda:[0-9]+|mps)$"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Gpu Devices"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "default": "语音训练"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "title": "TrainingBody"
+      },
       "TrainingConfig": {
         "properties": {
           "mode": {
@@ -25673,6 +29259,2776 @@
         "type": "object",
         "title": "TrainingConfig"
       },
+      "TtsAudio": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "sample_job_id": {
+            "type": "string",
+            "title": "Sample Job Id"
+          },
+          "source_job_id": {
+            "type": "string",
+            "title": "Source Job Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "requested_seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Seed"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "cfg_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfg Value"
+          },
+          "inference_timesteps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Timesteps"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "sample_job_id",
+          "source_job_id",
+          "project_id",
+          "version_id",
+          "checkpoint_id",
+          "filename",
+          "text",
+          "requested_seed",
+          "seed",
+          "cfg_value",
+          "inference_timesteps",
+          "duration_seconds",
+          "sample_rate",
+          "created_at",
+          "size",
+          "available",
+          "url"
+        ],
+        "title": "TtsAudio"
+      },
+      "TtsAudioCapability": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "const": "pcm_wav",
+            "title": "Format",
+            "default": "pcm_wav"
+          },
+          "sample_rate": {
+            "type": "integer",
+            "const": 44100,
+            "title": "Sample Rate",
+            "default": 44100
+          },
+          "channels": {
+            "type": "integer",
+            "const": 1,
+            "title": "Channels",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TtsAudioCapability"
+      },
+      "TtsBatchingReport": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "unchecked",
+              "ready",
+              "not_applicable",
+              "blocked",
+              "error"
+            ],
+            "title": "State"
+          },
+          "world_size": {
+            "type": "integer",
+            "const": 1,
+            "title": "World Size",
+            "default": 1
+          },
+          "batch_size": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Batch Size"
+          },
+          "shuffle": {
+            "type": "boolean",
+            "const": true,
+            "title": "Shuffle",
+            "default": true
+          },
+          "drop_last": {
+            "type": "boolean",
+            "title": "Drop Last"
+          },
+          "input_samples": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Samples"
+          },
+          "full_batches_per_pass": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Batches Per Pass"
+          },
+          "tail_samples_per_pass": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tail Samples Per Pass"
+          },
+          "partial_batches_per_pass": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partial Batches Per Pass"
+          },
+          "dropped_tail_samples_per_pass": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dropped Tail Samples Per Pass"
+          },
+          "yielded_batches_per_pass": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yielded Batches Per Pass"
+          },
+          "yielded_samples_per_pass": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yielded Samples Per Pass"
+          },
+          "can_form_full_batch": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Form Full Batch"
+          },
+          "can_yield_batch": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Yield Batch"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "batch_size",
+          "drop_last"
+        ],
+        "title": "TtsBatchingReport"
+      },
+      "TtsCapabilities": {
+        "properties": {
+          "contract_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Contract Version",
+            "default": 1
+          },
+          "engines": {
+            "items": {
+              "$ref": "#/components/schemas/TtsEngineCapability"
+            },
+            "type": "array",
+            "title": "Engines"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "engines"
+        ],
+        "title": "TtsCapabilities"
+      },
+      "TtsCapabilitySetting": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "reason_code": {
+            "type": "string",
+            "title": "Reason Code"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "reason_code",
+          "reason"
+        ],
+        "title": "TtsCapabilitySetting"
+      },
+      "TtsCheckpoint": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "source_job_id": {
+            "type": "string",
+            "title": "Source Job Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "upstream_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Step"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "discovered_at": {
+            "type": "number",
+            "title": "Discovered At"
+          },
+          "modified_at": {
+            "type": "number",
+            "title": "Modified At"
+          },
+          "can_preview": {
+            "type": "boolean",
+            "title": "Can Preview"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsIssue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/TtsCheckpointFile"
+            },
+            "type": "array",
+            "title": "Files"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "source_job_id",
+          "project_id",
+          "version_id",
+          "name",
+          "path",
+          "relative_path",
+          "step",
+          "upstream_step",
+          "size",
+          "created_at",
+          "discovered_at",
+          "modified_at",
+          "can_preview",
+          "unavailable_reason",
+          "files"
+        ],
+        "title": "TtsCheckpoint"
+      },
+      "TtsCheckpointFile": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "download_url": {
+            "type": "string",
+            "title": "Download Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role",
+          "size",
+          "download_url"
+        ],
+        "title": "TtsCheckpointFile"
+      },
+      "TtsCheckpointPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TtsCheckpoint"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "as_of": {
+            "type": "number",
+            "title": "As Of"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor",
+          "as_of"
+        ],
+        "title": "TtsCheckpointPage"
+      },
+      "TtsConfig": {
+        "properties": {
+          "engine": {
+            "type": "string",
+            "const": "voxcpm1.5",
+            "title": "Engine",
+            "default": "voxcpm1.5"
+          },
+          "python_path": {
+            "type": "string",
+            "title": "Python Path",
+            "default": ""
+          },
+          "trainer_path": {
+            "type": "string",
+            "title": "Trainer Path",
+            "default": ""
+          },
+          "model_path": {
+            "type": "string",
+            "title": "Model Path",
+            "default": ""
+          },
+          "train_manifest": {
+            "type": "string",
+            "title": "Train Manifest",
+            "default": ""
+          },
+          "val_manifest": {
+            "type": "string",
+            "title": "Val Manifest",
+            "default": ""
+          },
+          "batch_size": {
+            "type": "integer",
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "default": 1
+          },
+          "grad_accum_steps": {
+            "type": "integer",
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Grad Accum Steps",
+            "default": 1
+          },
+          "num_workers": {
+            "type": "integer",
+            "maximum": 64.0,
+            "minimum": 0.0,
+            "title": "Num Workers",
+            "default": 0
+          },
+          "num_iters": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 1.0,
+            "title": "Num Iters",
+            "default": 1000
+          },
+          "save_interval": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 1.0,
+            "title": "Save Interval",
+            "default": 100
+          },
+          "learning_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Rate",
+            "default": 0.0001
+          },
+          "warmup_steps": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Warmup Steps",
+            "default": 100
+          },
+          "lora_rank": {
+            "type": "integer",
+            "maximum": 512.0,
+            "minimum": 1.0,
+            "title": "Lora Rank",
+            "default": 32
+          },
+          "lora_alpha": {
+            "type": "integer",
+            "maximum": 4096.0,
+            "minimum": 1.0,
+            "title": "Lora Alpha",
+            "default": 16
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TtsConfig"
+      },
+      "TtsConfigResponse": {
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/TtsConfigScope"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "data_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Data Revision"
+          },
+          "config": {
+            "$ref": "#/components/schemas/TtsVersionConfig"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope",
+          "revision",
+          "data_revision",
+          "config"
+        ],
+        "title": "TtsConfigResponse"
+      },
+      "TtsConfigSaveBody": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "config": {
+            "$ref": "#/components/schemas/TtsVersionConfig"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "config"
+        ],
+        "title": "TtsConfigSaveBody"
+      },
+      "TtsConfigScope": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Project Id"
+          },
+          "version_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Version Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "version_id"
+        ],
+        "title": "TtsConfigScope"
+      },
+      "TtsDatasetReport": {
+        "properties": {
+          "train": {
+            "$ref": "#/components/schemas/TtsSplitDatasetReport"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/TtsSplitDatasetReport"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "train",
+          "validation"
+        ],
+        "title": "TtsDatasetReport"
+      },
+      "TtsDeviceCheck": {
+        "properties": {
+          "device": {
+            "type": "string",
+            "title": "Device"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uuid"
+          },
+          "bf16": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bf16"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "title": "State"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device",
+          "state"
+        ],
+        "title": "TtsDeviceCheck"
+      },
+      "TtsDeviceSelection": {
+        "properties": {
+          "requested_devices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requested Devices"
+          },
+          "eligible_devices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Eligible Devices"
+          },
+          "checked_devices": {
+            "items": {
+              "$ref": "#/components/schemas/TtsDeviceCheck"
+            },
+            "type": "array",
+            "title": "Checked Devices"
+          },
+          "cuda_visible_devices": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda Visible Devices"
+          },
+          "cuda_device_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda Device Order"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "requested_devices",
+          "eligible_devices",
+          "checked_devices"
+        ],
+        "title": "TtsDeviceSelection"
+      },
+      "TtsEngineCapability": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "const": "voxcpm1.5",
+            "title": "Id",
+            "default": "voxcpm1.5"
+          },
+          "training_modes": {
+            "items": {
+              "type": "string",
+              "const": "lora"
+            },
+            "type": "array",
+            "title": "Training Modes"
+          },
+          "devices": {
+            "items": {
+              "type": "string",
+              "const": "cuda"
+            },
+            "type": "array",
+            "title": "Devices"
+          },
+          "gpu_count": {
+            "type": "integer",
+            "const": 1,
+            "title": "Gpu Count",
+            "default": 1
+          },
+          "training_precision": {
+            "type": "string",
+            "const": "bf16_autocast",
+            "title": "Training Precision",
+            "default": "bf16_autocast"
+          },
+          "audio": {
+            "$ref": "#/components/schemas/TtsAudioCapability"
+          },
+          "upstream_revision": {
+            "type": "string",
+            "title": "Upstream Revision",
+            "default": "f0c787f0937dc1c9a8f4f64d9a332d9c5da2e629"
+          },
+          "fixed": {
+            "items": {
+              "$ref": "#/components/schemas/TtsCapabilitySetting"
+            },
+            "type": "array",
+            "title": "Fixed"
+          },
+          "unsupported": {
+            "items": {
+              "$ref": "#/components/schemas/TtsCapabilitySetting"
+            },
+            "type": "array",
+            "title": "Unsupported"
+          },
+          "schema_url": {
+            "type": "string",
+            "title": "Schema Url",
+            "default": "/api/tts/schema/train?engine=voxcpm1.5"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "fixed",
+          "unsupported"
+        ],
+        "title": "TtsEngineCapability"
+      },
+      "TtsEnvironmentCheck": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "python",
+              "upstream",
+              "model",
+              "dependencies",
+              "cuda",
+              "bf16",
+              "tokenizer",
+              "lora_targets"
+            ],
+            "title": "Key"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unchecked",
+              "available",
+              "unavailable"
+            ],
+            "title": "State"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "state"
+        ],
+        "title": "TtsEnvironmentCheck"
+      },
+      "TtsEnvironmentReport": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "unchecked",
+              "available",
+              "unavailable"
+            ],
+            "title": "State"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/TtsEnvironmentCheck"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "devices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsDeviceSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "checks"
+        ],
+        "title": "TtsEnvironmentReport"
+      },
+      "TtsError": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "trace_id": {
+            "type": "string",
+            "title": "Trace Id"
+          },
+          "details": {
+            "$ref": "#/components/schemas/TtsErrorDetails"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "trace_id",
+          "details"
+        ],
+        "title": "TtsError"
+      },
+      "TtsErrorDetails": {
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          },
+          "current_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Revision"
+          },
+          "current_data_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Data Revision"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "issues"
+        ],
+        "title": "TtsErrorDetails"
+      },
+      "TtsErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/TtsError"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "TtsErrorResponse"
+      },
+      "TtsIssue": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Loc"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "title": "Severity",
+            "default": "error"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "loc",
+          "message"
+        ],
+        "title": "TtsIssue"
+      },
+      "TtsProjectBody": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "project_type": {
+            "type": "string",
+            "const": "tts",
+            "title": "Project Type"
+          },
+          "engine": {
+            "type": "string",
+            "const": "voxcpm1.5",
+            "title": "Engine",
+            "default": "voxcpm1.5"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "project_type"
+        ],
+        "title": "TtsProjectBody"
+      },
+      "TtsRowsResponse": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "snapshot_id": {
+            "type": "string",
+            "title": "Snapshot Id"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Page Size"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TtsSourceRow"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_id",
+          "snapshot_id",
+          "page",
+          "page_size",
+          "total",
+          "items"
+        ],
+        "title": "TtsRowsResponse"
+      },
+      "TtsSampleBody": {
+        "properties": {
+          "gpu_devices": {
+            "items": {
+              "type": "string",
+              "pattern": "^(cuda:[0-9]+|mps)$"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Gpu Devices"
+          },
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "checkpoint_revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Revision"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "title": "Text"
+          },
+          "reference_audio": {
+            "type": "string",
+            "title": "Reference Audio",
+            "default": ""
+          },
+          "reference_text": {
+            "type": "string",
+            "title": "Reference Text",
+            "default": ""
+          },
+          "seed": {
+            "type": "integer",
+            "exclusiveMaximum": 4294967296.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "default": 42
+          },
+          "cfg_value": {
+            "type": "number",
+            "maximum": 20.0,
+            "minimum": 0.0,
+            "title": "Cfg Value",
+            "default": 2.0
+          },
+          "inference_timesteps": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Inference Timesteps",
+            "default": 10
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "TtsSampleBody"
+      },
+      "TtsSampleJob": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TtsSampleSource"
+          },
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "checkpoint_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Revision"
+          },
+          "request": {
+            "$ref": "#/components/schemas/TtsSampleRequestSnapshot"
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsAudio"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job",
+          "source",
+          "checkpoint_id",
+          "checkpoint_revision",
+          "request",
+          "audio"
+        ],
+        "title": "TtsSampleJob"
+      },
+      "TtsSampleJobPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TtsSampleJob"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "as_of": {
+            "type": "number",
+            "title": "As Of"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor",
+          "as_of"
+        ],
+        "title": "TtsSampleJobPage"
+      },
+      "TtsSampleRequestSnapshot": {
+        "properties": {
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "reference_audio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Audio"
+          },
+          "reference_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Text"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "cfg_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfg Value"
+          },
+          "inference_timesteps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Timesteps"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "reference_audio",
+          "reference_text",
+          "seed",
+          "cfg_value",
+          "inference_timesteps"
+        ],
+        "title": "TtsSampleRequestSnapshot"
+      },
+      "TtsSampleSource": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "record_exists": {
+            "type": "boolean",
+            "title": "Record Exists"
+          },
+          "checkpoint_available": {
+            "type": "boolean",
+            "title": "Checkpoint Available"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job_id",
+          "name",
+          "record_exists",
+          "checkpoint_available"
+        ],
+        "title": "TtsSampleSource"
+      },
+      "TtsSchemaGroup": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "fields"
+        ],
+        "title": "TtsSchemaGroup"
+      },
+      "TtsSource": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/TtsConfigScope"
+          },
+          "data_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Data Revision"
+          },
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "validation"
+            ],
+            "title": "Split"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unchecked",
+              "checking",
+              "valid",
+              "invalid",
+              "stale",
+              "error"
+            ],
+            "title": "State"
+          },
+          "check_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Id"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsSourceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Issues"
+          },
+          "issues_total": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issues Total"
+          },
+          "issues_truncated": {
+            "type": "boolean",
+            "title": "Issues Truncated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "scope",
+          "data_revision",
+          "split",
+          "path",
+          "revision",
+          "state",
+          "check_id",
+          "snapshot_id",
+          "checked_at",
+          "summary",
+          "issues",
+          "issues_total",
+          "issues_truncated"
+        ],
+        "title": "TtsSource"
+      },
+      "TtsSourceCheckBody": {
+        "properties": {
+          "expected_data_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Data Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_data_revision"
+        ],
+        "title": "TtsSourceCheckBody"
+      },
+      "TtsSourcePutBody": {
+        "properties": {
+          "expected_data_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Data Revision"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_data_revision",
+          "path"
+        ],
+        "title": "TtsSourcePutBody"
+      },
+      "TtsSourceRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "snapshot_id": {
+            "type": "string",
+            "title": "Snapshot Id"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Line"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "audio_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Name"
+          },
+          "reference_audio_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Audio Name"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate"
+          },
+          "channels": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channels"
+          },
+          "audio_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Url"
+          },
+          "reference_audio_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Audio Url"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "source_id",
+          "snapshot_id",
+          "line",
+          "text",
+          "audio_name",
+          "reference_audio_name",
+          "dataset_id",
+          "duration_seconds",
+          "sample_rate",
+          "channels",
+          "audio_url",
+          "reference_audio_url",
+          "issues"
+        ],
+        "title": "TtsSourceRow"
+      },
+      "TtsSourceSummary": {
+        "properties": {
+          "clips_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Clips Count"
+          },
+          "valid_clips_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Valid Clips Count"
+          },
+          "invalid_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Invalid Count"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Duration Seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "clips_count",
+          "valid_clips_count",
+          "invalid_count",
+          "duration_seconds"
+        ],
+        "title": "TtsSourceSummary"
+      },
+      "TtsSourcesResponse": {
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/TtsConfigScope"
+          },
+          "data_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Data Revision"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TtsSource"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope",
+          "data_revision",
+          "items"
+        ],
+        "title": "TtsSourcesResponse"
+      },
+      "TtsSplitDatasetReport": {
+        "properties": {
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "validation"
+            ],
+            "title": "Split"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unchecked",
+              "available",
+              "unavailable",
+              "disabled"
+            ],
+            "title": "State"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Revision"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "source_state": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "unchecked",
+              "checking",
+              "valid",
+              "invalid",
+              "stale",
+              "error"
+            ],
+            "title": "Source State"
+          },
+          "source_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsSourceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token_filter": {
+            "$ref": "#/components/schemas/TtsTokenFilterReport"
+          },
+          "batching": {
+            "$ref": "#/components/schemas/TtsBatchingReport"
+          },
+          "validation_execution": {
+            "$ref": "#/components/schemas/TtsValidationExecutionReport"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "split",
+          "state",
+          "source_state",
+          "token_filter",
+          "batching",
+          "validation_execution"
+        ],
+        "title": "TtsSplitDatasetReport"
+      },
+      "TtsTokenFilterReport": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "unchecked",
+              "ready",
+              "disabled",
+              "not_applicable",
+              "blocked",
+              "error"
+            ],
+            "title": "State"
+          },
+          "method": {
+            "type": "string",
+            "const": "voxcpm_pinned_estimated_sequence_length",
+            "title": "Method",
+            "default": "voxcpm_pinned_estimated_sequence_length"
+          },
+          "max_batch_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Batch Tokens"
+          },
+          "max_sample_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Sample Tokens"
+          },
+          "before_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Count"
+          },
+          "kept_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kept Count"
+          },
+          "filtered_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filtered Count"
+          },
+          "input_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Fingerprint"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "max_batch_tokens"
+        ],
+        "title": "TtsTokenFilterReport"
+      },
+      "TtsTrainSchema": {
+        "properties": {
+          "contract_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Contract Version",
+            "default": 1
+          },
+          "engine": {
+            "type": "string",
+            "const": "voxcpm1.5",
+            "title": "Engine",
+            "default": "voxcpm1.5"
+          },
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "json_schema": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Json Schema"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/TtsSchemaGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "fixed": {
+            "items": {
+              "$ref": "#/components/schemas/TtsCapabilitySetting"
+            },
+            "type": "array",
+            "title": "Fixed"
+          },
+          "unsupported": {
+            "items": {
+              "$ref": "#/components/schemas/TtsCapabilitySetting"
+            },
+            "type": "array",
+            "title": "Unsupported"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "json_schema",
+          "groups",
+          "fixed",
+          "unsupported"
+        ],
+        "title": "TtsTrainSchema"
+      },
+      "TtsTrainingBody": {
+        "properties": {
+          "gpu_devices": {
+            "items": {
+              "type": "string",
+              "pattern": "^(cuda:[0-9]+|mps)$"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Gpu Devices"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "data_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Data Revision"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": ".*\\S.*",
+            "title": "Name",
+            "default": "语音训练"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision",
+          "data_revision"
+        ],
+        "title": "TtsTrainingBody"
+      },
+      "TtsValidationBody": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "data_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Data Revision"
+          },
+          "gpu_devices": {
+            "items": {
+              "type": "string",
+              "pattern": "^cuda:[0-9]+$"
+            },
+            "type": "array",
+            "maxItems": 1,
+            "title": "Gpu Devices"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision",
+          "data_revision"
+        ],
+        "title": "TtsValidationBody"
+      },
+      "TtsValidationExecutionReport": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "unchecked",
+              "ready",
+              "not_applicable",
+              "blocked",
+              "error"
+            ],
+            "title": "State"
+          },
+          "max_batches_per_validation": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Batches Per Validation"
+          },
+          "evaluated_batches_per_validation": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluated Batches Per Validation"
+          },
+          "evaluated_samples_per_validation": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluated Samples Per Validation"
+          },
+          "not_evaluated_samples_per_validation": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Evaluated Samples Per Validation"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "TtsValidationExecutionReport"
+      },
+      "TtsValidationReport": {
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/TtsConfigScope"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "data_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Data Revision"
+          },
+          "validation_id": {
+            "type": "string",
+            "title": "Validation Id"
+          },
+          "input_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Fingerprint"
+          },
+          "checked_at": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Checked At"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "dataset": {
+            "$ref": "#/components/schemas/TtsDatasetReport"
+          },
+          "environment": {
+            "$ref": "#/components/schemas/TtsEnvironmentReport"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope",
+          "revision",
+          "data_revision",
+          "validation_id",
+          "checked_at",
+          "valid",
+          "errors",
+          "warnings",
+          "dataset",
+          "environment"
+        ],
+        "title": "TtsValidationReport"
+      },
+      "TtsVersionConfig": {
+        "properties": {
+          "engine": {
+            "type": "string",
+            "const": "voxcpm1.5",
+            "title": "Engine",
+            "default": "voxcpm1.5"
+          },
+          "python_path": {
+            "type": "string",
+            "title": "Python Path",
+            "default": ""
+          },
+          "trainer_path": {
+            "type": "string",
+            "title": "Trainer Path",
+            "default": ""
+          },
+          "model_path": {
+            "type": "string",
+            "title": "Model Path",
+            "default": ""
+          },
+          "batch_size": {
+            "type": "integer",
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "default": 1
+          },
+          "grad_accum_steps": {
+            "type": "integer",
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Grad Accum Steps",
+            "default": 1
+          },
+          "num_workers": {
+            "type": "integer",
+            "maximum": 64.0,
+            "minimum": 0.0,
+            "title": "Num Workers",
+            "default": 0
+          },
+          "preprocessing_num_workers": {
+            "type": "integer",
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Preprocessing Num Workers",
+            "default": 1
+          },
+          "max_batch_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Batch Tokens",
+            "default": 0
+          },
+          "num_iters": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 1.0,
+            "title": "Num Iters",
+            "default": 1000
+          },
+          "learning_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Rate",
+            "default": 0.0001
+          },
+          "warmup_steps": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Warmup Steps",
+            "default": 100
+          },
+          "weight_decay": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Weight Decay",
+            "default": 0.01
+          },
+          "max_grad_norm": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Max Grad Norm",
+            "default": 0.0
+          },
+          "max_steps": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Max Steps",
+            "default": 0
+          },
+          "loss_diff_weight": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Loss Diff Weight",
+            "default": 1.0
+          },
+          "loss_stop_weight": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Loss Stop Weight",
+            "default": 1.0
+          },
+          "save_interval": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 1.0,
+            "title": "Save Interval",
+            "default": 100
+          },
+          "valid_interval": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Interval"
+          },
+          "log_interval": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 1.0,
+            "title": "Log Interval",
+            "default": 1
+          },
+          "lora_rank": {
+            "type": "integer",
+            "maximum": 512.0,
+            "minimum": 1.0,
+            "title": "Lora Rank",
+            "default": 32
+          },
+          "lora_alpha": {
+            "type": "integer",
+            "maximum": 4096.0,
+            "minimum": 1.0,
+            "title": "Lora Alpha",
+            "default": 16
+          },
+          "lora_dropout": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "title": "Lora Dropout",
+            "default": 0.0
+          },
+          "lora_enable_lm": {
+            "type": "boolean",
+            "title": "Lora Enable Lm",
+            "default": true
+          },
+          "lora_target_modules_lm": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "q_proj",
+                "v_proj",
+                "k_proj",
+                "o_proj"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "uniqueItems": true,
+            "title": "Lora Target Modules Lm",
+            "default": [
+              "q_proj",
+              "v_proj",
+              "k_proj",
+              "o_proj"
+            ]
+          },
+          "lora_enable_dit": {
+            "type": "boolean",
+            "title": "Lora Enable Dit",
+            "default": true
+          },
+          "lora_target_modules_dit": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "q_proj",
+                "v_proj",
+                "k_proj",
+                "o_proj"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "uniqueItems": true,
+            "title": "Lora Target Modules Dit",
+            "default": [
+              "q_proj",
+              "v_proj",
+              "k_proj",
+              "o_proj"
+            ]
+          },
+          "lora_enable_proj": {
+            "type": "boolean",
+            "title": "Lora Enable Proj",
+            "default": false
+          },
+          "lora_target_proj_modules": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "enc_to_lm_proj",
+                "lm_to_dit_proj",
+                "res_to_dit_proj"
+              ]
+            },
+            "type": "array",
+            "maxItems": 3,
+            "uniqueItems": true,
+            "title": "Lora Target Proj Modules",
+            "default": [
+              "enc_to_lm_proj",
+              "lm_to_dit_proj",
+              "res_to_dit_proj"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TtsVersionConfig"
+      },
       "UploadManifestFile": {
         "properties": {
           "name": {
@@ -25853,6 +32209,20 @@
           "warnings"
         ],
         "title": "ValidateResult"
+      },
+      "ValidationBody": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "title": "ValidationBody"
       },
       "ValidationConfig": {
         "properties": {
@@ -26116,6 +32486,7 @@
             "title": "Family"
           }
         },
+        "additionalProperties": true,
         "type": "object",
         "required": [
           "name"
@@ -26147,6 +32518,21 @@
       },
       "VersionPatch": {
         "properties": {
+          "project_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "tts"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Type"
+          },
           "name": {
             "anyOf": [
               {
@@ -26310,7 +32696,14 @@
             "title": "Datasets"
           },
           "images": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Images"
           },
           "jobs": {
@@ -27722,7 +34115,108 @@
           "output_dir"
         ],
         "title": "XyzTask"
+      },
+      "TtsSourceChanged": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/TtsConfigScope"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "split": {
+            "enum": [
+              "train",
+              "validation"
+            ],
+            "title": "Split",
+            "type": "string"
+          },
+          "source_revision": {
+            "minimum": 1,
+            "title": "Source Revision",
+            "type": "integer"
+          },
+          "data_revision": {
+            "minimum": 1,
+            "title": "Data Revision",
+            "type": "integer"
+          },
+          "check_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Id"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unchecked",
+                  "checking",
+                  "valid",
+                  "invalid",
+                  "stale",
+                  "error"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "reason": {
+            "enum": [
+              "registered",
+              "check_started",
+              "check_completed",
+              "check_failed",
+              "stale",
+              "removed"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "source_id",
+          "split",
+          "source_revision",
+          "data_revision",
+          "check_id",
+          "snapshot_id",
+          "state",
+          "reason"
+        ],
+        "title": "TtsSourceChanged",
+        "type": "object"
       }
+    }
+  },
+  "x-event-payloads": {
+    "tts.source.changed": {
+      "$ref": "#/components/schemas/TtsSourceChanged"
     }
   }
 }

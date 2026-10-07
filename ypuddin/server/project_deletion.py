@@ -90,7 +90,7 @@ def _resolved(path: Path) -> Path | None:
         return None
 
 
-def plan(c: Any, pid: str) -> Plan:
+def plan(c: Any, pid: str, *, check_tts_refs: bool = True) -> Plan:
     """What deleting the project removes and what stops it; reads the disk but holds no lock."""
     from .routes_work import _get_project, _jobs_using
 
@@ -148,7 +148,28 @@ def plan(c: Any, pid: str) -> Plan:
     result = Plan(project, locations, records, jobs)
     targets = [location.path for location in locations if location.problem is None]
     result.blocked = _blocking(c, pid, targets, covered) or _in_use(c, pid, targets, _jobs_using)
+    if check_tts_refs and result.blocked is None:
+        result.blocked = _tts_reference_blocker(c, pid, targets)
     return result
+
+
+def _tts_reference_blocker(c: Any, pid: str, targets: list[Path]) -> ApiError | None:
+    manager = getattr(c, "tts_sources", None)
+    if manager is None:
+        return None
+    try:
+        references = manager.references_to(targets, excluding_project_id=pid)
+        from .tts_source_copy import active_references
+
+        references += active_references(c, targets, excluding_project_id=pid)
+    except ApiError as exc:
+        return exc
+    if references:
+        return ApiError(
+            "其他语音项目仍引用这些清单或录音，移除引用后才能删除。",
+            code="project.files_in_use", status=409, details={"sources": references},
+        )
+    return None
 
 
 def _blocking(c: Any, pid: str, targets: list[Path], resolved: list[Path]) -> ApiError | None:
@@ -190,6 +211,8 @@ def _in_use(c: Any, pid: str, targets: list[Path], jobs_using: Any) -> ApiError 
 
 def _project_busy(c: Any, pid: str, project: dict) -> ApiError | None:
     """Conditions in the database that refuse any deletion of the project; caller holds the lock."""
+    if c.db.fetchone("SELECT id FROM tts_sources WHERE project_id=? AND state='checking'", (pid,)):
+        return ApiError("项目的数据来源正在检查，请等待检查完成。", code="project.busy", status=409)
     if c.db.fetchone(f"SELECT id FROM jobs WHERE project_id=? AND status IN {ACTIVE_JOBS}", (pid,)):
         return ApiError("项目还有排队或运行中的任务，请等它们结束或取消后再删除。", code="project.busy", status=409)
     if c.db.fetchone(
@@ -201,6 +224,12 @@ def _project_busy(c: Any, pid: str, project: dict) -> ApiError | None:
         return ApiError("项目的任务进程还没有退出，请稍后再删除。", code="project.busy", status=409)
     if any(jid in deleting_jobs for jid in jobs):
         return ApiError("项目中有任务的文件正在删除，请等删除完成后再删除项目。", code="project.busy", status=409)
+    from .tts_job_actions import active_children
+
+    for source in c.db.fetchall("SELECT id FROM jobs WHERE project_id=? AND type='tts_train'", (pid,)):
+        if children := active_children(c, source["id"]):
+            return ApiError("项目的训练仍被活动试听使用，请先等待试听结束。", code="job.files_in_use", status=409,
+                            details={"jobs": [child["id"] for child in children]})
     if not project["archived"]:
         return ApiError("请先归档项目，再永久删除。", code="project.archive_required", status=409)
     if deleting(c, pid):
@@ -322,6 +351,8 @@ class ProjectDeletions:
             from .routes_work import _jobs_using
 
             targets = [location.path for location in found.locations if location.problem is None]
+            if error := _tts_reference_blocker(self.c, pid, targets):
+                raise error
             if error := _in_use(self.c, pid, targets, _jobs_using):
                 raise error
             tasks = self.c.background_tasks
@@ -445,6 +476,10 @@ class ProjectDeletions:
             versions = [row["id"] for row in c.db.fetchall("SELECT id FROM project_versions WHERE project_id=?", (pid,))]
             c.db.execute("BEGIN IMMEDIATE")
             try:
+                from .routes_work import _preserve_tts_source
+
+                for source in c.db.fetchall("SELECT * FROM jobs WHERE project_id=? AND type='tts_train'", (pid,)):
+                    _preserve_tts_source(c, source)
                 c.db.execute("DELETE FROM jobs WHERE project_id=?", (pid,))
                 c.db.execute("DELETE FROM artifacts WHERE project_id=?", (pid,))
                 for table in _VERSION_TABLES:
