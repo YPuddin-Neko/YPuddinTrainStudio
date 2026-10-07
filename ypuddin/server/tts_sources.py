@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS tts_source_snapshots (
   id TEXT PRIMARY KEY,
   source_id TEXT NOT NULL REFERENCES tts_sources(id) ON DELETE CASCADE,
   fingerprint TEXT NOT NULL, created_at REAL NOT NULL,
+  engine TEXT NOT NULL DEFAULT 'voxcpm1.5',
   UNIQUE(source_id, fingerprint)
 );
 CREATE TABLE IF NOT EXISTS tts_source_rows (
@@ -109,7 +110,34 @@ class TtsSources:
         )
         if row is None:
             raise ApiError("数据来源不存在或不属于当前版本。", code="tts.source_not_found", status=404)
-        return row
+        return self._refresh_engine(row)
+
+    def _engine(self, pid: str, vid: str) -> str:
+        from .tts_projects import _read
+
+        try:
+            return _read(self.c, pid, vid).config.engine
+        except ApiError as exc:
+            if exc.code == "tts.config_missing":
+                return "voxcpm1.5"
+            raise
+
+    def _refresh_engine(self, source: dict) -> dict:
+        if source["state"] in {"valid", "invalid"} and source["snapshot_id"]:
+            snapshot = self.c.db.fetchone("SELECT engine FROM tts_source_snapshots WHERE id=?", (source["snapshot_id"],))
+            snapshot_engine = snapshot["engine"] if snapshot else "voxcpm1.5"
+            if snapshot_engine != self._engine(source["project_id"], source["version_id"]):
+                self._stale(source, message="训练引擎已变化，请重新检查数据来源。")
+                return self.c.db.fetchone("SELECT * FROM tts_sources WHERE id=?", (source["id"],))
+        return source
+
+    def invalidate_engine(self, pid: str, vid: str) -> None:
+        """Discard completed and in-flight scans when a saved configuration changes engine."""
+        with self.c.db.transaction():
+            self._version(pid, vid)
+            for source in self.c.db.fetchall("SELECT * FROM tts_sources WHERE version_id=?", (vid,)):
+                if source["state"] in {"valid", "invalid", "checking"}:
+                    self._stale(source, message="训练引擎已变化，请重新检查数据来源。")
 
     def _revision(self, vid: str) -> int:
         return self.c.db.fetchone("SELECT data_revision FROM project_versions WHERE id=?", (vid,))["data_revision"]
@@ -137,6 +165,7 @@ class TtsSources:
         return version
 
     def _dto(self, row: dict) -> TtsSource:
+        row = self._refresh_engine(row)
         complete = row["state"] in {"valid", "invalid"}
         return TtsSource(
             id=row["id"], scope=TtsConfigScope(project_id=row["project_id"], version_id=row["version_id"]),
@@ -163,10 +192,11 @@ class TtsSources:
 
     def list(self, pid: str, vid: str) -> TtsSourcesResponse:
         with self.c.db.lock:
-            version = self._version(pid, vid)
+            self._version(pid, vid)
             rows = self.c.db.fetchall("SELECT * FROM tts_sources WHERE version_id=? ORDER BY split", (vid,))
+            rows = [self._refresh_engine(row) for row in rows]
             return TtsSourcesResponse(scope=TtsConfigScope(project_id=pid, version_id=vid),
-                                      data_revision=version["data_revision"], items=[self._dto(row) for row in rows])
+                                      data_revision=self._revision(vid), items=[self._dto(row) for row in rows])
 
     def get(self, pid: str, vid: str, source_id: str) -> TtsSource:
         with self.c.db.lock:
@@ -194,7 +224,7 @@ class TtsSources:
             self._mutable(pid, vid, expected_data_revision)
         try:
             if not path.strip():
-                raise SourceFileError("tts.path_invalid", "请填写 JSONL 清单路径。")
+                raise SourceFileError("tts.path_invalid", "请填写数据清单路径。")
             candidate = absolute_path(path)
             # Registration validates readable path safety; content diagnostics belong to the scan.
             file_identity(candidate, self.c.is_allowed)
@@ -240,11 +270,13 @@ class TtsSources:
             version = self._version(pid, vid, write=True)
             self._cas(version, expected_data_revision)
             source = self._source(pid, vid, source_id)
+            self._cas(self._version(pid, vid, write=True), expected_data_revision)
             if source["state"] == "checking":
                 return self._dto(source)
             if self._closed:
                 raise ApiError("数据检查服务正在关闭。", code="tts.check.unavailable", status=503)
             check_id = new_id("tc")
+            engine = self._engine(pid, vid)
             self.c.db.update("tts_sources", source_id, {
                 "state": "checking", "check_id": check_id, "snapshot_id": None, "checked_at": None,
                 "summary_json": None, "issues_json": "[]", "issues_total": None, "issues_truncated": 0,
@@ -253,7 +285,7 @@ class TtsSources:
             checking = self._source(pid, vid, source_id)
             result = self._dto(checking)
             self._event(checking, "check_started")
-            self.executor.submit(self._scan, source, check_id)
+            self.executor.submit(self._scan, source, check_id, engine)
             return result
 
     def _matches(self, source: dict, check_id: str) -> dict | None:
@@ -272,15 +304,18 @@ class TtsSources:
         updated = self.c.db.fetchone("SELECT * FROM tts_sources WHERE id=?", (source["id"],))
         self._event(updated, "check_failed")
 
-    def _scan(self, source: dict, check_id: str) -> None:
+    def _scan(self, source: dict, check_id: str, engine: str = "voxcpm1.5") -> None:
         try:
-            result = scan_manifest(Path(source["path"]), source["id"], source["split"], allowed=self.c.is_allowed)
+            result = scan_manifest(Path(source["path"]), source["id"], source["split"], allowed=self.c.is_allowed, engine=engine)
             changes = identity_changes(result.identities, allowed=self.c.is_allowed)
             with self.c.db.transaction():
                 current = self._matches(source, check_id)
                 if current is None:
                     return
                 self._version(source["project_id"], source["version_id"], write=True)
+                if engine != self._engine(source["project_id"], source["version_id"]):
+                    self._stale(current, message="训练引擎已变化，请重新检查数据来源。")
+                    return
                 if changes:
                     self._stale(current)
                     return
@@ -288,7 +323,8 @@ class TtsSources:
                 snapshot = "tss_" + hashlib.sha256((source["id"] + result.fingerprint).encode()).hexdigest()
                 if not self.c.db.fetchone("SELECT id FROM tts_source_snapshots WHERE id=?", (snapshot,)):
                     self.c.db.insert("tts_source_snapshots", {"id": snapshot, "source_id": source["id"],
-                                                             "fingerprint": result.fingerprint, "created_at": now()})
+                                                             "fingerprint": result.fingerprint, "created_at": now(),
+                                                             "engine": result.engine})
                     for item in result.rows:
                         data = item["row"]
                         row_id = "row_" + str(data["line"])
@@ -352,11 +388,11 @@ class TtsSources:
                                    total=total,
                                    items=[TtsSourceRow.model_validate_json(item["row_json"]) for item in items])
 
-    def _stale(self, source: dict) -> None:
+    def _stale(self, source: dict, *, message: str = "清单或录音内容已变化，请重新检查。") -> None:
         if source["state"] != "stale":
             self._bump(source["version_id"])
         issue = TtsIssue(code="tts.source_stale", loc=["sources", source["split"], "path"],
-                         message="清单或录音内容已变化，请重新检查。")
+                         message=message)
         self.c.db.update("tts_sources", source["id"], {
             "state": "stale", "snapshot_id": None, "checked_at": None, "summary_json": None,
             "issues_json": _json([issue.model_dump()]), "issues_total": None, "issues_truncated": 0,
@@ -398,9 +434,10 @@ class TtsSources:
 
     def snapshot_identity(self, pid: str, vid: str) -> dict:
         with self.c.db.lock:
-            version = self._version(pid, vid)
+            self._version(pid, vid)
             sources = self.c.db.fetchall("SELECT * FROM tts_sources WHERE version_id=? ORDER BY split", (vid,))
-            return {"data_revision": version["data_revision"], "sources": {
+            sources = [self._refresh_engine(source) for source in sources]
+            return {"data_revision": self._revision(vid), "sources": {
                 source["split"]: {key: source[key] for key in ("id", "revision", "state", "snapshot_id", "fingerprint")}
                 for source in sources
             }}

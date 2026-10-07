@@ -39,12 +39,18 @@ class TtsProjectRoute(APIRoute):
             try:
                 return await handler(request)
             except RequestValidationError as exc:
+                def field_location(value):
+                    loc = list(value)
+                    if loc and loc[0] == "body":
+                        loc = loc[1:]
+                    if len(loc) > 1 and loc[0] == "config" and loc[1] in {"voxcpm1.5", "gpt-sovits-v5"}:
+                        loc.pop(1)
+                    return loc
+
                 issues = [
                     TtsIssue(
                         code="tts.validation." + item["type"],
-                        loc=list(item["loc"])[1:]
-                        if item["loc"] and item["loc"][0] == "body"
-                        else list(item["loc"]),
+                        loc=field_location(item["loc"]),
                         message=item["msg"],
                     ).model_dump()
                     for item in exc.errors()

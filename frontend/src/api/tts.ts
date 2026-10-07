@@ -4,6 +4,12 @@ import type { components } from './generated';
 
 export type TtsVersionConfig = components['schemas']['TtsVersionConfig'];
 export type TtsConfigResponse = components['schemas']['TtsConfigResponse'];
+export type GptSovitsVersionConfig = components['schemas']['GptSovitsVersionConfig'];
+export type GptSovitsSampleOptions = components['schemas']['GptSovitsSampleOptions'];
+export type TtsScopedConfig = TtsConfigResponse['config'];
+export type TtsEngine = TtsScopedConfig['engine'];
+export type TtsGptSovitsDatasetReport = components['schemas']['TtsGptSovitsDatasetReport'];
+export type TtsGptSovitsEnvironmentReport = components['schemas']['TtsGptSovitsEnvironmentReport'];
 export type TtsConfigSaveBody = components['schemas']['TtsConfigSaveBody'];
 export type TtsIssue = components['schemas']['TtsIssue'];
 export type TtsCapabilities = components['schemas']['TtsCapabilities'];
@@ -23,7 +29,9 @@ export type TtsSplit = TtsSource['split'];
 export type TtsCheckpoint = components['schemas']['TtsCheckpoint'];
 export type TtsCheckpointPage = components['schemas']['TtsCheckpointPage'];
 export type TtsCheckpointFile = components['schemas']['TtsCheckpointFile'];
-export type TtsSampleBody = components['schemas']['TtsSampleBody'];
+type GeneratedSampleBody = components['schemas']['TtsSampleBody'];
+// Defaults are optional on the wire; GSV requests omit the Vox-specific options.
+export type TtsSampleBody = Omit<GeneratedSampleBody, 'cfg_value' | 'inference_timesteps'> & Partial<Pick<GeneratedSampleBody, 'cfg_value' | 'inference_timesteps'>>;
 export type TtsSampleJob = components['schemas']['TtsSampleJob'];
 export type TtsSampleJobPage = components['schemas']['TtsSampleJobPage'];
 export type TtsAudio = components['schemas']['TtsAudio'];
@@ -73,7 +81,7 @@ export const isTtsJob = (job: { type: string } | null | undefined) => job?.type 
 
 export const ttsApi = {
   capabilities: (signal?: AbortSignal) => apiClient.get<TtsCapabilities>('/tts/capabilities', { signal, silent: true }),
-  trainSchema: (signal?: AbortSignal) => apiClient.get<TtsTrainSchema>('/tts/schema/train', { params: { engine: 'voxcpm1.5' }, signal, silent: true }),
+  trainSchema: (signal?: AbortSignal, engine: TtsEngine = 'voxcpm1.5') => apiClient.get<TtsTrainSchema>('/tts/schema/train', { params: { engine }, signal, silent: true }),
   versionConfig: (projectId: string, versionId: string, signal?: AbortSignal) => apiClient.get<TtsConfigResponse>(ttsVersionConfigUrl(projectId, versionId), { signal, silent: true }),
   saveVersionConfig: (projectId: string, versionId: string, body: TtsConfigSaveBody) => apiClient.put<TtsConfigResponse>(ttsVersionConfigUrl(projectId, versionId), body, { silent: true }),
   sources: (pid: string, vid: string, signal?: AbortSignal) => apiClient.get<TtsSourcesResponse>(`${ttsVersionUrl(pid, vid)}/sources`, { signal, silent: true }),

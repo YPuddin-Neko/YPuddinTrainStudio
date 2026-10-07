@@ -50,3 +50,7 @@
 .tts-source-conflict-path { overflow-wrap:anywhere; }
 .tts-source-dialog-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:20px; }
 @media(max-width:600px) { .tts-source-actions { flex-basis:100%; margin-left:0; } .tts-source-summary { gap:10px 18px; } }
+
+.tts-source-table-scroll table.tts-source-gpt-sovits { min-width:900px; }
+.tts-source-gpt-sovits th:nth-child(3) { width:70px; }
+.tts-source-gpt-sovits th:nth-child(4) { width:100px; }

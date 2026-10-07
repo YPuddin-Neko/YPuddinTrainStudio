@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .config import TtsConfig
+from .gpt_sovits.config import GptSovitsExecutionConfig, GptSovitsVersionConfig
 from .version_config import TtsVersionConfig
 
 
@@ -13,9 +14,11 @@ class TtsExecutionConfig(TtsVersionConfig):
     val_manifest: str = ""
 
 
-def parse_execution_config(value: TtsConfig | TtsVersionConfig | dict[str, Any]) -> TtsExecutionConfig:
-    if isinstance(value, (TtsConfig, TtsVersionConfig)):
+def parse_execution_config(value: TtsConfig | TtsVersionConfig | GptSovitsVersionConfig | dict[str, Any]) -> TtsExecutionConfig | GptSovitsExecutionConfig:
+    if isinstance(value, (TtsConfig, TtsVersionConfig, GptSovitsVersionConfig)):
         value = value.model_dump()
+    if value.get("engine") == "gpt-sovits-v5":
+        return GptSovitsExecutionConfig.model_validate(value)
     return TtsExecutionConfig.model_validate(value)
 
 

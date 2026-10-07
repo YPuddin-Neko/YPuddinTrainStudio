@@ -1,6 +1,7 @@
 import schema from './ttsVersionSchema.json';
 import type { TtsConfigResponse, TtsTrainSchema, TtsVersionConfig } from '../../api/tts';
 
+export type VoxConfigResponse = Omit<TtsConfigResponse, 'config'> & { config: TtsVersionConfig };
 export type TtsField = keyof TtsVersionConfig;
 export type TtsDraft = Record<TtsField, string | boolean | string[]>;
 export type FieldProblem = { field: string; message: string };
@@ -61,10 +62,10 @@ export function mergeDraft(base: TtsVersionConfig, local: TtsDraft, remote: TtsV
 }
 
 export const draftKey = (projectId: string, versionId: string) => `tts-version-draft:v1:${projectId}:${versionId}`;
-export function readDraft(key: string, projectId: string, versionId: string): { base: TtsConfigResponse; draft: TtsDraft } | null {
+export function readDraft(key: string, projectId: string, versionId: string): { base: VoxConfigResponse; draft: TtsDraft } | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(key) || 'null');
-    if (value?.base?.scope?.project_id !== projectId || value?.base?.scope?.version_id !== versionId || !Number.isInteger(value.base.revision)) return null;
+    if (value?.base?.scope?.project_id !== projectId || value?.base?.scope?.version_id !== versionId || !Number.isInteger(value.base.revision) || value.base.config?.engine !== 'voxcpm1.5') return null;
     if (!fields.every(field => field in value.base.config && (typeof value.draft?.[field] === 'string' || typeof value.draft?.[field] === 'boolean' || Array.isArray(value.draft?.[field])))) return null;
     return value;
   } catch { return null; }

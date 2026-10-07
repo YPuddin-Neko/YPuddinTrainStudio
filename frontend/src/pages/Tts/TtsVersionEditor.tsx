@@ -12,11 +12,15 @@ import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { draftKey, fieldCopy, fields, fieldSchemas, groups, mergeDraft, parseDraft, readDraft, resolveTrainingSchema, targetOwners, toDraft, type FieldProblem, type TtsDraft, type TtsField } from './ttsVersionFields';
 import '../../schema/SchemaForm/config-fields.css';
+import GptSovitsVersionEditor from './GptSovitsVersionEditor';
+import { isGptSovitsConfigResponse } from './gptSovitsVersionFields';
+import type { VoxConfigResponse } from './ttsVersionFields';
 
 export type TtsEditorHandle = { beforeAction: () => Promise<void>; saveConfig: () => Promise<TtsConfigResponse | null> };
-type Props = { initial: TtsConfigResponse; readOnly: boolean; onSaved: (value: TtsConfigResponse) => void; schema?: TtsTrainSchema; onDirtyChange?: (dirty: boolean) => void; toolbarActions?: React.ReactNode };
+export type TtsEditorProps = { initial: TtsConfigResponse; readOnly: boolean; onSaved: (value: TtsConfigResponse) => void; schema?: TtsTrainSchema; onDirtyChange?: (dirty: boolean) => void; toolbarActions?: React.ReactNode };
 
-const TtsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function TtsVersionEditor({ initial, readOnly, onSaved, schema, onDirtyChange, toolbarActions }, ref) {
+type Props = Omit<TtsEditorProps, 'initial'> & { initial: VoxConfigResponse };
+const VoxVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function VoxVersionEditor({ initial, readOnly, onSaved, schema, onDirtyChange, toolbarActions }, ref) {
   const text = useWorkspaceText(), english = text('zh', 'en') === 'en';
   const client = useQueryClient();
   const { project_id: pid, version_id: vid } = initial.scope;
@@ -27,7 +31,7 @@ const TtsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function TtsVe
   const resolved = schema ? resolveTrainingSchema(schema) : null;
   const properties = resolved?.properties || fieldSchemas, orderedGroups = resolved?.groups || groups;
   const [draft, setDraft] = React.useState<TtsDraft>(local?.draft || toDraft(initial.config));
-  const [conflict, setConflict] = React.useState<TtsConfigResponse | null>(local && local.base.revision !== initial.revision ? initial : null);
+  const [conflict, setConflict] = React.useState<VoxConfigResponse | null>(local && local.base.revision !== initial.revision ? initial : null);
   const [saving, setSaving] = React.useState(false);
   const pending = React.useRef(false), mounted = React.useRef(true);
   const [closed, setClosed] = React.useState<Set<string>>(new Set());
@@ -83,15 +87,22 @@ const TtsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function TtsVe
     try {
       const saved = await ttsApi.saveVersionConfig(pid, vid, { expected_revision: base.revision, config: parsed.config });
       if (!mounted.current) return false;
-      stored.current = saved; setBase(saved); setDraft(toDraft(saved.config)); onDirtyChange?.(false); onSaved(saved);
+      if (isGptSovitsConfigResponse(saved)) { onSaved(saved); return false; }
+      const voxSaved = saved as VoxConfigResponse;
+      stored.current = voxSaved; setBase(voxSaved); setDraft(toDraft(voxSaved.config)); onDirtyChange?.(false); onSaved(saved);
       try { sessionStorage.removeItem(key); } catch { /* The server copy is saved. */ }
       return true;
     } catch (failure) {
       if (!mounted.current) return false;
       if (failure instanceof ApiError && failure.code === 'tts.config_conflict') {
         setError(text('服务器参数已更新，草稿仍保留。', 'Server parameters changed; your draft is preserved.'));
-        try { setConflict(await ttsApi.versionConfig(pid, vid)); }
-        catch (readFailure) { setError(formatApiError(readFailure)); }
+        try {
+          const remote = await ttsApi.versionConfig(pid, vid);
+          if (!mounted.current) return false;
+          if (isGptSovitsConfigResponse(remote)) onSaved(remote);
+          else setConflict(remote as VoxConfigResponse);
+        }
+        catch (readFailure) { if (mounted.current) setError(formatApiError(readFailure)); }
       } else {
         setError(formatApiError(failure));
         const issues = failure instanceof ApiError && Array.isArray(failure.details?.issues) ? failure.details.issues as TtsIssue[] : [];
@@ -162,5 +173,10 @@ const TtsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function TtsVe
     </Dialog>}
     {blocker.state === 'blocked' && !conflict && <Dialog title={text('有未保存的参数', 'Unsaved parameters')} onClose={() => blocker.reset()} closeDisabled={saving}><p>{text('是否保存此版本的修改？', 'Save changes to this version?')}</p><div className="tts-dialog-actions"><button className="ui-btn" disabled={saving} onClick={() => blocker.reset()}>{text('继续编辑', 'Keep editing')}</button><button className="ui-btn" disabled={saving} onClick={() => { try { sessionStorage.removeItem(key); } catch { /* Navigation is explicitly confirmed. */ } bypassNavigation.current = true; blocker.proceed(); }}>{text('放弃修改并离开', 'Discard and leave')}</button><button className="ui-btn ui-btn-primary" disabled={saving || readOnly} onClick={() => void save().then(ok => { if (ok) { bypassNavigation.current = true; blocker.proceed(); } })}>{text('保存并离开', 'Save and leave')}</button></div></Dialog>}
   </>;
+});
+const TtsVersionEditor = React.forwardRef<TtsEditorHandle, TtsEditorProps>(function TtsVersionEditor(props, ref) {
+  return isGptSovitsConfigResponse(props.initial)
+    ? <GptSovitsVersionEditor {...props} initial={props.initial} ref={ref}/>
+    : <VoxVersionEditor {...props} initial={props.initial as VoxConfigResponse} ref={ref}/>;
 });
 export default TtsVersionEditor;

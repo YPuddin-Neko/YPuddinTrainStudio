@@ -3,12 +3,14 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, AudioLines, Crop, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { FamilyInfo } from '../../api/types';
+import { ttsApi, type TtsEngine } from '../../api/tts';
 import Dialog from '../../components/Dialog';
 import { LazyImage } from '../../components/Loading';
 import StudioSelect from '../../components/StudioSelect';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { trainingFamilyOptions } from '../../utils/trainingFamilies';
+import { ttsEngineLabel } from '../../utils/ttsEngines';
 import { useTranslation } from 'react-i18next';
 import { categoryLabel, coverSource, PROJECT_CATEGORIES, type GalleryProject } from './projectGallery';
 import ProjectCoverCropper from './ProjectCoverCropper';
@@ -47,6 +49,14 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
   const [category, setCategory] = React.useState(project?.category || '');
   const [customCategory, setCustomCategory] = React.useState(false);
   const [family, setFamily] = React.useState('anima');
+  const [engine, setEngine] = React.useState<TtsEngine>('voxcpm1.5');
+  const capabilities = useQuery({
+    queryKey: ['tts-capabilities'], queryFn: ({ signal }) => ttsApi.capabilities(signal),
+    enabled: !project && !choosingType && projectType === 'tts', staleTime: 60_000,
+  });
+  const engineOptions = (capabilities.data?.engines || []).filter(item => item.id === 'voxcpm1.5' || item.id === 'gpt-sovits-v5')
+    .map(item => ({ value: item.id, label: ttsEngineLabel(item.id) }));
+  const engineAvailable = engineOptions.some(option => option.value === engine);
   const familyOptions = trainingFamilyOptions(families, english);
   const familyAvailable = familyOptions.some(option => option.value === family && !option.disabled);
   const [file, setFile] = React.useState<File | null>(null);
@@ -78,7 +88,7 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
     return () => URL.revokeObjectURL(url);
   }, [file]);
   const idError = !id ? text('请填写项目 ID。', 'Enter a project ID.') : id.length > 64 ? text('项目 ID 最多 64 个字符。', 'Project ID must be at most 64 characters.') : !/^[A-Za-z0-9_]+$/.test(id) ? text('项目 ID 只能包含英文字母、数字和下划线。', 'Use only ASCII letters, digits and underscores in the project ID.') : '';
-  const creationBlocked = !savedProject && (!!idError || (projectType === 'image' && !familyAvailable));
+  const creationBlocked = !savedProject && (!!idError || (projectType === 'image' ? !familyAvailable : !engineAvailable));
   const categoryOptions = [...new Set([...PROJECT_CATEGORIES, ...categories, ...(project?.category ? [project.category] : [])])];
   const categoryChoices = [{ value: '', label: text('未分类', 'Uncategorized') }, ...categoryOptions.map(value => ({ value: `category:${value}`, label: categoryLabel(value, english) })), { value: 'custom', label: text('自定义分类…', 'Custom category…') }];
   const categoryBox = React.useRef<HTMLDivElement>(null);
@@ -124,7 +134,7 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
     const signature = JSON.stringify(metadata);
     try {
       if (!currentProject) {
-        const model = projectType === 'tts' ? { project_type: 'tts' as const, engine: 'voxcpm1.5' as const } : { family };
+        const model = projectType === 'tts' ? { project_type: 'tts' as const, engine } : { family };
         currentProject = await apiClient.post<GalleryProject>('/projects', { id, ...metadata, ...model }, { silent: true });
         setSavedProject(currentProject); savedMetadata.current = signature;
       } else if (savedMetadata.current !== signature) {
@@ -188,7 +198,7 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
             <StudioSelect className="project-category-toggle" anchorRef={categoryBox} aria-label={text('选择项目分类', 'Choose a project category')} disabled={busy} value="custom" options={categoryChoices} onValueChange={chooseCategory}/>
           </div> : <StudioSelect id="project-category" aria-label={text('项目分类', 'Project category')} disabled={busy} value={category ? `category:${category}` : ''} options={categoryChoices} onValueChange={chooseCategory}/>}</div>
           {!project && (projectType === 'tts'
-            ? <div className="project-editor-field"><label htmlFor="project-engine">{text('训练模型', 'Training model')}</label><StudioSelect id="project-engine" disabled aria-label={text('训练模型', 'Training model')} value="voxcpm1.5" options={[{ value: 'voxcpm1.5', label: 'VoxCPM 1.5' }]} onValueChange={() => {}}/></div>
+            ? <div className="project-editor-field"><label htmlFor="project-engine">{text('训练模型', 'Training model')}</label><StudioSelect id="project-engine" disabled={busy || !!savedProject || !engineOptions.length} aria-label={text('训练模型', 'Training model')} value={engine} options={engineOptions} onValueChange={value => setEngine(value as TtsEngine)}/>{capabilities.isPending && <small role="status">{text('正在读取训练模型…', 'Loading training models…')}</small>}{(capabilities.error || capabilities.data && !engineOptions.length) && <p role="alert" className="project-editor-error">{capabilities.error ? text('无法读取训练模型。', 'Could not load training models.') : text('当前服务没有可用的语音训练模型。', 'No speech training models are available.')}<button type="button" className="ui-link" onClick={() => void capabilities.refetch()}>{text('重试', 'Retry')}</button></p>}</div>
             : <div className="project-editor-field"><label htmlFor="project-family">{text('初始模型类型', 'Initial model family')}</label><StudioSelect id="project-family" disabled={busy || !!savedProject} aria-label={text('初始模型类型', 'Initial model family')} value={family}
               options={familyOptions} onValueChange={setFamily}/>{familiesError && <p role="alert" className="project-editor-error">{text('无法读取可用模型类型。', 'Could not load model families.')}<button type="button" className="ui-link" onClick={() => void reloadFamilies()}>{text('重试', 'Retry')}</button></p>}</div>)}</div>
         <label className="project-editor-field"><span>{text('备注（可选）', 'Notes (optional)')}</span><textarea rows={2} value={note} onChange={event => setNote(event.target.value)}/></label>

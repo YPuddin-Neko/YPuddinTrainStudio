@@ -65,6 +65,7 @@ def _failed_speech_paths(c: Any, row: dict) -> dict[str, str]:
 
 def version_row(c: Any, row: dict) -> dict:
     from .artifact_inventory import artifact_count
+    from .tts_projects import version_engine
 
     pid, vid = row["project_id"], row["id"]
     project = c.db.fetchone("SELECT project_type FROM projects WHERE id=?", (pid,))
@@ -80,11 +81,11 @@ def version_row(c: Any, row: dict) -> dict:
     failed_paths = _failed_speech_paths(c, row) if is_tts and row["status"] == "failed" else None
     data_root = Path(failed_paths["root"]) if failed_paths else c.project_dir(pid) if row["legacy_layout"] and not is_tts else c.version_dir(pid, vid)
     return {
-        **{k: v for k, v in row.items() if k not in {"progress_json", "legacy_layout", "busy"}},
+        **{k: v for k, v in row.items() if k not in {"progress_json", "legacy_layout", "busy", "tts_engine", "tts_variant"}},
         "archived": bool(row["archived"]),
         "busy": bool(row["busy"]),
         "project_type": project["project_type"],
-        "engine": "voxcpm1.5" if is_tts else None,
+        "engine": version_engine(c, pid, vid) if is_tts else None,
         "audio_stats": audio_stats,
         "family": None if is_tts else version_family(c, row),
         "display_family": None if is_tts else row.get("display_family"),

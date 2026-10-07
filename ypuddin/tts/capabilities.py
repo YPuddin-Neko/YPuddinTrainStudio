@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .core import UPSTREAM_REVISION
+from .gpt_sovits.config import GptSettings, GptSovitsVersionConfig, SovitsSettings
 from .version_config import TtsVersionConfig
 
 
@@ -40,9 +41,33 @@ class TtsEngineCapability(_Model):
     schema_url: str = "/api/tts/schema/train?engine=voxcpm1.5"
 
 
+class GptSovitsAudioCapability(_Model):
+    format: Literal["pcm_wav"] = "pcm_wav"
+    sample_rates: list[int] = Field(default_factory=lambda: [32000, 44100, 48000])
+    output_sample_rate: Literal[48000] = 48000
+    channels: Literal[1] = 1
+    languages: list[str] = Field(default_factory=lambda: ["zh", "en", "ja", "ko", "yue"])
+    manifest_formats: list[str] = Field(default_factory=lambda: ["jsonl", "list"])
+
+
+class GptSovitsEngineCapability(_Model):
+    id: Literal["gpt-sovits-v5"] = "gpt-sovits-v5"
+    variants: list[Literal["v5dev", "v5turbo"]] = Field(default_factory=lambda: ["v5dev", "v5turbo"])
+    training_modes: list[Literal["gpt_finetune", "sovits_lora"]] = Field(default_factory=lambda: ["gpt_finetune", "sovits_lora"])
+    devices: list[Literal["cuda"]] = Field(default_factory=lambda: ["cuda"])
+    gpu_count: Literal[1] = 1
+    training_precision: Literal["configurable_fp16_fp32"] = "configurable_fp16_fp32"
+    audio: GptSovitsAudioCapability = Field(default_factory=GptSovitsAudioCapability)
+    upstream_revision: str = "f652b1da5af29a6955f9c3911aa71b7daa6618bc"
+    upstream_branch: str = "cuda_graph_accel_v5"
+    fixed: list[TtsCapabilitySetting]
+    unsupported: list[TtsCapabilitySetting]
+    schema_url: str = "/api/tts/schema/train?engine=gpt-sovits-v5"
+
+
 class TtsCapabilities(_Model):
     contract_version: Literal[1] = 1
-    engines: list[TtsEngineCapability]
+    engines: list[TtsEngineCapability | GptSovitsEngineCapability]
 
 
 class TtsSchemaGroup(_Model):
@@ -52,7 +77,7 @@ class TtsSchemaGroup(_Model):
 
 class TtsTrainSchema(_Model):
     contract_version: Literal[1] = 1
-    engine: Literal["voxcpm1.5"] = "voxcpm1.5"
+    engine: Literal["voxcpm1.5", "gpt-sovits-v5"] = "voxcpm1.5"
     schema_version: Literal[1] = 1
     json_schema: dict[str, Any]
     groups: list[TtsSchemaGroup]
@@ -121,7 +146,7 @@ def _fixed() -> list[TtsCapabilitySetting]:
 
 def _unsupported() -> list[TtsCapabilitySetting]:
     rows = (
-        ("other_models", "仅支持 VoxCPM 1.5，尚未接入 VoxCPM 2 或其他语音模型。"),
+        ("other_models", "此参数配置适用于 VoxCPM 1.5，不适用于 VoxCPM 2 或其他引擎。"),
         ("full_finetune", "当前任务仅支持 LoRA 训练。"),
         ("multi_gpu", "当前任务未接入多卡训练。"),
         ("pause", "当前语音训练任务不支持暂停。"),
@@ -138,10 +163,49 @@ def _unsupported() -> list[TtsCapabilitySetting]:
 
 
 def get_capabilities() -> TtsCapabilities:
-    return TtsCapabilities(engines=[TtsEngineCapability(fixed=_fixed(), unsupported=_unsupported())])
+    return TtsCapabilities(engines=[
+        TtsEngineCapability(fixed=_fixed(), unsupported=_unsupported()),
+        GptSovitsEngineCapability(fixed=_gsv_fixed(), unsupported=_gsv_unsupported()),
+    ])
+
+
+def _gsv_fixed() -> list[TtsCapabilitySetting]:
+    rows = (
+        ("gpu_count", 1, "每个任务使用一张 NVIDIA GPU，两个训练阶段依次执行。"),
+        ("output_dir", "managed", "预处理数据和训练产物保存到本任务目录，原始录音保持不变。"),
+        ("checkpoint_pair", ["gpt.ckpt", "sovits.pth"], "每个结果包含配套 GPT 与 SoVITS 权重；单阶段训练配对未训练阶段的底模。"),
+        ("save_every_weights", True, "各阶段保留间隔权重；任务完成后发布配套结果用于试听。"),
+        ("gpt_accumulation", "upstream", "沿用上游 GPT 手动优化循环：首次更新累计 5 批，随后每 4 批更新。"),
+        ("out_sample_rate", 48000, "v5 使用配套声码器输出 48000 Hz 音频。"),
+    )
+    return [TtsCapabilitySetting(key=k, value=v, reason_code=f"tts.gpt_sovits.fixed.{k}", reason=r) for k, v, r in rows]
+
+
+def _gsv_unsupported() -> list[TtsCapabilitySetting]:
+    rows = (
+        ("validation_source", "上游训练入口不接收独立验证清单。"),
+        ("resume", "当前任务从所选基础权重开始训练，不支持恢复优化器和随机数状态。"),
+        ("pause", "当前语音训练任务不支持暂停。"),
+        ("multi_gpu", "当前任务未接入多卡训练。"),
+        ("gradient_clip", "上游 GPT 配置中的 gradient_clip 未被训练循环使用。"),
+        ("sovits_full_finetune", "此入口使用上游 SoVITS LoRA 训练脚本，保留其非 CFM 模块训练行为。"),
+        ("dataset_tools", "请提供已切分和校对文本的录音；此入口不执行 ASR、降噪或人声分离。"),
+    )
+    return [TtsCapabilitySetting(key=k, reason_code=f"tts.gpt_sovits.unsupported.{k}", reason=r) for k, r in rows]
 
 
 def get_train_schema(engine: str = "voxcpm1.5") -> TtsTrainSchema:
+    if engine == "gpt-sovits-v5":
+        return TtsTrainSchema(
+            engine=engine,
+            json_schema=GptSovitsVersionConfig.model_json_schema(),
+            groups=[
+                TtsSchemaGroup(id="environment", fields=[k for k in GptSovitsVersionConfig.model_fields if k not in {"gpt", "sovits"}]),
+                TtsSchemaGroup(id="gpt", fields=[f"gpt.{k}" for k in GptSettings.model_fields]),
+                TtsSchemaGroup(id="sovits", fields=[f"sovits.{k}" for k in SovitsSettings.model_fields]),
+            ],
+            fixed=_gsv_fixed(), unsupported=_gsv_unsupported(),
+        )
     if engine != "voxcpm1.5":
         raise ValueError("不支持此语音引擎。")
     fields = [field for _, group in GROUPS for field in group]

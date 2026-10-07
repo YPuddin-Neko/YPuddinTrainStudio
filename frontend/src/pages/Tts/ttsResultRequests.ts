@@ -1,4 +1,5 @@
 import type { TtsCheckpoint, TtsSampleBody } from '../../api/tts';
+import { validGptSovitsOptions } from './gptSovitsResults';
 
 export type SampleAttempt = { sourceJobId: string; checkpoint: TtsCheckpoint; key: string; body: TtsSampleBody; blocked: boolean; message?: string };
 const prefix = 'tts-sample-request:v1:';
@@ -12,10 +13,13 @@ export function readSampleAttempt(jobId: string): SampleAttempt | null {
       || typeof value.body.text !== 'string' || !value.body.text.trim() || value.body.text.length > 4000
       || typeof value.body.reference_audio !== 'string' || typeof value.body.reference_text !== 'string'
       || !!value.body.reference_audio.trim() !== !!value.body.reference_text.trim()
-      || !Number.isInteger(value.body.seed) || value.body.seed < 0 || value.body.seed >= 4294967296
-      || !Number.isFinite(value.body.cfg_value) || value.body.cfg_value < 0 || value.body.cfg_value > 20
-      || !Number.isInteger(value.body.inference_timesteps) || value.body.inference_timesteps < 1 || value.body.inference_timesteps > 100
+      || typeof value.body.seed !== 'number' || !Number.isInteger(value.body.seed) || value.body.seed < 0 || value.body.seed >= 4294967296
       || !Array.isArray(value.body.gpu_devices) || value.body.gpu_devices.length > 1 || value.body.gpu_devices.some(device => !/^cuda:\d+$/.test(device))) return null;
+    if (value.checkpoint.gpt_sovits) {
+      if (!value.body.reference_audio.trim() || !value.body.reference_text.trim()
+        || 'cfg_value' in value.body || 'inference_timesteps' in value.body || !validGptSovitsOptions(value.body.gpt_sovits)) return null;
+    } else if ('gpt_sovits' in value.body || typeof value.body.cfg_value !== 'number' || !Number.isFinite(value.body.cfg_value) || value.body.cfg_value < 0 || value.body.cfg_value > 20
+      || typeof value.body.inference_timesteps !== 'number' || !Number.isInteger(value.body.inference_timesteps) || value.body.inference_timesteps < 1 || value.body.inference_timesteps > 100) return null;
     return value;
   } catch { return null; }
 }

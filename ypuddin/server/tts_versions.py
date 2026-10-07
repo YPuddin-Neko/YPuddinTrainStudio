@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ypuddin.tts.source_scan import file_identity, identity_changes
-from ypuddin.tts.version_config import TtsConfigEnvelope, TtsVersionConfig, write_envelope
+from ypuddin.tts.version_config import TtsConfigEnvelope, default_config, write_envelope
 
 from . import tts_source_copy as data_copy
 from .db import new_id, now
@@ -48,7 +48,7 @@ def _admit(c: Any, pid: str, source_id: str | None) -> dict:
 
 def create_version(manager: Any, pid: str, name: str, note: str, source_id: str | None,
                    data_mode: str, copy_config: bool, *, family: str | None = None) -> dict:
-    from .tts_projects import get_config
+    from .tts_projects import get_config, version_engine
     from .tts_references import reject_deleting_references
     from .versions import version_row
 
@@ -72,14 +72,16 @@ def create_version(manager: Any, pid: str, name: str, note: str, source_id: str 
         reject_deleting_references(c, [source_path, *data_copy.dependency_paths(plan)])
         if c.db.fetchone("SELECT id FROM project_versions WHERE project_id=? AND name=?", (pid, name)):
             raise ApiError("a version with this name already exists", code="version.duplicate", status=409)
-        config = get_config(c, pid, source_id).config if copy_config else TtsVersionConfig()
+        config = get_config(c, pid, source_id).config if copy_config else default_config(version_engine(c, pid, source_id) or "voxcpm1.5")
+        if not copy_config and config.engine == "gpt-sovits-v5":
+            config.variant = source.get("tts_variant") or "v5dev"
         envelope = TtsConfigEnvelope(revision=1, config=config)
         vid = new_id("v")
         number = c.db.fetchone("SELECT coalesce(max(number),0)+1 n FROM project_versions WHERE project_id=?", (pid,))["n"]
         progress, timestamp = _progress(), now()
         with c.db.transaction():
             c.db.insert("project_versions", {"id": vid, "project_id": pid, "number": number, "name": name,
-                        "note": note, "parent_version_id": source_id, "data_revision": 1,
+                        "note": note, "parent_version_id": source_id, "data_revision": 1, "tts_engine": config.engine, "tts_variant": getattr(config, "variant", None),
                         "created_at": timestamp, "updated_at": timestamp, "status": "copying",
                         "progress_json": json.dumps(progress)})
             c.db.update("project_versions", source_id, {"busy": vid})
@@ -214,7 +216,7 @@ def _copy(c: Any, pid: str, vid: str, source_id: str, envelope: TtsConfigEnvelop
             if c.version_dir(pid, vid) != final:
                 raise ApiError("目标版本目录已改变。", code="version.path", status=409)
         destination = _promote(c, staging, final, parent, owned)
-        entries = data_copy.scan_copies(c, entries)
+        entries = data_copy.scan_copies(c, entries, engine=envelope.config.engine)
         data_copy.recheck(c, pid, source_id, plan)
         if any(identity_changes(entry["scan"].identities, allowed=c.is_allowed) for entry in entries):
             raise ApiError("复制后的录音或清单已变化。", code="tts.source_stale", status=409)

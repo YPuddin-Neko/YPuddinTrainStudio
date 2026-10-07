@@ -32,7 +32,7 @@ def _key(recipe: dict, requested: list[str], mode: str, inventory: list[dict]) -
         except OSError:
             paths[field] = [str(path), None]
     return json.dumps({
-        "requested": requested, "mode": mode, "paths": paths,
+        "requested": requested, "mode": mode, "paths": paths, "recipe": recipe,
         "visibility": {key: os.environ.get(key) for key in ("CUDA_VISIBLE_DEVICES", "CUDA_DEVICE_ORDER", "NVIDIA_VISIBLE_DEVICES")},
         "inventory": [{key: gpu.get(key) for key in ("device", "uuid", "name", "compute_capability", "mem_total_mb")}
                       for gpu in inventory],
@@ -40,9 +40,11 @@ def _key(recipe: dict, requested: list[str], mode: str, inventory: list[dict]) -
 
 
 def eligible_inventory(job: dict, inventory: list[dict]) -> list[dict]:
-    from ypuddin.tts.core import runtime_probe
-
     recipe = json.loads(job["config_json"])["tts"]
+    if recipe.get("engine", "voxcpm1.5") == "gpt-sovits-v5":
+        from ypuddin.tts.gpt_sovits.core import runtime_probe
+    else:
+        from ypuddin.tts.core import runtime_probe
     requested = json.loads(job.get("gpu_devices_json") or "[]")
     mode = "train" if job["type"] == "tts_train" else "sample"
     key = _key(recipe, requested, mode, inventory)

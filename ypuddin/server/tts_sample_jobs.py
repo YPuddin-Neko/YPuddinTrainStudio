@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, model_serializer, model_validator
 
 from ypuddin.tts.execution_config import parse_execution_config
 from ypuddin.tts.issues import TtsIssue
 from ypuddin.tts.runtime import _model_identity, verify_input_snapshot
+from ypuddin.tts.sample_config import GptSovitsSampleOptions
 from ypuddin.tts.source_scan import SourceFileError, file_identity, inspect_audio, open_source
 
 from . import tts_requests, tts_results
@@ -37,6 +38,14 @@ class TtsSampleBody(GpuSelection):
     seed: int = Field(42, ge=0, lt=2**32)
     cfg_value: float = Field(2.0, ge=0, le=20, allow_inf_nan=False)
     inference_timesteps: int = Field(10, ge=1, le=100)
+    gpt_sovits: GptSovitsSampleOptions | None = None
+
+    @model_serializer(mode="wrap")
+    def engine_options(self, handler):
+        value = handler(self)
+        if value.get("gpt_sovits") is None:
+            value.pop("gpt_sovits", None)
+        return value
 
     @model_validator(mode="after")
     def identity(self):
@@ -113,7 +122,18 @@ def _preflight_inputs(c: Any, recipe: dict, *, sample: dict | None, previous: di
             assets = set(model["assets"].values())
             frozen_model = {"model_identity": model, "fingerprints": [item for item in previous["fingerprints"] if item["path"] in assets]}
             verify_input_snapshot(frozen_model, model_path=config.model_path)
-    identity = _model_identity(config.model_path)
+    if config.engine == "gpt-sovits-v5":
+        from ypuddin.tts.gpt_sovits.core import model_identity, require_text_assets
+
+        if sample:
+            options = sample.get("gpt_sovits", {})
+            try:
+                require_text_assets(config, [options.get("text_language", "zh"), options.get("reference_language", "zh")])
+            except (OSError, ValueError) as exc:
+                _fail("tts.sample_language_assets", str(exc), status=422, loc=["gpt_sovits"])
+        identity = model_identity(config)
+    else:
+        identity = _model_identity(config.model_path)
     files = {path: file_identity(Path(path), c.is_allowed) for path in identity["assets"].values()}
     if sample:
         _raise(tts_results.frozen_checkpoint_issue(c, sample))
@@ -121,10 +141,12 @@ def _preflight_inputs(c: Any, recipe: dict, *, sample: dict | None, previous: di
             files[item["path"]] = {key: item[key] for key in ("path", "size", "sha256")}
         if sample.get("reference_audio"):
             path = Path(sample["reference_audio"])
-            _, audio_identity, issues = inspect_audio(path, c.is_allowed)
+            metadata, audio_identity, issues = inspect_audio(path, c.is_allowed, engine=config.engine)
             if error := next((item for item in issues if not item[2]), None):
                 issue = TtsIssue(code=error[0], loc=["reference_audio"], message=error[1])
                 raise ApiError(error[1], code="tts.reference_invalid", status=422, details={"issues": [issue.model_dump()]})
+            if config.engine == "gpt-sovits-v5" and not 3 <= metadata["duration_seconds"] <= 10:
+                _fail("tts.reference_duration", "GPT-SoVITS 参考录音须为 3 至 10 秒。", status=422, loc=["reference_audio"])
             files[str(path)] = audio_identity
     else:
         # Historical recipes have no byte identities; capture their current valid manifests once.
@@ -134,7 +156,14 @@ def _preflight_inputs(c: Any, recipe: dict, *, sample: dict | None, previous: di
             if not recipe.get(field):
                 continue
             path = Path(recipe[field])
-            validate_manifest(path, allowed=c.is_allowed)
+            if config.engine == "gpt-sovits-v5":
+                from ypuddin.tts.source_scan import scan_manifest
+
+                scanned = scan_manifest(path, "retry", field, allowed=c.is_allowed, engine=config.engine)
+                if scanned.summary.invalid_count or not scanned.summary.valid_clips_count:
+                    raise ValueError("GPT-SoVITS 数据清单没有通过检查。")
+            else:
+                validate_manifest(path, allowed=c.is_allowed)
             files[str(path)] = file_identity(path, c.is_allowed)
             with open_source(path, c.is_allowed) as stream:
                 lines = stream.read().decode("utf-8-sig").split("\n")
@@ -263,6 +292,18 @@ def create_sample(c: Any, jid: str, body: TtsSampleBody, key: str) -> tuple[dict
         sample["reference_audio"] = str(Path(body.reference_audio).expanduser().absolute()) if body.reference_audio else ""
         sample["source_job_id"] = jid
         original = json.loads(source["config_json"])
+        recipe = original["tts"]
+        if recipe.get("engine") == "gpt-sovits-v5":
+            if not body.reference_audio.strip() or not body.reference_text.strip():
+                _fail("tts.reference_required", "GPT-SoVITS 试听需要参考录音及对应文本。", status=422, loc=["reference_audio"])
+            if {"cfg_value", "inference_timesteps"} & body.model_fields_set:
+                _fail("tts.sample_options", "请使用 GPT-SoVITS 的 CFG 和采样步数。", status=422, loc=["gpt_sovits"])
+            options = (body.gpt_sovits or GptSovitsSampleOptions()).resolved(recipe["variant"])
+            sample["gpt_sovits"] = options.model_dump()
+            sample["cfg_value"] = options.cfg_scale
+            sample["inference_timesteps"] = options.sample_steps
+        elif body.gpt_sovits is not None:
+            _fail("tts.sample_options", "此训练任务不使用 GPT-SoVITS 试听参数。", status=422, loc=["gpt_sovits"])
         payload = {"tts": copy.deepcopy(original["tts"]), "tts_sample": sample, "source_job_id": jid,
                    "source_summary": {"job_id": jid, "name": source["name"]}}
         devices = _devices(body.gpu_devices)

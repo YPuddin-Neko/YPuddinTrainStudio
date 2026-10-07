@@ -92,7 +92,7 @@ class ProjectBody(ProjectFields):
 class TtsProjectBody(ProjectFields):
     model_config = ConfigDict(extra="forbid")
     project_type: Literal["tts"]
-    engine: Literal["voxcpm1.5"] = "voxcpm1.5"
+    engine: Literal["voxcpm1.5", "gpt-sovits-v5"] = "voxcpm1.5"
 
 
 class ProjectPatch(BaseModel):
@@ -159,6 +159,7 @@ def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
     from .artifact_inventory import artifact_count
     from .family_config import version_family
     from .project_deletion import public_state
+    from .tts_projects import version_engine
 
     speech = r["project_type"] == "tts"
     ds = c.db.fetchall(
@@ -177,7 +178,7 @@ def _project_row(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         "cover_url": cover_url(c, r),
         "active_family": None if speech else version_family(c, c.resolve_version(r["id"], r["active_version_id"])),
         "active_display_family": version["display_family"] if version and not speech else None,
-        "active_engine": "voxcpm1.5" if speech else None,
+        "active_engine": version_engine(c, r["id"], r["active_version_id"]) if speech else None,
         "audio_stats": c.tts_sources.audio_stats(r["id"], r["active_version_id"]) if speech else None,
         "active_version_name": version["name"] if version else None,
         "active_version_number": version["number"] if version else None,
@@ -298,6 +299,8 @@ def create_project(body: ProjectBody | TtsProjectBody, c: ServiceContext = Depen
                     "id": vid,
                     "project_id": pid,
                     "number": 1,
+                    "tts_engine": body.engine if body.project_type == "tts" else None,
+                    "tts_variant": "v5dev" if body.project_type == "tts" and body.engine == "gpt-sovits-v5" else None,
                     "name": "v1",
                     "note": "",
                     "created_at": t,
@@ -313,9 +316,9 @@ def create_project(body: ProjectBody | TtsProjectBody, c: ServiceContext = Depen
             from .family_config import initial_family_config
 
             if body.project_type == "tts":
-                from ypuddin.tts.version_config import TtsConfigEnvelope, TtsVersionConfig, write_envelope
+                from ypuddin.tts.version_config import TtsConfigEnvelope, default_config, write_envelope
 
-                write_envelope(c.tts_config_path(pid, vid), TtsConfigEnvelope(revision=1, config=TtsVersionConfig()))
+                write_envelope(c.tts_config_path(pid, vid), TtsConfigEnvelope(revision=1, config=default_config(body.engine)))
             else:
                 initial = initial_family_config(c, body.family)
                 initial = deep_merge(

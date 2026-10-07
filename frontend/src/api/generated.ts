@@ -5107,6 +5107,265 @@ export interface components {
             /** User Id */
             user_id: string;
         };
+        /** GptSettings */
+        GptSettings: {
+            /**
+             * Epochs
+             * @default 15
+             */
+            epochs: number;
+            /**
+             * Batch Size
+             * @default 8
+             */
+            batch_size: number;
+            /**
+             * Precision
+             * @default 16-mixed
+             * @enum {string}
+             */
+            precision: "16-mixed" | "32-true";
+            /**
+             * Seed
+             * @default 1234
+             */
+            seed: number;
+            /**
+             * Save Every Epoch
+             * @default 5
+             */
+            save_every_epoch: number;
+            /**
+             * Save Latest
+             * @default true
+             */
+            save_latest: boolean;
+            /**
+             * Learning Rate
+             * @default 0.01
+             */
+            learning_rate: number;
+            /**
+             * Initial Learning Rate
+             * @default 0.00001
+             */
+            initial_learning_rate: number;
+            /**
+             * Final Learning Rate
+             * @default 0.0001
+             */
+            final_learning_rate: number;
+            /**
+             * Warmup Steps
+             * @default 2000
+             */
+            warmup_steps: number;
+            /**
+             * Decay Steps
+             * @default 40000
+             */
+            decay_steps: number;
+            /**
+             * Dpo
+             * @default false
+             */
+            dpo: boolean;
+            /**
+             * Max Seconds
+             * @default 54
+             */
+            max_seconds: number;
+            /**
+             * Num Workers
+             * @default 4
+             */
+            num_workers: number;
+        };
+        /** GptSovitsAudioCapability */
+        GptSovitsAudioCapability: {
+            /**
+             * Format
+             * @default pcm_wav
+             * @constant
+             */
+            format: "pcm_wav";
+            /** Sample Rates */
+            sample_rates?: number[];
+            /**
+             * Output Sample Rate
+             * @default 48000
+             * @constant
+             */
+            output_sample_rate: 48000;
+            /**
+             * Channels
+             * @default 1
+             * @constant
+             */
+            channels: 1;
+            /** Languages */
+            languages?: string[];
+            /** Manifest Formats */
+            manifest_formats?: string[];
+        };
+        /** GptSovitsCheckpointInfo */
+        GptSovitsCheckpointInfo: {
+            /**
+             * Variant
+             * @enum {string}
+             */
+            variant: "v5dev" | "v5turbo";
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "gpt" | "sovits" | "both";
+            gpt: components["schemas"]["TtsStageCheckpointInfo"];
+            sovits: components["schemas"]["TtsStageCheckpointInfo"];
+        };
+        /** GptSovitsEngineCapability */
+        GptSovitsEngineCapability: {
+            /**
+             * Id
+             * @default gpt-sovits-v5
+             * @constant
+             */
+            id: "gpt-sovits-v5";
+            /** Variants */
+            variants?: ("v5dev" | "v5turbo")[];
+            /** Training Modes */
+            training_modes?: ("gpt_finetune" | "sovits_lora")[];
+            /** Devices */
+            devices?: "cuda"[];
+            /**
+             * Gpu Count
+             * @default 1
+             * @constant
+             */
+            gpu_count: 1;
+            /**
+             * Training Precision
+             * @default configurable_fp16_fp32
+             * @constant
+             */
+            training_precision: "configurable_fp16_fp32";
+            audio?: components["schemas"]["GptSovitsAudioCapability"];
+            /**
+             * Upstream Revision
+             * @default f652b1da5af29a6955f9c3911aa71b7daa6618bc
+             */
+            upstream_revision: string;
+            /**
+             * Upstream Branch
+             * @default cuda_graph_accel_v5
+             */
+            upstream_branch: string;
+            /** Fixed */
+            fixed: components["schemas"]["TtsCapabilitySetting"][];
+            /** Unsupported */
+            unsupported: components["schemas"]["TtsCapabilitySetting"][];
+            /**
+             * Schema Url
+             * @default /api/tts/schema/train?engine=gpt-sovits-v5
+             */
+            schema_url: string;
+        };
+        /** GptSovitsSampleOptions */
+        GptSovitsSampleOptions: {
+            /**
+             * Text Language
+             * @default zh
+             * @enum {string}
+             */
+            text_language: "zh" | "en" | "ja" | "ko" | "yue" | "auto";
+            /**
+             * Reference Language
+             * @default zh
+             * @enum {string}
+             */
+            reference_language: "zh" | "en" | "ja" | "ko" | "yue" | "auto";
+            /**
+             * Top K
+             * @default 15
+             */
+            top_k: number;
+            /**
+             * Top P
+             * @default 1
+             */
+            top_p: number;
+            /**
+             * Temperature
+             * @default 1
+             */
+            temperature: number;
+            /**
+             * Speed
+             * @default 1
+             */
+            speed: number;
+            /**
+             * Repetition Penalty
+             * @default 1.35
+             */
+            repetition_penalty: number;
+            /**
+             * Fragment Interval
+             * @default 0.3
+             */
+            fragment_interval: number;
+            /** Sample Steps */
+            sample_steps?: (4 | 8 | 16 | 32) | null;
+            /** Cfg Scale */
+            cfg_scale?: number | null;
+        };
+        /** GptSovitsVersionConfig */
+        GptSovitsVersionConfig: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            engine: "gpt-sovits-v5";
+            /**
+             * Variant
+             * @default v5dev
+             * @enum {string}
+             */
+            variant: "v5dev" | "v5turbo";
+            /**
+             * Stage
+             * @default both
+             * @enum {string}
+             */
+            stage: "both" | "gpt" | "sovits";
+            /**
+             * Python Path
+             * @default
+             */
+            python_path: string;
+            /**
+             * Trainer Path
+             * @default
+             */
+            trainer_path: string;
+            /**
+             * Model Path
+             * @default
+             */
+            model_path: string;
+            /**
+             * Pretrained Gpt
+             * @default
+             */
+            pretrained_gpt: string;
+            /**
+             * Pretrained Sovits
+             * @default
+             */
+            pretrained_sovits: string;
+            gpt?: components["schemas"]["GptSettings"];
+            sovits?: components["schemas"]["SovitsSettings"];
+        };
         /** GpuInfo */
         GpuInfo: {
             /** Index */
@@ -7547,7 +7806,7 @@ export interface components {
              */
             project_type: "image" | "tts";
             /** Active Engine */
-            active_engine?: "voxcpm1.5" | null;
+            active_engine?: ("voxcpm1.5" | "gpt-sovits-v5") | null;
             audio_stats?: components["schemas"]["AudioStats"] | null;
         } & {
             [key: string]: unknown;
@@ -7778,7 +8037,7 @@ export interface components {
              */
             project_type: "image" | "tts";
             /** Engine */
-            engine?: "voxcpm1.5" | null;
+            engine?: ("voxcpm1.5" | "gpt-sovits-v5") | null;
             audio_stats?: components["schemas"]["AudioStats"] | null;
         } & {
             [key: string]: unknown;
@@ -8904,6 +9163,81 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** SovitsSettings */
+        SovitsSettings: {
+            /**
+             * Epochs
+             * @default 2
+             */
+            epochs: number;
+            /**
+             * Batch Size
+             * @default 1
+             */
+            batch_size: number;
+            /**
+             * Precision
+             * @default fp16
+             * @enum {string}
+             */
+            precision: "fp16" | "fp32";
+            /**
+             * Seed
+             * @default 1234
+             */
+            seed: number;
+            /**
+             * Save Every Epoch
+             * @default 1
+             */
+            save_every_epoch: number;
+            /**
+             * Save Latest
+             * @default true
+             */
+            save_latest: boolean;
+            /**
+             * Learning Rate
+             * @default 0.0001
+             */
+            learning_rate: number;
+            /**
+             * Adam Beta1
+             * @default 0.8
+             */
+            adam_beta1: number;
+            /**
+             * Adam Beta2
+             * @default 0.99
+             */
+            adam_beta2: number;
+            /**
+             * Adam Epsilon
+             * @default 1e-9
+             */
+            adam_epsilon: number;
+            /**
+             * Lr Decay
+             * @default 0.999875
+             */
+            lr_decay: number;
+            /**
+             * Log Interval
+             * @default 100
+             */
+            log_interval: number;
+            /**
+             * Lora Rank
+             * @default 32
+             * @enum {integer}
+             */
+            lora_rank: 16 | 32 | 64 | 128;
+            /**
+             * Gradient Checkpointing
+             * @default false
+             */
+            gradient_checkpointing: boolean;
+        };
         /** StorageDefaults */
         StorageDefaults: {
             bootstrap_env_dir: components["schemas"]["StoragePathPreview"];
@@ -9491,6 +9825,7 @@ export interface components {
             available: boolean;
             /** Url */
             url: string | null;
+            gpt_sovits?: components["schemas"]["GptSovitsSampleOptions"] | null;
         };
         /** TtsAudioCapability */
         TtsAudioCapability: {
@@ -9566,7 +9901,7 @@ export interface components {
              */
             contract_version: 1;
             /** Engines */
-            engines: components["schemas"]["TtsEngineCapability"][];
+            engines: (components["schemas"]["TtsEngineCapability"] | components["schemas"]["GptSovitsEngineCapability"])[];
         };
         /** TtsCapabilitySetting */
         TtsCapabilitySetting: {
@@ -9614,6 +9949,7 @@ export interface components {
             unavailable_reason: components["schemas"]["TtsIssue"] | null;
             /** Files */
             files: components["schemas"]["TtsCheckpointFile"][];
+            gpt_sovits?: components["schemas"]["GptSovitsCheckpointInfo"] | null;
         };
         /** TtsCheckpointFile */
         TtsCheckpointFile: {
@@ -9723,13 +10059,15 @@ export interface components {
             revision: number;
             /** Data Revision */
             data_revision: number;
-            config: components["schemas"]["TtsVersionConfig"];
+            /** Config */
+            config: components["schemas"]["TtsVersionConfig"] | components["schemas"]["GptSovitsVersionConfig"];
         };
         /** TtsConfigSaveBody */
         TtsConfigSaveBody: {
             /** Expected Revision */
             expected_revision: number;
-            config: components["schemas"]["TtsVersionConfig"];
+            /** Config */
+            config: components["schemas"]["TtsVersionConfig"] | components["schemas"]["GptSovitsVersionConfig"];
         };
         /** TtsConfigScope */
         TtsConfigScope: {
@@ -9869,6 +10207,122 @@ export interface components {
         TtsErrorResponse: {
             error: components["schemas"]["TtsError"];
         };
+        /** TtsGptSovitsDatasetReport */
+        TtsGptSovitsDatasetReport: {
+            /**
+             * Engine
+             * @default gpt-sovits-v5
+             * @constant
+             */
+            engine: "gpt-sovits-v5";
+            train: components["schemas"]["TtsGptSovitsSplitDatasetReport"];
+            validation: components["schemas"]["TtsGptSovitsSplitDatasetReport"];
+        };
+        /** TtsGptSovitsEnvironmentCheck */
+        TtsGptSovitsEnvironmentCheck: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "python" | "upstream" | "model" | "dependencies" | "cuda" | "precision";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "unchecked" | "available" | "unavailable";
+            /** Checked At */
+            checked_at?: number | null;
+            /** Issues */
+            issues?: components["schemas"]["TtsIssue"][];
+        };
+        /** TtsGptSovitsEnvironmentReport */
+        TtsGptSovitsEnvironmentReport: {
+            /**
+             * Engine
+             * @default gpt-sovits-v5
+             * @constant
+             */
+            engine: "gpt-sovits-v5";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "unchecked" | "available" | "unavailable";
+            /** Checked At */
+            checked_at?: number | null;
+            /** Checks */
+            checks: components["schemas"]["TtsGptSovitsEnvironmentCheck"][];
+            devices?: components["schemas"]["TtsDeviceSelection"] | null;
+        };
+        /** TtsGptSovitsPreparationReport */
+        TtsGptSovitsPreparationReport: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "unchecked" | "not_applicable" | "blocked" | "error";
+            /** Prepared Samples */
+            prepared_samples?: null;
+            /** Filtered Samples */
+            filtered_samples?: null;
+            /** Issues */
+            issues?: components["schemas"]["TtsIssue"][];
+        };
+        /** TtsGptSovitsSplitDatasetReport */
+        TtsGptSovitsSplitDatasetReport: {
+            /**
+             * Split
+             * @enum {string}
+             */
+            split: "train" | "validation";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "unchecked" | "available" | "unavailable" | "disabled";
+            /** Checked At */
+            checked_at?: number | null;
+            /** Source Id */
+            source_id?: string | null;
+            /** Source Revision */
+            source_revision?: number | null;
+            /** Snapshot Id */
+            snapshot_id?: string | null;
+            /**
+             * Source State
+             * @enum {string}
+             */
+            source_state: "missing" | "unchecked" | "checking" | "valid" | "invalid" | "stale" | "error";
+            source_summary?: components["schemas"]["TtsSourceSummary"] | null;
+            preparation: components["schemas"]["TtsGptSovitsPreparationReport"];
+            /** Stages */
+            stages: components["schemas"]["TtsGptSovitsStageReport"][];
+            /** Issues */
+            issues?: components["schemas"]["TtsIssue"][];
+        };
+        /** TtsGptSovitsStageReport */
+        TtsGptSovitsStageReport: {
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "gpt" | "sovits";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "unchecked" | "not_applicable" | "blocked";
+            /** Batch Size */
+            batch_size: number;
+            /** Input Samples */
+            input_samples?: null;
+            /** Yielded Batches Per Pass */
+            yielded_batches_per_pass?: null;
+            /** Dropped Samples Per Pass */
+            dropped_samples_per_pass?: null;
+            /** Issues */
+            issues?: components["schemas"]["TtsIssue"][];
+        };
         /** TtsIssue */
         TtsIssue: {
             /** Code */
@@ -9909,9 +10363,9 @@ export interface components {
             /**
              * Engine
              * @default voxcpm1.5
-             * @constant
+             * @enum {string}
              */
-            engine: "voxcpm1.5";
+            engine: "voxcpm1.5" | "gpt-sovits-v5";
         };
         /** TtsRowsResponse */
         TtsRowsResponse: {
@@ -9965,6 +10419,7 @@ export interface components {
              * @default 10
              */
             inference_timesteps: number;
+            gpt_sovits?: components["schemas"]["GptSovitsSampleOptions"] | null;
         };
         /** TtsSampleJob */
         TtsSampleJob: {
@@ -10000,6 +10455,7 @@ export interface components {
             cfg_value: number | null;
             /** Inference Timesteps */
             inference_timesteps: number | null;
+            gpt_sovits?: components["schemas"]["GptSovitsSampleOptions"] | null;
         };
         /** TtsSampleSource */
         TtsSampleSource: {
@@ -10078,6 +10534,10 @@ export interface components {
             line: number;
             /** Text */
             text: string | null;
+            /** Language */
+            language?: string | null;
+            /** Speaker */
+            speaker?: string | null;
             /** Audio Name */
             audio_name: string | null;
             /** Reference Audio Name */
@@ -10148,6 +10608,13 @@ export interface components {
             /** Issues */
             issues?: components["schemas"]["TtsIssue"][];
         };
+        /** TtsStageCheckpointInfo */
+        TtsStageCheckpointInfo: {
+            /** Epoch */
+            epoch?: number | null;
+            /** Global Step */
+            global_step?: number | null;
+        };
         /** TtsTokenFilterReport */
         TtsTokenFilterReport: {
             /**
@@ -10187,9 +10654,9 @@ export interface components {
             /**
              * Engine
              * @default voxcpm1.5
-             * @constant
+             * @enum {string}
              */
-            engine: "voxcpm1.5";
+            engine: "voxcpm1.5" | "gpt-sovits-v5";
             /**
              * Schema Version
              * @default 1
@@ -10267,15 +10734,16 @@ export interface components {
             errors: components["schemas"]["TtsIssue"][];
             /** Warnings */
             warnings: components["schemas"]["TtsIssue"][];
-            dataset: components["schemas"]["TtsDatasetReport"];
-            environment: components["schemas"]["TtsEnvironmentReport"];
+            /** Dataset */
+            dataset: components["schemas"]["TtsDatasetReport"] | components["schemas"]["TtsGptSovitsDatasetReport"];
+            /** Environment */
+            environment: components["schemas"]["TtsEnvironmentReport"] | components["schemas"]["TtsGptSovitsEnvironmentReport"];
         };
         /** TtsVersionConfig */
         TtsVersionConfig: {
             /**
-             * Engine
-             * @default voxcpm1.5
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             engine: "voxcpm1.5";
             /**
@@ -16151,7 +16619,7 @@ export interface operations {
     training_schema_api_tts_schema_train_get: {
         parameters: {
             query?: {
-                engine?: "voxcpm1.5";
+                engine?: "voxcpm1.5" | "gpt-sovits-v5";
             };
             header?: never;
             path?: never;

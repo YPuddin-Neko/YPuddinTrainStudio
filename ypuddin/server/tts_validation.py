@@ -8,12 +8,18 @@ import json
 from typing import Any
 
 from ypuddin.tts.core import UPSTREAM_REVISION
+from ypuddin.tts.gpt_sovits.config import GptSovitsVersionConfig
 from ypuddin.tts.issues import TtsIssue
 from ypuddin.tts.source_models import TtsSource
 from ypuddin.tts.validation_models import (
     TtsBatchingReport,
     TtsDatasetReport,
     TtsEnvironmentReport,
+    TtsGptSovitsDatasetReport,
+    TtsGptSovitsEnvironmentReport,
+    TtsGptSovitsPreparationReport,
+    TtsGptSovitsSplitDatasetReport,
+    TtsGptSovitsStageReport,
     TtsSplitDatasetReport,
     TtsTokenFilterReport,
     TtsValidationExecutionReport,
@@ -28,8 +34,11 @@ from .tts_projects import get_config
 from .versions import assert_version_writable
 
 
-def inspect_runtime(config: TtsVersionConfig, manifests: dict, *, allowed: Any, gpu_devices: list[str] | None = None) -> dict:
-    from ypuddin.tts.runtime import inspect_runtime as inspect
+def inspect_runtime(config: TtsVersionConfig | GptSovitsVersionConfig, manifests: dict, *, allowed: Any, gpu_devices: list[str] | None = None) -> dict:
+    if config.engine == "gpt-sovits-v5":
+        from ypuddin.tts.gpt_sovits.runtime import inspect_runtime as inspect
+    else:
+        from ypuddin.tts.runtime import inspect_runtime as inspect
 
     return inspect(config, manifests, allowed=allowed, timeout=90, gpu_devices=gpu_devices)
 
@@ -262,17 +271,81 @@ def _split_report(
     return result
 
 
+def _gpt_sovits_split_report(
+    split: str, value: dict | None, config: Any
+) -> TtsGptSovitsSplitDatasetReport:
+    source = _source(value)
+    training = split == "train"
+    disabled = source is None and not training
+    active = bool(source is not None and source.state == "valid" and training
+                  and source.summary is not None and source.summary.valid_clips_count > 0)
+    preparation_state = "not_applicable" if disabled or not training else "unchecked" if active else "blocked"
+    result = TtsGptSovitsSplitDatasetReport(
+        split=split,
+        state="disabled" if disabled else "available" if active else "unavailable",
+        checked_at=None if disabled else now(),
+        source_state=source.state if source else "missing",
+        source_id=source.id if source else None,
+        source_revision=source.revision if source else None,
+        snapshot_id=source.snapshot_id if source else None,
+        source_summary=source.summary if source and source.state in ("valid", "invalid") else None,
+        preparation=TtsGptSovitsPreparationReport(state=preparation_state),
+        stages=[
+            TtsGptSovitsStageReport(
+                stage=stage,
+                state="not_applicable" if not training or config.stage not in ("both", stage)
+                else "unchecked" if active else "blocked",
+                batch_size=getattr(config, stage).batch_size,
+            )
+            for stage in ("gpt", "sovits")
+        ],
+    )
+    if source is None:
+        if training:
+            result.issues.append(
+                TtsIssue(code="tts.dataset.missing", loc=["sources", "train"], message="请登记训练数据清单。")
+            )
+        return result
+    result.issues.extend(_source_issues(source, split))
+    if not training:
+        result.issues.append(TtsIssue(
+            code="tts.gpt_sovits.validation_source_unsupported", loc=["sources", "validation"],
+            message="GPT-SoVITS v5 训练不使用独立验证清单，请移除验证来源。",
+        ))
+    if source.state != "valid":
+        if source.state in ("unchecked", "checking"):
+            result.state, result.checked_at = "unchecked", None
+        result.issues.append(TtsIssue(
+            code="tts.source_not_ready" if source.state in ("unchecked", "checking") else "tts.dataset.source_unavailable",
+            loc=["sources", split],
+            message="数据清单尚未检查完成。" if source.state in ("unchecked", "checking")
+            else "数据清单无法用于训练，请查看来源检查结果。",
+            details={"source_id": source.id, "state": source.state},
+        ))
+    elif training and (source.summary is None or source.summary.valid_clips_count == 0):
+        result.state = "unavailable"
+        result.issues.append(TtsIssue(
+            code="tts.dataset.empty_training", loc=["sources", "train"], message="训练清单没有可用样本。",
+        ))
+    return result
+
+
 def _issues(
-    dataset: TtsDatasetReport, environment: TtsEnvironmentReport, config: TtsVersionConfig
+    dataset: TtsDatasetReport | TtsGptSovitsDatasetReport,
+    environment: TtsEnvironmentReport | TtsGptSovitsEnvironmentReport,
+    config: TtsVersionConfig | GptSovitsVersionConfig,
 ) -> tuple[list[TtsIssue], list[TtsIssue]]:
     all_issues = []
     for split in (dataset.train, dataset.validation):
         all_issues.extend(split.issues)
-        for report in (split.token_filter, split.batching, split.validation_execution):
+        reports = (split.preparation, *split.stages) if isinstance(dataset, TtsGptSovitsDatasetReport) else (
+            split.token_filter, split.batching, split.validation_execution
+        )
+        for report in reports:
             all_issues.extend(report.issues)
     for check in environment.checks:
         all_issues.extend(check.issues)
-    if 0 < config.max_steps < config.num_iters:
+    if config.engine == "voxcpm1.5" and 0 < config.max_steps < config.num_iters:
         all_issues.append(
             TtsIssue(
                 code="tts.config.schedule_shorter_than_training",
@@ -315,13 +388,19 @@ def validate_version(c: Any, pid: str, vid: str, revision: int, data_revision: i
         for split in ("train", "validation")
     }
     runtime = inspect_runtime(captured.config.model_copy(deep=True), manifests, allowed=c.is_allowed, gpu_devices=gpu_devices)
-    dataset = TtsDatasetReport(
-        **{
+    is_gpt_sovits = captured.config.engine == "gpt-sovits-v5"
+    if is_gpt_sovits:
+        dataset = TtsGptSovitsDatasetReport(**{
+            split: _gpt_sovits_split_report(split, inputs[split], captured.config)
+            for split in ("train", "validation")
+        })
+    else:
+        dataset = TtsDatasetReport(**{
             split: _split_report(split, inputs[split], captured.config, runtime["token_filter"][split])
             for split in ("train", "validation")
-        }
-    )
-    environment = TtsEnvironmentReport.model_validate(runtime["environment"])
+        })
+    environment_model = TtsGptSovitsEnvironmentReport if is_gpt_sovits else TtsEnvironmentReport
+    environment = environment_model.model_validate(runtime["environment"])
     refreshed = c.tts_sources.validation_inputs(pid, vid, recheck=True)
     with c.db.lock:
         _assert_sources(c, pid, vid, captured, expected_sources)
@@ -343,7 +422,7 @@ def validate_version(c: Any, pid: str, vid: str, revision: int, data_revision: i
             _source(inputs[split]).state == "valid"
             and _source(inputs[split]).snapshot_id
             and inputs[split]["fingerprint"]
-            and getattr(dataset, split).token_filter.before_count is not None
+            and (is_gpt_sovits or getattr(dataset, split).token_filter.before_count is not None)
         )
         for split in ("train", "validation")
     )
@@ -355,7 +434,7 @@ def validate_version(c: Any, pid: str, vid: str, revision: int, data_revision: i
                 "revision": revision,
                 "data_revision": data_revision,
                 "schema_version": 1,
-                "upstream_revision": UPSTREAM_REVISION,
+                "upstream_revision": runtime["details"]["upstream_revision"] if is_gpt_sovits else UPSTREAM_REVISION,
                 "config": captured.config.model_dump(mode="json"),
                 "sources": initial_inputs,
                 "runtime": runtime["input_fingerprint"],

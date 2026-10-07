@@ -22,7 +22,7 @@ def capabilities():
 
 
 @router.get("/tts/schema/train", response_model=TtsTrainSchema, responses=ERRORS)
-def training_schema(engine: Literal["voxcpm1.5"] = "voxcpm1.5"):
+def training_schema(engine: Literal["voxcpm1.5", "gpt-sovits-v5"] = "voxcpm1.5"):
     return get_train_schema(engine)
 
 

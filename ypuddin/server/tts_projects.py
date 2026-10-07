@@ -24,6 +24,31 @@ def empty_audio_stats() -> dict:
     return {"train": {"state": "missing", "clips_count": None, "duration_seconds": None}, "validation": None}
 
 
+def version_engine(c: Any, pid: str, vid: str | None) -> str | None:
+    """Project lists remain readable when a version's configuration is unavailable."""
+    visited = set()
+    while vid and vid not in visited:
+        visited.add(vid)
+        try:
+            return read_envelope(c.tts_config_path(pid, vid)).config.engine
+        except FileNotFoundError:
+            version = c.db.fetchone("SELECT parent_version_id,status,tts_engine FROM project_versions WHERE id=? AND project_id=?", (vid, pid))
+            if version and version["tts_engine"]:
+                return version["tts_engine"]
+            if not version or version["status"] not in {"copying", "failed"}:
+                return None
+            vid = version["parent_version_id"]
+        except (OSError, ValueError):
+            version = c.db.fetchone("SELECT tts_engine FROM project_versions WHERE id=? AND project_id=?", (vid, pid))
+            return (version["tts_engine"] or "voxcpm1.5") if version else None
+        except ApiError as exc:
+            if exc.code != "version.path":
+                raise
+            version = c.db.fetchone("SELECT tts_engine FROM project_versions WHERE id=? AND project_id=?", (vid, pid))
+            return (version["tts_engine"] or "voxcpm1.5") if version else None
+    return None
+
+
 def _read(c: Any, pid: str, vid: str) -> TtsConfigEnvelope:
     try:
         return read_envelope(c.tts_config_path(pid, vid))
@@ -72,6 +97,7 @@ def save_config(c: Any, pid: str, vid: str, body: TtsConfigSaveBody) -> TtsConfi
                 details={"current_revision": saved.revision},
             )
         if saved.config != body.config:
+            changed_engine = saved.config.engine != body.config.engine
             saved = TtsConfigEnvelope(revision=saved.revision + 1, config=body.config)
             try:
                 write_envelope(c.tts_config_path(pid, vid), saved)
@@ -79,6 +105,9 @@ def save_config(c: Any, pid: str, vid: str, body: TtsConfigSaveBody) -> TtsConfi
                 raise ApiError("语音配置路径不可安全访问。", code="tts.path_denied", status=403) from exc
             except OSError as exc:
                 raise ApiError("无法保存语音版本配置。", code="tts.config_io", status=500) from exc
-            c.db.update("project_versions", vid, {"updated_at": now()})
+            if changed_engine:
+                c.tts_sources.invalidate_engine(pid, vid)
+                version = c.resolve_version(pid, vid)
+            c.db.update("project_versions", vid, {"updated_at": now(), "tts_engine": saved.config.engine, "tts_variant": getattr(saved.config, "variant", None)})
             c.bus.publish("version.changed", {"project_id": pid, "version_id": vid})
         return _response(pid, version, saved)

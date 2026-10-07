@@ -66,6 +66,8 @@ class TtsSourceRow(SourceModel):
     snapshot_id: str
     line: int = Field(ge=1)
     text: str | None
+    language: str | None = None
+    speaker: str | None = None
     audio_name: str | None
     reference_audio_name: str | None
     dataset_id: int | None = Field(ge=0)

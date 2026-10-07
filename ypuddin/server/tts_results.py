@@ -16,6 +16,7 @@ from urllib.parse import quote
 
 from ypuddin.tts.issues import TtsIssue
 from ypuddin.tts.result_models import (
+    GptSovitsCheckpointInfo,
     TtsAudio,
     TtsCheckpoint,
     TtsCheckpointPage,
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS tts_sample_audio (
 CREATE INDEX IF NOT EXISTS idx_tts_audio_job ON tts_sample_audio(sample_job_id);
 """
 CHECKPOINT_FILES = ("lora_config.json", "lora_weights.safetensors", "lora_weights.ckpt")
+GSV_CHECKPOINT_FILES = ("checkpoint.json", "gpt.ckpt", "sovits.pth")
 STAT_FIELDS = ("device", "inode", "mtime_ns", "ctime_ns")
 
 
@@ -136,7 +138,9 @@ def _checkpoint_files(c: Any, root: Path, relative: str, *, verify: bool = True)
     if target == root:
         raise SourceFileError("tts.path_denied", "请选择来源任务中的检查点。")
     assets = []
-    for name in CHECKPOINT_FILES:
+    gsv = (target / "checkpoint.json").exists() or (target / "checkpoint.json").is_symlink()
+    names_to_read = GSV_CHECKPOINT_FILES if gsv else CHECKPOINT_FILES
+    for name in names_to_read:
         asset = target / name
         if not asset.exists() and not asset.is_symlink():
             continue
@@ -159,10 +163,28 @@ def _checkpoint_files(c: Any, root: Path, relative: str, *, verify: bool = True)
                     stream.seek(0)
                     if not isinstance(json.load(stream), dict):
                         raise ValueError("检查点 LoRA 配置不是有效 JSON 对象。")
+                elif name == "checkpoint.json":
+                    stream.seek(0)
+                    metadata = json.load(stream)
+                    if not isinstance(metadata, dict) or metadata.get("engine") != "gpt-sovits-v5":
+                        raise ValueError("GPT-SoVITS 检查点配置无效。")
+                    GptSovitsCheckpointInfo.model_validate({key: metadata.get(key) for key in GptSovitsCheckpointInfo.model_fields})
         identity["name"] = name
         assets.append(identity)
     names = {item["name"] for item in assets if item["size"] > 0}
-    if "lora_config.json" not in names or not names.intersection(CHECKPOINT_FILES[1:]):
+    if gsv and names != set(GSV_CHECKPOINT_FILES):
+        raise ValueError("检查点缺少配套 GPT、SoVITS 权重或配置。")
+    if gsv and verify:
+        expected = metadata.get("files", {})
+        if not isinstance(expected, dict):
+            raise ValueError("GPT-SoVITS 检查点缺少权重摘要。")
+        for asset in assets:
+            if asset["name"] == "checkpoint.json":
+                continue
+            identity = expected.get(asset["name"], {})
+            if not isinstance(identity, dict) or asset["size"] != identity.get("size") or asset["sha256"] != identity.get("sha256"):
+                raise ValueError("GPT-SoVITS 配对检查点的权重内容已变化。")
+    if not gsv and ("lora_config.json" not in names or not names.intersection(CHECKPOINT_FILES[1:])):
         raise ValueError("检查点缺少 LoRA 配置或权重。")
     return assets
 
@@ -269,7 +291,11 @@ def _register_checkpoints(c: Any, job: dict) -> None:
     relative_paths = set(matches)
     try:
         _directory(c, root)
-        relative_paths.update(path.relative_to(root).as_posix() for path in (root / "voxcpm").glob("step_*"))
+        engine = _payload(job).get("tts", {}).get("engine", "voxcpm1.5")
+        if engine == "gpt-sovits-v5":
+            relative_paths.update(path.parent.relative_to(root).as_posix() for path in (root / "gpt_sovits").glob("*/checkpoint.json"))
+        else:
+            relative_paths.update(path.relative_to(root).as_posix() for path in (root / "voxcpm").glob("step_*"))
     except (OSError, ValueError):
         return
     for relative in sorted(relative_paths):
@@ -278,6 +304,20 @@ def _register_checkpoints(c: Any, job: dict) -> None:
         except (OSError, ValueError):
             continue
         event = matches.get(relative, {})
+        gsv_info = None
+        if any(item["name"] == "checkpoint.json" for item in assets):
+            if engine != "gpt-sovits-v5":
+                continue
+            try:
+                with open_source(root / relative / "checkpoint.json", c.is_allowed) as stream:
+                    metadata = json.load(stream)
+                gsv_info = GptSovitsCheckpointInfo.model_validate({key: metadata.get(key) for key in GptSovitsCheckpointInfo.model_fields})
+                if gsv_info.variant != _payload(job)["tts"].get("variant") or gsv_info.stage != _payload(job)["tts"].get("stage"):
+                    continue
+            except (OSError, ValueError):
+                continue
+        elif engine == "gpt-sovits-v5":
+            continue
         cid = _id("ckpt", [job["id"], relative])
         fingerprints = [
             {key: item[key] for key in ("path", "size", "sha256", *STAT_FIELDS)} for item in assets
@@ -310,6 +350,7 @@ def _register_checkpoints(c: Any, job: dict) -> None:
                 path=relative,
                 relative_path=relative,
                 **metadata,
+                gpt_sovits=gsv_info,
                 size=sum(item["size"] for item in assets),
                 discovered_at=discovered,
                 modified_at=modified,
@@ -319,7 +360,7 @@ def _register_checkpoints(c: Any, job: dict) -> None:
                     {
                         "id": _id("file", [cid, revision, item["name"]]),
                         "name": item["name"],
-                        "role": "config" if item["name"] == "lora_config.json" else "weights",
+                        "role": "config" if item["name"] in {"lora_config.json", "checkpoint.json"} else "gpt_weights" if item["name"] == "gpt.ckpt" else "sovits_weights" if item["name"] == "sovits.pth" else "weights",
                         "size": item["size"],
                         "download_url": f"/api/tts/jobs/{job['id']}/checkpoints/{cid}/files/{_id('file', [cid, revision, item['name']])}",
                     }
@@ -557,6 +598,7 @@ def _audio_records(c: Any, job: dict) -> list[dict]:
             size=identity["size"] if identity else None,
             available=False,
             url=None,
+            gpt_sovits=event.get("gpt_sovits"),
         )
         record = _json({"dto": dto.model_dump(), "path": str(path), "fingerprint": identity})
         with c.db.lock:

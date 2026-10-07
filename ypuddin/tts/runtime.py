@@ -143,7 +143,13 @@ def verify_input_snapshot(inputs: dict[str, Any], *, manifests: tuple[str, ...] 
     if "model_identity" in inputs and (model_path is None or not isinstance(inputs["model_identity"], dict)):
         raise ValueError("语音任务缺少有效的模型目录与资产身份。")
     if model_path is not None:
-        current = _model_identity(model_path)
+        frozen = inputs.get("model_identity", {})
+        if frozen.get("engine") == "gpt-sovits-v5":
+            from .gpt_sovits.core import validate_model_identity
+
+            current = validate_model_identity(frozen, model_path)
+        else:
+            current = _model_identity(model_path)
         if "model_identity" in inputs and inputs["model_identity"] != current:
             raise ValueError("语音模型目录或逻辑资产路径在检查后发生变化。")
         for asset in current["assets"].values():

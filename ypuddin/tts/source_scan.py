@@ -1,4 +1,4 @@
-"""Read-only JSONL scanning with complete row diagnostics and byte identities."""
+"""Read-only speech-manifest scans with complete diagnostics and byte identities."""
 
 from __future__ import annotations
 
@@ -17,6 +17,13 @@ from .issues import TtsIssue
 from .source_models import TtsSourceSummary
 
 Allowed = Callable[[Path], bool]
+SOURCE_ENGINES = {"voxcpm1.5", "gpt-sovits-v5"}
+GSV_LANGUAGES = {"zh", "en", "ja", "ko", "yue"}
+
+
+def _source_engine(engine: str) -> None:
+    if engine not in SOURCE_ENGINES:
+        raise SourceFileError("tts.engine.unsupported", "不支持这一语音训练引擎。")
 
 
 class SourceFileError(ValueError):
@@ -126,8 +133,9 @@ def _json(text: str) -> Any:
     return json.loads(text, parse_constant=invalid)
 
 
-def inspect_audio(path: Path, allowed: Allowed) -> tuple[dict, dict, list[tuple[str, str, bool]]]:
+def inspect_audio(path: Path, allowed: Allowed, *, engine: str = "voxcpm1.5") -> tuple[dict, dict, list[tuple[str, str, bool]]]:
     """Return frame metadata, a byte identity and all independent format issues."""
+    _source_engine(engine)
     problems: list[tuple[str, str, bool]] = []
     metadata = {"duration_seconds": None, "sample_rate": None, "channels": None}
     with open_source(path, allowed) as stream:
@@ -144,8 +152,10 @@ def inspect_audio(path: Path, allowed: Allowed) -> tuple[dict, dict, list[tuple[
                 metadata.update(sample_rate=rate, channels=channels)
                 if channels != 1:
                     problems.append(("tts.audio.channels", "录音须为单声道。", False))
-                if rate != 44_100:
-                    problems.append(("tts.audio.sample_rate", "录音采样率须为 44100 Hz。", False))
+                rates = {32_000, 44_100, 48_000} if engine == "gpt-sovits-v5" else {44_100}
+                if rate not in rates:
+                    message = "录音采样率须为 32000、44100 或 48000 Hz。" if engine == "gpt-sovits-v5" else "录音采样率须为 44100 Hz。"
+                    problems.append(("tts.audio.sample_rate", message, False))
                 if frames <= 0 or width not in {1, 2, 3, 4}:
                     problems.append(("tts.audio.frames", "录音没有有效 PCM 帧。", False))
                 read = 0
@@ -173,11 +183,25 @@ class ScanResult:
     issues: list[TtsIssue]
     issues_total: int
     issues_truncated: bool
+    engine: str = "voxcpm1.5"
 
 
-def scan_manifest(path: Path, source_id: str, split: str, *, allowed: Allowed) -> ScanResult:
+def _manifest_row(text: str, *, native_list: bool) -> Any:
+    if native_list:
+        parts = text.split("|")
+        if len(parts) != 4:
+            raise SourceFileError("tts.row.invalid_list", "这一行须为录音路径|说话人|语言|转写文本，字段中不能包含 |。")
+        audio, speaker, language, transcript = parts
+        return {"audio": audio, "speaker": speaker, "language": language, "text": transcript}
+    return _json(text)
+
+
+def scan_manifest(path: Path, source_id: str, split: str, *, allowed: Allowed, engine: str = "voxcpm1.5") -> ScanResult:
     """Collect every nonblank physical row, including invalid JSON and invalid audio."""
+    _source_engine(engine)
     path = absolute_path(path)
+    gsv = engine == "gpt-sovits-v5"
+    native_list = gsv and path.suffix.lower() == ".list"
     with open_source(path, allowed) as stream:
         raw = stream.read()
     manifest_identity = {"path": str(path), "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}
@@ -200,7 +224,10 @@ def scan_manifest(path: Path, source_id: str, split: str, *, allowed: Allowed) -
         normalized: dict[str, Any] = {}
         assets: dict[str, dict] = {}
         try:
-            value = _json(text)
+            value = _manifest_row(text, native_list=native_list)
+        except SourceFileError as exc:
+            value = None
+            issues.append(_issue(exc.code, loc, str(exc)))
         except ValueError:
             value = None
             issues.append(_issue("tts.row.invalid_json", loc, "这一行不是有效 JSON。"))
@@ -211,14 +238,33 @@ def scan_manifest(path: Path, source_id: str, split: str, *, allowed: Allowed) -
         if isinstance(value, dict):
             if isinstance(value.get("text"), str) and value["text"].strip():
                 item["text"] = normalized["text"] = value["text"]
+                if gsv and any(character in value["text"] for character in "|\r\n\t\0"):
+                    issues.append(_issue("tts.text.invalid", loc + ["text"], "转写文本不能包含换行、制表符、空字符或 |。"))
             else:
                 issues.append(_issue("tts.text.required", loc + ["text"], "缺少转写文本。"))
-            dataset_id = value.get("dataset_id", 0)
-            if type(dataset_id) is int and dataset_id >= 0:
-                item["dataset_id"] = normalized["dataset_id"] = dataset_id
+            if gsv:
+                language = value.get("language")
+                if isinstance(language, str) and language.lower() in GSV_LANGUAGES:
+                    item["language"] = normalized["language"] = language.lower()
+                else:
+                    issues.append(_issue("tts.language.invalid", loc + ["language"], "语言须为 zh、en、ja、ko 或 yue。"))
+                speaker = value.get("speaker", "speaker")
+                if isinstance(speaker, str) and speaker.strip() and not any(character in speaker for character in "|\r\n\t\0"):
+                    item["speaker"] = normalized["speaker"] = speaker
+                else:
+                    issues.append(_issue("tts.speaker.invalid", loc + ["speaker"], "说话人不能为空，也不能包含换行、制表符、空字符或 |。"))
+                for field in ("ref_audio", "dataset_id"):
+                    if field in value:
+                        issues.append(_issue("tts.row.field_unsupported", loc + [field], f"GPT-SoVITS 数据清单不支持 {field}。"))
             else:
-                issues.append(_issue("tts.dataset_id.invalid", loc + ["dataset_id"], "dataset_id 须为非负整数。"))
+                dataset_id = value.get("dataset_id", 0)
+                if type(dataset_id) is int and dataset_id >= 0:
+                    item["dataset_id"] = normalized["dataset_id"] = dataset_id
+                else:
+                    issues.append(_issue("tts.dataset_id.invalid", loc + ["dataset_id"], "dataset_id 须为非负整数。"))
             for key, name in (("audio", "audio_name"), ("ref_audio", "reference_audio_name")):
+                if gsv and key == "ref_audio":
+                    continue
                 audio_value = value.get(key)
                 if key == "ref_audio" and audio_value is None:
                     continue
@@ -226,11 +272,14 @@ def scan_manifest(path: Path, source_id: str, split: str, *, allowed: Allowed) -
                     issues.append(_issue("tts.audio.required", loc + [key], "缺少录音路径。"))
                     continue
                 item[name] = Path(audio_value).name
+                if gsv and any(character in audio_value for character in "|\r\n\t\0"):
+                    issues.append(_issue("tts.path_invalid", loc + [key], "录音路径不能包含换行、制表符、空字符或 |。"))
+                    continue
                 audio = None
                 try:
                     audio = absolute_path(audio_value, base=path.parent)
                     if str(audio) not in audio_cache:
-                        audio_cache[str(audio)] = inspect_audio(audio, allowed)
+                        audio_cache[str(audio)] = inspect_audio(audio, allowed, engine=engine)
                     info, identity, problems = audio_cache[str(audio)]
                     identities[str(audio)] = identity
                     issues.extend(_issue(code, loc + [key], message, warning=warning) for code, message, warning in problems)
@@ -258,8 +307,11 @@ def scan_manifest(path: Path, source_id: str, split: str, *, allowed: Allowed) -
     if not rows:
         all_issues.insert(0, _issue("tts.manifest_empty", ["sources", split, "path"], "数据清单没有非空样本行。"))
     ordered_identities = [identities[key] for key in sorted(identities)]
+    identity_payload = {"scanner": 1, "files": ordered_identities}
+    if gsv:
+        identity_payload["engine"] = engine
     fingerprint = hashlib.sha256(json.dumps(
-        {"scanner": 1, "files": ordered_identities}, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        identity_payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
     ).encode()).hexdigest()
     return ScanResult(
         fingerprint=fingerprint, identities=ordered_identities, rows=rows,
@@ -267,7 +319,7 @@ def scan_manifest(path: Path, source_id: str, split: str, *, allowed: Allowed) -
             clips_count=len(rows), valid_clips_count=valid_count, invalid_count=len(rows) - valid_count,
             duration_seconds=duration,
         ),
-        issues=all_issues[:100], issues_total=len(all_issues), issues_truncated=len(all_issues) > 100,
+        issues=all_issues[:100], issues_total=len(all_issues), issues_truncated=len(all_issues) > 100, engine=engine,
     )
 
 
@@ -296,7 +348,13 @@ def manifest_references(path: Path, *, allowed: Allowed) -> list[Path]:
     for line in content.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         if not line.strip():
             continue
-        value = _json(line)
+        # Dependency protection must keep working after an engine change and before rescanning.
+        try:
+            value = _json(line)
+        except ValueError:
+            if path.suffix.lower() != ".list":
+                raise
+            value = _manifest_row(line, native_list=True)
         if not isinstance(value, dict):
             raise SourceFileError("tts.references_unresolved", "清单包含无法确定录音引用的行。")
         for key in ("audio", "ref_audio"):

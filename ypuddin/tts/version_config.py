@@ -10,9 +10,13 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .gpt_sovits.config import GptSovitsVersionConfig
+
+TtsEngine = Literal["voxcpm1.5", "gpt-sovits-v5"]
 
 AttentionTarget = Literal["q_proj", "v_proj", "k_proj", "o_proj"]
 ProjectionTarget = Literal["enc_to_lm_proj", "lm_to_dit_proj", "res_to_dit_proj"]
@@ -91,10 +95,28 @@ class TtsVersionConfig(_Model):
         return self
 
 
+TtsSavedConfig = Annotated[TtsVersionConfig | GptSovitsVersionConfig, Field(discriminator="engine")]
+
+
+def default_config(engine: TtsEngine = "voxcpm1.5") -> TtsVersionConfig | GptSovitsVersionConfig:
+    if engine == "gpt-sovits-v5":
+        return GptSovitsVersionConfig()
+    if engine != "voxcpm1.5":
+        raise ValueError("不支持此语音引擎。")
+    return TtsVersionConfig()
+
+
 class TtsConfigEnvelope(_Model):
     schema_version: Literal[1] = 1
     revision: int = Field(ge=1)
-    config: TtsVersionConfig
+    config: TtsSavedConfig
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def legacy_engine(cls, value: object) -> object:
+        if isinstance(value, dict) and "engine" not in value:
+            return {"engine": "voxcpm1.5", **value}
+        return value
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -113,12 +135,17 @@ class TtsConfigResponse(_Model):
     scope: TtsConfigScope
     revision: int = Field(ge=1)
     data_revision: int = Field(ge=1)
-    config: TtsVersionConfig
+    config: TtsSavedConfig
 
 
 class TtsConfigSaveBody(_Model):
     expected_revision: int = Field(ge=1)
-    config: TtsVersionConfig
+    config: TtsSavedConfig
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def legacy_engine(cls, value: object) -> object:
+        return TtsConfigEnvelope.legacy_engine(value)
 
 
 class TtsConfigPathError(ValueError):

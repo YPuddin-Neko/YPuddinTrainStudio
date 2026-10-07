@@ -9,6 +9,7 @@ import { ttsApi } from '../../api/tts';
 import { useFamilies } from '../../api/hooks/useFamilies';
 import { inactiveTrainingReason, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import { ttsEngineLabel } from '../../utils/ttsEngines';
 import { formatApiError } from '../../utils/errors';
 import { activateProjectVersion, configDifferences, projectUrl, versionConfigUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import { type WorkspaceStep, ProjectWorkflow } from '../ProjectWorkflow';
@@ -176,7 +177,7 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
     return states[summary.state];
   };
   const engine = current?.engine || project.active_engine;
-  const engineLabel = engine === 'voxcpm1.5' ? 'VoxCPM 1.5' : engine || '—';
+  const engineLabel = ttsEngineLabel(engine);
   const projectControls = <section className="project-sidebar" aria-label={text('当前项目工作区', 'Current project workspace')}>
     <Link className="project-sidebar-identity" to={projectUrl(project.id, selectedId, 'overview')} title={project.note || project.name}><strong title={project.name}>{project.name}</strong><small title={project.id}>{project.id}</small></Link>
     {supported && <>

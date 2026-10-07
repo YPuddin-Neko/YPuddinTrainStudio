@@ -685,7 +685,7 @@ class Project(_Out):
     active_family: str | None = None
     active_display_family: str | None = None
     project_type: Literal["image", "tts"] = "image"
-    active_engine: Literal["voxcpm1.5"] | None = None
+    active_engine: Literal["voxcpm1.5", "gpt-sovits-v5"] | None = None
     audio_stats: AudioStats | None = None
 
 
@@ -755,7 +755,7 @@ class ProjectVersion(_Out):
     family: str | None = None
     display_family: str | None = None
     project_type: Literal["image", "tts"] = "image"
-    engine: Literal["voxcpm1.5"] | None = None
+    engine: Literal["voxcpm1.5", "gpt-sovits-v5"] | None = None
     audio_stats: AudioStats | None = None
 
 

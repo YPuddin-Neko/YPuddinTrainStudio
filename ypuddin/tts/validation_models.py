@@ -111,6 +111,55 @@ class TtsDatasetReport(_Model):
         return self
 
 
+class TtsGptSovitsPreparationReport(_Model):
+    state: Literal["unchecked", "not_applicable", "blocked", "error"]
+    prepared_samples: None = None
+    filtered_samples: None = None
+    issues: list[TtsIssue] = Field(default_factory=list)
+
+
+class TtsGptSovitsStageReport(_Model):
+    stage: Literal["gpt", "sovits"]
+    state: Literal["unchecked", "not_applicable", "blocked"]
+    batch_size: Annotated[int, Field(ge=1)]
+    input_samples: None = None
+    yielded_batches_per_pass: None = None
+    dropped_samples_per_pass: None = None
+    issues: list[TtsIssue] = Field(default_factory=list)
+
+
+class TtsGptSovitsSplitDatasetReport(_Model):
+    split: Split
+    state: Literal["unchecked", "available", "unavailable", "disabled"]
+    checked_at: Timestamp | None = None
+    source_id: str | None = None
+    source_revision: Annotated[int, Field(ge=1)] | None = None
+    snapshot_id: str | None = None
+    source_state: SourceState
+    source_summary: TtsSourceSummary | None = None
+    preparation: TtsGptSovitsPreparationReport
+    stages: list[TtsGptSovitsStageReport]
+    issues: list[TtsIssue] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def ordered_stages(self) -> TtsGptSovitsSplitDatasetReport:
+        if tuple(stage.stage for stage in self.stages) != ("gpt", "sovits"):
+            raise ValueError("训练阶段报告必须依次包含 GPT 与 SoVITS。")
+        return self
+
+
+class TtsGptSovitsDatasetReport(_Model):
+    engine: Literal["gpt-sovits-v5"] = "gpt-sovits-v5"
+    train: TtsGptSovitsSplitDatasetReport
+    validation: TtsGptSovitsSplitDatasetReport
+
+    @model_validator(mode="after")
+    def correct_splits(self) -> TtsGptSovitsDatasetReport:
+        if self.train.split != "train" or self.validation.split != "validation":
+            raise ValueError("数据报告的训练集与验证集位置不匹配。")
+        return self
+
+
 class TtsEnvironmentCheck(_Model):
     key: EnvironmentKey
     state: Literal["unchecked", "available", "unavailable"]
@@ -164,6 +213,31 @@ class TtsEnvironmentReport(_Model):
         return self
 
 
+GPT_SOVITS_ENVIRONMENT_KEYS = ("python", "upstream", "model", "dependencies", "cuda", "precision")
+
+
+class TtsGptSovitsEnvironmentCheck(TtsEnvironmentCheck):
+    key: Literal["python", "upstream", "model", "dependencies", "cuda", "precision"]
+
+
+class TtsGptSovitsEnvironmentReport(_Model):
+    engine: Literal["gpt-sovits-v5"] = "gpt-sovits-v5"
+    state: Literal["unchecked", "available", "unavailable"]
+    checked_at: Timestamp | None = None
+    checks: list[TtsGptSovitsEnvironmentCheck]
+    devices: TtsDeviceSelection | None = None
+
+    @model_validator(mode="after")
+    def complete_checks(self) -> TtsGptSovitsEnvironmentReport:
+        if tuple(check.key for check in self.checks) != GPT_SOVITS_ENVIRONMENT_KEYS:
+            raise ValueError("环境报告必须按固定顺序返回全部检查项。")
+        states = {check.state for check in self.checks}
+        expected = "unavailable" if "unavailable" in states else "unchecked" if "unchecked" in states else "available"
+        if self.state != expected:
+            raise ValueError("环境总状态与各检查项不一致。")
+        return self
+
+
 class TtsValidationReport(_Model):
     _runtime_fingerprints: list[dict] = PrivateAttr(default_factory=list)
     _runtime_model_identity: dict | None = PrivateAttr(default=None)
@@ -176,11 +250,13 @@ class TtsValidationReport(_Model):
     valid: bool
     errors: list[TtsIssue]
     warnings: list[TtsIssue]
-    dataset: TtsDatasetReport
-    environment: TtsEnvironmentReport
+    dataset: TtsDatasetReport | TtsGptSovitsDatasetReport
+    environment: TtsEnvironmentReport | TtsGptSovitsEnvironmentReport
 
     @model_validator(mode="after")
     def result_consistency(self) -> TtsValidationReport:
+        if isinstance(self.dataset, TtsGptSovitsDatasetReport) != isinstance(self.environment, TtsGptSovitsEnvironmentReport):
+            raise ValueError("数据报告与环境报告必须属于同一语音引擎。")
         if any(issue.severity != "error" for issue in self.errors):
             raise ValueError("errors 只能包含 error 级问题。")
         if any(issue.severity != "warning" for issue in self.warnings):

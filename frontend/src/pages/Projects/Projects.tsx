@@ -7,6 +7,7 @@ import { apiClient } from '../../api/client';
 import type { FamilyInfo } from '../../api/types';
 import StudioSelect from '../../components/StudioSelect';
 import { formatApiError } from '../../utils/errors';
+import { ttsEngineLabel } from '../../utils/ttsEngines';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import ProjectEditor from './ProjectEditor';
 import { categoryLabel, type GalleryProject } from './projectGallery';
@@ -133,7 +134,7 @@ export default function Projects() {
   const menu = (project: GalleryProject) => <ProjectCardMenu name={project.name} archived={project.archived} busy={!!pending || project.deletion?.state === 'deleting'} onEdit={() => setEditor(project)} onArchive={() => void mutate(project.id, () => apiClient.patch(`/projects/${project.id}`, { archived: !project.archived }))} onDelete={() => remove(project)}/>;
   const activity = (project: GalleryProject) => project.deletion ? <ProjectDeletionLine deletion={project.deletion}/> : <ProjectActivityLine job={project.latest_job}/>;
   const modelLabel = (project: GalleryProject) => project.project_type === 'tts'
-    ? [text('语音', 'Speech'), project.active_engine === 'voxcpm1.5' ? 'VoxCPM 1.5' : project.active_engine].filter(Boolean).join(' · ')
+    ? [text('语音', 'Speech'), project.active_engine ? ttsEngineLabel(project.active_engine) : null].filter(Boolean).join(' · ')
     : familyLabel(project.active_display_family ?? project.active_family);
   const meta = (project: GalleryProject) => [project.category ? categoryLabel(project.category, english) : text('未分类', 'Uncategorized'), modelLabel(project), versionLabel(project)].filter(Boolean);
   const mixedDataTypes = pageProjects.some(project => project.project_type === 'tts') && pageProjects.some(project => project.project_type !== 'tts');

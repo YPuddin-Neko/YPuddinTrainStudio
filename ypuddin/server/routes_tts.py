@@ -220,7 +220,12 @@ def launch_payload(job: dict, device: str | None = None) -> dict:
     if job["type"] == "tts_sample":
         sample = payload["tts_sample"]
         _stable_root(Path(sample["source_output_dir"]))
-        sample["checkpoint"] = str(safe_checkpoint(sample["source_output_dir"], sample["checkpoint"]))
+        if payload["tts"].get("engine") == "gpt-sovits-v5":
+            from ypuddin.tts.gpt_sovits.core import safe_checkpoint as gsv_checkpoint
+
+            sample["checkpoint"] = str(gsv_checkpoint(sample["source_output_dir"], sample["checkpoint"]))
+        else:
+            sample["checkpoint"] = str(safe_checkpoint(sample["source_output_dir"], sample["checkpoint"]))
     return payload
 
 

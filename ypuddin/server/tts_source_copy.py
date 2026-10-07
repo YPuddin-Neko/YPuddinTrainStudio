@@ -169,10 +169,10 @@ def copy_data(c: Any, plan: dict | None, staging: DirectoryGuard, final: Path, p
     return [{"id": item["id"], "split": item["split"], "path": final / item["name"]} for item in manifests]
 
 
-def scan_copies(c: Any, entries: list[dict]) -> list[dict]:
+def scan_copies(c: Any, entries: list[dict], *, engine: str = "voxcpm1.5") -> list[dict]:
     result = []
     for entry in entries:
-        scan = scan_manifest(entry["path"], entry["id"], entry["split"], allowed=c.is_allowed)
+        scan = scan_manifest(entry["path"], entry["id"], entry["split"], allowed=c.is_allowed, engine=engine)
         if scan.summary.invalid_count or any(issue.severity == "error" for issue in scan.issues):
             raise ApiError("复制后的录音或清单未通过检查。", code="tts.source_not_ready", status=409)
         result.append({**entry, "scan": scan})
@@ -195,7 +195,7 @@ def publish(c: Any, pid: str, vid: str, entries: list[dict]) -> None:
                   "created_at": now(), "updated_at": now()}
         c.db.insert("tts_sources", source)
         c.db.insert("tts_source_snapshots", {"id": snapshot, "source_id": sid,
-                                            "fingerprint": result.fingerprint, "created_at": now()})
+                                            "fingerprint": result.fingerprint, "created_at": now(), "engine": result.engine})
         for item in result.rows:
             row_id = "row_" + str(item["row"]["line"])
             dto = TtsSourceRow(**item["row"], id=row_id, source_id=sid, snapshot_id=snapshot,

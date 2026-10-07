@@ -3,18 +3,20 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, Play } from 'lucide-react';
 import Dialog from '../../components/Dialog';
 import { ApiError, type Job } from '../../api/types';
-import { ttsApi, type TtsConfigResponse, type TtsIssue, type TtsSourceChanged, type TtsSourcesResponse, type TtsTrainingBody, type TtsValidationReport } from '../../api/tts';
+import { ttsApi, type TtsConfigResponse, type TtsEngine, type TtsIssue, type TtsSourceChanged, type TtsSourcesResponse, type TtsTrainingBody, type TtsValidationReport } from '../../api/tts';
 import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { formatApiError } from '../../utils/errors';
 import { gpuDeviceLabel } from '../../utils/gpuDevices';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import TtsGpuPicker from './TtsGpuPicker';
+import GptSovitsValidationResult from './GptSovitsValidationResult';
+import { gptSovitsFieldCopy } from './gptSovitsVersionFields';
 import { fieldCopy, fields, type TtsField } from './ttsVersionFields';
 import './tts-training.css';
 
 type Props = {
-  projectId: string; versionId: string; readOnly: boolean; draftDirty: boolean;
+  projectId: string; versionId: string; readOnly: boolean; draftDirty: boolean; engine?: TtsEngine;
   ensureSaved: () => Promise<TtsConfigResponse | null>; onStarted: (job: Job) => void;
 };
 type Attempt = { scope: { project_id: string; version_id: string }; key: string; body: TtsTrainingBody; blocked: boolean; message?: string };
@@ -34,10 +36,10 @@ function readAttempt(pid: string, vid: string): Attempt | null {
 }
 
 export default function TtsTrainingActions(props: Props) {
-  return <TrainingActions key={`${props.projectId}:${props.versionId}`} {...props}/>;
+  return <TrainingActions key={`${props.projectId}:${props.versionId}:${props.engine || 'voxcpm1.5'}`} {...props}/>;
 }
 
-function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty, ensureSaved, onStarted }: Props) {
+function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty, ensureSaved, onStarted, engine = 'voxcpm1.5' }: Props) {
   const text = useWorkspaceText();
   const queryClient = useQueryClient();
   const [open, setOpen] = React.useState(false), [resetting, setResetting] = React.useState(false);
@@ -98,10 +100,10 @@ function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty,
       const [config, sources] = await Promise.all([ttsApi.versionConfig(pid, vid, abort.signal), ttsApi.sources(pid, vid, abort.signal)]);
       if (!active()) return;
       publishLatest(config, sources);
-      if (!owns(config.scope) || !owns(sources.scope) || config.revision !== saved.revision || config.data_revision !== sources.data_revision) throw new Error(changedMessage());
+      if (config.config.engine !== engine || !owns(config.scope) || !owns(sources.scope) || config.revision !== saved.revision || config.data_revision !== sources.data_revision) throw new Error(changedMessage());
       const result = await ttsApi.validateVersion(pid, vid, { revision: config.revision, data_revision: sources.data_revision, gpu_devices: checkedDevices }, abort.signal);
       if (!active()) return;
-      if (!owns(result.scope) || result.revision !== config.revision || result.data_revision !== sources.data_revision) throw new Error(changedMessage());
+      if (('engine' in result.dataset ? result.dataset.engine : 'voxcpm1.5') !== engine || ('engine' in result.environment ? result.environment.engine : 'voxcpm1.5') !== engine || !owns(result.scope) || result.revision !== config.revision || result.data_revision !== sources.data_revision) throw new Error(changedMessage());
       const devices = result.environment.devices;
       if (devices ? !sameDevices(devices.requested_devices, checkedDevices) : result.valid) throw new Error(changedMessage());
       setReport(result); setReportGpu(checkedDevices);
@@ -121,7 +123,7 @@ function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty,
         const [config, sources] = await Promise.all([ttsApi.versionConfig(pid, vid), ttsApi.sources(pid, vid)]);
         if (!active()) return;
         publishLatest(config, sources);
-        if (latest.current.readOnly || latest.current.draftDirty || !sameDevices(reportGpu, latest.current.gpu) || !owns(config.scope) || !owns(sources.scope)
+        if (config.config.engine !== engine || latest.current.readOnly || latest.current.draftDirty || !sameDevices(reportGpu, latest.current.gpu) || !owns(config.scope) || !owns(sources.scope)
           || config.revision !== report.revision || config.data_revision !== report.data_revision || sources.data_revision !== report.data_revision) {
           setStale(true); throw new Error(changedMessage());
         }
@@ -160,7 +162,7 @@ function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty,
       <div className="tts-training-content" aria-busy={phase !== 'idle'}>
         {phase === 'checking' && <p role="status" className="tts-training-progress"><Loader2 size={16} className="animate-spin"/>{text('正在检查环境与数据，模型文件检查可能需要一些时间…', 'Checking environment and data. Reading model files can take some time…')}</p>}
         {error && <p role="alert" className="workspace-message error">{error}</p>}
-        {issues.length > 0 && <IssueList issues={issues}/>}
+        {issues.length > 0 && <IssueList issues={issues} engine={engine}/>}
         {attempt && <p role="status" className="tts-training-note">{attempt.blocked ? text('此启动请求不能继续。重新检查前，请先确认原任务状态。', 'This request cannot continue. Check the original task before starting another check.') : text('启动结果尚待确认。继续确认会使用原请求，不会重复创建任务。', 'The start result needs confirmation. Confirming reuses the original request without creating a duplicate job.')}</p>}
         {report && <ValidationResult report={report} stale={stale}/>}
         {stale && !attempt && <p role="status" className="workspace-message error">{changedMessage()}</p>}
@@ -196,10 +198,12 @@ function gpuIssueMessage(issue: TtsIssue, english: boolean) {
   return issue.message;
 }
 
-function IssueList({ issues }: { issues: TtsIssue[] }) {
+function IssueList({ issues, engine = 'voxcpm1.5' }: { issues: TtsIssue[]; engine?: TtsEngine }) {
   const text = useWorkspaceText(), english = text('zh', 'en') === 'en';
   const location = (loc: TtsIssue['loc']) => {
     if (loc[0] === 'gpu_devices') return [text('运行显卡', 'Run on GPU'), ...loc.slice(1).map(value => typeof value === 'string' && /^cuda:\d+$/.test(value) ? gpuDeviceLabel(value) : value)].join(' / ');
+    if (engine === 'gpt-sovits-v5' && loc[0] === 'config') return gptSovitsFieldCopy(loc.slice(1).join('.'), english).label;
+    if (loc[0] === 'environment' && loc[1] === 'precision') return [text('训练精度', 'Training precision'), ...loc.slice(2)].join(' / ');
     const field = loc[1];
     const environment = loc[0] === 'environment' ? environmentChecks.find(([key]) => key === field) : undefined;
     if (environment) return [text(environment[1], environment[2]), ...loc.slice(2)].join(' / ');
@@ -213,6 +217,8 @@ function ValidationResult({ report, stale }: { report: TtsValidationReport; stal
   const text = useWorkspaceText();
   const value = (number: number | null | undefined) => number == null ? text('未知', 'Unknown') : number.toLocaleString();
   const state = (key: string) => ({ available: text('可用', 'Available'), unavailable: text('不可用', 'Unavailable'), unchecked: text('未检查', 'Not checked'), disabled: text('已关闭', 'Disabled'), not_applicable: text('不适用', 'Not applicable'), ready: text('就绪', 'Ready'), blocked: text('受阻', 'Blocked'), error: text('检查失败', 'Check failed'), missing: text('未登记', 'Not registered'), checking: text('正在检查', 'Checking'), valid: text('通过', 'Passed'), invalid: text('存在无效数据', 'Contains invalid data'), stale: text('内容已变化', 'Content changed') }[key] || key);
+  if ('engine' in report.dataset && report.dataset.engine === 'gpt-sovits-v5' && 'engine' in report.environment && report.environment.engine === 'gpt-sovits-v5') return <GptSovitsValidationResult report={report} dataset={report.dataset} environment={report.environment} stale={stale} renderIssues={issues => <IssueList issues={issues} engine="gpt-sovits-v5"/>}/>;
+  if ('engine' in report.dataset || 'engine' in report.environment) return <p role="alert" className="workspace-message error">{text('检查结果的训练引擎不一致，请重新检查。', 'The check results use different training engines. Run the check again.')}</p>;
   const train = report.dataset.train, validation = report.dataset.validation;
   const summarized = new Set([...report.errors, ...report.warnings].map(issueIdentity));
   const remaining = (items: TtsIssue[] = [], represented: TtsIssue[] = []) => {

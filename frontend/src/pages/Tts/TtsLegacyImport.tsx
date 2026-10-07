@@ -13,6 +13,7 @@ import './tts-import.css';
 
 const parameterFields = ['python_path', 'trainer_path', 'model_path', 'batch_size', 'grad_accum_steps', 'num_workers', 'num_iters', 'save_interval', 'learning_rate', 'warmup_steps', 'lora_rank', 'lora_alpha'] as const;
 type LegacyConfig = { [K in keyof TtsConfig]: TtsConfig[K] extends number ? number | string : TtsConfig[K] };
+type VoxResponse = Omit<TtsConfigResponse, 'config'> & { config: TtsVersionConfig };
 type Step = 'config' | 'train' | 'validation';
 type Plan = { source: string; config: LegacyConfig; steps: Step[]; done: Step[] };
 const steps: Step[] = ['config', 'train', 'validation'];
@@ -49,18 +50,22 @@ export default function TtsLegacyImport({ projectId: pid, versionId: vid, readOn
   const [error, setError] = React.useState(''), [needsRefresh, setNeedsRefresh] = React.useState(false);
   const [global, setGlobal] = React.useState<TtsConfig | null>(null), [local, setLocal] = React.useState<LegacyConfig | null>(null);
   const [source, setSource] = React.useState('global'), [selected, setSelected] = React.useState<Step[]>([]);
-  const [current, setCurrent] = React.useState<TtsConfigResponse | null>(null), [sources, setSources] = React.useState<TtsSourcesResponse | null>(null);
+  const [current, setCurrent] = React.useState<VoxResponse | null>(null), [sources, setSources] = React.useState<TtsSourcesResponse | null>(null);
   const [plan, setPlan] = React.useState<Plan | null>(null);
   const locked = React.useRef(false), alive = React.useRef(true), latestReadOnly = React.useRef(readOnly);
   latestReadOnly.current = readOnly;
   React.useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const owns = (scope: { project_id: string; version_id: string }) => scope.project_id === pid && scope.version_id === vid;
+  const requireVox = (response: TtsConfigResponse): VoxResponse => {
+    if (response.config.engine !== 'voxcpm1.5') throw new Error(text('旧草稿只能导入 VoxCPM 1.5 版本。', 'Legacy drafts can only be imported into VoxCPM 1.5 versions.'));
+    return { ...response, config: response.config };
+  };
   const savePlan = (value: Plan) => {
     sessionStorage.setItem(key, JSON.stringify(value));
     if (alive.current) setPlan(value);
   };
   const loadCurrent = async () => {
-    const [config, data] = await Promise.all([ttsApi.versionConfig(pid, vid), ttsApi.sources(pid, vid)]);
+    const [config, data] = await Promise.all([ttsApi.versionConfig(pid, vid).then(requireVox), ttsApi.sources(pid, vid)]);
     if (!owns(config.scope) || !owns(data.scope) || config.data_revision !== data.data_revision) throw new Error(text('版本数据已变化，请重新读取。', 'Version data changed. Reload it.'));
     if (alive.current) { setCurrent(config); setSources(data); }
     client.setQueryData(['tts-sources', pid, vid], data);
@@ -92,9 +97,9 @@ export default function TtsLegacyImport({ projectId: pid, versionId: vid, readOn
     if (locked.current || latestReadOnly.current || needsRefresh || !legacy || !current || !sources || !chosen.length) return;
     locked.current = true; setBusy(true); setError('');
     let next = plan || { source, config: legacy, steps: selected, done: [] };
-    let config: TtsConfigResponse, data: TtsSourcesResponse;
+    let config: VoxResponse, data: TtsSourcesResponse;
     try {
-      const [freshConfig, freshSources] = await Promise.all([ttsApi.versionConfig(pid, vid), ttsApi.sources(pid, vid)]);
+      const [freshConfig, freshSources] = await Promise.all([ttsApi.versionConfig(pid, vid).then(requireVox), ttsApi.sources(pid, vid)]);
       if (!owns(freshConfig.scope) || !owns(freshSources.scope) || freshConfig.data_revision !== freshSources.data_revision
         || next.steps.includes('config') && !next.done.includes('config') && freshConfig.revision !== current.revision
         || next.steps.some(step => step !== 'config' && !next.done.includes(step)) && freshSources.data_revision !== sources.data_revision) {
@@ -109,7 +114,7 @@ export default function TtsLegacyImport({ projectId: pid, versionId: vid, readOn
           const merged = mergeParameters(config.config, next.config);
           const parsed = parseDraft(toDraft(merged), text('请检查旧参数的数值范围。', 'Check the ranges of the legacy parameters.'));
           if (parsed.problems.length) throw new Error(parsed.problems.map(item => `${item.field}: ${item.message}`).join('\n'));
-          if (parameterFields.some(field => config.config[field] !== merged[field])) config = await ttsApi.saveVersionConfig(pid, vid, { expected_revision: config.revision, config: merged });
+          if (parameterFields.some(field => config.config[field] !== merged[field])) config = requireVox(await ttsApi.saveVersionConfig(pid, vid, { expected_revision: config.revision, config: merged }));
           if (!owns(config.scope)) throw new Error(text('返回的配置不属于当前版本。', 'The returned configuration belongs to another version.'));
           onImported(config);
         } else {

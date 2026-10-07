@@ -241,6 +241,10 @@ def preflight(
     allowed: Callable[[Path], bool] | None = None,
     gpu_devices: list[str] | None = None,
 ) -> dict[str, Any]:
+    if config.engine == "gpt-sovits-v5":
+        from .gpt_sovits.core import preflight as inspect_gpt_sovits
+
+        return inspect_gpt_sovits(config, check_runtime=check_runtime, mode=mode, allowed=allowed, gpu_devices=gpu_devices)
     errors: list[str] = []
     warnings: list[str] = []
     details: dict[str, Any] = {"engine": config.engine, "sample_rate": SAMPLE_RATE}

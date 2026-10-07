@@ -66,6 +66,8 @@ class Database:
         from .tts_sources import SCHEMA_SQL
 
         self.conn.executescript(SCHEMA_SQL)
+        if "engine" not in {row[1] for row in self.conn.execute("PRAGMA table_info(tts_source_snapshots)")}:
+            self.conn.execute("ALTER TABLE tts_source_snapshots ADD COLUMN engine TEXT NOT NULL DEFAULT 'voxcpm1.5'")
         from .tts_results import SCHEMA_SQL as RESULTS_SCHEMA_SQL
 
         self.conn.executescript(RESULTS_SCHEMA_SQL)
@@ -102,6 +104,8 @@ class Database:
                     ("project_versions", "number", "INTEGER"),
                     ("project_versions", "data_revision", "INTEGER NOT NULL DEFAULT 1"),
                     ("project_versions", "display_family", "TEXT"),
+                    ("project_versions", "tts_engine", "TEXT"),
+                    ("project_versions", "tts_variant", "TEXT"),
                     ("jobs", "samples_dir", "TEXT"),
                     ("jobs", "gpu_devices_json", "TEXT NOT NULL DEFAULT '[]'"),
                     ("jobs", "archived_at", "REAL"),

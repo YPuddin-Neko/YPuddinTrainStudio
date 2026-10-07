@@ -1,14 +1,24 @@
 """Persisted speech result projections; absent historical values stay absent."""
 
-from pydantic import BaseModel, ConfigDict
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from ypuddin.server.models import Job
 
 from .issues import TtsIssue
+from .sample_config import GptSovitsSampleOptions
 
 
 class _Result(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @model_serializer(mode="wrap")
+    def engine_options(self, handler):
+        value = handler(self)
+        if value.get("gpt_sovits") is None:
+            value.pop("gpt_sovits", None)
+        return value
 
 
 class TtsCheckpointFile(_Result):
@@ -17,6 +27,18 @@ class TtsCheckpointFile(_Result):
     role: str
     size: int
     download_url: str
+
+
+class TtsStageCheckpointInfo(_Result):
+    epoch: int | None = Field(None, ge=0)
+    global_step: int | None = Field(None, ge=0)
+
+
+class GptSovitsCheckpointInfo(_Result):
+    variant: Literal["v5dev", "v5turbo"]
+    stage: Literal["gpt", "sovits", "both"]
+    gpt: TtsStageCheckpointInfo
+    sovits: TtsStageCheckpointInfo
 
 
 class TtsCheckpoint(_Result):
@@ -37,6 +59,7 @@ class TtsCheckpoint(_Result):
     can_preview: bool
     unavailable_reason: TtsIssue | None
     files: list[TtsCheckpointFile]
+    gpt_sovits: GptSovitsCheckpointInfo | None = None
 
 
 class TtsCheckpointPage(_Result):
@@ -52,6 +75,7 @@ class TtsSampleRequestSnapshot(_Result):
     seed: int | None
     cfg_value: float | None
     inference_timesteps: int | None
+    gpt_sovits: GptSovitsSampleOptions | None = None
 
 
 class TtsSampleSource(_Result):
@@ -80,6 +104,7 @@ class TtsAudio(_Result):
     size: int | None
     available: bool
     url: str | None
+    gpt_sovits: GptSovitsSampleOptions | None = None
 
 
 class TtsSampleJob(_Result):

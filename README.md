@@ -4,7 +4,7 @@
 
 # YPuddin Train Studio
 
-一个本地运行的训练工作台，支持 Anima、SDXL、Krea 2、FLUX.2 Klein 图像训练与 VoxCPM 1.5 语音 LoRA 微调
+一个本地运行的训练工作台，支持 Anima、SDXL、Krea 2、FLUX.2 Klein 图像训练，以及 VoxCPM 1.5、GPT-SoVITS v5 语音微调
 
 [![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#支持的模型与平台) [![Version](https://img.shields.io/badge/Version-v0.6.0-orange)](CHANGELOG.md) [![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB)](#快速开始) [![PyTorch](https://img.shields.io/badge/PyTorch-2.4%2B-EE4C2C)](docs/RUNTIME.md) [![React](https://img.shields.io/badge/React-18-61DAFB)](frontend/package.json)
 
@@ -19,7 +19,7 @@
 - **安排显卡与任务**：不同显卡可同时运行不同任务；图像训练可通过 DDP / FSDP 共同训练一个模型，支持暂停、保存恢复点和继续训练。
 - **查看训练过程**：实时日志、损失与硬件曲线、定期预览，以及按任务管理的权重和恢复点。
 - **测试训练结果**：选择保存的权重，对比模型版本、强度和采样参数；保留生成记录，放大或下载图片。OrthoLoRA 和 T-LoRA 导出为通用 LoRA，适配器兼容范围见[内置适配器](docs/ADAPTERS.md)。
-- **训练语音**：创建语音项目，按版本配置 VoxCPM 1.5 的独立环境、WAV 与文本清单和 LoRA 参数，排队训练并生成试听音频。配置方式见 [语音训练](docs/TTS.md)。
+- **训练语音**：创建语音项目，选择 VoxCPM 1.5 LoRA 或 GPT-SoVITS v5dev / v5turbo，按版本配置独立环境、录音转写和训练参数，排队训练并生成试听音频。配置方式见 [语音训练](docs/TTS.md)。
 
 ## 支持的模型与平台
 
@@ -42,7 +42,7 @@ Krea 2 Turbo 用于采样。Klein 蒸馏版、KV 版及 FLUX.2 dev 不用于训�
 
 多卡的精度、优化器和训练对象限制见 [多卡训练](docs/MULTI_GPU.md)。
 
-以上模型与平台表适用于图像训练。语音训练使用独立的 VoxCPM 1.5 环境和完整预训练模型目录，当前接入单卡 CUDA LoRA 微调及排队试听；任务支持取消和重新训练，不支持暂停恢复或多卡训练。音频格式、环境安装和源码版本要求见 [语音训练](docs/TTS.md)。
+以上模型与平台表适用于图像训练。语音训练使用所选引擎的独立环境和完整预训练模型目录，支持单卡 CUDA 训练及排队试听。VoxCPM 1.5 使用 LoRA；GPT-SoVITS v5 支持 GPT 全参微调与 SoVITS LoRA，可分别或依次执行。任务支持取消和重新训练，不支持暂停恢复或多卡训练。音频格式、环境安装和源码版本要求见 [语音训练](docs/TTS.md)。
 
 ## 快速开始
 

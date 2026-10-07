@@ -11,6 +11,7 @@
 .tts-checkpoint-table th { color:var(--studio-dim); font-weight:500; white-space:nowrap; }
 .tts-checkpoint-table td:first-child { min-width:170px; max-width:300px; }
 .tts-checkpoint-table td > strong { font-weight:500; overflow-wrap:anywhere; }
+.tts-checkpoint-progress { white-space:pre-line; font-variant-numeric:tabular-nums; line-height:1.65; }
 .tts-checkpoint-files { list-style:none; padding:0; margin:0; display:grid; gap:7px; }
 .tts-checkpoint-files a { white-space:normal; overflow-wrap:anywhere; }
 .tts-checkpoint-files small { display:block; color:var(--studio-dim); font-size:11px; margin-top:2px; }

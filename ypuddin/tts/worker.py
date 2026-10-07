@@ -68,6 +68,10 @@ def _sample_options(snapshot: dict[str, Any]) -> dict[str, Any]:
 def run(snapshot_path: Path, *, mode: str = "train") -> int:
     snapshot_path = snapshot_path.resolve()
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    if snapshot.get("tts", {}).get("engine") == "gpt-sovits-v5":
+        from .gpt_sovits.worker import run as run_gpt_sovits
+
+        return run_gpt_sovits(snapshot_path, mode=mode)
     config = parse_execution_config(snapshot["tts"])
     events_path = Path(snapshot.get("logging", {}).get("events_path") or snapshot_path.parent / "events.jsonl")
     events = Events(events_path)
