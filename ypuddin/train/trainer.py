@@ -724,7 +724,7 @@ class Trainer:
             "optimizer %s: %d parameter groups, learning rates %s, weight decay %s",
             type(self.optimizer).__name__,
             len(self.optimizer.param_groups),
-            ", ".join(f"{group.get('lr', 0):.3g}" for group in self.optimizer.param_groups),
+            ", ".join(f"{group.get('lr', 0):.2e}" for group in self.optimizer.param_groups),
             cfg.optimizer.weight_decay,
         )
         log.info(
@@ -2260,7 +2260,7 @@ class Trainer:
             now = time.monotonic()
             if step == 1 or step == self.progress.total_steps or now - self._last_step_log >= 30:
                 self._last_step_log = now
-                rates = sorted({f"{value:.3g}" for value in (lrs or {}).values()})
+                rates = sorted({f"{value:.2e}" for value in (lrs or {}).values()})
                 log.info(
                     "step %d/%d | epoch %s | loss %.4f | avg loss %.4f | lr %s | grad norm %.3g | %s it/s | eta %s",
                     step,
