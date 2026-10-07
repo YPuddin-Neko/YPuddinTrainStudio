@@ -95,6 +95,8 @@ const RULES: Rule[] = [
   [/^VAE encode finished: images (\d+), VAE calls (\d+), at most (\d+) per call$/, m => `VAE 编码调用：${m[1]} 张图片，共 ${m[2]} 次调用，每次最多 ${m[3]} 张`],
   [/^online VAE encode, first training batch: images (\d+), VAE calls (\d+), at most (\d+) per call$/, m => `在线 VAE 编码（第一个训练批次）：${m[1]} 张图片，共 ${m[2]} 次调用，每次最多 ${m[3]} 张`],
   [/^VAE encode memory on (\S+): peak allocated ([\d.]+) GiB, peak reserved ([\d.]+) GiB \(this process, (this phase|run so far)\); device in use up to ([\d.]+) of ([\d.]+) GiB \(all processes\)$/, m => `VAE 编码显存（${m[1]}）：本进程已分配峰值 ${m[2]} GiB，本进程保留峰值 ${m[3]} GiB（${m[4] === 'this phase' ? '本阶段' : '训练开始至今'}）；整卡占用最高 ${m[5]} GiB，共 ${m[6]} GiB（含其他程序）`],
+  [/^VAE encode completed on (\S+) after (\d+) allocator retries: image (\d+)x(\d+), batch (\d+)$/, m => `VAE 编码完成（${m[1]}）：本次分配器重试 ${m[2]} 次，图片 ${m[3]}×${m[4]}，编码批量 ${m[5]}`],
+  [/^VAE attention cache release on (\S+): workspace ([\d.]+) GiB, free ([\d.]+) GiB, unused cache ([\d.]+) GiB$/, m => `VAE 注意力计算前回收显存缓存（${m[1]}）：预计工作区 ${m[2]} GiB，可用显存 ${m[3]} GiB，未使用缓存 ${m[4]} GiB`],
   [/^all text encodings were already cached$/, () => '复用文本缓存：所有文本都已有缓存，无需重新编码'],
   [/^cached (\d+) text encodings \((\d+) distinct captions\) in ([\d.]+)s$/, m => `文本编码完成：新缓存 ${m[1]} 条（${m[2]} 条不同的标注），用时 ${seconds(m[3])}`],
   [/^cached (\d+) text encodings \((\d+) captions of images and prompts\) in ([\d.]+)s$/, m => `文本编码完成：新缓存 ${m[1]} 条（共 ${m[2]} 条图片标注和提示词），用时 ${seconds(m[3])}`],

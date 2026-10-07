@@ -50,6 +50,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
+from ypuddin.models.vae_attention_memory import VaeMathMemoryGuard
+
 from .qwen_image_vae import (
     ChunkedConv2d,
     DiagonalGaussianDistribution,
@@ -88,7 +90,8 @@ class QwenImageResidualBlock2D(nn.Module):
 
 
 def _vae_sdpa(
-    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *, query_chunking: bool = False
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *, query_chunking: bool = False,
+    memory_guard: VaeMathMemoryGuard | None = None,
 ) -> torch.Tensor:
     if q.device.type != "cuda" or not torch.version.hip:
         return F.scaled_dot_product_attention(q, k, v)
@@ -119,6 +122,9 @@ def _vae_sdpa(
     if fused_available:
         return F.scaled_dot_product_attention(q, k, v)
 
+    if not query_chunking and memory_guard is not None:
+        memory_guard.prepare(q, k)
+
     # Keep the single attention head and all keys/values. Chunking only the
     # queries bounds the math backend's otherwise quadratic score allocation.
     with sdpa_kernel(SDPBackend.MATH):
@@ -137,6 +143,7 @@ class QwenImageAttentionBlock2D(nn.Module):
         self.to_qkv = nn.Conv2d(dim, dim * 3, 1)
         self.proj = nn.Conv2d(dim, dim, 1)
         self.query_chunking = False
+        self._math_memory = VaeMathMemoryGuard()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         identity = x
@@ -147,7 +154,7 @@ class QwenImageAttentionBlock2D(nn.Module):
         qkv = qkv.reshape(batch_size, 1, channels * 3, -1)
         qkv = qkv.permute(0, 1, 3, 2).contiguous()
         q, k, v = qkv.chunk(3, dim=-1)
-        x = _vae_sdpa(q, k, v, query_chunking=self.query_chunking)
+        x = _vae_sdpa(q, k, v, query_chunking=self.query_chunking, memory_guard=self._math_memory)
         x = x.squeeze(1).permute(0, 2, 1).reshape(batch_size, channels, height, width)
         x = self.proj(x)
         return x + identity

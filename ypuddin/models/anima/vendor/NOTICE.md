@@ -116,6 +116,9 @@ and with sd-scripts / ComfyUI / diffusion-pipe LoRA key conventions.
    SDPA. The capability query's known missing-memory-efficient-backend warning is suppressed
    locally because that case uses the math fallback; other warnings and execution errors propagate.
    No parameters, checkpoint keys or main-model attention settings change.
+4. Large, growing HIP math attention workspaces can release unused allocator cache before
+   execution when free device memory is insufficient. Equal or smaller workspaces retain
+   normal cache reuse. The SDPA operation and explicit query-chunking setting are unchanged.
 
 ## Not vendored
 

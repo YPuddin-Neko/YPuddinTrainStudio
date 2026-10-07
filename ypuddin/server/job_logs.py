@@ -82,6 +82,7 @@ _NATIVE_CRASH = re.compile(
     r"|(?:[^\n]+:\s+line \d+:\s+|(?:\[\d+\][+-]?\s+)?)(?:\d+\s+)Segmentation fault\b)",
     re.IGNORECASE,
 )
+_HYLOG_DIRECTORY_WARNING = re.compile(_RANK + r"\s*Could not open /var/log/hylog/\.\s*")
 
 MAX_READ = 512 * 1024
 SUPERVISOR_SOURCE = "ypuddin.server.supervisor"
@@ -308,6 +309,12 @@ def _parse_plain_lines(lines: list[str], *, now: datetime) -> list[dict[str, Any
                 "kind": "record", "ts": None, "level": "error", "source": None, "msg": line,
                 # Python fatal errors print a thread dump after the header; keep it attached.
                 **({} if re.match(_RANK + r"\s*Fatal Python error:", line, re.IGNORECASE) else {"standalone": True}),
+            })
+            continue
+        if _HYLOG_DIRECTORY_WARNING.fullmatch(line):
+            out.append({
+                "kind": "record", "ts": None, "level": "warn", "source": None,
+                "msg": line, "standalone": True,
             })
             continue
         if _TRACEBACK.match(line):

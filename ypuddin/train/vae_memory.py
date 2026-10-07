@@ -412,6 +412,7 @@ class EncodeMonitor:
                     _precision(self.latent),
                     _tiling(self.latent, caching=self.caching),
                 )
+            retries_before = self._allocation_retries()
             latents = encode(pixels)
             self.calls += 1
             self.images += len(pixels)
@@ -421,9 +422,24 @@ class EncodeMonitor:
                     self.device = torch.device("cuda", torch.cuda.current_device())
                 free, total = torch.cuda.mem_get_info(self.device)
                 self.device_used, self.device_total = max(self.device_used, total - free), total
+                retries_after = self._allocation_retries()
+                if retries_before is not None and retries_after is not None and retries_after > retries_before:
+                    log.debug(
+                        "VAE encode completed on %s after %d allocator retries: image %dx%d, batch %d",
+                        self.device, retries_after - retries_before, pixels.shape[-1], pixels.shape[-2],
+                        len(pixels),
+                    )
             return latents
 
         return counted
+
+    def _allocation_retries(self) -> int | None:
+        if not self.cuda or not torch.cuda.is_initialized():
+            return None
+        if self.device.index is None:
+            self.device = torch.device("cuda", torch.cuda.current_device())
+        retries = torch.cuda.memory_stats(self.device).get("num_alloc_retries")
+        return retries if type(retries) is int and retries >= 0 else None
 
     def finish(self) -> None:
         if not self.calls:
