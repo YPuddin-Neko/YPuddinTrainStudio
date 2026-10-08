@@ -6,6 +6,7 @@ import StudioSelect from '../../components/StudioSelect';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
 import { modelAssetUnsupportedReason, trainingFamilyOptions } from '../../utils/trainingFamilies';
+import SetupTtsModels from './SetupTtsModels';
 
 const AttentionSetup = React.lazy(() => import('../../components/EnvironmentManagerPanel').then(module => ({ default: module.EnvironmentManagerPanel })));
 
@@ -86,6 +87,17 @@ function latestModelTasks(tasks: DownloadTask[]) {
   return latest;
 }
 export function ModelsStep({ onContinueChange }: { onContinueChange?: (ready: boolean) => void } = {}) {
+  const text = useWorkspaceText();
+  const [type, setType] = React.useState('image');
+  const currentType = React.useRef(type);
+  const imageContinue = React.useCallback((ready: boolean) => { if (currentType.current === 'image') onContinueChange?.(ready); }, [onContinueChange]);
+  const ttsContinue = React.useCallback((ready: boolean) => { if (currentType.current === 'tts') onContinueChange?.(ready); }, [onContinueChange]);
+  return <><label className="setup-model-type">{text('训练类型', 'Training type')}<StudioSelect aria-label={text('训练类型', 'Training type')} value={type}
+    options={[{ value: 'image', label: text('图像', 'Image') }, { value: 'tts', label: text('语音', 'Speech') }]}
+    onValueChange={value => { currentType.current = value; onContinueChange?.(false); setType(value); }}/></label>
+    {type === 'tts' ? <SetupTtsModels onContinueChange={ttsContinue}/> : <ImageModelsStep onContinueChange={imageContinue}/>}</>;
+}
+function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: boolean) => void }) {
   const text = useWorkspaceText();
   const families = useResource<import('../../api/types').FamilyInfo[]>('/families');
   const [snapshot, setSnapshot] = React.useState<ModelSnapshot | null>(null);
@@ -218,6 +230,6 @@ export function RuntimeStep() {
     <dl className="setup-runtime-grid">{[[text('部署环境', 'Deployment'), profileName], ['Python', runtime.python], ['PyTorch', runtime.torch || text('未安装', 'Not installed')], [text('计算后端', 'Compute backend'), backendName]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
     <div className="setup-gpus">{runtime.gpus?.length ? runtime.gpus.map((gpu, index) => <div key={gpu.device ?? index}><span className="setup-gpu-index">{index + 1}</span><span><strong>{gpu.name}</strong><small>{gpu.device || `GPU ${index}`}{gpu.mem_total_mb ? ` · ${(gpu.mem_total_mb / 1024).toFixed(0)} GiB` : ''}</small></span>{gpuAvailable(gpu) ? <Check size={17} aria-label={text('设备可用', 'Device available')}/> : <small>{text('当前环境不可用', 'Unavailable in this environment')}</small>}</div>) : <p className="setup-note">{text('未检测到可用 GPU。', 'No available GPU detected.')}</p>}</div>
     <React.Suspense fallback={<div className="setup-resource-loading"><Loader2 size={16} className="animate-spin"/></div>}><AttentionSetup mode="onboarding-attention"/></React.Suspense>
-    <p className="setup-note">{text('完成后即可创建项目，添加训练图片。', 'Create a project and add your training images to get started.')}</p>
+    <p className="setup-note">{text('完成后即可创建项目，添加训练数据。', 'Create a project and add your training data to get started.')}</p>
     {error && <ResourceState error={error} retry={reload}/>}</>;
 }

@@ -2,7 +2,8 @@ import React from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Activity, AudioLines, Box, ChevronLeft, ChevronRight, Download, ExternalLink, Loader2, PackageOpen, Play, RefreshCw } from 'lucide-react';
-import { ttsApi, ttsResourceUrl, type TtsAudio, type TtsCheckpoint, type TtsSampleJob } from '../../api/tts';
+import { ttsApi, ttsResourceUrl, type TtsCheckpoint, type TtsSampleJob } from '../../api/tts';
+import AudioPlayer from '../../components/AudioPlayer';
 import Switch from '../../components/Switch';
 import OverflowStrip from '../../components/OverflowStrip';
 import { SlidingIndicator } from '../../components/motion';
@@ -25,27 +26,6 @@ type CheckpointKind = 'paired' | 'lora' | 'mixed';
 export type TrainingRecords = { content: React.ReactNode; selector: React.ReactNode; projectId: string; total?: number; loading: boolean; refresh: () => void };
 const activeSample = (item: TtsSampleJob) => ['queued', 'scheduled', 'running', 'cancelling'].includes(item.job.status);
 
-function AudioPlayer({ audio, autoPlay, playRequest }: { audio: TtsAudio; autoPlay: boolean; playRequest: number }) {
-  const text = useWorkspaceText();
-  const element = React.useRef<HTMLAudioElement>(null);
-  const [error, setError] = React.useState<'load' | 'play' | null>(null);
-  const url = ttsResourceUrl(audio.url)!;
-  React.useEffect(() => {
-    const current = element.current;
-    if (current && current.getAttribute('src') !== url) current.setAttribute('src', url);
-    return () => { current?.pause(); current?.removeAttribute('src'); current?.load(); };
-  }, [url]);
-  React.useEffect(() => {
-    let cancelled = false;
-    if (autoPlay) {
-      setError(null);
-      void element.current?.play()?.catch(failure => { if (!cancelled && !(failure instanceof DOMException && failure.name === 'AbortError')) setError(current => current === 'load' ? current : 'play'); });
-    }
-    return () => { cancelled = true; };
-  }, [autoPlay, url, playRequest]);
-  return <div className="tts-result-player"><strong>{audio.filename}</strong><audio ref={element} controls preload="none" src={url} onPlay={() => setError(null)} onError={() => setError('load')} aria-label={text(`试听 ${audio.filename}`, `Listen to ${audio.filename}`)}/>{error && <p role="alert" className="tts-result-error">{error === 'load' ? text('音频无法读取，请刷新结果后重试。', 'Audio could not be read. Refresh the results and try again.') : text('播放未能开始，请点击播放器重试。', 'Playback could not start. Try the audio player again.')}</p>}</div>;
-}
-
 export function SampleRecords({ items, single = false }: { items: TtsSampleJob[]; single?: boolean }) {
   const text = useWorkspaceText();
   const [selection, setSelection] = React.useState<string | null>(null);
@@ -54,7 +34,10 @@ export function SampleRecords({ items, single = false }: { items: TtsSampleJob[]
   const selected = available.find(item => item.audio?.id === selection) || available[0];
   const value = (number: number | null | undefined) => number == null ? text('未知', 'Unknown') : number.toLocaleString();
   return <div className="tts-sample-records">
-    {selected?.audio && <AudioPlayer key={`${selected.audio.id}:${selected.audio.url}`} audio={selected.audio} autoPlay={selection === selected.audio.id} playRequest={playRequest}/>}
+    {selected?.audio && <div className="tts-result-player"><strong>{selected.audio.filename}</strong><AudioPlayer key={`${selected.audio.id}:${selected.audio.url}`}
+      src={ttsResourceUrl(selected.audio.url)!} label={text(`试听 ${selected.audio.filename}`, `Listen to ${selected.audio.filename}`)} autoPlay={selection === selected.audio.id} playRequest={playRequest}
+      loadError={text('音频无法读取，请刷新结果后重试。', 'Audio could not be read. Refresh the results and try again.')}
+      playError={text('播放未能开始，请点击播放器重试。', 'Playback could not start. Try the audio player again.')}/></div>}
     <div className="tts-sample-list">{items.map(item => {
       const gsv = !!(item.audio?.gpt_sovits || item.request.gpt_sovits);
       const options = item.audio ? item.audio.gpt_sovits : item.request.gpt_sovits;

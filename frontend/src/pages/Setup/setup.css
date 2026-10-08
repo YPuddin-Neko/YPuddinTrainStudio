@@ -56,6 +56,16 @@
 .setup-key-field .ui-link { display:inline-flex; margin-top:9px; font-size:11px; }
 .setup-model-selects { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
 .setup-model-selects label { font-size:12px; display:grid; gap:8px; }
+.setup-model-type { font-size:12px; display:grid; gap:8px; margin-bottom:16px; }
+.setup-tts-model { align-items:flex-start; }
+.setup-tts-description { flex:1; min-width:0; }
+.setup-tts-description .ui-link { display:inline-flex; align-items:center; gap:3px; }
+.setup-tts-description .setup-error { margin:8px 0 0; }
+.setup-tts-actions { flex-shrink:0; display:flex; align-items:center; min-height:30px; }
+.setup-tts-transfer { color:var(--studio-dim); font-size:11px; line-height:1.65; margin:8px 0 0; }
+.setup-tts-path { display:block; max-width:100%; color:var(--studio-dim); font-size:11px; overflow-wrap:anywhere; margin-top:6px; }
+.setup-tts-progress { margin-top:9px; }
+.setup-tts-other h3 { margin:20px 0 0; font-size:12px; font-weight:500; }
 .setup-model-list { margin:20px 0; }
 .setup-model-row { display:flex; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--studio-line); font-size:12px; }
 .setup-model-row input { accent-color:var(--studio-accent); width:16px; height:16px; flex-shrink:0; }

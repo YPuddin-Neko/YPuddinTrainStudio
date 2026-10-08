@@ -7,6 +7,7 @@ import { ttsPresetsApi, type TtsPreset, type TtsPresetDocument } from '../../api
 import { ApiError } from '../../api/types';
 import Dialog from '../../components/Dialog';
 import StudioSelect from '../../components/StudioSelect';
+import ParameterModeToggle from '../../components/ParameterModeToggle';
 import PageLocation from '../../components/PageLocation';
 import { LoadingNote } from '../../components/Loading';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -39,6 +40,7 @@ export default function TtsPresets({ engine }: { engine: TtsEngine }) {
   const [busy, setBusy] = React.useState(false), pendingRequest = React.useRef(false), mounted = React.useRef(true);
   const [error, setError] = React.useState(''), [notice, setNotice] = React.useState('');
   const [search, setSearch] = React.useState('');
+  const [advanced, setAdvanced] = React.useState(false);
   const [descriptionOpen, setDescriptionOpen] = React.useState(false);
   const descriptionInput = React.useRef<HTMLInputElement>(null);
   const [pending, setPending] = React.useState<(() => void) | null>(null);
@@ -184,8 +186,8 @@ export default function TtsPresets({ engine }: { engine: TtsEngine }) {
       {unavailable && ![list, defaults, schema].some(query => query.isError) && <LoadingNote label={text('正在读取预设…', 'Loading presets…')}/>}
     </div>
     {draft && schema.data && <div className="presets-editor">
-      <div className="presets-form-toolbar"><label className="presets-field-search"><Search size={16}/><input type="search" aria-label={text('搜索预设参数', 'Search preset parameters')} placeholder={text('搜索参数名称或关键字…', 'Search parameters…')} value={search} onChange={event => setSearch(event.target.value)}/>{search && <button type="button" className="ui-btn ui-btn-quiet ui-btn-icon" aria-label={text('清空预设参数搜索', 'Clear preset parameter search')} onClick={() => setSearch('')}><X size={15}/></button>}</label></div>
-      <TtsPresetConfigEditor key={`${draft.id || 'new'}:${draft.revision}`} ref={editor} value={draft.config} schema={schema.data} readOnly={busy || !!conflict} search={search} onSearch={setSearch} onChange={config => { setDraft({ ...draft, config }); setNotice(''); }}/>
+      <div className="presets-form-toolbar"><label className="presets-field-search"><Search size={16}/><input type="search" aria-label={text('搜索预设参数', 'Search preset parameters')} placeholder={text('搜索参数名称或关键字…', 'Search parameters…')} value={search} onChange={event => setSearch(event.target.value)}/>{search && <button type="button" className="ui-btn ui-btn-quiet ui-btn-icon" aria-label={text('清空预设参数搜索', 'Clear preset parameter search')} onClick={() => setSearch('')}><X size={15}/></button>}</label><ParameterModeToggle advanced={advanced} onChange={setAdvanced}/></div>
+      <TtsPresetConfigEditor identity={draft.id || 'new'} revision={draft.revision} advanced={advanced} onAdvancedChange={setAdvanced} ref={editor} value={draft.config} schema={schema.data} readOnly={busy || !!conflict} search={search} onSearch={setSearch} onChange={config => { setDraft({ ...draft, config }); setNotice(''); }}/>
     </div>}
     {(pending || blocker.state === 'blocked') && !conflict && <Dialog title={text('保存预设修改？', 'Save preset changes?')} closeDisabled={busy} onClose={cancelLeave}><p>{text('当前预设尚未保存。可以先保存，或放弃这些修改。', 'This preset has unsaved changes. Save them or discard the draft.')}</p>{error && <p role="alert" className="studio-error">{error}</p>}<footer className="presets-confirm-actions"><button type="button" className="ui-btn" disabled={busy} onClick={cancelLeave}>{text('继续编辑', 'Keep editing')}</button><button type="button" className="ui-btn" disabled={busy} onClick={proceed}>{text('放弃修改', 'Discard changes')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={busy} onClick={() => void save().then(ok => { if (ok) proceed(); })}>{text('保存并继续', 'Save and continue')}</button></footer></Dialog>}
     {conflict && <Dialog title={text('预设已被更新', 'Preset changed')} onClose={() => setConflict(null)}><p>{text('本地修改仍保留。合并会保留你修改的字段，并载入服务器其他字段的最新值。', 'Your changes are retained. Merging keeps your edited fields and loads the latest server values for other fields.')}</p><footer className="presets-confirm-actions"><button type="button" className="ui-btn" onClick={() => open(conflict)}>{text('使用服务器预设', 'Use server preset')}</button><button type="button" className="ui-btn ui-btn-primary" onClick={merge}>{text('合并我的修改', 'Merge my changes')}</button></footer></Dialog>}

@@ -33,6 +33,7 @@ const GptSovitsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function
   const [saving, setSaving] = React.useState(false);
   const pending = React.useRef(false), mounted = React.useRef(true);
   const [search, setSearch] = React.useState('');
+  const [advanced, setAdvanced] = React.useState(false);
   const updateSearch = (value: string) => { setSearch(value); if (value.trim()) setClosed(new Set()); };
   const [closed, setClosed] = React.useState<Set<string>>(new Set());
   const [problems, setProblems] = React.useState<FieldProblem[]>([]);
@@ -71,7 +72,7 @@ const GptSovitsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function
     return (dirty || pending.current) && !bypassNavigation.current && workspacePath(currentLocation) !== workspacePath(nextLocation);
   });
   const reveal = (issues: FieldProblem[]) => {
-    setSearch(''); setProblems(issues);
+    setSearch(''); setAdvanced(true); setProblems(issues);
     setClosed(previous => new Set([...previous].filter(id => !issues.some(issue => issue.field === id)
       && !orderedGroups.find(group => group.id === id)?.fields.some(field => issues.some(issue => issue.field === field)))));
     requestAnimationFrame(() => {
@@ -148,13 +149,13 @@ const GptSovitsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function
   };
   return <>
     <form id={formId} ref={form} className="tts-version-editor" onSubmit={event => { event.preventDefault(); void save(); }} aria-busy={saving}>
-      <TtsParameterToolbar model={`GPT-SoVITS · ${String(draft.variant)}`} search={search} onSearch={updateSearch} parameterActions={parameterActions} status={saving ? text('正在保存…', 'Saving…') : dirty ? text('有未保存修改', 'Unsaved changes') : text('参数已保存', 'Parameters saved')} actions={<><button type="submit" form={formId} className={`ui-btn${toolbarActions ? '' : ' ui-btn-primary'}`} disabled={readOnly || saving || !dirty || !!conflict || schemaUnavailable}>{saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} {text('保存参数', 'Save parameters')}</button>{toolbarActions}</>}/>
+      <TtsParameterToolbar model={`GPT-SoVITS · ${String(draft.variant)}`} search={search} onSearch={updateSearch} advanced={advanced} onAdvancedChange={setAdvanced} parameterActions={parameterActions} status={saving ? text('正在保存…', 'Saving…') : dirty ? text('有未保存修改', 'Unsaved changes') : text('参数已保存', 'Parameters saved')} actions={<><button type="submit" form={formId} className={`ui-btn${toolbarActions ? '' : ' ui-btn-primary'}`} disabled={readOnly || saving || !dirty || !!conflict || schemaUnavailable}>{saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} {text('保存参数', 'Save parameters')}</button>{toolbarActions}</>}/>
       {schemaUnavailable && <p className="workspace-message error" role="alert">{text('参数定义与当前模型不匹配，请重新读取此版本。', 'The parameter definition does not match this model. Reload this version.')}</p>}
       {readOnly && <p className="workspace-message" role="status">{text('此版本当前只读。', 'This version is currently read-only.')}</p>}
       {error && <p className="workspace-message error" role="alert">{error}</p>}
       {notice && <p className="tts-editor-notice" role="status">{notice}</p>}
       {storageError && dirty && <p role="alert" className="workspace-message error">{text('浏览器无法保留草稿，请在离开前保存。', 'This browser cannot retain the draft. Save before leaving.')}</p>}
-      <TtsParameterForm id="tts-gsv" groups={presentationGroups} search={search} onSearch={updateSearch} closed={closed} onClosedChange={setClosed}/>
+      <TtsParameterForm id="tts-gsv" groups={presentationGroups} advanced={advanced} onAdvancedChange={setAdvanced} search={search} onSearch={updateSearch} closed={closed} onClosedChange={setClosed}/>
     </form>
     {conflict && <Dialog title={text('服务器参数已更新', 'Server parameters changed')} onClose={() => { setConflict(null); setError(text('草稿仍保留；再次保存前会重新检查版本。', 'Draft preserved. Saving will check the revision again.')); }}>
       <p>{remoteConfig ? text('本地草稿仍保留。合并会保留你修改过的字段，并采用服务器上其他字段的最新值；合并后需重新保存。', 'Your draft is preserved. Merging keeps fields you edited and uses the latest server values for other fields. Save after reviewing the merge.') : text('服务器的模型类型已改变，当前草稿仍保留。载入服务器参数后继续编辑。', 'The server model type changed. Your draft is retained. Load the server configuration to continue.')}</p>

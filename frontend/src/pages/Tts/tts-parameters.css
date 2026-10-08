@@ -1,0 +1,7 @@
+.tts-parameter-filters { display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 340px; }
+.tts-parameter-filters .parameter-mode-toggle { flex-shrink:0; }
+.tts-parameter-search-context { margin:0 0 12px; color:var(--studio-dim); font-size:12px; }
+@media(max-width:800px) {
+  .tts-parameter-filters { flex-basis:100%; gap:10px; flex-wrap:wrap; }
+  .tts-parameter-toolbar .tts-parameter-filters .config-search { flex:1 1 180px; }
+}

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AudioLines, ChevronLeft, ChevronRight, FileAudio, FolderOpen, ListChecks, Loader2, Play, RefreshCw, X } from 'lucide-react';
 import { ttsApi, ttsAudioUrl, type TtsEngine, type TtsIssue, type TtsSource, type TtsSourceChanged, type TtsSourceRow, type TtsSourcesResponse, type TtsSplit } from '../../api/tts';
 import Dialog from '../../components/Dialog';
+import AudioPlayer from '../../components/AudioPlayer';
 import ConfigHelp from '../../components/ConfigHelp';
 import OverflowStrip from '../../components/OverflowStrip';
 import { SlidingIndicator } from '../../components/motion';
@@ -46,23 +47,11 @@ function IssueList({ issues }: { issues: TtsIssue[] }) {
 
 function AudioPreview({ url, label, playRequest, onClose }: { url: string; label: string; playRequest: number; onClose: () => void }) {
   const text = useWorkspaceText();
-  const audio = React.useRef<HTMLAudioElement>(null);
-  const [failure, setFailure] = React.useState<'load' | 'play' | null>(null);
-  React.useEffect(() => {
-    const element = audio.current;
-    if (element && element.getAttribute('src') !== url) element.setAttribute('src', url);
-    return () => { element?.pause(); element?.removeAttribute('src'); element?.load(); };
-  }, [url]);
-  React.useEffect(() => {
-    let cancelled = false;
-    setFailure(null);
-    void audio.current?.play()?.catch(error => { if (!cancelled && !(error instanceof DOMException && error.name === 'AbortError')) setFailure(current => current === 'load' ? current : 'play'); });
-    return () => { cancelled = true; };
-  }, [url, playRequest]);
   return <div className="tts-source-player">
     <div><strong>{label}</strong><button type="button" className="ui-btn ui-btn-quiet ui-btn-icon" onClick={onClose} aria-label={text('关闭试听', 'Close audio preview')}><X size={14}/></button></div>
-    <audio ref={audio} controls preload="none" src={url} onPlay={() => setFailure(null)} onError={() => setFailure('load')} aria-label={label}/>
-    {failure && <p role="alert" className="tts-source-error">{failure === 'load' ? text('音频无法读取。请重新检查来源后再试听。', 'Audio could not be read. Check the source again before previewing.') : text('播放未能开始，请再次点击试听或播放器重试。', 'Playback could not start. Try the preview button or audio player again.')}</p>}
+    <AudioPlayer src={url} label={label} autoPlay playRequest={playRequest}
+      loadError={text('音频无法读取。请重新检查来源后再试听。', 'Audio could not be read. Check the source again before previewing.')}
+      playError={text('播放未能开始，请再次点击试听或播放器重试。', 'Playback could not start. Try the preview button or audio player again.')}/>
   </div>;
 }
 

@@ -5,6 +5,8 @@ import StudioSelect from '../../components/StudioSelect';
 import { PathInput } from '../../components/PathBrowser';
 import { gptSovitsFieldCopy as fieldCopy, isScientificField, type GptSovitsDraft as TtsDraft, type GptSovitsField as TtsField, type GptSovitsFieldProblem as FieldProblem, type GptSovitsFieldSchema } from './gptSovitsVersionFields';
 import type { TtsParameterGroup } from './TtsParameterForm';
+import { TtsDecimalInput, TtsScientificBadge } from './ttsParameterControls';
+import { ttsParameterHelp, gptSovitsAdvancedParameters } from './ttsParameterMetadata';
 
 type Props = {
   draft: TtsDraft; properties: Record<TtsField, GptSovitsFieldSchema>; problems: FieldProblem[];
@@ -31,7 +33,7 @@ export function gptSovitsParameterGroups({ draft, properties, problems, orderedG
     const pathField = property.type === 'string' && !property.enum;
     const id = `tts-gsv-${field}`, problem = problems.filter(issue => issue.field === field).map(issue => issue.message).join(' ');
     const describedBy = `${copy.hint ? `${id}-hint` : ''}${problem ? ` ${id}-error` : ''}`.trim() || undefined;
-    const help = [copy.help, bounds(field), isScientificField(field) ? text('支持科学计数法，例如 1e-4；数值必须大于 0。', 'Accepts scientific notation, e.g. 1e-4; the value must be greater than 0.') : ''].filter(Boolean).join('\n\n');
+    const help = ttsParameterHelp(copy.help, bounds(field), isScientificField(field) ? text('支持科学计数法，例如 1e-4；数值必须大于 0。', 'Accepts scientific notation, e.g. 1e-4; the value must be greater than 0.') : '');
     if (property.type === 'boolean') return <div key={field} data-field={field} className={`config-field config-field-boolean${problem ? ' config-field-invalid' : ''}`}>
       <fieldset className="config-field-control">
         <Switch id={id} aria-label={copy.label} aria-invalid={!!problem} aria-describedby={describedBy} disabled={readOnly || saving || schemaUnavailable} checked={value === true} onCheckedChange={checked => change(field, checked)}/>
@@ -40,11 +42,12 @@ export function gptSovitsParameterGroups({ draft, properties, problems, orderedG
       {problem && <p id={`${id}-error`} role="alert" className="config-field-error">{problem}</p>}
     </div>;
     return <div key={field} data-field={field} className={`config-field${pathField ? ' config-field-wide' : ''}${property.type === 'boolean' ? ' config-field-boolean' : ''}${problem ? ' config-field-invalid' : ''}`}>
-      <div className="config-field-heading"><label htmlFor={pathField ? undefined : id}>{copy.label}</label><span className="config-field-reference"><code tabIndex={0} className="config-field-key">{field}</code>{help && <ConfigHelp label={`${copy.label} · ${text('说明', 'Help')}`}>{help}</ConfigHelp>}</span></div>
+      <div className="config-field-heading"><label htmlFor={pathField ? undefined : id}>{copy.label}{isScientificField(field) && <TtsScientificBadge value={value} english={english}/>}</label><span className="config-field-reference"><code tabIndex={0} className="config-field-key">{field}</code>{help && <ConfigHelp label={`${copy.label} · ${text('说明', 'Help')}`}>{help}</ConfigHelp>}</span></div>
       <fieldset className={`config-field-control${pathField ? ' model-path-control' : ''}`} disabled={readOnly || saving || schemaUnavailable}>
         {property.enum ? <StudioSelect id={id} aria-label={copy.label} aria-invalid={!!problem} aria-describedby={describedBy} value={String(value)} options={property.enum.map(option => ({ value: String(option), label: optionLabel(field, option) }))} onValueChange={next => change(field, next)}/>
             : pathField ? <PathInput ariaLabel={copy.label} value={String(value)} onChange={next => change(field, next)} directoryOnly={field === 'trainer_path' || field === 'model_path'}/>
-              : <input id={id} type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={String(value)} aria-invalid={!!problem} aria-describedby={describedBy} onChange={event => change(field, event.target.value)} onBlur={() => { if (isScientificField(field) && String(value).trim() && Number.isFinite(Number(value))) change(field, Number(value).toExponential()); }}/>}</fieldset>
+              : isScientificField(field) ? <TtsDecimalInput id={id} value={String(value)} aria-invalid={!!problem} aria-describedby={describedBy} onValueChange={next => change(field, next)}/>
+              : <input id={id} type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={String(value)} aria-invalid={!!problem} aria-describedby={describedBy} onChange={event => change(field, event.target.value)}/>}</fieldset>
       <div className="config-field-footer">{copy.hint && <p id={`${id}-hint`} className="config-field-hint">{copy.hint}</p>}{problem && <p id={`${id}-error`} role="alert" className="config-field-error">{problem}</p>}</div>
     </div>;
   };
@@ -63,7 +66,7 @@ export function gptSovitsParameterGroups({ draft, properties, problems, orderedG
       notice: <>{inactive && <p className="config-field-hint" role="status">{text('此阶段的参数会保留，本次任务不执行该阶段。', 'These settings are retained; this stage will not run in the current job.')}</p>}{problems.filter(issue => issue.field === group.id).map(issue => <p key={issue.message} role="alert" className="config-field-error">{issue.message}</p>)}</>,
       sections: buckets.map(bucket => ({ label: bucket.label, fields: group.fields.filter(field => bucket.fields.includes(field)).map(field => {
         const copy = fieldCopy(field, english);
-        return { id: field, search: `${field} ${copy.label} ${copy.hint} ${copy.help}`, node: renderField(field), toggle: properties[field].type === 'boolean' };
+        return { id: field, advanced: gptSovitsAdvancedParameters.has(field), search: `${field} ${copy.label} ${copy.hint} ${copy.help}`, node: renderField(field), toggle: properties[field].type === 'boolean' };
       }) })).filter(section => section.fields.length),
     };
   });

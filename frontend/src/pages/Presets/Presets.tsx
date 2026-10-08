@@ -27,6 +27,7 @@ import PageLocation from '../../components/PageLocation';
 import PresetImportDialog, { type ImportedPreset } from './PresetImportDialog';
 import PresetTypeNavigation from './PresetTypeNavigation';
 import TtsPresets from './TtsPresets';
+import { useEnterAnimation } from '../../utils/motion';
 import './tts-presets.css';
 
 interface Draft { name: string; description: string; config: Record<string, any>; originalName: string | null; builtin: boolean; }
@@ -49,6 +50,7 @@ function ImagePresets() {
   const families = useFamilies();
   const editorSchema = React.useMemo(() => schema.data ? workflowSchema(presetEditorSchema(schema.data)) : null, [schema.data]);
   const [draft, setDraft] = React.useState<Draft | null>(null);
+  const parameterContent = useEnterAnimation<HTMLDivElement>(draft ? `${draft.originalName || 'new'}:${draft.config.model?.family}` : null, { skipFirst: true });
   const inactiveReason = inactiveTrainingReason(draft?.config, english);
   const [saved, setSaved] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -248,7 +250,7 @@ function ImagePresets() {
       <ParameterSections rootRef={parameterScrollRef} tab={tab} onTabChange={tab => {setTab(tab);setSearch('');}} issues={issues} preset hasTrainingMode={!!editorSchema?.properties?.training} fullTraining={draft.config.training?.mode === 'full'} onRevealAdvanced={() => setAdvanced(true)}/>
       <div className="parameter-scroll-region" ref={parameterScrollRef}>
       {search && <p className="presets-search-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
-      {editorSchema && <div id="preset-parameters" className="presets-schema" role="region" aria-label={search ? text('预设参数搜索结果', 'Preset parameter search results') : text('预设参数内容', 'Preset parameter fields')}><SchemaForm key={revealVersion} preset readOnly={busy || !!inactiveReason} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced || !!search} search={search} onClearSearch={clearSearch} family={family} families={families.data} errors={issues.map(issue => ({ loc: issue.path, msg: issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message }))}/></div>}
+      {editorSchema && <div ref={parameterContent} id="preset-parameters" className="presets-schema" role="region" aria-label={search ? text('预设参数搜索结果', 'Preset parameter search results') : text('预设参数内容', 'Preset parameter fields')}><SchemaForm key={revealVersion} preset readOnly={busy || !!inactiveReason} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced || !!search} search={search} onClearSearch={clearSearch} family={family} families={families.data} errors={issues.map(issue => ({ loc: issue.path, msg: issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message }))}/></div>}
       </div>
       </div>
     </div>}
