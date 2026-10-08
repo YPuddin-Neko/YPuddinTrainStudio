@@ -16,7 +16,16 @@ from pathlib import Path
 
 from ..events import Events
 from .config import parse_config
-from .core import asset_paths, audio_info, file_digest, manifest_rows, safe_checkpoint
+from .core import (
+    asset_paths,
+    audio_info,
+    file_digest,
+    manifest_rows,
+    require_text_assets,
+    safe_checkpoint,
+    text_asset_files,
+    text_asset_roots,
+)
 
 log = logging.getLogger("ypuddin.tts")
 
@@ -87,11 +96,16 @@ def workspace(config, target):
         destination = target / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
-    g2pw = upstream / "GPT_SoVITS/text/G2PWModel"
-    if g2pw.is_dir():
-        shutil.copytree(g2pw, target / "GPT_SoVITS/text/G2PWModel", dirs_exist_ok=True)
-    # Upstream downloads G2PW when this directory is absent; missing files must fail locally.
-    (target / "GPT_SoVITS/text/G2PWModel").mkdir(parents=True, exist_ok=True)
+    destinations = {"g2pw": "GPT_SoVITS/text/G2PWModel",
+                    "fast_langdetect": "GPT_SoVITS/pretrained_models/fast_langdetect"}
+    for key, root in text_asset_roots(config).items():
+        destination = target / destinations[key]
+        # G2PW downloads when its directory is absent; the language detector also needs its cache directory.
+        destination.mkdir(parents=True, exist_ok=True)
+        for name, source in text_asset_files(root).items():
+            copied = destination / name
+            copied.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, copied)
     vocoder = target / "GPT_SoVITS/pretrained_models/gsv-v5-pretrained/vocoder.pth"
     vocoder.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(asset_paths(config)["vocoder"], vocoder)
@@ -116,6 +130,7 @@ def stage_environment(config, work, prepared):
 
 def prepare_data(config, work, prepared, events):
     rows = manifest_rows(config.train_manifest)
+    require_text_assets(config, {row["language"] for row in rows})
     prepared.mkdir()
     audio_dir = prepared / "audio"
     audio_dir.mkdir()
@@ -324,12 +339,32 @@ def train(request):
             "stages": {stage: {key: value[key] for key in ("epoch", "global_step")} for stage, value in outcomes.items()}}
 
 
+def offline_language_detection(work):
+    infer = sys.modules.get("fast_langdetect.infer")
+    if infer is None:
+        return
+    downloader = getattr(infer, "ModelDownloader", None)
+    if downloader is None or not hasattr(downloader, "download") or not hasattr(infer, "_LOCAL_SMALL_MODEL_PATH"):
+        raise ValueError("fast_langdetect 版本缺少本地模型加载接口。")
+
+    def missing_local_model(url, save_path, proxy=None):
+        raise FileNotFoundError(f"语言识别模型不存在，请在模型管理中重新准备：{save_path}")
+
+    downloader.download = staticmethod(missing_local_model)
+    small = Path(work) / "GPT_SoVITS/pretrained_models/fast_langdetect/lid.176.ftz"
+    if small.is_file():
+        infer._LOCAL_SMALL_MODEL_PATH = small
+
+
 def sample(request):
     import numpy as np
     import soundfile as sf
     import torch
 
     config = parse_config(request["config"])
+    options = request["sample"]
+    require_text_assets(config, [options["gpt_sovits"][key] for key in ("text_language", "reference_language")],
+                        inference=True)
     work = workspace(config, Path(request["run_dir"]) / "upstream")
     os.chdir(work)
     for folder in (work / "GPT_SoVITS", work / "GPT_SoVITS/BigVGAN", work):
@@ -337,7 +372,7 @@ def sample(request):
     os.environ["version"] = config.variant
     from TTS_infer_pack.TTS import TTS, TTS_Config
 
-    options = request["sample"]
+    offline_language_detection(work)
     bundle = safe_checkpoint(options["source_output_dir"], options["checkpoint"])
     metadata = json.loads((bundle / "checkpoint.json").read_text())
     if metadata["variant"] != config.variant:

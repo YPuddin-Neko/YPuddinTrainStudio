@@ -756,6 +756,7 @@ class ProjectVersion(_Out):
     display_family: str | None = None
     project_type: Literal["image", "tts"] = "image"
     engine: Literal["voxcpm1.5", "gpt-sovits-v5"] | None = None
+    variant: Literal["v5dev", "v5turbo"] | None = None
     audio_stats: AudioStats | None = None
 
 

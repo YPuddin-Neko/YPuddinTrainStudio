@@ -72,6 +72,7 @@ def version_row(c: Any, row: dict) -> dict:
     if project is None:
         raise NotFound("project not found", code="project.not_found")
     is_tts = project["project_type"] == "tts"
+    engine = version_engine(c, pid, vid) if is_tts else None
     audio_stats = None
     if is_tts:
         audio_stats = c.tts_sources.audio_stats(pid, vid)
@@ -85,7 +86,8 @@ def version_row(c: Any, row: dict) -> dict:
         "archived": bool(row["archived"]),
         "busy": bool(row["busy"]),
         "project_type": project["project_type"],
-        "engine": version_engine(c, pid, vid) if is_tts else None,
+        "engine": engine,
+        "variant": row.get("tts_variant") if engine == "gpt-sovits-v5" else None,
         "audio_stats": audio_stats,
         "family": None if is_tts else version_family(c, row),
         "display_family": None if is_tts else row.get("display_family"),
@@ -220,13 +222,20 @@ class VersionManager:
         copy_config: bool = True,
         *,
         family: str | None = None,
+        engine: str | None = None,
+        variant: str | None = None,
+        variant_provided: bool = False,
     ) -> dict:
         c = self.c
         project = c.db.fetchone("SELECT project_type FROM projects WHERE id=?", (pid,))
         if project and project["project_type"] == "tts":
             from .tts_versions import create_version
 
-            return create_version(self, pid, name, note, source_id, data_mode, copy_config, family=family)
+            return create_version(self, pid, name, note, source_id, data_mode, copy_config,
+                                  family=family, engine=engine, variant=variant, variant_provided=variant_provided)
+
+        if engine is not None or variant is not None or variant_provided:
+            raise ApiError("图像版本不能设置语音模型类型。", code="project.type_mismatch", status=409)
 
         from .routes_work import get_project_config
 

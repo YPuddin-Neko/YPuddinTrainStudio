@@ -1,11 +1,11 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { GitBranch, Plus, Settings2, GitCompare, FolderOpen, Loader2, Copy, AlertCircle } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { FamilyInfo } from '../../api/types';
-import { ttsApi } from '../../api/tts';
+import { ttsApi, type TtsConfigResponse, type TtsEngine } from '../../api/tts';
 import { useFamilies } from '../../api/hooks/useFamilies';
 import { inactiveTrainingReason, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -65,6 +65,17 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
   const [showArchived, setShowArchived] = React.useState(false);
   const [compareTo, setCompareTo] = React.useState('');
   const [comparison, setComparison] = React.useState<ReturnType<typeof configDifferences> | null>(null);
+  const [engineConfig, setEngineConfig] = React.useState<TtsConfigResponse | null>(null);
+  const [nextEngine, setNextEngine] = React.useState<TtsEngine>('voxcpm1.5');
+  const [nextVariant, setNextVariant] = React.useState<'v5dev' | 'v5turbo'>('v5dev');
+  const [createEngine, setCreateEngine] = React.useState<TtsEngine | ''>('');
+  const [createVariant, setCreateVariant] = React.useState<'v5dev' | 'v5turbo' | ''>('');
+  const [engineConflict, setEngineConflict] = React.useState(false);
+  const capabilities = useQuery({ queryKey: ['tts-capabilities'], queryFn: ({ signal }) => ttsApi.capabilities(signal), enabled: speech && (dialog === 'edit' || dialog === 'create') });
+  const engineOptions = (capabilities.data?.engines || []).filter(item => item.id === 'voxcpm1.5' || item.id === 'gpt-sovits-v5').map(item => ({ value: item.id, label: ttsEngineLabel(item.id) }));
+  const engineChanged = !!engineConfig && (nextEngine !== engineConfig.config.engine || nextEngine === 'gpt-sovits-v5' && engineConfig.config.engine === 'gpt-sovits-v5' && nextVariant !== engineConfig.config.variant);
+  const engineUnavailable = !engineOptions.some(item => item.value === nextEngine);
+  const engineWriteBlocked = engineChanged && (engineUnavailable || !!current?.busy || current?.status !== 'ready');
   const archivedActivations = React.useRef(new Set<string>());
   const supported = !!project.active_version_id || !!versionId;
   const selectedId = versionId || project.active_version_id || undefined;
@@ -76,9 +87,15 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
   }, [sidebarOnly,busy,ownerArchived,versionId,current?.status,current?.archived,current?.busy,project.id,project.active_version_id,queryClient]);
   const readyVersions = versions.filter(item => item.status === 'ready');
   const sourceFamily = versions.find(item => item.id === source)?.family;
+  const sourceVersion = versions.find(item => item.id === source);
+  const createTargetEngine = createEngine || sourceVersion?.engine || current?.engine || project.active_engine || 'voxcpm1.5';
+  const createTargetVariant = createVariant || (sourceVersion?.engine === createTargetEngine ? sourceVersion.variant : null) || 'v5dev';
+  const changedSourceEngine = speech && !!sourceVersion?.engine && createTargetEngine !== sourceVersion.engine;
+  const changedSourceVariant = speech && !changedSourceEngine && createTargetEngine === 'gpt-sovits-v5' && !!sourceVersion?.variant && createTargetVariant !== sourceVersion.variant;
+  const createEngineUnavailable = speech && (!!createEngine || !source) && !engineOptions.some(item => item.value === createTargetEngine);
   const familyLabel = (value?: string | null) => value === 'flux' ? `FLUX.1 · ${text('已停用', 'Retired')}` : trainingFamilyOptions(families, text('zh', 'en') === 'en', value || undefined).find(item => item.value === value)?.label || value || text('沿用配置', 'From configuration');
   const familyOptions = trainingFamilyOptions(families, text('zh', 'en') === 'en', dialog === 'edit' ? family : sourceFamily || family);
-  const incompatibleFamily = !!sourceFamily && !!family && sourceFamily !== family;
+  const incompatibleFamily = speech ? changedSourceEngine : !!sourceFamily && !!family && sourceFamily !== family;
   const hasUncopyableAudio = (item?: ProjectVersion) => speech && !!item && (!item.audio_stats || [item.audio_stats.train, item.audio_stats.validation].some(split => split && !['missing', 'valid'].includes(split.state)));
   const audioCopyUnavailable = hasUncopyableAudio(versions.find(item => item.id === source));
   const copySources = readyVersions.filter(item => !item.archived && !('busy' in item && item.busy));
@@ -103,14 +120,26 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
       setNote(kind === 'edit' ? current?.note || '' : '');
       const origin = copySources.find(item => item.id === current?.id) || copySources[0];
       setSource(origin?.id || ''); setFamily(kind === 'edit' ? current?.display_family ?? current?.family ?? '' : origin?.family || ''); setMode(hasUncopyableAudio(origin) ? 'empty' : 'copy');
+      setCreateEngine(''); setCreateVariant('');
       setCompareTo(readyVersions.find(item => item.id !== selectedId)?.id || ''); setComparison(null);
+      setEngineConfig(null); setEngineConflict(false);
+      if (speech && kind === 'edit' && current) {
+        try {
+          const saved = await ttsApi.versionConfig(project.id, current.id);
+          setEngineConfig(saved); setNextEngine(saved.config.engine);
+          setNextVariant(saved.config.engine === 'gpt-sovits-v5' ? saved.config.variant : 'v5dev');
+        } catch (failure) { setError(formatApiError(failure)); }
+      }
       setDialog(kind);
     } catch (error) { setError(formatApiError(error)); }
     finally { setBusy(false); }
   };
   const save = async (event: React.FormEvent) => {
     event.preventDefault(); if (!name.trim() || busy || ownerArchived) return;
+    if (speech && dialog === 'edit' && (engineConflict || engineWriteBlocked)) return;
+    if (dialog === 'create' && createEngineUnavailable) return;
     setBusy(true); setError('');
+    let changedModel = false;
     try {
       if (dialog === 'create') {
         if (source && !copySources.some(item => item.id === source)) throw new Error(text('来源版本已不可复制，请重新选择。', 'The source version is no longer available to copy. Choose another source.'));
@@ -122,14 +151,33 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
           const retiredConfig = inactiveTrainingReason(sourceConfig, text('zh', 'en') === 'en');
           if (retiredConfig) throw new Error(retiredConfig);
         }
-        const next = await apiClient.post<ProjectVersion>(`/projects/${project.id}/versions`, { name: name.trim(), note: note.trim(), source_version_id: source || null, data_mode: source ? mode : 'empty', copy_config: !!source, ...(!speech && family ? {family} : {}) }, { silent: true });
+        const next = await apiClient.post<ProjectVersion>(`/projects/${project.id}/versions`, { name: name.trim(), note: note.trim(), source_version_id: source || null, data_mode: source ? mode : 'empty', copy_config: !!source, ...(!speech && family ? {family} : {}), ...(speech && (createEngine || !source) ? { engine: createTargetEngine } : {}), ...(speech && createTargetEngine === 'gpt-sovits-v5' && (createVariant || !source || changedSourceEngine) ? { variant: createTargetVariant } : {}) }, { silent: true });
         await refresh(); setDialog(null); navigate(projectUrl(project.id, next.id));
       } else if (current && !current.archived) {
+        if (speech && engineConfig && engineChanged) {
+          const saved = await ttsApi.changeEngine(project.id, current.id, { expected_revision: engineConfig.revision, engine: nextEngine, ...(nextEngine === 'gpt-sovits-v5' ? { variant: nextVariant } : {}) });
+          changedModel = true; setEngineConfig(saved);
+          queryClient.setQueryData(['tts-version-config', project.id, current.id], saved);
+          await Promise.all([queryClient.invalidateQueries({ queryKey: ['tts-sources', project.id, current.id] }), refresh(), queryClient.invalidateQueries({ queryKey: ['project', project.id] })]);
+        }
         const updated = await apiClient.patch<ProjectVersion>(`/projects/${project.id}/versions/${current.id}`, { name: name.trim(), note: note.trim(), ...(!speech && family !== (current.display_family ?? current.family ?? '') ? { display_family: family || null } : {}) }, { silent: true });
         queryClient.setQueryData<ProjectVersion[]>(['project-versions', project.id], previous => previous?.map(item => item.id === updated.id ? updated : item));
         await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ['project', project.id] })]); setDialog(null);
       }
-    } catch (error) { setError(formatApiError(error)); }
+    } catch (error) {
+      if (speech && error && typeof error === 'object' && 'code' in error && error.code === 'tts.config_conflict') setEngineConflict(true);
+      setError(`${changedModel ? text('模型类型已更新，但版本信息尚未保存。', 'Model type was updated, but version details have not been saved. ') : ''}${formatApiError(error)}`);
+    }
+    finally { setBusy(false); }
+  };
+  const reloadEngine = async () => {
+    if (!current || busy) return;
+    setBusy(true); setError('');
+    try {
+      const saved = await ttsApi.versionConfig(project.id, current.id);
+      setEngineConfig(saved); setEngineConflict(false);
+      if (!engineConfig) { setNextEngine(saved.config.engine); setNextVariant(saved.config.engine === 'gpt-sovits-v5' ? saved.config.variant : 'v5dev'); }
+    } catch (failure) { setError(formatApiError(failure)); }
     finally { setBusy(false); }
   };
   const archive = async () => {
@@ -177,7 +225,7 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
     return states[summary.state];
   };
   const engine = current?.engine || project.active_engine;
-  const engineLabel = ttsEngineLabel(engine);
+  const engineLabel = `${ttsEngineLabel(engine)}${speech && current?.variant ? ` · ${current.variant}` : ''}`;
   const projectControls = <section className="project-sidebar" aria-label={text('当前项目工作区', 'Current project workspace')}>
     <Link className="project-sidebar-identity" to={projectUrl(project.id, selectedId, 'overview')} title={project.note || project.name}><strong title={project.name}>{project.name}</strong><small title={project.id}>{project.id}</small></Link>
     {supported && <>
@@ -208,12 +256,24 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
       {ownerArchived && (dialog === 'create' || dialog === 'edit') && <p role="status" className="version-copy-note">{ownerArchivedReason}</p>}
       {(dialog === 'create' || dialog === 'edit') && <form onSubmit={save} className="version-form"><label>{text('版本名称', 'Version name')}<input value={name} onChange={event => setName(event.target.value)} maxLength={120} required disabled={busy || ownerArchived || dialog === 'edit' && !!current?.archived}/></label><label>{text('实验说明', 'Experiment notes')}<textarea value={note} onChange={event => setNote(event.target.value)} placeholder={speech ? text('例如：调整录音数据，学习率设为 1e-4', 'For example: update recordings, learning rate 1e-4') : text('例如：仅训练服装区域，学习率调整为 0.0002', 'For example: train clothing only, learning rate 0.0002')} disabled={busy || ownerArchived || dialog === 'edit' && !!current?.archived}/></label>
         {dialog === 'edit' && !speech && <label>{text('模型类型', 'Model type')}<StudioSelect aria-label={text('模型类型', 'Model type')} value={family} onValueChange={setFamily} disabled={busy || !!current?.archived} options={familyOptions}/></label>}
-        {dialog === 'create' && <><label>{text('创建来源', 'Create from')}<StudioSelect aria-label={text('创建来源', 'Create from')} value={source} onValueChange={value => { setSource(value);setFamily(versions.find(item => item.id === value)?.family || ''); if (hasUncopyableAudio(versions.find(item => item.id === value))) setMode('empty'); }} disabled={busy || ownerArchived} options={[{value:'',label:text('默认配置 · 空白版本', 'Default configuration · blank version')},...copySources.map(item => ({value:item.id,label:item.name}))]}/></label>
+        {dialog === 'edit' && speech && <>
+          <label>{text('模型类型', 'Model type')}<StudioSelect aria-label={text('模型类型', 'Model type')} value={engineConfig ? nextEngine : current?.engine || ''} onValueChange={value => setNextEngine(value as TtsEngine)} disabled={busy || ownerArchived || !!current?.archived || !!current?.busy || current?.status !== 'ready' || !engineConfig || !engineOptions.length} options={engineOptions}/></label>
+          {engineConfig && nextEngine === 'gpt-sovits-v5' && <label>{text('模型变体', 'Model variant')}<StudioSelect aria-label={text('模型变体', 'Model variant')} value={nextVariant} onValueChange={value => setNextVariant(value as 'v5dev' | 'v5turbo')} disabled={busy || ownerArchived || !!current?.archived || !!current?.busy || current?.status !== 'ready'} options={[{ value: 'v5dev', label: 'v5dev' }, { value: 'v5turbo', label: 'v5turbo' }]}/></label>}
+          {engineChanged && <p className="version-family-note">{nextEngine !== engineConfig?.config.engine ? text('更换模型类型会重建训练参数并清空环境与模型路径。音频文件、数据登记和已有训练记录保留，清单需要重新检查。', 'Changing model type resets training parameters, environment paths and model paths. Audio files, registered sources and existing jobs are preserved. Recheck the manifests afterwards.') : text('更换模型变体会清空基础模型与预训练权重路径，保留训练参数和数据。', 'Changing the variant clears base-model and pretrained-weight paths. Training parameters and data are preserved.')}</p>}
+          {(!engineConfig || engineConflict) && <p className="version-family-note" role="status">{engineConflict ? text('版本参数已变化。请重新读取后核对所选模型类型，再保存。', 'Version parameters changed. Reload them, review the selected model type, then save.') : text('读取版本参数后可更换模型类型。', 'Load version parameters to change model type.')} <button type="button" className="ui-link" disabled={busy} onClick={() => void reloadEngine()}>{text('重新读取参数', 'Reload parameters')}</button></p>}
+          {capabilities.error && <p className="version-family-note" role="status">{text('无法读取模型类型。', 'Could not load model types.')} <button type="button" className="ui-link" disabled={busy} onClick={() => void capabilities.refetch()}>{text('重试', 'Retry')}</button></p>}
+        </>}
+        {dialog === 'create' && <><label>{text('创建来源', 'Create from')}<StudioSelect aria-label={text('创建来源', 'Create from')} value={source} onValueChange={value => { setSource(value);setFamily(versions.find(item => item.id === value)?.family || ''); setCreateEngine(''); setCreateVariant(''); if (hasUncopyableAudio(versions.find(item => item.id === value))) setMode('empty'); }} disabled={busy || ownerArchived} options={[{value:'',label:text('默认配置 · 空白版本', 'Default configuration · blank version')},...copySources.map(item => ({value:item.id,label:item.name}))]}/></label>
+          {speech && <><label>{text('训练模型类型', 'Training model type')}<StudioSelect aria-label={text('训练模型类型', 'Training model type')} value={source ? createEngine : createTargetEngine} onValueChange={value => { setCreateEngine(value as TtsEngine | ''); setCreateVariant(''); }} disabled={busy || ownerArchived} options={[...(source ? [{ value: '', label: text(`沿用来源版本 · ${ttsEngineLabel(sourceVersion?.engine)}`, `Inherit source · ${ttsEngineLabel(sourceVersion?.engine)}`) }] : []), ...engineOptions]}/></label>
+            {createTargetEngine === 'gpt-sovits-v5' && <label>{text('模型变体', 'Model variant')}<StudioSelect aria-label={text('模型变体', 'Model variant')} value={sourceVersion?.engine === 'gpt-sovits-v5' && !changedSourceEngine ? createVariant : createTargetVariant} onValueChange={value => setCreateVariant(value as typeof createVariant)} disabled={busy || ownerArchived} options={[...(sourceVersion?.engine === 'gpt-sovits-v5' && !changedSourceEngine ? [{ value: '', label: text(`沿用来源版本 · ${sourceVersion.variant || 'v5dev'}`, `Inherit source · ${sourceVersion.variant || 'v5dev'}`) }] : []), { value: 'v5dev', label: 'v5dev' }, { value: 'v5turbo', label: 'v5turbo' }]}/></label>}
+            {(changedSourceEngine || changedSourceVariant || !source) && <p className="version-family-note">{changedSourceEngine ? text('新版本使用目标模型的默认训练参数，并清空环境与模型路径。复制数据后会按目标模型重新检查，不兼容时新版本会创建失败；也可选择重新准备数据。来源版本保持不变。', 'The new version uses target-model defaults with empty environment and model paths. Copied data is checked for the target model; incompatible data makes creation fail. You can start with empty data instead. The source version is preserved.') : changedSourceVariant ? text('新版本保留训练参数与环境，清空基础模型和预训练权重路径。', 'The new version keeps training parameters and environment paths, and clears base-model and pretrained-weight paths.') : text('使用所选模型的默认配置。', 'Uses the selected model’s defaults.')}</p>}
+            {capabilities.error && <p className="version-family-note" role="status">{text('模型类型列表暂时无法读取，仍可沿用来源版本配置。', 'Model types are unavailable. The source configuration can still be inherited.')} <button type="button" className="ui-link" disabled={busy} onClick={() => void capabilities.refetch()}>{text('重试', 'Retry')}</button></p>}
+          </>}
           {!speech && <><label>{text('训练模型类型', 'Training model type')}<StudioSelect aria-label={text('训练模型类型', 'Training model type')} value={family || (source ? '' : 'anima')} onValueChange={setFamily} disabled={busy} options={[...(source ? [{value:'',label:text(`沿用来源版本 · ${familyLabel(sourceFamily)}`, `Inherit source · ${familyLabel(sourceFamily)}`)}] : []),...familyOptions]}/></label>
           <p className="version-family-note">{incompatibleFamily ? text('更换模型类型会重置模型路径、恢复权重和训练参数。', 'Changing model type resets model paths, resume weights and training settings.') : text('使用所选模型的默认配置。', 'Uses the selected model’s defaults.')}</p>
           {familiesError && <p className="version-family-note" role="status">{text('模型类型列表暂时无法读取，仍可沿用来源版本配置。', 'Model types are unavailable. The source configuration can still be inherited.')}</p>}</>}
           {source && <fieldset><legend>{text('继承内容', 'Include')}</legend><label><input type="radio" name="version-mode" checked={mode === 'copy'} onChange={() => setMode('copy')} disabled={busy || ownerArchived || audioCopyUnavailable}/><div><strong>{incompatibleFamily ? text('复制数据，使用新模型配置', 'Copy data with new model defaults') : text('配置和完整数据副本', 'Configuration and a complete data copy')}</strong><p>{speech ? audioCopyUnavailable ? text('已登记的音频清单须全部检查通过；也可仅复制配置。', 'All registered audio manifests must pass their checks. Configuration-only copying is also available.') : text('复制清单、音频及参考音频，后续修改互不影响。', 'Copy manifests, audio and reference audio into an independent version.') : text('复制图片、标签、遮罩和验证集，后续修改互不影响。', 'Independent images, captions, masks and validation data. Later edits do not affect the source.')}</p></div></label><label><input type="radio" name="version-mode" checked={mode === 'empty'} onChange={() => setMode('empty')} disabled={busy || ownerArchived}/><div><strong>{incompatibleFamily ? text('使用新模型配置，重新准备数据', 'New model defaults and new data') : text('仅配置，重新准备数据', 'Configuration only, prepare new data')}</strong><p>{incompatibleFamily ? text('按所选模型类型重建默认参数，清空数据来源。', 'Initialize defaults for the selected model and start with no data sources.') : text('保留实验参数，清空数据来源。', 'Keep experiment parameters and start with no data sources.')}</p></div></label></fieldset>}<p className="version-copy-note"><Copy size={14}/>{speech ? text('训练记录、检查点和试听音频不会复制到新版本。', 'Jobs, checkpoints and preview audio stay in the original version.') : text('训练记录、采样图和产物不会复制到新版本。', 'Jobs, generated samples and outputs stay in the original version.')}</p></>}
-        <footer>{dialog === 'edit' && <button type="button" className="ui-btn" onClick={() => void archive()} disabled={busy || ownerArchived || versions.filter(item => !item.archived && item.status === 'ready').length < 2 && !current?.archived}>{current?.archived ? text('恢复版本', 'Restore version') : text('归档版本', 'Archive version')}</button>}<span/><button type="button" className="ui-btn" disabled={busy} onClick={() => setDialog(null)}>{text('取消', 'Cancel')}</button><button type="submit" className="ui-btn ui-btn-primary" disabled={busy || ownerArchived || !name.trim() || dialog === 'edit' && !!current?.archived}>{busy && <Loader2 size={14} className="animate-spin"/>}{dialog === 'create' ? text('创建版本', 'Create version') : text('保存', 'Save')}</button></footer>
+        <footer>{dialog === 'edit' && <button type="button" className="ui-btn" onClick={() => void archive()} disabled={busy || ownerArchived || versions.filter(item => !item.archived && item.status === 'ready').length < 2 && !current?.archived}>{current?.archived ? text('恢复版本', 'Restore version') : text('归档版本', 'Archive version')}</button>}<span/><button type="button" className="ui-btn" disabled={busy} onClick={() => setDialog(null)}>{text('取消', 'Cancel')}</button><button type="submit" className="ui-btn ui-btn-primary" disabled={busy || ownerArchived || !name.trim() || dialog === 'create' && createEngineUnavailable || dialog === 'edit' && (!!current?.archived || speech && (engineConflict || engineWriteBlocked))}>{busy && <Loader2 size={14} className="animate-spin"/>}{dialog === 'create' ? text('创建版本', 'Create version') : text('保存', 'Save')}</button></footer>
       </form>}
       {dialog === 'paths' && current && <div className="version-paths"><p>{text('重命名不改变项目 ID 或文件目录。', 'Renaming does not change the project ID or folders.')}</p><dl>{[
         {key:'root',label:text('本版本目录', 'Version folder'),path:current.paths.root},
@@ -224,8 +284,8 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
         {key:'jobs',label:text('任务记录', 'Job records'),path:current.paths.jobs},
         {key:'config',label:text('参数草稿', 'Configuration draft'),path:current.paths.config},
         {key:'cache',label:text('编码缓存', 'Encoding cache'),path:speech ? null : current.paths.cache},
-      ].filter(item=>item.path).map(item=><div key={item.key}><dt>{item.label}</dt><dd>{item.path}</dd></div>)}</dl><div className="version-tree">{text('每次训练按任务 ID 分开保存：','Each training job has its own ID subfolder:')}<br/>{current.paths.output ? 'output' : 'runs'}/{'<job_id>'}/ · {speech ? text('LoRA 权重', 'LoRA weights') : text('模型产物（LoRA 与模型权重）','model outputs (LoRA and model weights)')}<br/>jobs/{'<job_id>'}/ · {speech ? text('任务配置、日志和事件', 'job configuration, logs and events') : text('训练配置、日志和事件；恢复点在其中的 resume/','configuration, logs and events; resume points in its resume/')}<br/>samples/{'<job_id>'}/ · {speech ? text('试听音频', 'preview audio') : text('采样图片','sample images')}</div></div>}
-      {dialog === 'compare' && current && <div className="version-comparison"><div className="comparison-controls"><label>{text('对比版本', 'Compare from')}<StudioSelect aria-label={text('对比版本', 'Compare from')} value={compareTo} disabled={busy} onValueChange={value => { setCompareTo(value);setComparison(null); }} options={readyVersions.filter(item => item.id !== current.id).map(item => ({value:item.id,label:item.name}))}/></label><span>→ {current.name}</span><button type="button" className="ui-btn" disabled={busy || !compareTo} onClick={() => void compare()}>{busy ? <><Loader2 size={14} className="animate-spin" aria-hidden="true"/>{text('读取中…', 'Loading…')}</> : text('查看差异', 'Show differences')}</button></div><div className="version-comparison-stats">{[versions.find(item => item.id === compareTo),current].filter(Boolean).map(item => <div key={item!.id}><strong>{item!.name}</strong><span>{speech ? audioSummary(item!) : `${item!.stats.images} ${text('张图片', 'images')}`} · {item!.stats.jobs} {text('次训练', 'jobs')} · {item!.stats.artifacts} {text('个产物', 'outputs')}</span></div>)}</div>{comparison && (comparison.length ? <div className="comparison-table-wrap"><table><thead><tr><th>{text('参数', 'Parameter')}</th><th>{versions.find(item => item.id === compareTo)?.name}</th><th>{current.name}</th></tr></thead><tbody>{comparison.map(item => <tr key={item.path}><th>{item.path}</th><td>{formatValue(item.before)}</td><td>{formatValue(item.after)}</td></tr>)}</tbody></table></div> : <p>{text('两个版本的参数相同。', 'The configurations are identical.')}</p>)}</div>}
+      ].filter(item=>item.path).map(item=><div key={item.key}><dt>{item.label}</dt><dd>{item.path}</dd></div>)}</dl><div className="version-tree">{text('每次训练按任务 ID 分开保存：','Each training job has its own ID subfolder:')}<br/>{current.paths.output ? 'output' : 'runs'}/{'<job_id>'}/ · {text('模型产物（LoRA 与模型权重）','model outputs (LoRA and model weights)')}<br/>jobs/{'<job_id>'}/ · {speech ? text('任务配置、日志和事件', 'job configuration, logs and events') : text('训练配置、日志和事件；恢复点在其中的 resume/','configuration, logs and events; resume points in its resume/')}<br/>samples/{'<job_id>'}/ · {speech ? text('试听音频', 'preview audio') : text('采样图片','sample images')}</div></div>}
+      {dialog === 'compare' && current && <div className="version-comparison"><div className="comparison-controls"><label>{text('对比版本', 'Compare from')}<StudioSelect aria-label={text('对比版本', 'Compare from')} value={compareTo} disabled={busy} onValueChange={value => { setCompareTo(value);setComparison(null); }} options={readyVersions.filter(item => item.id !== current.id).map(item => ({value:item.id,label:item.name}))}/></label><span>→ {current.name}</span><button type="button" className="ui-btn" disabled={busy || !compareTo} onClick={() => void compare()}>{busy ? <><Loader2 size={14} className="animate-spin" aria-hidden="true"/>{text('读取中…', 'Loading…')}</> : text('查看差异', 'Show differences')}</button></div><div className="version-comparison-stats">{[versions.find(item => item.id === compareTo),current].filter(Boolean).map(item => <div key={item!.id}><strong>{item!.name}</strong><span>{speech ? audioSummary(item!) : `${item!.stats.images} ${text('张图片', 'images')}`} · {item!.stats.jobs} {speech ? text('个任务', 'jobs') : text('次训练', 'jobs')}{!speech && <> · {item!.stats.artifacts} {text('个产物', 'outputs')}</>}</span></div>)}</div>{comparison && (comparison.length ? <div className="comparison-table-wrap"><table><thead><tr><th>{text('参数', 'Parameter')}</th><th>{versions.find(item => item.id === compareTo)?.name}</th><th>{current.name}</th></tr></thead><tbody>{comparison.map(item => <tr key={item.path}><th>{item.path}</th><td>{formatValue(item.before)}</td><td>{formatValue(item.after)}</td></tr>)}</tbody></table></div> : <p>{text('两个版本的参数相同。', 'The configurations are identical.')}</p>)}</div>}
     </Dialog>}
   </>;
 }

@@ -488,6 +488,12 @@
     "entity": "Team / account"
   },
   "phase": {
+    "preflight": "Checking training environment",
+    "prepare_text": "Preparing transcripts",
+    "prepare_hubert": "Extracting audio features",
+    "prepare_semantic": "Extracting semantic features",
+    "train_sovits": "Training SoVITS",
+    "train_gpt": "Training GPT",
     "starting": "Starting",
     "checking_communication": "Checking multi-GPU communication",
     "loading": "Loading weights",

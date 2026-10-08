@@ -11,6 +11,7 @@ export type TtsEngine = TtsScopedConfig['engine'];
 export type TtsGptSovitsDatasetReport = components['schemas']['TtsGptSovitsDatasetReport'];
 export type TtsGptSovitsEnvironmentReport = components['schemas']['TtsGptSovitsEnvironmentReport'];
 export type TtsConfigSaveBody = components['schemas']['TtsConfigSaveBody'];
+export type TtsEngineChangeBody = components['schemas']['TtsEngineChangeBody'];
 export type TtsIssue = components['schemas']['TtsIssue'];
 export type TtsCapabilities = components['schemas']['TtsCapabilities'];
 export type TtsEngineCapability = components['schemas']['TtsEngineCapability'];
@@ -84,6 +85,7 @@ export const ttsApi = {
   trainSchema: (signal?: AbortSignal, engine: TtsEngine = 'voxcpm1.5') => apiClient.get<TtsTrainSchema>('/tts/schema/train', { params: { engine }, signal, silent: true }),
   versionConfig: (projectId: string, versionId: string, signal?: AbortSignal) => apiClient.get<TtsConfigResponse>(ttsVersionConfigUrl(projectId, versionId), { signal, silent: true }),
   saveVersionConfig: (projectId: string, versionId: string, body: TtsConfigSaveBody) => apiClient.put<TtsConfigResponse>(ttsVersionConfigUrl(projectId, versionId), body, { silent: true }),
+  changeEngine: (projectId: string, versionId: string, body: TtsEngineChangeBody) => apiClient.put<TtsConfigResponse>(`${ttsVersionUrl(projectId, versionId)}/engine`, body, { silent: true }),
   sources: (pid: string, vid: string, signal?: AbortSignal) => apiClient.get<TtsSourcesResponse>(`${ttsVersionUrl(pid, vid)}/sources`, { signal, silent: true }),
   putSource: (pid: string, vid: string, split: TtsSplit, body: TtsSourcePutBody) => apiClient.put<TtsSourcesResponse>(`${ttsVersionUrl(pid, vid)}/sources/${split}`, body, { silent: true }),
   removeSource: (pid: string, vid: string, split: TtsSplit, expectedDataRevision: number) => apiClient.delete<TtsSourcesResponse>(`${ttsVersionUrl(pid, vid)}/sources/${split}`, { params: { expected_data_revision: expectedDataRevision }, silent: true }),

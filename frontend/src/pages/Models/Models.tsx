@@ -16,6 +16,7 @@ import Switch from '../../components/Switch';
 import ProgressBar from '../../components/ProgressBar';
 import { SlidingIndicator } from '../../components/motion';
 import { LoadingNote } from '../../components/Loading';
+import TtsModels from './TtsModels';
 
 type ModelDownload = BaseDownload & {bytes_per_second?: number; eta_seconds?: number | null; progress_at?: number | null};
 type Provider = 'huggingface' | 'modelscope';
@@ -35,6 +36,15 @@ const primary = 'ui-btn ui-btn-primary';
 const secondary = 'ui-btn';
 
 export default function Models({ embedded = false }: { embedded?: boolean }) {
+  const text = useWorkspaceText(), location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const speech = params.get('type') === 'tts';
+  const typeSelector = <StudioSelect aria-label={text('模型类型', 'Model type')} value={speech ? 'tts' : 'image'} options={[{ value: 'image', label: text('图像模型', 'Image models') }, { value: 'tts', label: text('语音模型', 'Speech models') }]}
+    onValueChange={type => { const next = new URLSearchParams(params); next.set('type', type); setParams(next, { replace: true, state: location.state }); }}/>;
+  return speech ? <TtsModels embedded={embedded} typeSelector={typeSelector}/> : <ImageModels embedded={embedded} typeSelector={typeSelector}/>;
+}
+
+function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelector: React.ReactNode }) {
   const text = useWorkspaceText();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
@@ -205,7 +215,7 @@ export default function Models({ embedded = false }: { embedded?: boolean }) {
         {settings?.paths.models_dir && <div className="models-heading-path" title={settings.paths.models_dir}><span>{text('模型目录', 'Model directory')}</span><strong>{settings.paths.models_dir}</strong><Link className="ui-link" to="/settings/preferences?section=storage" replace state={location.state}>{text('更改', 'Change')}</Link></div>}
         <div className="model-actions"><Link to={settingsLink('credentials')} replace state={location.state} className={secondary}><KeyRound size={14}/>{text('访问密钥', 'Access keys')}</Link><button type="button" className={`${secondary} ui-btn-icon`} onClick={() => void refresh()} aria-label={text('刷新模型', 'Refresh models')} title={text('刷新模型', 'Refresh models')}><RefreshCw size={14}/></button></div>
       </div>
-      <div className="models-filters"><StudioSelect aria-label={text('模型系列', 'Model family')} value={family} disabled={familiesLoading || !!familiesError} options={trainingFamilyOptions(families)} onValueChange={family => updateParams({ family })}/>
+      <div className="models-filters">{typeSelector}<StudioSelect aria-label={text('模型系列', 'Model family')} value={family} disabled={familiesLoading || !!familiesError} options={trainingFamilyOptions(families)} onValueChange={family => updateParams({ family })}/>
         <div className="models-view-tabs ui-segmented" role="tablist" aria-label={text('模型管理视图', 'Model management views')}>{tabs.map(tab => <button key={tab.key} type="button" role="tab" aria-selected={view === tab.key} onClick={() => updateParams({ view: tab.key })}>{tab.label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div>
       </div>
     </div>

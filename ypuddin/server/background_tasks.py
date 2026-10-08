@@ -307,6 +307,37 @@ def model_download_source(downloads: Any, since: float) -> Callable[[], list[dic
     return tasks
 
 
+def tts_model_download_source(downloads: Any, since: float) -> Callable[[], list[dict[str, Any]]]:
+    """Complete speech model packages retain their own persistent download records."""
+
+    def tasks() -> list[dict[str, Any]]:
+        current, found = time.time(), []
+        for download in downloads.list():
+            row = download.model_dump()
+            active = row["status"] in ("queued", "downloading", "verifying")
+            task = {
+                "id": row["id"],
+                "kind": "model_download",
+                "subject": row["name"],
+                "state": "running" if active else row["status"],
+                "done": row["downloaded_bytes"],
+                "total": row["total_bytes"],
+                "unit": "bytes",
+                "rate": row["bytes_per_second"] if row["phase"] == "download" else None,
+                "detail": row["status"] if row["status"] in ("queued", "verifying") else None,
+                "link": "/settings/environment?tab=models&type=tts",
+                "cancellable": active,
+                "started_at": row["created_at"],
+                "finished_at": row["finished_at"],
+                "error": row["error"],
+            }
+            if active or _recent(task, since, current):
+                found.append(task)
+        return found
+
+    return tasks
+
+
 def vision_download_source(vision: Any, since: float) -> Callable[[], list[dict[str, Any]]]:
     """Tagging and mask detection model downloads (``VisionModels.tasks``) as task center work."""
     from .model_catalog import VISION_MODELS

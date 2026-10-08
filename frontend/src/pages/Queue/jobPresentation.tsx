@@ -30,7 +30,7 @@ export function JobProgressSummary({ job }: { job: Job }) {
   if (active && progress.total_steps) {
     const step = progress.step ?? 0;
     const eta = job.status === 'running' && progress.eta_s != null ? ` · ${text('剩余', 'left')} ${formatEta(progress.eta_s)}` : '';
-    return <><div className="queue-progress"><ProgressBar label={text('训练进度', 'Training progress')} value={step} max={progress.total_steps}/><span>{step} / {progress.total_steps} · {Math.floor(step / progress.total_steps * 100)}%{eta}</span></div>{preempted && <small className="queue-status-note">{preempted}</small>}</>;
+    return <><div className="queue-progress"><ProgressBar label={text('训练进度', 'Training progress')} value={step} max={progress.total_steps}/><span>{step} / {progress.total_steps} · {Math.floor(step / progress.total_steps * 100)}%{eta}</span></div>{isTtsJob(job) && progress.phase && <small className="queue-status-note">{t(`phase.${progress.phase}`, t('job.phaseInProgress'))}</small>}{preempted && <small className="queue-status-note">{preempted}</small>}</>;
   }
   if (active || job.status === 'queued') {
     const reason = preempted || (progress.wait_reason && progress.wait_reason !== DEVICE_WAIT ? progress.wait_reason : progress.phase ? t(`phase.${progress.phase}`, t('job.phaseInProgress')) : '');

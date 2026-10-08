@@ -7,7 +7,21 @@
 | VoxCPM 1.5 | LM、DiT、投影层的 LoRA | BF16 | 单声道 44100 Hz PCM WAV |
 | GPT-SoVITS v5 | GPT 全参微调、SoVITS LoRA，可单独或顺序执行 | GPT：FP16 混合精度或 FP32；SoVITS：FP16 或 FP32 | 单声道 32000、44100 或 48000 Hz PCM WAV |
 
-两种引擎都使用单张 NVIDIA CUDA GPU、独立 Python 环境、本地官方源码与本地模型。请提前准备依赖和权重，语音依赖不安装到图像训练环境中。当前不提供多卡、暂停恢复或手动保存；「重试」创建新任务，从该任务记录的初始权重重新执行。两种引擎的参数和检查点格式各自独立，切换版本引擎后须重新检查数据。
+两种引擎都使用单张 NVIDIA CUDA GPU、独立 Python 环境、本地官方源码与本地模型。模型可在训练器中下载，也可选择已有本地目录；语音依赖安装到独立环境中。当前不提供多卡、暂停恢复或手动保存；「重试」创建新任务，从该任务记录的初始权重重新执行。两种引擎的参数和检查点格式各自独立，切换版本引擎后须重新检查数据。
+
+## 下载模型
+
+在模型管理中选择 VoxCPM 1.5、GPT-SoVITS v5dev 或 v5turbo，下载完整模型包。下载使用设置中的模型目录、Hugging Face 凭据和代理；进度与取消也可在后台任务中心查看。网络文件全部接收后还会解压和校验，完成后才能选择到语音版本的配置草稿中，再保存配置。
+
+GPT-SoVITS 包包含所选变体的权重、GPT 权重、声码器、BERT 模型及词表、HuBERT、G2PW 和语言识别模型。不同变体共有的已下载文件可经校验后复制使用，减少再次联网下载。模型包使用固定官方版本及文件摘要；已有目标目录不会被覆盖。失败或取消后可重试，重试沿用原下载目录。修改模型目录设置不移动已下载的模型。
+
+模型包与运行环境分别准备。模型下载不会安装独立 Python、官方训练源码、CUDA 版 PyTorch 或 NLTK/OpenJTalk 环境资源；对应要求见下文。已有本地模型可以继续使用，无需再次下载。
+
+## 模型类型与参数预设
+
+版本设置中可以重新选择模型类型。切换 VoxCPM 与 GPT-SoVITS 时使用新引擎的默认参数，并清空原 Python、源码和模型路径；数据登记保留，需要按新引擎重新检查。GPT-SoVITS 同一引擎切换 dev/turbo 时保留训练参数、Python 和源码路径，清除旧模型绑定，重新选择对应变体的权重。已有训练和试听任务始终使用创建时保存的配置。
+
+TTS 参数预设按训练引擎管理，可以把当前参数另存为预设、载入到草稿、重命名、删除或导入导出 JSON。载入后检查并保存版本配置。预设只携带可复用训练参数，不包含本机环境和模型路径、数据来源或任务输出；GPT-SoVITS 的执行阶段属于预设，dev/turbo 变体由当前版本保留。不同引擎的预设不能互相载入。
 
 ## VoxCPM 1.5
 
@@ -24,7 +38,7 @@
    ```
 
    Windows 中将 Python 路径替换为独立环境的 `Scripts/python.exe`。不要在该源码目录里修改训练文件；版本或源码不符时，配置检查会说明原因。
-3. 下载完整的 [openbmb/VoxCPM1.5 模型](https://huggingface.co/openbmb/VoxCPM1.5)。模型目录需包含 `config.json`、词表相关文件、主模型权重和 AudioVAE 权重，例如 `model.safetensors`、`audiovae.safetensors`、`tokenizer.json`、`tokenizer_config.json`。也可使用该模型原有的 `pytorch_model.bin`、`audiovae.pth` 权重。
+3. 在训练器中下载并选择 VoxCPM 1.5 模型包。若使用已有的 [openbmb/VoxCPM1.5 模型](https://huggingface.co/openbmb/VoxCPM1.5)，模型目录需包含 `config.json`、词表相关文件、主模型权重和 AudioVAE 权重，例如 `model.safetensors`、`audiovae.safetensors`、`tokenizer.json`、`tokenizer_config.json`。也可使用该模型原有的 `pytorch_model.bin`、`audiovae.pth` 权重。
 4. 在语音版本的训练参数中填写独立环境的 Python、VoxCPM 源码目录和模型目录，使用服务器上的绝对路径。配置检查会通过这个 Python 检查依赖、所选显卡的 CUDA 与 BF16 能力、分词器和实际 LoRA 目标；任务取得 GPU 后会再次检查实际分配的显卡。更换显卡后重新检查。
 
 VoxCPM 1.0、VoxCPM 2、ONNX、GGUF 或其他量化推理导出不能作为这里的底模。VoxCPM 1.5 的 AudioVAE 采样率为 44100 Hz，模型配置和训练入口必须匹配。
@@ -94,7 +108,9 @@ VoxCPM 1.0、VoxCPM 2、ONNX、GGUF 或其他量化推理导出不能作为这�
 
 ### 准备运行环境与模型
 
-使用独立的 Python 3.10 或 3.11 环境，安装与显卡驱动匹配的 CUDA 版 PyTorch、对应 torchaudio 及固定官方源码的 `requirements.txt` 依赖，并准备 FFmpeg。环境安装参照 [固定版本的官方说明](https://github.com/RVC-Boss/GPT-SoVITS/blob/f652b1da5af29a6955f9c3911aa71b7daa6618bc/README.md) 和 [PyTorch 安装说明](https://pytorch.org/get-started/locally/)。此接入要求 CUDA；不会自动改用 CPU、MPS 或 DTK。
+使用独立的 Python 环境，安装与显卡驱动匹配的 CUDA 版 PyTorch、对应 torchaudio 及固定官方源码的依赖，并准备 FFmpeg。通用安装可使用 Python 3.10 或 3.11；Windows 的 Python 3.12 / CUDA 12.8 环境按 [固定上游的 Windows 安装清单](https://github.com/RVC-Boss/GPT-SoVITS/blob/f652b1da5af29a6955f9c3911aa71b7daa6618bc/requirements-py312-win-flash_attention/requirements_py312_win_cu128_overseas.txt) 使用 `torch==2.7.1+cu128` 与 `torchaudio==2.7.1+cu128`。环境安装参照 [固定版本的官方说明](https://github.com/RVC-Boss/GPT-SoVITS/blob/f652b1da5af29a6955f9c3911aa71b7daa6618bc/README.md) 和 [PyTorch 安装说明](https://pytorch.org/get-started/locally/)。此接入要求 CUDA；不会自动改用 CPU、MPS 或 DTK。
+
+Windows 的 GPT 阶段即使单卡也需要可用的 Gloo。PyTorch 能识别 CUDA 显卡，并不表示该构建能初始化 Gloo；出现 `unsupported gloo device` 时，请核对所选独立环境中的 PyTorch 版本与上述安装清单。
 
 使用官方 `cuda_graph_accel_v5` 分支的固定提交：
 
@@ -102,11 +118,14 @@ VoxCPM 1.0、VoxCPM 2、ONNX、GGUF 或其他量化推理导出不能作为这�
 git clone --branch cuda_graph_accel_v5 https://github.com/RVC-Boss/GPT-SoVITS.git /path/to/GPT-SoVITS
 git -C /path/to/GPT-SoVITS checkout f652b1da5af29a6955f9c3911aa71b7daa6618bc
 /path/to/gpt-sovits-venv/bin/python -m pip install -r /path/to/GPT-SoVITS/requirements.txt
+/path/to/gpt-sovits-venv/bin/python -m pip install 'resampy>=0.4.2,<0.5'
 ```
+
+试听重采样需要 `resampy`；固定上游的 Windows 安装清单已包含它，使用通用 `requirements.txt` 时须按上述命令补装。Windows 使用对应的安装清单替代通用依赖安装命令，并保留清单中的 PyTorch 版本。
 
 保留这个提交的已跟踪源码，不修改训练脚本或配置模板。填写 `trainer_path` 时指向 Git 仓库根目录；`python_path` 指向独立环境的 Python，Windows 对应 `Scripts/python.exe`。任务会在自己的目录中使用源码副本与预处理产物。
 
-`model_path` 指向 **`GPT_SoVITS/pretrained_models` 根目录**，不指向其中的 `gsv-v5-pretrained`。从 [官方模型仓库](https://huggingface.co/lj1995/GPT-SoVITS) 准备以下文件；v5 权重见 [gsv-v5-pretrained 目录](https://huggingface.co/lj1995/GPT-SoVITS/tree/main/gsv-v5-pretrained)。
+在训练器中下载所选 v5 变体的模型包，并把包目录选为 `model_path`。若使用原有官方目录，`model_path` 指向 **`GPT_SoVITS/pretrained_models` 根目录**，不指向其中的 `gsv-v5-pretrained`。模型根目录需要以下文件；主权重来自 [官方模型仓库](https://huggingface.co/lj1995/GPT-SoVITS)，v5 权重见 [gsv-v5-pretrained 目录](https://huggingface.co/lj1995/GPT-SoVITS/tree/main/gsv-v5-pretrained)。
 
 | 相对 `model_path` 的位置 | 用途 |
 | --- | --- |
@@ -116,7 +135,9 @@ git -C /path/to/GPT-SoVITS checkout f652b1da5af29a6955f9c3911aa71b7daa6618bc
 | `chinese-roberta-wwm-ext-large/` | BERT 模型目录，至少包含 `config.json`、`vocab.txt` 和 `pytorch_model.bin` 或 `model.safetensors`，并保留官方分词器文件。 |
 | `chinese-hubert-base/` | HuBERT 模型目录，包含 `config.json` 和 `pytorch_model.bin` 或 `model.safetensors`。 |
 
-中文数据另需把完整 [G2PW 模型包](https://huggingface.co/XXXXRT/GPT-SoVITS-Pretrained/resolve/main/G2PWModel.zip) 解压到源码目录的 `GPT_SoVITS/text/G2PWModel/`，包含 `g2pW.onnx`、`MONOPHONIC_CHARS.txt` 和 `POLYPHONIC_CHARS.txt`。缺少这些文件时须补齐模型包。
+训练器下载包中的 `G2PWModel/` 已包含中文需要的 `g2pW.onnx`、`MONOPHONIC_CHARS.txt`、`POLYPHONIC_CHARS.txt`、`bopomofo_to_pinyin_wo_tune_dict.json`、`char_bopomofo_dict.json` 及官方配置。训练器下载的完整模型包只使用包内配套资源；`G2PWModel/` 或 `fast_langdetect/` 整个目录缺失时也会报错，不从源码目录补用另一套资源。旧本地布局仍可把完整 [G2PW 模型包](https://huggingface.co/XXXXRT/GPT-SoVITS-Pretrained/resolve/main/G2PWModel.zip) 解压到源码目录的 `GPT_SoVITS/text/G2PWModel/`；若模型根目录已有 `G2PWModel/`，则使用该目录，缺件时不混用其他目录的文件。
+
+非纯英文试听还需要 `fast_langdetect/lid.176.bin` 与 `lid.176.ftz`，训练器下载包已包含。旧本地布局可以放在源码目录的 `GPT_SoVITS/pretrained_models/fast_langdetect/`。任务在独立工作目录中读取这些资源，缺件时会说明缺少的文件，不在试听进程中临时联网下载。
 
 英文与日文还依赖语言资源：按固定官方安装脚本，把 `nltk_data` 放在所选 Python 环境的 `sys.prefix` 下，把 OpenJTalk 字典放到该环境的 `pyopenjtalk` 包目录。仅安装 `requirements.txt` 不会完成这些字典的部署；启动任务前应一并准备好。
 

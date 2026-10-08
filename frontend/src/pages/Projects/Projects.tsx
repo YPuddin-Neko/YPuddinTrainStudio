@@ -123,7 +123,9 @@ export default function Projects() {
       ? { key: 'audio', label: text('训练音频', 'Training audio'), value: project.audio_stats?.train.clips_count, unit: text('段音频', 'clips') }
       : { key: 'images', label: text('训练图片', 'Training images'), value: project.image_count, unit: text('张图片', 'images') },
     { key: 'versions', label: text('版本', 'Versions'), value: project.version_count, unit: text('个版本', 'versions') },
-    { key: 'outputs', label: t('projects.artifacts'), value: project.stats?.artifacts, unit: text('个产物', 'outputs') },
+    project.project_type === 'tts'
+      ? { key: 'jobs', label: text('任务', 'Jobs'), value: project.stats?.jobs, unit: text('个任务', 'jobs') }
+      : { key: 'outputs', label: t('projects.artifacts'), value: project.stats?.artifacts, unit: text('个产物', 'outputs') },
   ];
   const training = projects.filter(project => !project.archived && ACTIVE.includes(project.latest_job?.status || '')).length;
   const archivedCount = projects.filter(project => project.archived).length;
@@ -172,14 +174,14 @@ export default function Projects() {
           {menu(project)}
         </article>)}</div>
         : <div className="projects-rows" role="list" aria-label={text('项目列表', 'Project list')}>
-          <div className="project-row-head" aria-hidden="true"><span/><span>{text('项目', 'Project')}</span><span>{text('分类与模型', 'Category & model')}</span><span>{text('最近训练', 'Latest training')}</span>{counts(pageProjects[0]).map((item, index) => <span key={item.key} className="project-row-number">{index === 0 && mixedDataTypes ? text('训练数据', 'Training data') : item.label}</span>)}<span>{text('更新', 'Updated')}</span><span/></div>
+          <div className="project-row-head" aria-hidden="true"><span/><span>{text('项目', 'Project')}</span><span>{text('分类与模型', 'Category & model')}</span><span>{text('最近训练', 'Latest training')}</span>{counts(pageProjects[0]).map((item, index) => <span key={item.key} className="project-row-number">{index === 0 && mixedDataTypes ? text('训练数据', 'Training data') : index === 2 && mixedDataTypes ? text('产物 / 任务', 'Outputs / jobs') : item.label}</span>)}<span>{text('更新', 'Updated')}</span><span/></div>
           {pageProjects.map(project => <article key={project.id} role="listitem" className="project-row" data-archived={project.archived || undefined} data-testid={`project-card-${project.id}`}>
             <Link to={open(project)} className="project-row-link" aria-label={text(`打开项目：${project.name}`, `Open project: ${project.name}`)}>
               <div className="project-row-thumb"><ProjectArtwork name={project.name} coverUrl={project.cover_url}/></div>
               <div className="project-row-name"><strong title={project.name}>{project.name}</strong>{project.archived ? <small>{t('projects.archived')}</small> : project.note?.trim() && <small title={project.note}>{project.note}</small>}</div>
               <div className="project-row-meta"><span className="project-category">{meta(project)[0]}</span><small title={meta(project).slice(1).join(' · ')}>{meta(project).slice(1).join(' · ')}</small></div>
               {activity(project)}
-              {counts(project).map(item => <span key={item.key} className="project-row-number" aria-label={`${item.label}: ${item.value ?? '—'}`}>{item.value ?? '—'}</span>)}
+              {counts(project).map(item => <span key={item.key} className="project-row-number" aria-label={`${item.label}: ${item.value ?? '—'}`} title={item.label}>{item.value ?? '—'}</span>)}
               {updated(project.updated_at)}
             </Link>
             {menu(project)}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import wave
 from pathlib import Path
@@ -65,6 +66,49 @@ def asset_paths(config):
     return assets
 
 
+def text_asset_roots(config):
+    config = parse_config(config)
+    models = Path(config.model_path).expanduser().resolve()
+    trainer = Path(config.trainer_path).expanduser().resolve()
+    marker = models / ".ypuddin-tts-package.json"
+    try:
+        info = marker.lstat()
+    except FileNotFoundError:
+        managed = False
+    else:
+        if not stat.S_ISREG(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+            raise ValueError(f"模型包标记必须是普通文件，不能包含文件重定向：{marker}")
+        managed = True
+    roots = {}
+    for key, name, legacy in (("g2pw", "G2PWModel", "GPT_SoVITS/text/G2PWModel"),
+                              ("fast_langdetect", "fast_langdetect", "GPT_SoVITS/pretrained_models/fast_langdetect")):
+        packaged = models / name
+        # Managed packages keep their resource roots even when a directory disappears.
+        root = packaged if managed or packaged.exists() or packaged.is_symlink() else trainer / legacy
+        if root.is_symlink() or root.resolve() != root:
+            raise ValueError(f"模型资源不能包含文件重定向：{root}")
+        if managed and not root.is_dir():
+            raise ValueError(f"模型包资源目录不存在或不可用：{root}")
+        if root.exists() and not root.is_dir():
+            raise ValueError(f"模型资源需要目录：{root}")
+        roots[key] = root
+    return roots
+
+
+def text_asset_files(root):
+    root = Path(root)
+    if root.is_symlink() or root.resolve() != root:
+        raise ValueError(f"模型资源不能包含文件重定向：{root}")
+    files = {}
+    if root.is_dir():
+        for entry in sorted(root.rglob("*")):
+            if entry.is_symlink() or entry.resolve() != entry:
+                raise ValueError(f"模型资源不能包含文件重定向：{entry}")
+            if entry.is_file():
+                files[str(entry.relative_to(root))] = entry
+    return files
+
+
 def model_identity(config):
     config = parse_config(config)
     paths = asset_paths(config)
@@ -79,25 +123,31 @@ def model_identity(config):
                     assets[f"{key}/{entry.relative_to(path)}"] = str(entry.resolve())
         else:
             assets[key] = str(path)
-    g2pw = Path(config.trainer_path) / "GPT_SoVITS/text/G2PWModel"
-    if g2pw.is_dir():
-        for entry in sorted(g2pw.rglob("*")):
-            if entry.is_file():
-                assets[f"g2pw/{entry.relative_to(g2pw)}"] = str(entry.resolve())
+    for key, root in text_asset_roots(config).items():
+        for name, entry in text_asset_files(root).items():
+            assets[f"{key}/{name}"] = str(entry)
     return {"engine": config.engine, "variant": config.variant, "directory": str(Path(config.model_path).resolve()),
             "trainer_path": str(Path(config.trainer_path).resolve()), "pretrained_gpt": config.pretrained_gpt,
             "pretrained_sovits": config.pretrained_sovits, "assets": assets}
 
 
-def require_text_assets(config, languages):
-    if not set(languages).intersection({"zh", "auto"}):
-        return
-    root = Path(config.trainer_path) / "GPT_SoVITS/text/G2PWModel"
-    required = [root / "POLYPHONIC_CHARS.txt", root / "MONOPHONIC_CHARS.txt"]
-    onnx = next((root / name for name in ("g2pW.onnx", "g2pw.onnx") if (root / name).is_file()), root / "g2pW.onnx")
-    for path in [onnx, *required]:
-        if not path.is_file() or not path.stat().st_size:
-            raise ValueError(f"中文或自动识别语言需要本地 G2PW 资源：{path}")
+def require_text_assets(config, languages, *, inference=False):
+    languages = set(languages)
+    roots = text_asset_roots(config)
+    if languages.intersection({"zh", "auto"}):
+        root = roots["g2pw"]
+        files = text_asset_files(root)
+        onnx = next((name for name in ("g2pW.onnx", "g2pw.onnx") if name in files), "g2pW.onnx")
+        for name in (onnx, "POLYPHONIC_CHARS.txt", "MONOPHONIC_CHARS.txt",
+                     "bopomofo_to_pinyin_wo_tune_dict.json", "char_bopomofo_dict.json"):
+            if name not in files or not files[name].stat().st_size:
+                raise ValueError(f"中文或自动识别语言需要本地 G2PW 资源：{root / name}")
+    if inference and languages.difference({"en"}):
+        root = roots["fast_langdetect"]
+        files = text_asset_files(root)
+        for name in ("lid.176.bin", "lid.176.ftz"):
+            if name not in files or not files[name].stat().st_size:
+                raise ValueError(f"此语言的试听需要本地语言识别模型：{root / name}")
 
 
 def validate_model_identity(frozen, model_path):

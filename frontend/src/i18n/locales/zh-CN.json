@@ -488,6 +488,12 @@
     "entity": "团队 / 账户"
   },
   "phase": {
+    "preflight": "检查训练环境",
+    "prepare_text": "准备转写文本",
+    "prepare_hubert": "提取音频特征",
+    "prepare_semantic": "提取语义特征",
+    "train_sovits": "训练 SoVITS",
+    "train_gpt": "训练 GPT",
     "starting": "启动中",
     "checking_communication": "正在检查多卡通信",
     "loading": "加载权重",

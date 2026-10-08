@@ -44,7 +44,8 @@ def sample_options(snapshot):
 
     variant = snapshot["tts"].get("variant", "v5dev")
     options["gpt_sovits"] = GptSovitsSampleOptions.model_validate(options.get("gpt_sovits", {})).resolved(variant).model_dump()
-    require_text_assets(parse_config(snapshot["tts"]), [options["gpt_sovits"][key] for key in ("text_language", "reference_language")])
+    require_text_assets(parse_config(snapshot["tts"]),
+                        [options["gpt_sovits"][key] for key in ("text_language", "reference_language")], inference=True)
     return options
 
 

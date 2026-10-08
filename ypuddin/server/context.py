@@ -66,6 +66,7 @@ class ServiceContext:
     upload_sessions: Any = field(default=None, init=False, repr=False)
     background_tasks: Any = field(default=None, init=False, repr=False)
     _active_imports: int = field(default=0, init=False, repr=False)
+    _active_tts_downloads: int = field(default=0, init=False, repr=False)
     _onboarding_completed: bool = field(default=False, init=False, repr=False)
 
     @contextmanager

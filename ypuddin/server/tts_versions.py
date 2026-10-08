@@ -9,7 +9,7 @@ import stat
 from pathlib import Path
 from typing import Any
 
-from ypuddin.tts.source_scan import file_identity, identity_changes
+from ypuddin.tts.source_scan import file_identity, identity_changes, scan_manifest
 from ypuddin.tts.version_config import TtsConfigEnvelope, default_config, write_envelope
 
 from . import tts_source_copy as data_copy
@@ -47,12 +47,21 @@ def _admit(c: Any, pid: str, source_id: str | None) -> dict:
 
 
 def create_version(manager: Any, pid: str, name: str, note: str, source_id: str | None,
-                   data_mode: str, copy_config: bool, *, family: str | None = None) -> dict:
+                   data_mode: str, copy_config: bool, *, family: str | None = None,
+                   engine: str | None = None, variant: str | None = None, variant_provided: bool = False) -> dict:
+    from .tts_engine import select_engine_config
     from .tts_projects import get_config, version_engine
     from .tts_references import reject_deleting_references
     from .versions import version_row
 
     c = manager.c
+
+    def check_variant(target_engine: str) -> None:
+        if (variant_provided or variant is not None) and target_engine == "voxcpm1.5":
+            message = "VoxCPM 不使用模型变体，请移除 variant 字段。"
+            raise ApiError(message, code="validation", status=422,
+                           details={"errors": [{"loc": ["body", "variant"], "msg": message, "type": "value_error"}]})
+
     with c.db.lock:
         source = _admit(c, pid, source_id)
         if family is not None:
@@ -60,6 +69,7 @@ def create_version(manager: Any, pid: str, name: str, note: str, source_id: str 
         if data_mode not in {"copy", "empty"} or not copy_config and data_mode != "empty":
             raise ApiError("copy_config=false requires data_mode=empty", code="version.invalid")
         source_id = source["id"]
+        check_variant(engine or version_engine(c, pid, source_id) or "voxcpm1.5")
         source_path = c.version_dir(pid, source_id)
     source_guard = data_copy.DirectoryGuard.capture(source_path, c.is_allowed)
     plan = data_copy.prepare(c, pid, source_id) if data_mode == "copy" else None
@@ -75,6 +85,11 @@ def create_version(manager: Any, pid: str, name: str, note: str, source_id: str 
         config = get_config(c, pid, source_id).config if copy_config else default_config(version_engine(c, pid, source_id) or "voxcpm1.5")
         if not copy_config and config.engine == "gpt-sovits-v5":
             config.variant = source.get("tts_variant") or "v5dev"
+        check_variant(engine or config.engine)
+        source_engine = config.engine
+        config = select_engine_config(config, engine or config.engine, variant)
+        if plan is not None and source_engine == "voxcpm1.5" and config.engine == "gpt-sovits-v5":
+            plan = {**plan, "rescan_engine": config.engine}
         envelope = TtsConfigEnvelope(revision=1, config=config)
         vid = new_id("v")
         number = c.db.fetchone("SELECT coalesce(max(number),0)+1 n FROM project_versions WHERE project_id=?", (pid,))["n"]
@@ -104,6 +119,26 @@ def create_version(manager: Any, pid: str, name: str, note: str, source_id: str 
 
 def _directory_identity(path: Path) -> tuple[int, int]:
     return data_copy._directory_key(path)
+
+
+def _target_copy_plan(c: Any, plan: dict | None) -> dict | None:
+    if not plan or not plan.get("rescan_engine"):
+        return plan
+    sources = {}
+    for split, item in plan["sources"].items():
+        source = item["source"]
+        scanned = scan_manifest(Path(source.path), source.id, split, allowed=c.is_allowed,
+                                engine=plan["rescan_engine"])
+        if scanned.summary.invalid_count or any(issue.severity == "error" for issue in scanned.issues):
+            raise ApiError("数据清单不符合目标语音模型的要求，请调整数据后再复制。",
+                           code="tts.source_not_ready", status=409)
+        expected = {value["path"]: (value["size"], value["sha256"]) for value in item["fingerprints"]}
+        actual = {value["path"]: (value["size"], value["sha256"]) for value in scanned.identities}
+        if actual != expected:
+            raise ApiError("录音或清单在复制期间发生变化，请重新检查后再复制。",
+                           code="tts.source_stale", status=409)
+        sources[split] = {**item, "rows": [value["normalized"] for value in scanned.rows]}
+    return {**plan, "sources": sources}
 
 
 def _remove_owned(path: Path | None, identity: tuple[int, int] | None, *, parent: data_copy.DirectoryGuard | None = None) -> None:
@@ -206,7 +241,7 @@ def _copy(c: Any, pid: str, vid: str, source_id: str, envelope: TtsConfigEnvelop
             c.bus.publish("version.changed", {"project_id": pid, "version_id": vid, "progress": dict(progress)})
 
         advance()
-        entries = data_copy.copy_data(c, plan, staging, final, advance)
+        entries = data_copy.copy_data(c, _target_copy_plan(c, plan), staging, final, advance)
         data_copy.recheck(c, pid, source_id, plan)
         if source_guard:
             source_guard.check(c.is_allowed)

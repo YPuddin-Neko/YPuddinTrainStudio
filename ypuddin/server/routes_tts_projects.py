@@ -10,6 +10,7 @@ from ypuddin.tts.version_config import TtsConfigResponse, TtsConfigSaveBody
 
 from .context import ServiceContext
 from .errors import ApiError
+from .tts_engine import TtsEngineChangeBody, change_engine
 from .tts_projects import get_config, save_config
 
 
@@ -90,3 +91,10 @@ def save_version_config(
     pid: str, vid: str, body: TtsConfigSaveBody, c: ServiceContext = Depends(ctx)
 ) -> TtsConfigResponse:
     return save_config(c, pid, vid, body)
+
+
+@router.put("/tts/projects/{pid}/versions/{vid}/engine", response_model=TtsConfigResponse, responses=ERRORS)
+def change_version_engine(
+    pid: str, vid: str, body: TtsEngineChangeBody, c: ServiceContext = Depends(ctx)
+) -> TtsConfigResponse:
+    return change_engine(c, pid, vid, body)

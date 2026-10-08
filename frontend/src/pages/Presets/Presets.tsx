@@ -25,15 +25,25 @@ import { workflowSchema } from '../../utils/parameterWorkflow';
 import { LoadingNote } from '../../components/Loading';
 import PageLocation from '../../components/PageLocation';
 import PresetImportDialog, { type ImportedPreset } from './PresetImportDialog';
+import PresetTypeNavigation from './PresetTypeNavigation';
+import TtsPresets from './TtsPresets';
+import './tts-presets.css';
 
 interface Draft { name: string; description: string; config: Record<string, any>; originalName: string | null; builtin: boolean; }
 const KEY = ['standalone-presets'];
 
 export default function Presets() {
+  const [params] = useSearchParams();
+  const engine = params.get('engine') === 'gpt-sovits-v5' ? 'gpt-sovits-v5' : 'voxcpm1.5';
+  return params.get('type') === 'tts' ? <TtsPresets key={engine} engine={engine}/> : <ImagePresets/>;
+}
+
+function ImagePresets() {
   const text = useWorkspaceText();
   const english = text('zh', 'en') === 'en';
   const queryClient = useQueryClient();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  const bypassTypeNavigation = React.useRef(false);
   const list = useQuery({ queryKey: KEY, queryFn: () => apiClient.get<Preset[]>('/presets', { silent: true }) });
   const schema = useQuery({ queryKey: ['training-schema'], queryFn: () => apiClient.get<any>('/schema/train', { silent: true }) });
   const families = useFamilies();
@@ -66,7 +76,8 @@ export default function Presets() {
     const currentBackground = (currentLocation.state as { backgroundLocation?: Location } | null)?.backgroundLocation;
     const returningFromSettings = currentLocation.pathname.startsWith('/settings') && currentBackground?.pathname === '/presets'
       && nextLocation.pathname === currentBackground.pathname && nextLocation.search === currentBackground.search && nextLocation.hash === currentBackground.hash;
-    return dirty && nextLocation.pathname !== currentLocation.pathname && !returningFromSettings && !(nextLocation.pathname.startsWith('/settings') && background?.pathname === '/presets');
+    const changingType = new URLSearchParams(nextLocation.search).get('type') === 'tts' && nextLocation.pathname === '/presets';
+    return dirty && !bypassTypeNavigation.current && (nextLocation.pathname !== currentLocation.pathname || changingType) && !returningFromSettings && !(nextLocation.pathname.startsWith('/settings') && background?.pathname === '/presets');
   });
   React.useEffect(() => {
     if (!dirty) return;
@@ -197,7 +208,7 @@ export default function Presets() {
   const options = userPresets.map(item=>({value:item.name,label:`${item.name} · ${familyName(presetFamily(item.config))}`}));
   return <section className="presets-page parameter-workspace">
     <div className="parameter-workspace-header">
-    <PageLocation trail={[{ label: text('参数预设', 'Presets') }]}/><header className="presets-page-heading"><div><h1>{text('参数预设', 'Presets')}</h1></div><span>{text(`${userPresets.length} 个预设`, `${userPresets.length} presets`)}</span></header>
+    <PageLocation trail={[{ label: text('参数预设', 'Presets') }]}/><header className="presets-page-heading"><div className="presets-title-navigation"><h1>{text('参数预设', 'Presets')}</h1><PresetTypeNavigation value="image" disabled={busy} onChange={() => requestAction(() => { bypassTypeNavigation.current = true; setParams({ type: 'tts', engine: 'voxcpm1.5' }); })}/></div><span>{text(`${userPresets.length} 个预设`, `${userPresets.length} presets`)}</span></header>
     <div className="presets-toolbar" ref={toolbarRef} role="group" aria-label={text('预设操作', 'Preset actions')}>
       <div className="presets-actions">
         <span role="status" className={`presets-status${draft && dirty ? ' presets-dirty' : ''}`}>{!draft ? notice : dirty ? text('有未保存修改', 'Unsaved changes') : notice || (draft.originalName ? text('已保存', 'Saved') : text('尚未创建', 'Not created yet'))}</span>

@@ -32,6 +32,8 @@ from . import (
     routes_regularization,
     routes_site_downloads,
     routes_tts,
+    routes_tts_models,
+    routes_tts_presets,
     routes_tts_projects,
     routes_tts_results,
     routes_tts_sources,
@@ -43,7 +45,12 @@ from . import (
     routes_work,
     routes_xyz,
 )
-from .background_tasks import BackgroundTasks, model_download_source, vision_download_source
+from .background_tasks import (
+    BackgroundTasks,
+    model_download_source,
+    tts_model_download_source,
+    vision_download_source,
+)
 from .bus import EventBus
 from .config_migration import migrate_dora_axis
 from .context import ServiceContext
@@ -108,6 +115,7 @@ def create_app(
     tasks = context.background_tasks
     tasks.add_source(context.upload_sessions.background_tasks)
     tasks.add_source(model_download_source(model_downloads, tasks.started_at), cancel=model_downloads.cancel)
+    tasks.add_source(tts_model_download_source(model_downloads.tts, tasks.started_at), cancel=model_downloads.tts.cancel)
     tasks.add_source(
         vision_download_source(vision_models, tasks.started_at),
         cancel=lambda task_id: vision_models.cancel(task_id.removeprefix("vision-")),
@@ -228,6 +236,8 @@ def create_app(
     app.include_router(routes_xyz.router, prefix="/api")
     app.include_router(routes_work.router, prefix="/api")
     app.include_router(routes_tts.router, prefix="/api")
+    app.include_router(routes_tts_models.router, prefix="/api")
+    app.include_router(routes_tts_presets.router, prefix="/api")
     app.include_router(routes_tts_projects.router, prefix="/api")
     app.include_router(routes_tts_sources.router, prefix="/api")
     app.include_router(routes_tts_training.router, prefix="/api")

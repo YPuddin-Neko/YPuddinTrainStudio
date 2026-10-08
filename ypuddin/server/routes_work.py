@@ -688,6 +688,8 @@ class VersionBody(BaseModel):
     data_mode: Literal["copy", "empty"] = "copy"
     copy_config: bool = True
     family: Literal["anima", "krea2", "sdxl", "flux2", "toy"] | None = None
+    engine: Literal["voxcpm1.5", "gpt-sovits-v5"] | None = None
+    variant: Literal["v5dev", "v5turbo"] | None = None
 
 
 class VersionPatch(BaseModel):
@@ -712,8 +714,11 @@ def list_versions(pid: str, include_archived: bool = True, c: ServiceContext = D
     responses={code: {"model": m.ApiErrorResponse} for code in (400, 404, 409, 422)},
 )
 def create_version(pid: str, body: VersionBody, c: ServiceContext = Depends(ctx)) -> dict:
-    if _get_project(c, pid)["project_type"] == "tts" and {"family", "display_family"} & body.model_fields_set:
+    speech = _get_project(c, pid)["project_type"] == "tts"
+    if speech and {"family", "display_family"} & body.model_fields_set:
         raise ApiError("语音版本不能设置图像模型类型。", code="project.type_mismatch", status=409)
+    if not speech and {"engine", "variant"} & body.model_fields_set:
+        raise ApiError("图像版本不能设置语音模型类型。", code="project.type_mismatch", status=409)
     return c.versions.create(
         pid,
         body.name.strip(),
@@ -722,6 +727,9 @@ def create_version(pid: str, body: VersionBody, c: ServiceContext = Depends(ctx)
         body.data_mode,
         body.copy_config,
         family=body.family,
+        engine=body.engine,
+        variant=body.variant,
+        variant_provided="variant" in body.model_fields_set,
     )
 
 

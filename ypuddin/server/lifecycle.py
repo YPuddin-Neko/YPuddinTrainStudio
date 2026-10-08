@@ -29,6 +29,7 @@ RESTART_TOKEN_ENV = "YPUDDIN_SERVICE_RESTART_TOKEN"
 DOWNLOADING = ("queued", "downloading", "verifying")
 # Task-center work a restart would cut off, by kind.
 BACKGROUND_REASONS = {
+    "model_download": "model_download_running",
     "dataset_upload": "data_operation_running",
     "dataset_refresh": "data_operation_running",
     "project_delete": "data_operation_running",
@@ -163,6 +164,8 @@ class ServiceLifecycle:
             return "restart_in_progress"
         if self.updating and not updating:
             return "update_in_progress"
+        if self.context._active_tts_downloads:
+            return "model_download_running"
         if self.context._active_imports or self.context.db.fetchone(
             "SELECT id FROM datasets WHERE index_status='indexing' LIMIT 1"
         ):

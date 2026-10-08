@@ -42,6 +42,17 @@ def _stat_key(info: os.stat_result) -> tuple[int, ...]:
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
+def _same_open_file(before: os.stat_result, opened: os.stat_result) -> bool:
+    before_key, opened_key = _stat_key(before), _stat_key(opened)
+    if os.name == "nt":
+        before_birth = getattr(before, "st_birthtime_ns", None)
+        opened_birth = getattr(opened, "st_birthtime_ns", None)
+        if isinstance(before_birth, int) and isinstance(opened_birth, int):
+            # Windows path stat can expose creation time as ctime while fstat uses change time.
+            return before_key[:-1] + (before_birth,) == opened_key[:-1] + (opened_birth,)
+    return before_key == opened_key
+
+
 def absolute_path(path: str | Path, *, base: Path | None = None) -> Path:
     if "\0" in str(path):
         raise SourceFileError("tts.path_invalid", "文件路径不能包含空字符。")
@@ -94,10 +105,10 @@ def open_source(path: Path, allowed: Allowed) -> Iterator[BinaryIO]:
         fd = os.open(path.name if parent_fd is not None else path, flags, dir_fd=parent_fd)
         with os.fdopen(fd, "rb") as stream:
             current = os.fstat(stream.fileno())
-            if not stat.S_ISREG(current.st_mode) or _stat_key(current) != _stat_key(before):
+            if not stat.S_ISREG(current.st_mode) or not _same_open_file(before, current):
                 raise SourceFileError("tts.source_stale", "文件在读取期间发生变化。")
             yield stream
-            if _stat_key(os.fstat(stream.fileno())) != _stat_key(before):
+            if _stat_key(os.fstat(stream.fileno())) != _stat_key(current):
                 raise SourceFileError("tts.source_stale", "文件在读取期间发生变化。")
         if _parents(path) != parents or not allowed(path):
             raise SourceFileError("tts.path_denied", "文件目录或访问权限在读取期间发生变化。")

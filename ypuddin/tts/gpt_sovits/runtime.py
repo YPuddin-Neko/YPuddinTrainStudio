@@ -81,6 +81,8 @@ def child_probe(request):
         for name in ("yaml", "numpy", "scipy", "librosa", "transformers", "peft", "pytorch_lightning",
                      "tensorboard", "soundfile", "module.models", "module.models_v5", "AR.models.t2s_lightning_module"):
             importlib.import_module(name)
+        if request.get("mode") == "sample":
+            importlib.import_module("resampy")
         checks["dependencies"] = check("dependencies", "available")
         details["torch"] = torch.__version__
         devices = inspect_devices(torch, request.get("gpu_devices", []), require_bf16=False)
@@ -89,6 +91,13 @@ def child_probe(request):
         checks["cuda"] = check("cuda", "unavailable" if errors else "available", errors[0]["message"] if errors else None)
         checks["precision"] = check("precision", "available" if not errors else "unchecked")
         details["precision"] = {"gpt": config.gpt.precision, "sovits": config.sovits.precision}
+        if not errors and os.name == "nt" and request.get("mode", "train") == "train" and config.stage in {"gpt", "both"}:
+            try:
+                if not torch.distributed.is_available() or not torch.distributed.is_gloo_available():
+                    raise RuntimeError("当前 PyTorch 未提供 Gloo 支持。")
+                torch.distributed.ProcessGroupGloo.create_device(hostname="127.0.0.1")
+            except Exception as exc:
+                raise ValueError(f"GPT 训练需要可用的 Gloo 设备：{exc}") from exc
         if request.get("model_valid", True):
             try:
                 details["weights"] = inspect_weights(config)

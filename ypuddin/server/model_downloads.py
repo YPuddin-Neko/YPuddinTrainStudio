@@ -307,6 +307,10 @@ class ModelDownloads:
                             pass  # An unavailable old drive should not prevent service startup.
         self._persist()
 
+        from .tts_model_downloads import TtsModelDownloads
+
+        self.tts = TtsModelDownloads(context, self.credentials)
+
     def _persist(self) -> None:
         """Save the current tasks. Call it without holding ``self.lock``."""
         with self.lock:
@@ -703,4 +707,5 @@ class ModelDownloads:
             self.closed = True
             for event in self.cancelled.values():
                 event.set()
+        self.tts.close()
         self.pool.shutdown(wait=True)

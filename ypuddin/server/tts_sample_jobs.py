@@ -128,7 +128,7 @@ def _preflight_inputs(c: Any, recipe: dict, *, sample: dict | None, previous: di
         if sample:
             options = sample.get("gpt_sovits", {})
             try:
-                require_text_assets(config, [options.get("text_language", "zh"), options.get("reference_language", "zh")])
+                require_text_assets(config, [options.get("text_language", "zh"), options.get("reference_language", "zh")], inference=True)
             except (OSError, ValueError) as exc:
                 _fail("tts.sample_language_assets", str(exc), status=422, loc=["gpt_sovits"])
         identity = model_identity(config)
