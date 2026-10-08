@@ -2,14 +2,15 @@
 
 A ``record`` line carries a logging header or independently classified native output.
 A ``traceback`` line starts an interpreter traceback printed without a header. Other ``text`` lines
-belong to the record above them (traceback frames, multi-line messages, progress
-bars); the log view groups them because a record can span two reads.
+are independent output unless their syntax identifies a continuation. The log view groups
+continuations over all loaded lines because a record can span two reads.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +38,23 @@ _TRACEBACK = re.compile(_RANK + r"\s*Traceback \(most recent call last\):")
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _PROCESS_RANK = re.compile(r"^\[rank(\d+)\]:\s?")
 _WARNING_HEAD = re.compile(r"^(?:\[rank\d+\]:\s*)?(?:[^\n]+:\d+:\s*)?\w*Warning:")
+_FATAL_PYTHON = re.compile(r"^\s*Fatal Python error:", re.IGNORECASE)
+_THREAD_DUMP = re.compile(
+    r"^\s*(?:(?:Current thread|Thread)\s+0x[\da-f]+|Stack \(most recent call first\):|Extension modules:)",
+    re.IGNORECASE,
+)
+_EXCEPTION_END = re.compile(
+    r"^(?:[A-Za-z_]\w*\.)*(?:(?:[A-Za-z_]\w*)?(?:Error|Exception|Warning|Failure)"
+    r"|KeyboardInterrupt|SystemExit|GeneratorExit|Stop(?:Async)?Iteration)(?::(?:\s|$)|$)"
+)
+_TRACEBACK_FRAME = re.compile(r'^\s+File ".+", line \d+(?:, in .*)?$')
+_TRACEBACK_PROGRESS = re.compile(
+    r"^(?:(?:Epoch|Total):\s*\d+(?:\s*/\s*\d+)?\s*|Loading(?:\s.*|:.*)?"
+    r"|(?:(?:phoneme_data_len|wav_data_len|skipped_phone|skipped_dur):\s*\d+\s*)"
+    r"(?:,\s*(?:phoneme_data_len|wav_data_len|skipped_phone|skipped_dur):\s*\d+\s*)*"
+    r"|[^\s:]+\.(?:wav|flac|mp3|ogg|m4a|aac))$",
+    re.IGNORECASE,
+)
 _CHAINED = re.compile(
     r"^(?:During handling of the above exception, another exception occurred:"
     r"|The above exception was the direct cause of the following exception:)$"
@@ -333,6 +351,22 @@ def _parse_plain_lines(lines: list[str], *, now: datetime) -> list[dict[str, Any
     return out
 
 
+def _exception_terminal(body: str, seen_frame: bool) -> bool:
+    if _TRACEBACK_PROGRESS.fullmatch(body):
+        return False
+    if not seen_frame:
+        return _EXCEPTION_END.match(body) is not None
+    name, separator, message = body.partition(":")
+    if separator and message and not message[:1].isspace():
+        return False
+    parts = name.split(".")
+    return all(
+        (part == "<locals>" and index < len(parts) - 1)
+        or unicodedata.normalize("NFKC", part).isidentifier()
+        for index, part in enumerate(parts)
+    )
+
+
 def entry_levels(lines: list[Mapping[str, Any]]) -> list[str]:
     """The level of the log entry each parsed line belongs to, grouped as the job log view groups them.
 
@@ -342,9 +376,11 @@ def entry_levels(lines: list[Mapping[str, Any]]) -> list[str]:
     has ended. Keep in step with ``groupLogLines`` in ``frontend/src/utils/jobLogs.ts``.
     """
     levels: list[str] = []
-    level = kind = rank = None
+    level = kind = rank = source = None
+    header = ""
     standalone = False
     traceback = "none"
+    seen_frame = False
     chained = False
     for line in lines:
         line_kind = line.get("kind") or "text"
@@ -354,26 +390,45 @@ def entry_levels(lines: list[Mapping[str, Any]]) -> list[str]:
         line_rank = found[1] if found else None
         body = message[found.end() :] if found else message
         different_rank = line_rank is not None and rank is not None and line_rank != rank
-        if level is None or different_rank or standalone or line.get("standalone"):
+        line_source = line.get("source")
+        different_source = bool(line_source and line_source != OUTPUT_SOURCE and line_source != source)
+        if level is None or different_rank or different_source or standalone or line.get("standalone"):
             joins = False
         elif line_kind == "traceback":
-            joins = (
-                kind == "traceback"
-                or level == "error"
-                or (kind == "record" and level == "warn" and (traceback == "none" or chained))
+            joins = (traceback == "none" or chained) and (
+                level == "error" or (kind == "record" and level == "warn")
             )
         elif line_kind == "text":
             warning_head = traceback != "frames" and _WARNING_HEAD.match(message) is not None
+            warning_detail = _WARNING_HEAD.match(header) is not None
+            fatal_python = _FATAL_PYTHON.match(header) is not None
+            indented = bool(body[:1].isspace() and body.strip())
+            legacy_detail = line.get("ts") is None and not line_source and kind == "record"
+            detail_header = kind == "record" or warning_detail or fatal_python or header.rstrip().endswith(":")
+            text_detail = line_level == "info" and (
+                legacy_detail
+                or ((indented or not body.strip()) and detail_header)
+                or (fatal_python and _THREAD_DUMP.match(body) is not None)
+            )
             joins = not warning_head and (
-                traceback == "frames" or line_level == "info" or _ORDER[line_level] <= _ORDER[level]
+                (traceback == "frames" and (not body.strip() or indented or _exception_terminal(body, seen_frame)))
+                or (traceback == "done" and (not body.strip() or _CHAINED.match(body.strip()) is not None))
+                or (traceback == "none" and text_detail)
             )
         else:
             joins = False
         if not joins:
             level, kind, rank, traceback = line_level, line_kind, line_rank, "none"
+            source, header = line_source, body
             standalone = bool(line.get("standalone"))
+            seen_frame = False
+        elif rank is None and line_rank is not None:
+            rank = line_rank
         if line_kind == "traceback":
             traceback = "frames"
+            seen_frame = False
+        elif traceback == "frames" and _TRACEBACK_FRAME.fullmatch(body):
+            seen_frame = True
         elif traceback == "frames" and body.strip() and not body[:1].isspace():
             traceback = "done"  # the unindented exception line ends the frames
         if body.strip():

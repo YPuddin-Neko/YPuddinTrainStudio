@@ -24,8 +24,25 @@ const RANK: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 4
 const PROCESS_RANK = /^\[rank(\d+)\]:/;
 const PROCESS_PREFIX = /^\[rank\d+\]:\s?/;
 const WARNING_HEAD = /^(?:\[rank\d+\]:\s*)?(?:[^\n]+:\d+:\s*)?\w*Warning:/;
+const FATAL_PYTHON = /^\s*Fatal Python error:/i;
+const THREAD_DUMP = /^\s*(?:(?:Current thread|Thread)\s+0x[\da-f]+|Stack \(most recent call first\):|Extension modules:)/i;
+const EXCEPTION_END = /^(?:[A-Za-z_][\p{L}\p{N}_]*\.)*(?:(?:[A-Za-z_][\p{L}\p{N}_]*)?(?:Error|Exception|Warning|Failure)|KeyboardInterrupt|SystemExit|GeneratorExit|StopIteration|StopAsyncIteration)(?::(?:\s|$)|$)/u;
+const TRACEBACK_FRAME = /^\s+File ".+", line \d+(?:, in .*)?$/;
+const PYTHON_IDENTIFIER = /^[\p{ID_Start}_][\p{ID_Continue}_]*$/u;
+const INDEPENDENT_OUTPUT = /^(?:(?:Epoch|Total):\s*\d+(?:\s*\/\s*\d+)?\s*|Loading(?:\s.*|:.*)?|(?:(?:phoneme_data_len|wav_data_len|skipped_phone|skipped_dur):\s*\d+\s*)(?:,\s*(?:phoneme_data_len|wav_data_len|skipped_phone|skipped_dur):\s*\d+\s*)*|[^\s:]+\.(?:wav|flac|mp3|ogg|m4a|aac))$/i;
 // Python prints one of these between an exception and the one raised while handling it.
 const CHAINED = /^(?:During handling of the above exception, another exception occurred:|The above exception was the direct cause of the following exception:)$/;
+
+function exceptionTerminal(body: string, hasFrame: boolean): boolean {
+  // Captured progress can interrupt a traceback; its own record keeps its level.
+  if (INDEPENDENT_OUTPUT.test(body)) return false;
+  if (!hasFrame) return EXCEPTION_END.test(body);
+  const colon = body.indexOf(':');
+  if (colon >= 0 && body.length > colon + 1 && !/\s/.test(body[colon + 1])) return false;
+  const parts = (colon < 0 ? body : body.slice(0, colon)).split('.');
+  return parts.every((part, index) => (part === '<locals>' && index < parts.length - 1)
+    || PYTHON_IDENTIFIER.test(part.normalize('NFKC')));
+}
 
 export function logLevel(value: string | null | undefined): LogLevel {
   const level = (value || '').toLowerCase();
@@ -35,18 +52,17 @@ export function logLevel(value: string | null | undefined): LogLevel {
 }
 
 /**
- * Group parsed lines in file order. A header starts a record and its level never
- * changes: the lines joined to it are details. A warning or error record keeps the
- * traceback logged with it (``exc_info``), so a warning with a traceback stays a
- * warning. Any other traceback starts an error entry of its own: one after an
- * info or debug record, after plain output, or after a warning whose own traceback
- * has ended. Grouping runs over every loaded line because a record can span two reads.
+ * Preserve each captured line unless its syntax identifies a continuation.
+ * Logged tracebacks retain their header's level; independent output retains its
+ * own time and source. Group over all loaded lines to cover page boundaries.
  */
 export function groupLogLines(lines: JobLogLine[]): LogEntry[] {
   const entries: LogEntry[] = [];
   let current: LogEntry | null = null;
-  // Inside a traceback's frames every line belongs to it, up to the unindented exception line.
+  let groupRank: string | undefined;
+  // Frames end at an unindented exception; unrelated output starts a new entry.
   let traceback: 'none' | 'frames' | 'done' = 'none';
+  let hasFrame = false;
   // The last line said the next traceback is chained to the one before.
   let chained = false;
   for (const line of lines) {
@@ -54,14 +70,21 @@ export function groupLogLines(lines: JobLogLine[]): LogEntry[] {
     const level = logLevel(line.level);
     const body = line.msg.replace(PROCESS_PREFIX, '');
     const rank = line.msg.match(PROCESS_RANK)?.[1];
-    const previousRank = current?.msg.match(PROCESS_RANK)?.[1];
-    const differentRank = rank !== undefined && previousRank !== undefined && rank !== previousRank;
+    const differentRank = rank !== undefined && groupRank !== undefined && rank !== groupRank;
+    const differentSource = !!line.source && line.source !== 'process.output' && line.source !== current?.source;
     const warningHead = kind === 'text' && traceback !== 'frames' && WARNING_HEAD.test(line.msg);
-    const joins = current !== null && !current.standalone && !line.standalone && !differentRank && (kind === 'traceback'
-      ? current.kind === 'traceback' || current.level === 'error'
-        || (current.kind === 'record' && current.level === 'warn' && (traceback === 'none' || chained))
-      : kind === 'text' && !warningHead
-        && (traceback === 'frames' || level === 'info' || RANK[level] <= RANK[current.level]));
+    const header = current?.msg.replace(PROCESS_PREFIX, '') || '';
+    const indented = /^\s/.test(body) && !!body.trim();
+    const legacyDetail = line.ts == null && !line.source && current?.kind === 'record';
+    const textDetail = level === 'info' && (legacyDetail
+      || indented && (current?.kind === 'record' || WARNING_HEAD.test(header) || FATAL_PYTHON.test(header) || header.trimEnd().endsWith(':'))
+      || !body.trim() && (current?.kind === 'record' || WARNING_HEAD.test(header) || FATAL_PYTHON.test(header) || header.trimEnd().endsWith(':'))
+      || FATAL_PYTHON.test(header) && THREAD_DUMP.test(body));
+    const joins = current !== null && !current.standalone && !line.standalone && !differentRank && !differentSource && (kind === 'traceback'
+      ? (traceback === 'none' || chained) && (current.level === 'error' || current.kind === 'record' && current.level === 'warn')
+      : kind === 'text' && !warningHead && (traceback === 'frames' && (!body.trim() || indented || exceptionTerminal(body, hasFrame))
+        || traceback === 'done' && (!body.trim() || CHAINED.test(body.trim()))
+        || traceback === 'none' && textDetail));
     if (joins && current) {
       current.detail.push(line.msg);
     } else {
@@ -69,8 +92,12 @@ export function groupLogLines(lines: JobLogLine[]): LogEntry[] {
         ...(line.standalone ? { standalone: true } : {}) };
       entries.push(current);
       traceback = 'none';
+      hasFrame = false;
+      groupRank = rank;
     }
-    if (kind === 'traceback') traceback = 'frames';
+    if (joins && groupRank === undefined && rank !== undefined) groupRank = rank;
+    if (kind === 'traceback') { traceback = 'frames'; hasFrame = false; }
+    else if (traceback === 'frames' && TRACEBACK_FRAME.test(body)) hasFrame = true;
     else if (traceback === 'frames' && body.trim() && !/^\s/.test(body)) traceback = 'done';
     if (body.trim()) chained = CHAINED.test(body.trim());
   }
