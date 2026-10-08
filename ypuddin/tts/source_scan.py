@@ -221,6 +221,7 @@ def scan_manifest(path: Path, source_id: str, split: str, *, allowed: Allowed, e
     rows: list[dict] = []
     all_issues: list[TtsIssue] = []
     valid_count, duration = 0, 0.0
+    uses_japanese_alias = False
     # One recording can appear on several training rows without duplicating file reads.
     audio_cache: dict[str, tuple[dict, dict, list[tuple[str, str, bool]]]] = {}
     for line, text in enumerate(content.replace("\r\n", "\n").replace("\r", "\n").split("\n"), 1):
@@ -255,6 +256,9 @@ def scan_manifest(path: Path, source_id: str, split: str, *, allowed: Allowed, e
                 issues.append(_issue("tts.text.required", loc + ["text"], "缺少转写文本。"))
             if gsv:
                 language = value.get("language")
+                if isinstance(language, str) and language.lower() == "jp":
+                    language = "ja"
+                    uses_japanese_alias = True
                 if isinstance(language, str) and language.lower() in GSV_LANGUAGES:
                     item["language"] = normalized["language"] = language.lower()
                 else:
@@ -321,6 +325,9 @@ def scan_manifest(path: Path, source_id: str, split: str, *, allowed: Allowed, e
     identity_payload = {"scanner": 1, "files": ordered_identities}
     if gsv:
         identity_payload["engine"] = engine
+    if uses_japanese_alias:
+        # A recheck must replace snapshots that rejected JP; other fingerprints stay unchanged.
+        identity_payload["language_aliases"] = {"jp": "ja"}
     fingerprint = hashlib.sha256(json.dumps(
         identity_payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
     ).encode()).hexdigest()
