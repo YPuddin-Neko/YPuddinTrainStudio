@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, Download, ExternalLink, KeyRound, RefreshCw, Search, X } from 'lucide-react';
+import { Check, Download, ExternalLink, Search, X } from 'lucide-react';
 import { updateTtsDownload, useTtsModelResources } from '../../api/hooks/useTtsModels';
 import { latestTtsDownloads, ttsDownloadActive, ttsModelDownloadErrorText, ttsModelIssueText, ttsModelsApi, type TtsInstalledModel, type TtsModelDownload, type TtsModelPackage } from '../../api/ttsModels';
 import StudioSelect from '../../components/StudioSelect';
@@ -13,6 +13,7 @@ import { formatApiError } from '../../utils/errors';
 import { ttsEngineLabel } from '../../utils/ttsEngines';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import './models.css';
+import { ModelToolbar, ModelCatalogSection, ModelCatalogRow } from './ModelDownloadLayout';
 
 const primary = 'ui-btn ui-btn-primary', secondary = 'ui-btn';
 const comparablePath = (path: string) => {
@@ -63,12 +64,14 @@ export default function TtsModels({ embedded = false, typeSelector }: { embedded
   const taskFor = (entry: TtsModelPackage) => tasks.find(task => task.package_id === entry.id && task.package_revision === entry.revision && comparablePath(task.target_path) === targetFor(entry));
   const linked = new Set(entries.map(taskFor).filter((task): task is TtsModelDownload => !!task).map(task => task.id));
   const standalone = tasks.filter(task => !linked.has(task.id) && task.status !== 'completed');
+  const activeStandalone = standalone.filter(ttsDownloadActive);
+  const downloadHistory = standalone.filter(task => !ttsDownloadActive(task));
   const installationsFor = (entry: TtsModelPackage) => selected.filter(model => model.package_id === entry.id && model.package_revision === entry.revision);
   const readyFor = (entry: TtsModelPackage) => installationsFor(entry).find(model => model.status === 'ready' && model.ready && comparablePath(model.path) === targetFor(entry));
   const listsReady = !!models.data && !!downloads.data && !models.error && !downloads.error;
   const refreshing = [catalog, models, downloads, settings].some(item => item.isFetching);
   const loadErrors = [
-    { label: text('准备模型', 'Prepare models'), query: catalog }, { label: text('本地模型', 'Local models'), query: models },
+    { label: text('在线模型', 'Online models'), query: catalog }, { label: text('本地模型', 'Local models'), query: models },
     { label: text('下载记录', 'Downloads'), query: downloads }, { label: text('存储设置', 'Storage settings'), query: settings },
   ].filter(item => item.query.error);
   const viewQuery = view === 'prepare' ? catalog : models;
@@ -89,44 +92,48 @@ export default function TtsModels({ embedded = false, typeSelector }: { embedded
       {task.current_file && <p className="tts-model-current-file" title={task.current_file}>{task.current_file}</p>}
       <ProgressBar className="model-download-progress" label={`${task.name} ${transferring ? text('下载进度', 'download progress') : phaseLabel(task)}`} max={task.total_bytes || undefined} value={transferring && task.total_bytes > 0 ? task.downloaded_bytes : undefined}/></>;
   };
+  const standaloneRow = (task: TtsModelDownload) => <div className="model-download-inline-row" key={task.id}>
+    <div className="model-download-heading"><div><strong>{task.name}</strong></div><div className="model-actions">{taskAction(task)}</div></div>
+    {taskStatus(task)}
+    <details className="model-download-location"><summary>{text('下载位置', 'Download location')}</summary><code>{task.target_path}</code></details>
+  </div>;
   return <div className="models-workspace tts-models-workspace" data-testid="tts-models-page">
-    <div className="models-toolbar"><div className="models-heading"><div><h2>{text('模型权重', 'Model weights')}</h2>{!embedded && <p>{text('准备模型组件，供项目选择。', 'Prepare components for your projects.')}</p>}</div>
-      {settings.data?.paths.models_dir && <div className="models-heading-path" title={settings.data.paths.models_dir}><span>{text('模型目录', 'Model directory')}</span><strong>{settings.data.paths.models_dir}</strong><Link className="ui-link" to="/settings/preferences?section=storage" replace state={location.state}>{text('更改', 'Change')}</Link></div>}
-      <div className="model-actions"><Link to="/settings/environment?tab=credentials&type=tts" replace state={location.state} className={secondary}><KeyRound size={14}/>{text('访问密钥', 'Access keys')}</Link><button type="button" className={`${secondary} ui-btn-icon`} disabled={refreshing} onClick={() => void refresh()} aria-label={text('刷新模型', 'Refresh models')} title={text('刷新模型', 'Refresh models')}><RefreshCw size={14}/></button></div>
-    </div><div className="models-filters">{typeSelector}<StudioSelect aria-label={text('模型系列', 'Model family')} value={engine} options={[{ value: 'voxcpm1.5', label: ttsEngineLabel('voxcpm1.5') }, { value: 'gpt-sovits-v5', label: ttsEngineLabel('gpt-sovits-v5') }]} onValueChange={value => updateParams({ engine: value })}/>
-      <div className="models-view-tabs ui-segmented" role="tablist" aria-label={text('模型管理视图', 'Model management views')}>{[{ key: 'prepare', label: text('准备模型', 'Prepare models') }, { key: 'library', label: `${text('本地模型', 'Local models')}${models.data ? ` · ${selected.length}` : ''}` }].map(tab => <button type="button" key={tab.key} role="tab" aria-selected={view === tab.key} onClick={() => updateParams({ view: tab.key })}>{tab.label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div>
-    </div></div>
+    <ModelToolbar embedded={embedded} directory={settings.data?.paths.models_dir} credentialsLink="/settings/environment?tab=credentials&type=tts" refreshing={refreshing} onRefresh={refresh}>
+      {typeSelector}<StudioSelect aria-label={text('模型系列', 'Model family')} value={engine} options={[{ value: 'voxcpm1.5', label: ttsEngineLabel('voxcpm1.5') }, { value: 'gpt-sovits-v5', label: ttsEngineLabel('gpt-sovits-v5') }]} onValueChange={value => updateParams({ engine: value })}/>
+      <div className="models-view-tabs ui-segmented" role="tablist" aria-label={text('模型管理视图', 'Model management views')}>{[{ key: 'prepare', label: text('在线模型', 'Online models') }, { key: 'library', label: `${text('本地模型', 'Local models')}${models.data ? ` · ${selected.length}` : ''}` }].map(tab => <button type="button" key={tab.key} role="tab" aria-selected={view === tab.key} onClick={() => updateParams({ view: tab.key })}>{tab.label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div>
+    </ModelToolbar>
     {error && <div role="alert" className="settings-alert">{error}</div>}
     {!!loadErrors.length && <div role="alert" className="settings-alert"><div>{loadErrors.map(item => <p key={item.label}>{item.label}：{formatApiError(item.query.error)}{' '}<button type="button" className="ui-link" disabled={item.query.isFetching} onClick={() => void item.query.refetch()}>{text('重新读取', 'Reload')}</button></p>)}</div></div>}
-    {standalone.length > 0 && <section className="model-download-inline" aria-label={text('下载状态', 'Download status')}><h3>{text('下载状态', 'Download status')}</h3>{standalone.map(task => <div className="model-download-inline-row" key={task.id}><div className="model-download-heading"><div><strong>{task.name}</strong></div><div className="model-actions">{taskAction(task)}</div></div>{taskStatus(task)}</div>)}</section>}
     {viewQuery.error && !viewQuery.data ? <p className="model-empty">{text('此列表暂时无法读取，请重试。其他视图仍可查看。', 'This list is unavailable. Retry or open another view.')}</p> : viewQuery.isPending ? <LoadingNote block className="model-empty" label={view === 'prepare' ? text('正在读取模型包…', 'Loading model packages…') : text('正在读取本地模型…', 'Loading local models…')}/> : view === 'prepare' ? <>
-      <div className="models-source-bar"><label>{text('下载来源', 'Download source')}<StudioSelect value="huggingface" aria-label={text('下载来源', 'Download source')} options={[{ value: 'huggingface', label: 'Hugging Face' }]} disabled onValueChange={() => {}}/></label><span>{text('包含训练与试听所需的模型资源', 'Includes model resources for training and previews')}</span></div>
-      {entries.length ? <section className="model-component" aria-label={text('完整模型包', 'Complete model packages')}><header><h3>{text('完整模型包', 'Complete model packages')}</h3></header>{entries.map(entry => {
+      <div className="models-source-bar"><label>{text('下载来源', 'Download source')}<StudioSelect value="huggingface" aria-label={text('下载来源', 'Download source')} options={[{ value: 'huggingface', label: 'Hugging Face' }]} disabled onValueChange={() => {}}/></label>{listsReady && settings.data && !settings.error && <span>{text('已就绪', 'Ready')} {entries.filter(entry => readyFor(entry)).length} / {entries.length}</span>}</div>
+      {entries.length ? <ModelCatalogSection label={ttsEngineLabel(engine)}>{entries.map(entry => {
         const task = taskFor(entry), ready = readyFor(entry), installations = installationsFor(entry);
         const unavailable = installations.find(model => !model.ready || model.status !== 'ready');
         const elsewhere = installations.find(model => model.status === 'ready' && model.ready && comparablePath(model.path) !== targetFor(entry));
         const recovering = !!unavailable || task?.status === 'completed';
-        return <div className="model-catalog-row" key={entry.id} data-testid={`tts-model-package-${entry.id}`}><div className="model-catalog-description"><strong>{entry.name}</strong><div><span>{formatBytes(entry.size)}</span><span>{entry.license}</span><a className="ui-link" href={entry.url} target="_blank" rel="noreferrer">{text('发布页', 'Source')}<ExternalLink size={11}/></a></div>
+        return <ModelCatalogRow key={entry.id} testId={`tts-model-package-${entry.id}`} name={entry.name} metadata={<><span>{formatBytes(entry.size)}</span><span>{entry.license}</span><a className="ui-link" href={entry.url} target="_blank" rel="noreferrer">{text('发布页', 'Source')}<ExternalLink size={11}/></a></>} action={task && ttsDownloadActive(task) ? cancelButton(task) : ready ? <span className="model-ready"><Check size={14}/>{text('已就绪', 'Ready')}</span> : task && ['failed', 'cancelled'].includes(task.status) && !recovering ? taskAction(task) : startButton(entry, recovering)}>
           {task && task.status !== 'completed' && taskStatus(task)}
           {unavailable && !ready && <p className="model-download-error">{installationStatus(unavailable)}{unavailable.issues?.map(issue => ` · ${ttsModelIssueText(issue, text)}`).join('')}</p>}
           {!ready && elsewhere && <p className="model-help-text">{text('其他目录已有可用模型，仍可在项目中选择。', 'A model in another directory remains available for projects.')}</p>}
           {!ready && recovering && recoveryHelp()}
           {!ready && (installations.length > 0 || task?.status === 'completed') && <button type="button" className="ui-link" onClick={() => updateParams({ view: 'library' })}>{text('查看本地模型', 'View local models')}</button>}
-        </div><div className="model-catalog-action">{task && ttsDownloadActive(task) ? cancelButton(task) : ready ? <span className="model-ready"><Check size={14}/>{text('已就绪', 'Ready')}</span> : task && ['failed', 'cancelled'].includes(task.status) && !recovering ? taskAction(task) : startButton(entry, recovering)}</div></div>;
-      })}</section> : <p className="model-empty">{text('当前服务没有此系列的可下载模型包。', 'No downloadable packages are available for this model family.')}</p>}
-      <p className="model-help-text">{text('已有模型可在项目参数中填写本地路径。Python 与训练器路径也在项目内配置。', 'Enter existing local model, Python and trainer paths in the project parameters.')}</p>
+        </ModelCatalogRow>;
+      })}</ModelCatalogSection> : <p className="model-empty">{text('当前服务没有此系列的可下载模型包。', 'No downloadable packages are available for this model family.')}</p>}
     </> : <><div className="models-list-toolbar"><label className="model-search"><Search size={15}/><input value={query} aria-label={text('搜索模型', 'Search models')} placeholder={text('搜索名称或路径', 'Search name or path')} onChange={event => { setQuery(event.target.value); setPage(1); }}/></label></div>
       <div className="models-pagination"><span>{filtered.length} {text('项', 'items')}</span><button type="button" className={secondary} disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>{text('上一页', 'Previous')}</button><span>{currentPage} / {pages}</span><button type="button" className={secondary} disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)}>{text('下一页', 'Next')}</button></div>
-      {!filtered.length ? <p className="model-empty">{query ? text('没有匹配的记录。', 'No matching records.') : text('尚无已下载的模型包，可在“准备模型”中下载，或在项目参数中填写本地路径。', 'No model packages are installed. Download one in Prepare models or enter a local path in the project parameters.')}</p> : <div className="model-library-list">{filtered.slice((currentPage - 1) * 12, currentPage * 12).map(model => {
+      {!filtered.length ? <p className="model-empty">{query ? text('没有匹配的记录。', 'No matching records.') : text('尚无已下载的模型包，可在“在线模型”中下载，或在项目参数中填写本地路径。', 'No model packages are installed. Download one in Online models or enter a local path in the project parameters.')}</p> : <div className="model-library-list"><ModelCatalogSection label={ttsEngineLabel(engine)}>{filtered.slice((currentPage - 1) * 12, currentPage * 12).map(model => {
         const ready = model.status === 'ready' && model.ready;
         const entry = entries.find(item => item.id === model.package_id);
         const task = entry ? taskFor(entry) : undefined, currentReady = entry ? readyFor(entry) : undefined;
-        return <div className="model-library-row" key={model.id}><div><strong>{model.name}</strong><p>{ttsEngineLabel(model.engine)}{model.variant && ` · ${model.variant}`} · {installationStatus(model)}</p>{model.issues?.map((issue, index) => <p className="model-download-error" key={`${issue.code}-${index}`}>{ttsModelIssueText(issue, text)}</p>)}<details><summary>{text('文件路径', 'File path')}</summary><code>{model.path}</code></details>
+        return <ModelCatalogRow key={model.id} className="model-library-row" name={model.name} nameTitle={model.path} metadata={<><span>{installationStatus(model)}</span></>} action={ready ? <span className="model-ready"><Check size={14}/>{text('可在项目中选择', 'Available in projects')}</span> : task && ttsDownloadActive(task) ? cancelButton(task) : currentReady ? <span className="model-ready"><Check size={14}/>{text('当前目录已有可用模型', 'A model is available in the current directory')}</span> : entry ? startButton(entry, true) : null}>
+          {model.issues?.map((issue, index) => <p className="model-download-error" key={`${issue.code}-${index}`}>{ttsModelIssueText(issue, text)}</p>)}
           {!ready && entry && !currentReady && recoveryHelp()}
           {!ready && task && ttsDownloadActive(task) && taskStatus(task)}
           {!ready && !entry && !catalog.isPending && <p className="model-help-text">{text('此模型包暂不提供下载，可检查文件路径或选择其他模型。', 'This package is not currently available to download. Check its file path or choose another model.')}</p>}
-        </div><div className="model-actions">{ready ? <span className="model-ready"><Check size={14}/>{text('可在项目中选择', 'Available in projects')}</span> : task && ttsDownloadActive(task) ? cancelButton(task) : currentReady ? <span className="model-ready"><Check size={14}/>{text('当前目录已有可用模型', 'A model is available in the current directory')}</span> : entry ? startButton(entry, true) : null}</div></div>;
-      })}</div>}
+        </ModelCatalogRow>;
+      })}</ModelCatalogSection></div>}
     </>}
+    {view === 'prepare' && activeStandalone.length > 0 && <section className="model-download-inline" aria-label={text('下载状态', 'Download status')}><h3>{text('下载状态', 'Download status')}</h3>{activeStandalone.map(standaloneRow)}</section>}
+    {view === 'prepare' && downloadHistory.length > 0 && <details className="model-download-history"><summary>{text('其他下载', 'Other downloads')} · {downloadHistory.length}</summary>{downloadHistory.map(standaloneRow)}</details>}
   </div>;
 }

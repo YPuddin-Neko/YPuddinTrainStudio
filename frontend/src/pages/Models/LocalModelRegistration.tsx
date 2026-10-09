@@ -16,7 +16,7 @@ export interface ModelInspection {
   evidence: string[]; warnings: string[]; files_inspected: number;
 }
 
-export default function LocalModelRegistration({ initialFamily, families: serviceFamilies, onClose, onRegistered, onBusyChange }: {initialFamily:string;families:FamilyInfo[];onClose:()=>void;onRegistered:(family:string)=>Promise<void>;onBusyChange:(busy:boolean)=>void}) {
+export default function LocalModelRegistration({ initialFamily, initialKind = '', families: serviceFamilies, onClose, onRegistered, onBusyChange }: {initialFamily:string;initialKind?:string;families:FamilyInfo[];onClose:()=>void;onRegistered:(family:string)=>Promise<void>;onBusyChange:(busy:boolean)=>void}) {
   const text = useWorkspaceText();
   const families = availableTrainingFamilies(serviceFamilies);
   const familyNames = families.filter(item => item.name !== 'toy').map(item => item.name).join('\0');
@@ -50,6 +50,12 @@ export default function LocalModelRegistration({ initialFamily, families: servic
   },[path,reload,familyNames]);
   const ready=!!detected && inspectedPath.current===path.trim();
   const weights = modelFamilyWeights(families.find(item => item.name === family));
+  const supportedKinds = weights.map(weight => weight.kind).join('\0');
+  React.useEffect(() => {
+    if (!detected || detected.kind) return;
+    const available = supportedKinds.split('\0').filter(Boolean);
+    setKind(current => available.includes(current) ? current : available.includes(initialKind) ? initialKind : '');
+  }, [detected, family, initialKind, supportedKinds]);
   const needsVariant = family === 'krea2' && kind === 'dit';
   const inferenceOnly = needsVariant && variant === 'turbo';
   const knownComponent = weights.some(weight => weight.kind === kind);
