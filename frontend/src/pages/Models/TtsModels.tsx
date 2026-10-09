@@ -1,10 +1,9 @@
 import React from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Check, Download, ExternalLink, KeyRound, RefreshCw, Search, X } from 'lucide-react';
-import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
-import type { Settings } from '../../api/types';
-import { latestTtsDownloads, ttsDownloadActive, ttsModelDownloadErrorText, ttsModelIssueText, ttsModelKeys, ttsModelsApi, type TtsInstalledModel, type TtsModelDownload, type TtsModelPackage } from '../../api/ttsModels';
+import { updateTtsDownload, useTtsModelResources } from '../../api/hooks/useTtsModels';
+import { latestTtsDownloads, ttsDownloadActive, ttsModelDownloadErrorText, ttsModelIssueText, ttsModelsApi, type TtsInstalledModel, type TtsModelDownload, type TtsModelPackage } from '../../api/ttsModels';
 import StudioSelect from '../../components/StudioSelect';
 import ProgressBar from '../../components/ProgressBar';
 import { SlidingIndicator } from '../../components/motion';
@@ -15,7 +14,6 @@ import { ttsEngineLabel } from '../../utils/ttsEngines';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import './models.css';
 
-const activeInterval = 2500;
 const primary = 'ui-btn ui-btn-primary', secondary = 'ui-btn';
 const comparablePath = (path: string) => {
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -27,10 +25,7 @@ export default function TtsModels({ embedded = false, typeSelector }: { embedded
   const [params, setParams] = useSearchParams();
   const engine = params.get('engine') === 'gpt-sovits-v5' ? 'gpt-sovits-v5' : 'voxcpm1.5';
   const view = params.get('view') === 'library' ? 'library' : 'prepare';
-  const catalog = useQuery({ queryKey: ttsModelKeys.catalog, queryFn: ({ signal }) => ttsModelsApi.catalog(signal), retry: false, networkMode: 'always' });
-  const models = useQuery({ queryKey: ttsModelKeys.installed, queryFn: ({ signal }) => ttsModelsApi.installed(signal), refetchInterval: query => query.state.status === 'error' ? false : activeInterval, retry: false, networkMode: 'always' });
-  const downloads = useQuery({ queryKey: ttsModelKeys.downloads, queryFn: ({ signal }) => ttsModelsApi.downloads(signal), refetchInterval: query => query.state.status === 'error' ? false : activeInterval, retry: false, networkMode: 'always' });
-  const settings = useQuery({ queryKey: ['tts-model-settings'], queryFn: ({ signal }) => apiClient.get<Settings>('/settings', { silent: true, signal, timeout: READ_TIMEOUT_MS }), retry: false, networkMode: 'always' });
+  const { catalog, installed: models, downloads, settings } = useTtsModelResources();
   const [error, setError] = React.useState(''), [busy, setBusy] = React.useState(false);
   const [query, setQuery] = React.useState(''), [page, setPage] = React.useState(1);
   const [observedAt, setObservedAt] = React.useState(() => Date.now() / 1000);
@@ -53,10 +48,7 @@ export default function TtsModels({ embedded = false, typeSelector }: { embedded
     pending.current = true; setBusy(true); setError('');
     try {
       const task = await operation();
-      await client.cancelQueries({ queryKey: ttsModelKeys.downloads });
-      client.setQueryData<TtsModelDownload[]>(ttsModelKeys.downloads, previous => [task, ...(previous || []).filter(item => item.id !== task.id)]);
-      void Promise.all([client.invalidateQueries({ queryKey: ttsModelKeys.downloads }), client.invalidateQueries({ queryKey: ttsModelKeys.installed })]);
-      window.dispatchEvent(new Event('studio-tts-models-changed'));
+      updateTtsDownload(client, task);
     } catch (failure) { if (alive.current) setError(formatApiError(failure)); }
     finally { pending.current = false; if (alive.current) setBusy(false); }
   };

@@ -1,4 +1,8 @@
 import React from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateResource, useResourceCacheEvents, useResourceQuery } from '../../api/resourcePolicy';
+import { readCredentialStatus } from '../../api/hooks/useCredentialsStatus';
+import { useImageModelResources } from '../../api/hooks/useImageModelResources';
 import { Check, Download, ExternalLink, Loader2 } from 'lucide-react';
 import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { Settings } from '../../api/types';
@@ -13,18 +17,21 @@ const AttentionSetup = React.lazy(() => import('../../components/EnvironmentMana
 
 type Paths = Record<string, { path: string }>;
 function useResource<T>(path: string) {
-  const [data, setData] = React.useState<T | null>(null);
-  const [error, setError] = React.useState('');
-  const [attempt, reload] = React.useReducer(value => value + 1, 0);
+  const client = useQueryClient();
+  useResourceCacheEvents();
+  const queryKey = path === '/families' ? ['families'] : path === '/environment' ? ['environment', path] : path === '/credentials' ? ['credentials'] : ['setup-resource', path];
+  const query = useResourceQuery<T>({ queryKey,
+    queryFn: ({ signal }) => path === '/credentials' ? readCredentialStatus(signal) as Promise<T> : apiClient.get<T>(path, { silent: true, signal, timeout: READ_TIMEOUT_MS }),
+  });
   React.useEffect(() => {
-    const controller = new AbortController();
-    setError('');
-    void apiClient.get<T>(path, { silent: true, signal: controller.signal, timeout: READ_TIMEOUT_MS }).then(value => {
-      if (!controller.signal.aborted) setData(value);
-    }).catch(failure => { if (!controller.signal.aborted) setError(formatApiError(failure)); });
-    return () => controller.abort();
-  }, [path, attempt]);
-  return { data, error, reload, setData };
+    const event = path === '/settings/storage-defaults' ? 'studio.settings.changed' : null;
+    if (!event) return;
+    const changed = () => invalidateResource(client, path === '/families' ? ['families'] : path === '/environment' ? ['environment', path] : path === '/credentials' ? ['credentials'] : ['setup-resource', path]);
+    window.addEventListener(event, changed);
+    return () => window.removeEventListener(event, changed);
+  }, [client, path]);
+  return { data: query.data ?? null, error: query.error ? formatApiError(query.error) : '', reload: () => void query.refetch(),
+    setData: (data: T) => { void client.cancelQueries({ queryKey, exact: true }); client.setQueryData(queryKey, data); } };
 }
 function ResourceState({ error, retry, label }: { error: string; retry: () => void; label?: string }) {
   const text = useWorkspaceText();
@@ -100,55 +107,31 @@ export function ModelsStep({ onContinueChange }: { onContinueChange?: (ready: bo
 function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: boolean) => void }) {
   const text = useWorkspaceText();
   const families = useResource<import('../../api/types').FamilyInfo[]>('/families');
-  const [snapshot, setSnapshot] = React.useState<ModelSnapshot | null>(null);
   const [family, setFamily] = React.useState('anima');
   const [main, setMain] = React.useState('');
   const [preparedPackage, setPreparedPackage] = React.useState('');
   const [provider, setProvider] = React.useState<'huggingface' | 'modelscope'>('huggingface');
   const [busy, setBusy] = React.useState(false);
   const busyRef = React.useRef(false);
-  const revision = React.useRef(0);
   const [error, setError] = React.useState('');
-  const [loadErrors, setLoadErrors] = React.useState<Partial<Record<ModelList, string>>>({});
-  const [loaded, setLoaded] = React.useState<Partial<Record<ModelList, boolean>>>({});
-  const pollingController = React.useRef<AbortController | null>(null);
+  const resources = useImageModelResources(!busy);
+  const snapshot: ModelSnapshot = { catalog: resources.catalog.data ?? [], assets: resources.assets.data ?? [], tasks: resources.tasks.data ?? [] };
+  const loaded = { catalog: resources.catalog.data !== undefined, assets: resources.assets.data !== undefined, tasks: resources.tasks.data !== undefined };
+  const loadErrors = Object.fromEntries((['catalog', 'assets', 'tasks'] as const).map(name => [name, resources[name].error ? formatApiError(resources[name].error) : ''])) as Record<ModelList, string>;
+  const reload = () => { void resources.refresh(); };
   const prepareController = React.useRef<AbortController | null>(null);
-  const [attempt, reload] = React.useReducer(value => value + 1, 0);
   const [selected, setSelected] = React.useState<string[] | null>(null);
-  const read = React.useCallback(async (signal?: AbortSignal): Promise<ModelSnapshot> => {
+  const read = async (signal?: AbortSignal): Promise<ModelSnapshot> => {
     const list = <T,>(name: ModelList, path: string) => apiClient.get<T>(path, { silent: true, signal, timeout: READ_TIMEOUT_MS })
       .catch((failure: unknown) => { throw failure instanceof Error && failure.name === 'AbortError' ? failure : new ListFailure(name, failure); });
     const results = await Promise.allSettled([
-      list<Recommendation[]>('catalog', '/models/recommendations'), list<ModelAsset[]>('assets', '/models'), list<DownloadTask[]>('tasks', '/models/downloads'),
+      list<Recommendation[]>('catalog', '/models/recommendations'), list<ModelAsset[]>('assets', '/models'), resources.readTasks(signal).catch(failure => { throw failure instanceof Error && failure.name === 'AbortError' ? failure : new ListFailure('tasks', failure); }),
     ]);
     const failure = results.find(result => result.status === 'rejected');
     if (failure?.status === 'rejected') throw failure.reason;
     return { catalog: (results[0] as PromiseFulfilledResult<Recommendation[]>).value, assets: (results[1] as PromiseFulfilledResult<ModelAsset[]>).value, tasks: (results[2] as PromiseFulfilledResult<DownloadTask[]>).value };
-  }, []);
+  };
   React.useEffect(() => () => prepareController.current?.abort(), []);
-  React.useEffect(() => {
-    const controller = new AbortController();
-    pollingController.current = controller;
-    let polling = false;
-    const refresh = async () => {
-      if (controller.signal.aborted || polling || busyRef.current) return;
-      polling = true;
-      const current = ++revision.current;
-      const update = <K extends ModelList,>(name: K, path: string) => apiClient.get<ModelSnapshot[K]>(path, { silent: true, signal: controller.signal, timeout: READ_TIMEOUT_MS })
-        .then(value => {
-          if (controller.signal.aborted || current !== revision.current) return;
-          setSnapshot(old => ({ catalog: [], assets: [], tasks: [], ...old, [name]: value }));
-          setLoaded(old => ({ ...old, [name]: true }));
-          setLoadErrors(old => ({ ...old, [name]: undefined }));
-        }).catch(failure => {
-          if (!controller.signal.aborted && current === revision.current) setLoadErrors(old => ({ ...old, [name]: formatApiError(failure) }));
-        });
-      await Promise.allSettled([update('catalog', '/models/recommendations'), update('assets', '/models'), update('tasks', '/models/downloads')]);
-      polling = false;
-    };
-    void refresh(); const timer = window.setInterval(() => void refresh(), 3000);
-    return () => { controller.abort(); window.clearInterval(timer); };
-  }, [attempt]);
   const loadError = Object.values(loadErrors).some(Boolean);
   const listsReady = loaded.catalog && loaded.assets && loaded.tasks;
   const availableFamilies = (families.data ? trainingFamilyOptions(families.data) : [])
@@ -179,14 +162,14 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
   React.useEffect(() => { onContinueChange?.(continueReady); }, [continueReady, onContinueChange]);
   const prepare = async (ids: string[]) => {
     if (busyRef.current) return;
-    busyRef.current = true; ++revision.current; pollingController.current?.abort();
+    busyRef.current = true; void resources.cancelReads();
     const controller = new AbortController(); prepareController.current = controller;
     setBusy(true); setError('');
     try {
       // Re-read before submission: another page may have started a download or changed the defaults.
       let current = await read(controller.signal);
       if (controller.signal.aborted) return;
-      setSnapshot(current); setLoadErrors({}); setLoaded({ catalog: true, assets: true, tasks: true });
+      current = resources.acceptSnapshot(current);
       for (const id of ids) {
         const bundle = modelBundle(current.catalog, currentFamily, currentMain);
         const entry = bundle.find(item => item.id === id);
@@ -207,10 +190,10 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
         }
         if (controller.signal.aborted) return;
         setPreparedPackage(packageKey);
-        setSnapshot(current);
+        current = resources.acceptSnapshot(current);
       }
     } catch (failure) { if (!controller.signal.aborted) setError(formatApiError(failure)); }
-    finally { busyRef.current = false; if (!controller.signal.aborted) { setBusy(false); reload(); } }
+    finally { busyRef.current = false; if (!controller.signal.aborted) { setBusy(false); window.dispatchEvent(new Event('studio-models-changed')); } }
   };
   const listNames: Record<ModelList, string> = { catalog: text('推荐模型', 'Recommended models'), assets: text('本地模型', 'Local models'), tasks: text('下载记录', 'Downloads') };
   const loadMessage = (Object.entries(loadErrors) as [ModelList, string][]).filter(([, message]) => message).map(([list, message]) => `${listNames[list]}：${message}`).join('；');
@@ -244,7 +227,7 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
 
 export function RuntimeStep() {
   const text = useWorkspaceText();
-  const { data, error, reload, setData } = useResource<EnvironmentStatus>('/environment');
+  const { data, error, reload } = useResource<EnvironmentStatus>('/environment');
   if (!data) return <ResourceState error={error} retry={reload}/>;
   const runtime = data.runtime;
   const backend = runtime.compute_backend || 'cpu';
@@ -256,7 +239,7 @@ export function RuntimeStep() {
   return <><div className="setup-runtime-heading"><span>{text('当前运行环境', 'Current environment')}</span></div>
     <dl className="setup-runtime-grid">{[[text('部署环境', 'Deployment'), profileName], ['Python', runtime.python], ['PyTorch', runtime.torch || text('未安装', 'Not installed')], [text('计算后端', 'Compute backend'), backendName]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
     <div className="setup-gpus">{runtime.gpus?.length ? runtime.gpus.map((gpu, index) => <div key={gpu.device ?? index}><span className="setup-gpu-index">{index + 1}</span><span><strong>{gpu.name}</strong><small>{gpu.device || `GPU ${index}`}{gpu.mem_total_mb ? ` · ${(gpu.mem_total_mb / 1024).toFixed(0)} GiB` : ''}</small></span>{gpuAvailable(gpu) ? <Check size={17} aria-label={text('设备可用', 'Device available')}/> : <small>{text('当前环境不可用', 'Unavailable in this environment')}</small>}</div>) : <p className="setup-note">{text('未检测到可用 GPU。', 'No available GPU detected.')}</p>}</div>
-    <React.Suspense fallback={<div className="setup-resource-loading"><Loader2 size={16} className="animate-spin"/></div>}><AttentionSetup mode="onboarding-attention" initialStatus={data} onStatusChange={setData}/></React.Suspense>
+    <React.Suspense fallback={<div className="setup-resource-loading"><Loader2 size={16} className="animate-spin"/></div>}><AttentionSetup mode="onboarding-attention" initialStatus={data}/></React.Suspense>
     <p className="setup-note">{text('完成后即可创建项目，添加训练数据。', 'Create a project and add your training data to get started.')}</p>
     {error && <ResourceState error={error} retry={reload}/>}</>;
 }

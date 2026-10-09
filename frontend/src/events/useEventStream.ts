@@ -104,10 +104,10 @@ class EventStreamManager {
       const source = new EventSource(url.toString());
       this.eventSource = source;
       this.lastActivityAt = Date.now();
-      // The server sends system.stats every 2.5 seconds. A proxy can retain an
-      // apparently open stream after a server restart without firing onerror.
+      // Telemetry can be configured up to 60 seconds. Allow that interval before
+      // replacing a proxy connection that stayed open after the server disappeared.
       this.activityTimer = setInterval(() => {
-        if (Date.now() - this.lastActivityAt >= 20_000) this.reconnect(source);
+        if (Date.now() - this.lastActivityAt >= 75_000) this.reconnect(source);
       }, 5000);
 
       source.onopen = () => {

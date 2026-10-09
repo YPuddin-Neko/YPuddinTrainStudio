@@ -6,6 +6,7 @@ import OnboardingGate from './pages/Setup/OnboardingGate';
 import './pages/Setup/setup.css';
 import SettingsRedirect from './pages/Settings/SettingsRedirect';
 import { projectUrl } from './utils/projectVersions';
+import { ResourceActivityContext, useResourceCacheEvents } from './api/resourcePolicy';
 
 const Setup = React.lazy(() => import('./pages/Setup/Setup'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard/Dashboard'));
@@ -37,12 +38,13 @@ function settingsRoutes() {
   return <Route path="settings" element={<Settings/>}><Route index element={<SettingsRedirect/>}/><Route path="environment" element={<EnvironmentRoute/>}/><Route path="preferences" element={<Preferences/>}/><Route path="page" element={<PageSettings/>}/><Route path="charts" element={<PageSettings focus="charts"/>}/><Route path="updates" element={<TrainerUpdates/>}/></Route>;
 }
 export default function AppRoutes() {
+  useResourceCacheEvents();
   const location = useLocation(); const navigate = useNavigate();
   const previous = (location.state as {backgroundLocation?: Location} | null)?.backgroundLocation;
   const background = location.pathname.startsWith('/settings') && previous?.pathname && !previous.pathname.startsWith('/settings') ? previous : null;
   const closeSettings = () => { if(background)navigate(`${background.pathname}${background.search}${background.hash}`,{replace:true,state:background.state}); };
   return <>
-    <div className="route-surface" aria-hidden={background ? true : undefined} {...(background ? {inert:''} : {})}><Routes location={background || location}>
+    <ResourceActivityContext.Provider value={!background}><div className="route-surface" aria-hidden={background ? true : undefined} {...(background ? {inert:''} : {})}><Routes location={background || location}>
       <Route path="/setup" element={<React.Suspense fallback={<div className="setup-loading"/>}><Setup/></React.Suspense>}/>
       <Route path="/" element={<OnboardingGate><Layout navigationKey={location.key}/></OnboardingGate>}>
         <Route index element={<Dashboard/>}/><Route path="projects" element={<Projects/>}/>
@@ -53,7 +55,7 @@ export default function AppRoutes() {
         <Route path="artifacts" element={<LegacyOutputsRedirect/>}/><Route path="models" element={<SettingsRedirect tab="models"/>}/>
         {settingsRoutes()}
       </Route>
-    </Routes></div>
+    </Routes></div></ResourceActivityContext.Provider>
     {background && <SettingsDrawer onClose={closeSettings}><Routes>{settingsRoutes()}</Routes></SettingsDrawer>}
   </>;
 }

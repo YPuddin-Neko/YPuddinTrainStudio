@@ -1,9 +1,8 @@
 import React from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Check, Download, ExternalLink, Loader2, RefreshCw, X } from 'lucide-react';
-import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
-import type { Settings } from '../../api/types';
-import { latestTtsDownloads, ttsDownloadActive, ttsModelDownloadErrorText, ttsModelIssueText, ttsModelKeys, ttsModelsApi, type TtsInstalledModel, type TtsModelDownload, type TtsModelPackage } from '../../api/ttsModels';
+import { updateTtsDownload, useTtsModelResources } from '../../api/hooks/useTtsModels';
+import { latestTtsDownloads, ttsDownloadActive, ttsModelDownloadErrorText, ttsModelIssueText, ttsModelsApi, type TtsInstalledModel, type TtsModelDownload, type TtsModelPackage } from '../../api/ttsModels';
 import StudioSelect from '../../components/StudioSelect';
 import ProgressBar from '../../components/ProgressBar';
 import { formatBytes, formatEta } from '../../utils/format';
@@ -19,10 +18,7 @@ const isReady = (model: TtsInstalledModel) => model.ready && model.status === 'r
 
 export default function SetupTtsModels({ onContinueChange }: { onContinueChange?: (ready: boolean) => void }) {
   const text = useWorkspaceText(), client = useQueryClient();
-  const catalog = useQuery({ queryKey: ttsModelKeys.catalog, queryFn: ({ signal }) => ttsModelsApi.catalog(signal), retry: false, networkMode: 'always' });
-  const installed = useQuery({ queryKey: ttsModelKeys.installed, queryFn: ({ signal }) => ttsModelsApi.installed(signal), refetchInterval: query => query.state.status === 'error' ? false : 3000, retry: false, networkMode: 'always' });
-  const downloads = useQuery({ queryKey: ttsModelKeys.downloads, queryFn: ({ signal }) => ttsModelsApi.downloads(signal), refetchInterval: query => query.state.status === 'error' ? false : 3000, retry: false, networkMode: 'always' });
-  const settings = useQuery({ queryKey: ['tts-model-settings'], queryFn: ({ signal }) => apiClient.get<Settings>('/settings', { silent: true, signal, timeout: READ_TIMEOUT_MS }), refetchInterval: query => query.state.status === 'error' ? false : 3000, retry: false, networkMode: 'always' });
+  const { catalog, installed, downloads, settings } = useTtsModelResources();
   const [engine, setEngine] = React.useState('voxcpm1.5');
   const [busy, setBusy] = React.useState(false), [error, setError] = React.useState('');
   const [observedAt, setObservedAt] = React.useState(() => Date.now() / 1000);
@@ -56,10 +52,7 @@ export default function SetupTtsModels({ onContinueChange }: { onContinueChange?
     pending.current = true; setBusy(true); setError('');
     try {
       const task = await operation();
-      await client.cancelQueries({ queryKey: ttsModelKeys.downloads });
-      client.setQueryData<TtsModelDownload[]>(ttsModelKeys.downloads, previous => [task, ...(previous || []).filter(item => item.id !== task.id)]);
-      void Promise.all([client.invalidateQueries({ queryKey: ttsModelKeys.downloads }), client.invalidateQueries({ queryKey: ttsModelKeys.installed })]);
-      window.dispatchEvent(new Event('studio-tts-models-changed'));
+      updateTtsDownload(client, task);
     } catch (failure) { if (alive.current) setError(formatApiError(failure)); }
     finally { pending.current = false; if (alive.current) setBusy(false); }
   };

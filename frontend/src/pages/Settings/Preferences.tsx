@@ -96,10 +96,12 @@ export default function Preferences() {
     setSaving(true); setError('');
     apiClient.put<SettingsType>('/settings', { ...settings, ...(proxyPassword !== undefined ? { network: { ...(settings.network ?? defaultNetworkSettings), proxy_password: proxyPassword } } : {}) })
       .then((res) => {
+        const networkChanged = proxyPassword !== undefined || JSON.stringify([loadedSettings.current?.network, loadedSettings.current?.downloads]) !== JSON.stringify([res.network, res.downloads]);
         loadedSettings.current = res;
         setSettings(res);
         setProxyPassword(undefined);
         window.dispatchEvent(new CustomEvent('studio.settings.changed', { detail: res }));
+        if (networkChanged) window.dispatchEvent(new Event('studio.network.changed'));
         setSaved(true);
         setServiceRefreshKey(value=>value+1);
         setTimeout(() => setSaved(false), 2000);

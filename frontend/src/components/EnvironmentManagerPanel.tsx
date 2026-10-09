@@ -7,10 +7,12 @@ import { LoadingNote } from './Loading';
 import ConfigHelp from './ConfigHelp';
 import WindowsAttentionWheelPicker, { type WindowsAttentionWheel } from './WindowsAttentionWheelPicker';
 import React from 'react';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, ChevronRight, Download, ExternalLink, Loader2, RefreshCw, Upload, X } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useEnvironmentRead } from './useEnvironmentRead';
+import { IDLE_POLL_MS, ONLINE_STALE_MS, invalidateResource, useLocalResourceSync } from '../api/resourcePolicy';
 import { formatApiError } from '../utils/errors';
 import { formatBytes, formatEta } from '../utils/format';
 import { SettingsSections } from '../pages/Settings/SettingsSections';
@@ -57,6 +59,12 @@ const busyStatus = (op: Operation) => ['planning', 'installing', 'verifying'].in
 const cudaAttentionPackages = new Set(['xformers', 'flash-attn']);
 const managedPackages = new Set([...cudaAttentionPackages, 'mtlattn', 'bitsandbytes', 'onnxruntime', 'onnxruntime-gpu', 'triton-windows']);
 const metalFlashVersion = '0.4.1';
+const runtimeIdentities = new WeakMap<QueryClient, string>();
+const runtimeIdentity = (value: EnvironmentStatus) => JSON.stringify([
+  value.runtime.environment_profile, value.runtime.python, value.runtime.torch, value.runtime.platform,
+  value.runtime.machine, value.runtime.cuda_runtime, value.runtime.hip_runtime, value.runtime.cuda_available,
+  value.runtime.gpu_capability, value.packages.map(pkg => [pkg.name, pkg.version]),
+]);
 
 function runtimeTarget(runtime: EnvironmentStatus['runtime']): 'cpu' | 'mps' | 'cuda' | 'hip' {
   const profile = runtime.environment_profile || 'legacy';
@@ -85,27 +93,48 @@ function DownloadProgress({ operation, copy }: {operation: Operation; copy: (zh:
 }
 
 export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onStatusChange }: { focusPackage?: string; mode?: 'onboarding-attention'; initialStatus?: EnvironmentStatus; onStatusChange?: (status: EnvironmentStatus) => void } = {}) {
+  const queryClient = useQueryClient();
   const onboardingAttention = mode === 'onboarding-attention';
   const { i18n } = useTranslation();
   const en = i18n.resolvedLanguage?.startsWith('en');
   const copy = (zh: string, english: string) => en ? english : zh;
-  const runtimeRead = useEnvironmentRead<EnvironmentStatus>('/environment', { interval: 15_000, refreshParam: true, probe: true, initialData: initialStatus, onSuccess: next => onStatusChange?.(next) });
+  const terminalRuntimeRefreshes = React.useRef(new Set<string>());
+  const runtimeRead = useEnvironmentRead<EnvironmentStatus>('/environment', { interval: IDLE_POLL_MS, refreshParam: true, probe: true, initialData: initialStatus, onSuccess: next => {
+    onStatusChange?.(next);
+    const previous = runtimeIdentities.get(queryClient), identity = runtimeIdentity(next);
+    runtimeIdentities.set(queryClient, identity);
+    if (previous && previous !== identity) {
+      void invalidateResource(queryClient, ['environment', '/environment/latest']);
+      void invalidateResource(queryClient, ['environment', '/environment/lora']);
+      void invalidateResource(queryClient, ['environment', '/environment/windows/wheels']);
+      void invalidateResource(queryClient, ['environment', '/environment/dtk/wheels']);
+      void invalidateResource(queryClient, ['vision-models']);
+    }
+  } });
   const status = runtimeRead.data, loading = runtimeRead.loading, probing = runtimeRead.probing;
-  const operationsRead = useEnvironmentRead<Operation[]>('/environment/operations', { interval: 1500, onSuccess: (next, previous) => {
-    if (previous?.some(op => busyStatus(op) && !next.some(current => current.id === op.id && busyStatus(current)))) void runtimeRead.read();
+  const operationsRead = useEnvironmentRead<Operation[]>('/environment/operations', { interval: rows => rows?.some(busyStatus) ? 1500 : IDLE_POLL_MS, onSuccess: (next, previous) => {
+    const finished = previous?.filter(op => busyStatus(op) && !next.some(current => current.id === op.id && busyStatus(current))) || [];
+    const needsRuntime = finished.some(op => !terminalRuntimeRefreshes.current.has(op.id));
+    for (const op of finished) terminalRuntimeRefreshes.current.delete(op.id);
+    if (needsRuntime) void runtimeRead.read();
   } });
   const operations = React.useMemo(() => operationsRead.data || [], [operationsRead.data]);
-  const [latest, setLatest] = React.useState<LatestVersions | null>(null);
-  const [lora, setLora] = React.useState<LoraEnvironment | null>(null);
-  const latestRead = useEnvironmentRead<LatestVersions>('/environment/latest', { enabled: !onboardingAttention, refreshParam: true, onSuccess: next => {
-    setLatest(previous => ({ ...next, packages: Object.fromEntries(Object.entries(next.packages).map(([name, release]) => [name,
+  useLocalResourceSync([['environment', '/environment'], ['environment', '/environment/operations']], event => !!event.id?.startsWith('environment-') || !!event.id?.startsWith('torch-') && ['completed', 'failed', 'cancelled'].includes(event.state ?? ''), event => {
+    const operationId = event.id?.startsWith('environment-') ? event.id.slice('environment-'.length) : undefined;
+    if (operationId && ['completed', 'failed', 'cancelled'].includes(event.state ?? '') && operations.some(op => op.id === operationId && busyStatus(op)))
+      terminalRuntimeRefreshes.current.add(operationId);
+  });
+  const latestRead = useEnvironmentRead<LatestVersions>('/environment/latest', { enabled: !onboardingAttention, staleTime: ONLINE_STALE_MS, refetchOnVisible: false, refreshParam: true, reconcile: (next, previous) => (
+    { ...next, packages: Object.fromEntries(Object.entries(next.packages).map(([name, release]) => [name,
       release.error && previous?.packages[name] ? { ...previous.packages[name], error: release.error } : release,
-    ])) }));
-  } });
+    ])) }
+  ) });
+  const latest = latestRead.data;
   const latestError = latestRead.error, refreshLatest = latestRead.reload;
-  const loraRead = useEnvironmentRead<LoraEnvironment>('/environment/lora', { enabled: !onboardingAttention, refreshParam: true, onSuccess: next => {
-    setLora(previous => ({ ...next, upstream: next.upstream.error && previous ? { ...previous.upstream, error: next.upstream.error } : next.upstream }));
-  } });
+  const loraRead = useEnvironmentRead<LoraEnvironment>('/environment/lora', { enabled: !onboardingAttention, staleTime: ONLINE_STALE_MS, refetchOnVisible: false, refreshParam: true,
+    reconcile: (next, previous) => ({ ...next, upstream: next.upstream.error && previous ? { ...previous.upstream, error: next.upstream.error } : next.upstream }),
+  });
+  const lora = loraRead.data;
   const loraError = loraRead.error, refreshLora = loraRead.reload;
   const reportRestart = React.useContext(RestartRequiredContext);
   const restartRequired = status?.restart_required;

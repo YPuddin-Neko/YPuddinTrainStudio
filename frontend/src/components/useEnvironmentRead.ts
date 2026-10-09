@@ -1,73 +1,58 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { apiClient, READ_TIMEOUT_MS } from '../api/client';
+import { LOCAL_STALE_MS, useResourceQuery } from '../api/resourcePolicy';
 import { formatApiError } from '../utils/errors';
 
 type Options<T> = {
   enabled?: boolean;
-  interval?: number | false;
+  interval?: number | false | ((value: T | undefined) => number | false);
   refreshParam?: boolean;
   probe?: boolean;
   initialData?: T;
+  staleTime?: number;
+  refetchOnVisible?: boolean;
+  reconcile?: (value: T, previous: T | undefined) => T;
   onSuccess?: (value: T, previous: T | null) => void;
 };
 
-export function useEnvironmentRead<T>(endpoint: string, { enabled = true, interval = false, refreshParam = false, probe = false, initialData, onSuccess }: Options<T> = {}) {
-  const initial = useRef(initialData);
-  const [data, setData] = useState<T | null>(initialData ?? null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(enabled && initialData === undefined);
+export function useEnvironmentRead<T>(endpoint: string, { enabled = true, interval = false, refreshParam = false, probe = false, initialData, staleTime = LOCAL_STALE_MS, refetchOnVisible = true, reconcile, onSuccess }: Options<T> = {}) {
+  const client = useQueryClient();
   const [probing, setProbing] = useState(false);
-  const value = useRef<T | null>(initialData ?? null);
-  const alive = useRef(false);
-  const failed = useRef(false);
-  const accepted = useRef(onSuccess);
+  const mounted = useRef(true), accepted = useRef(onSuccess), previous = useRef<T | null>(null);
+  const merge = useRef(reconcile); merge.current = reconcile;
   accepted.current = onSuccess;
-  const pending = useRef<{ controller: AbortController; promise: Promise<void> } | null>(null);
-  const read = useCallback((refresh = false, replace = false): Promise<void> => {
-    if (!alive.current || !enabled || failed.current && !replace) return Promise.resolve();
-    if (pending.current) {
-      if (!replace) return pending.current.promise;
-      pending.current.controller.abort();
-    }
-    failed.current = false;
-    const controller = new AbortController();
-    const current = () => alive.current && pending.current?.controller === controller && !controller.signal.aborted;
-    setLoading(true); setProbing(probe && refresh);
-    const promise = apiClient.get<T>(endpoint, {
-      silent: true, signal: controller.signal, timeout: probe && refresh ? 120_000 : READ_TIMEOUT_MS,
+  const fetch = useCallback(async (signal: AbortSignal, refresh = false) => {
+    const value = await apiClient.get<T>(endpoint, {
+      silent: true, signal, timeout: probe && refresh ? 120_000 : READ_TIMEOUT_MS,
       ...(refreshParam ? { params: { refresh } } : {}),
-    }).then(next => {
-      if (!current()) return;
-      const previous = value.current;
-      value.current = next; setData(next); setError(''); accepted.current?.(next, previous);
-    }).catch(failure => {
-      if (current()) { failed.current = true; setError(formatApiError(failure)); }
-    }).finally(() => {
-      if (!current()) return;
-      pending.current = null; setLoading(false); setProbing(false);
     });
-    pending.current = { controller, promise };
-    return promise;
-  }, [enabled, endpoint, probe, refreshParam]);
+    return merge.current ? merge.current(value, client.getQueryData<T>(['environment', endpoint])) : value;
+  }, [client, endpoint, probe, refreshParam]);
+  const query = useResourceQuery<T>({ queryKey: ['environment', endpoint], enabled, initialData, staleTime, pollInterval: interval, refetchOnVisible,
+    queryFn: ({ signal }) => fetch(signal) });
+  const lastError = useRef('');
+  if (query.error) lastError.current = formatApiError(query.error);
+  else if (query.status === 'success' && !query.isFetching) lastError.current = '';
   useEffect(() => {
-    alive.current = true;
-    if (initial.current === undefined) void read();
-    return () => { alive.current = false; pending.current?.controller.abort(); pending.current = null; };
-  }, [read]);
-  useEffect(() => {
-    if (!enabled || !interval) return;
-    const timer = window.setInterval(() => { void read(); }, interval);
-    return () => window.clearInterval(timer);
-  }, [enabled, interval, read]);
+    if (query.data !== undefined) { const before = previous.current; previous.current = query.data; accepted.current?.(query.data, before); }
+  }, [query.data, query.dataUpdatedAt]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const read = useCallback(async (refresh = false, explicit = false) => {
+    if (!enabled || !mounted.current) return;
+    const queryKey = ['environment', endpoint];
+    if (!explicit && client.getQueryState(queryKey)?.error) return;
+    if (probe && refresh) setProbing(true);
+    try {
+      await client.fetchQuery<T>({ queryKey, queryFn: ({ signal }) => fetch(signal, refresh), staleTime: 0, retry: false, networkMode: 'always' });
+    } catch { /* The shared query retains the failure for the row's retry control. */ }
+    finally { if (mounted.current) setProbing(false); }
+  }, [client, enabled, endpoint, fetch, probe]);
   const reload = useCallback((refresh = false) => read(refresh, true), [read]);
   const updateData = useCallback((update: (current: T | null) => T | null) => {
-    if (!alive.current) return;
-    pending.current?.controller.abort(); pending.current = null;
-    setLoading(false); setProbing(false);
-    const previous = value.current;
-    const next = update(previous);
-    value.current = next; setData(next);
-    if (next !== null) accepted.current?.(next, previous);
-  }, []);
-  return { data, error, loading, probing, reload, read, updateData };
+    const key = ['environment', endpoint];
+    void client.cancelQueries({ queryKey: key, exact: true });
+    client.setQueryData<T>(key, current => update(current ?? null) ?? undefined);
+  }, [client, endpoint]);
+  return { data: query.data ?? null, error: lastError.current, loading: query.isFetching, probing, reload, read, updateData };
 }

@@ -1,7 +1,5 @@
-import React from 'react';
 import { ExternalLink, Loader2, RefreshCw } from 'lucide-react';
-import { apiClient } from '../api/client';
-import { formatApiError } from '../utils/errors';
+import { useEnvironmentRead } from './useEnvironmentRead';
 import { formatBytes } from '../utils/format';
 import { useWorkspaceText } from '../utils/workspaceText';
 import StudioSelect from './StudioSelect';
@@ -31,18 +29,7 @@ export default function DtkWheelPicker({ packageName, selected, onSelect, disabl
   packageName: string; selected: DtkWheel | null; onSelect: (wheel: DtkWheel | null) => void; disabled: boolean;
 }) {
   const text = useWorkspaceText();
-  const [catalog, setCatalog] = React.useState<DtkCatalog | null>(null);
-  const [error, setError] = React.useState('');
-  const [loading, setLoading] = React.useState(true);
-  const [revision, setRevision] = React.useState(0);
-  React.useEffect(() => {
-    let active = true;
-    setLoading(true); setError('');
-    void apiClient.get<DtkCatalog>('/environment/dtk/wheels', {silent: true}).then(value => {
-      if (active) setCatalog(value);
-    }).catch(err => { if (active) setError(formatApiError(err)); }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [revision]);
+  const { data: catalog, error, loading, reload } = useEnvironmentRead<DtkCatalog>('/environment/dtk/wheels');
   const wheels = catalog?.wheels.filter(item => item.package === packageName) || [];
   const compatible = wheels.filter(item => item.compatible);
   const reason = (value: string | null) => {
@@ -64,7 +51,7 @@ export default function DtkWheelPicker({ packageName, selected, onSelect, disabl
       <strong className="text-sm">{text('DTK 官方安装包', 'Official DTK packages')}</strong>
       <div className="flex items-center gap-2">
         {catalog?.source_url && <a className="ui-link" href={catalog.source_url} target="_blank" rel="noreferrer">{text('官方目录', 'Official catalog')}<ExternalLink size={12}/></a>}
-        <button type="button" className="ui-btn ui-btn-sm" disabled={disabled || loading} onClick={() => { onSelect(null); setRevision(value => value + 1); }}><RefreshCw size={13}/>{text('重新检查兼容版本', 'Check compatible versions again')}</button>
+        <button type="button" className="ui-btn ui-btn-sm" disabled={disabled || loading} onClick={() => { onSelect(null); void reload(); }}><RefreshCw size={13}/>{text('重新检查兼容版本', 'Check compatible versions again')}</button>
       </div>
     </div>
     {catalog && <p className="settings-note">DTK {catalog.runtime.dtk || '—'} · PyTorch {catalog.runtime.torch} · Python {catalog.runtime.python} · {catalog.runtime.machine}</p>}

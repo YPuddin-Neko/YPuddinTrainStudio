@@ -18,6 +18,8 @@ export const EVENT_TYPES = {
   TTS_SOURCE_CHANGED: 'tts.source.changed',
   ARTIFACT_CREATED: 'artifact.created',
   BACKGROUND_CHANGED: 'background.changed',
+  MODEL_DOWNLOAD: 'model.download',
+  TTS_MODEL_DOWNLOAD: 'tts.model_download',
 } as const;
 
 export type EventType = typeof EVENT_TYPES[keyof typeof EVENT_TYPES];

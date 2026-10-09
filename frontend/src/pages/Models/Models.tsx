@@ -1,8 +1,10 @@
 import React from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Check, Download, ExternalLink, FolderSearch, KeyRound, Loader2, Plus, RefreshCw, Search, Star, Trash2, X } from 'lucide-react';
-import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
-import type { ModelAsset, ModelDownload as BaseDownload, ModelDownloadRequest, Settings } from '../../api/types';
+import { apiClient } from '../../api/client';
+import { useImageModelResources, type ImageRecommendation as Recommendation } from '../../api/hooks/useImageModelResources';
+import { usePageVisible, useSharedSettings } from '../../api/resourcePolicy';
+import type { ModelAsset, ModelDownload as BaseDownload, ModelDownloadRequest } from '../../api/types';
 import { useFamilies } from '../../api/hooks/useFamilies';
 import LocalModelRegistration from './LocalModelRegistration';
 import StudioSelect from '../../components/StudioSelect';
@@ -20,18 +22,10 @@ import TtsModels from './TtsModels';
 
 type ModelDownload = BaseDownload & {bytes_per_second?: number; eta_seconds?: number | null; progress_at?: number | null};
 type Provider = 'huggingface' | 'modelscope';
-type Recommendation = {
-  id: string; family: string; kind: string; name: string; dtype: string; size: number;
-  purpose?: 'training' | 'inference'; variant?: 'raw' | 'turbo' | null;
-  recommended: boolean; model_id: string | null; available_path: string | null; is_default: boolean;
-  sources: { provider: Provider; repo_id: string; filename: string; revision: string; url: string }[];
-};
 const isActive = (task: ModelDownload) => ['queued', 'downloading'].includes(task.status);
 const basename = (path: string) => path.split(/[\\/]/).pop() || path;
 // Each list arrives on its own, so one slow or failed read holds back only the part that shows it.
 type Resource = 'library' | 'downloads' | 'settings' | 'prepare';
-const resources: Record<Resource, string> = { library: '/models', downloads: '/models/downloads', settings: '/settings', prepare: '/models/recommendations' };
-const resourceKeys = Object.keys(resources) as Resource[];
 const primary = 'ui-btn ui-btn-primary';
 const secondary = 'ui-btn';
 
@@ -55,20 +49,24 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
   const kinds = weights.map(weight => weight.kind);
   const downloadableKinds = weights.filter(weight => weight.downloadable).map(weight => weight.kind);
   const view = params.get('view') === 'library' ? 'library' : 'prepare';
-  const [models, setModels] = React.useState<ModelAsset[]>([]);
-  const [downloads, setDownloads] = React.useState<ModelDownload[]>([]);
+  const resources = useImageModelResources();
+  const settingsQuery = useSharedSettings();
+  const models = resources.assets.data ?? [];
+  const downloads = React.useMemo(() => resources.tasks.data ?? [], [resources.tasks.data]);
+  const catalog = resources.catalog.data ?? [];
+  const settings = settingsQuery.data ?? null;
+  const queries = { library: resources.assets, downloads: resources.tasks, settings: settingsQuery, prepare: resources.catalog };
+  const loaded = Object.fromEntries(Object.entries(queries).map(([key, query]) => [key, query.data !== undefined])) as Record<Resource, boolean>;
+  const loadErrors = Object.fromEntries(Object.entries(queries).filter(([, query]) => query.error).map(([key, query]) => [key, formatApiError(query.error)])) as Record<Resource, string>;
+  const visible = usePageVisible();
   const [observedAt, setObservedAt] = React.useState(() => Date.now() / 1000);
   const transferring = downloads.some(isActive);
   React.useEffect(() => {
-    if (!transferring) return;
+    if (!transferring || !visible) return;
     const timer = window.setInterval(() => setObservedAt(Date.now() / 1000), 1000);
     return () => window.clearInterval(timer);
-  }, [transferring]);
-  const [catalog, setCatalog] = React.useState<Recommendation[]>([]);
-  const [settings, setSettings] = React.useState<Settings | null>(null);
-  const [loaded, setLoaded] = React.useState<Partial<Record<Resource, true>>>({});
+  }, [transferring, visible]);
   const [error, setError] = React.useState('');
-  const [loadErrors, setLoadErrors] = React.useState<Partial<Record<Resource, string>>>({});
   const [notice, setNotice] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const pendingAction = React.useRef(false);
@@ -101,78 +99,19 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
     const next = new URLSearchParams(params); Object.entries(values).forEach(([key, value]) => next.set(key, value));
     setParams(next, { replace: true, state: location.state }); setPage(1); setQuery('');
   };
-  // The newest read of each list, the newest one shown, and the page's lifetime (aborted on leaving).
-  const reading = React.useRef<Partial<Record<Resource, number>>>({});
-  const controllers = React.useRef<Partial<Record<Resource, AbortController>>>({});
-  const shown = React.useRef<Partial<Record<Resource, number>>>({});
-  const failedReads = React.useRef(new Set<Resource>());
-  const reads = React.useRef(0);
   const lifetime = React.useRef<AbortController | null>(null);
-  const read = React.useCallback(async (resource: Resource, poll = false) => {
-    // A poll waits for the previous read of the same list instead of queueing behind it.
-    if (poll && (reading.current[resource] !== undefined || failedReads.current.has(resource))) return;
-    controllers.current[resource]?.abort();
-    const controller = new AbortController();
-    controllers.current[resource] = controller;
-    const id = ++reads.current;
-    const signal = controller.signal;
-    reading.current[resource] = id;
-    const show = (apply: () => void) => {
-      if (signal.aborted || lifetime.current?.signal.aborted || reading.current[resource] !== id || (shown.current[resource] ?? 0) > id) return;
-      shown.current[resource] = id; apply();
-    };
-    try {
-      const value = await apiClient.get<unknown>(resources[resource], { silent: true, signal, timeout: READ_TIMEOUT_MS });
-      show(() => {
-        failedReads.current.delete(resource);
-        if (resource === 'library') setModels(value as ModelAsset[]);
-        else if (resource === 'downloads') setDownloads(value as ModelDownload[]);
-        else if (resource === 'settings') setSettings(value as Settings);
-        else setCatalog(value as Recommendation[]);
-        setLoaded(current => current[resource] ? current : { ...current, [resource]: true });
-        setLoadErrors(current => {
-          if (!(resource in current)) return current;
-          const next = { ...current }; delete next[resource]; return next;
-        });
-      });
-    } catch (failure) {
-      show(() => { failedReads.current.add(resource); setLoadErrors(current => ({ ...current, [resource]: formatApiError(failure) })); });
-    } finally {
-      if (reading.current[resource] === id) delete reading.current[resource];
-      if (controllers.current[resource] === controller) delete controllers.current[resource];
-    }
-  }, []);
-  const refresh = React.useCallback(async () => { await Promise.all(resourceKeys.map(resource => read(resource))); }, [read]);
   React.useEffect(() => {
-    lifetime.current = new AbortController();
-    const current = lifetime.current;
-    const activeReads = controllers.current;
-    void refresh();
-    const timer = window.setInterval(() => resourceKeys.forEach(resource => void read(resource, true)), 2500);
-    return () => { current.abort(); Object.values(activeReads).forEach(controller => controller?.abort()); clearInterval(timer); };
-  }, [read, refresh]);
-  const cancelRead = (resource: Resource) => {
-    controllers.current[resource]?.abort();
-    delete controllers.current[resource]; delete reading.current[resource];
-  };
-  const acceptDownload = (task: ModelDownload) => {
-    if (lifetime.current?.signal.aborted) return;
-    cancelRead('downloads');
-    setDownloads(previous => [task, ...previous.filter(item => item.id !== task.id)]);
-  };
-  const acceptModel = (model: ModelAsset, recommendationId?: string) => {
-    if (lifetime.current?.signal.aborted) return;
-    cancelRead('library'); cancelRead('prepare');
-    setModels(previous => [...previous.filter(item => item.id !== model.id).map(item => model.is_default && item.family === model.family && item.kind === model.kind ? { ...item, is_default: false } : item), model]);
-    setCatalog(previous => previous.map(entry => entry.id === recommendationId || entry.model_id === model.id || entry.available_path === model.path
-      ? { ...entry, model_id: model.id, available_path: model.path, is_default: model.is_default }
-      : model.is_default && entry.family === model.family && entry.kind === model.kind ? { ...entry, is_default: false } : entry));
-  };
+    const controller = new AbortController(); lifetime.current = controller;
+    return () => controller.abort();
+  }, []);
+  const refresh = () => Promise.all([resources.refresh(), settingsQuery.refetch()]);
+  const acceptDownload = (task: ModelDownload) => { if (!lifetime.current?.signal.aborted) resources.acceptDownload(task); };
+  const acceptModel = (model: ModelAsset, recommendationId?: string) => { if (!lifetime.current?.signal.aborted) resources.acceptModel(model, recommendationId); };
   const setModelDefault = async (id: string, isDefault: boolean) => acceptModel(await apiClient.patch<ModelAsset>(`/models/${id}`, { is_default: isDefault }));
   const action = async (operation: () => Promise<void>, inForm = false) => {
     if (pendingAction.current) return;
     pendingAction.current = true; setBusy(true); setError(''); setFormError(''); setNotice('');
-    try { await operation(); if (!lifetime.current?.signal.aborted) void refresh(); window.dispatchEvent(new Event('studio-models-changed')); }
+    try { await operation(); window.dispatchEvent(new Event('studio-models-changed')); }
     catch (error) { if (!lifetime.current?.signal.aborted) (inForm ? setFormError : setError)(formatApiError(error)); }
     finally { pendingAction.current = false; if (!lifetime.current?.signal.aborted) setBusy(false); }
   };
@@ -253,7 +192,7 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
       </div>
     </div>
     {error && <div role="alert" className="settings-alert">{error}<button className={secondary} onClick={() => void refresh()}>{text('重试', 'Retry')}</button></div>}
-    {Object.keys(loadErrors).length > 0 && <div role="alert" className="settings-alert"><div>{Object.entries(loadErrors).map(([key, message]) => <p key={key}>{({ library: text('本地模型', 'Local models'), downloads: text('下载记录', 'Downloads'), settings: text('存储设置', 'Storage settings'), prepare: text('推荐模型', 'Recommended models') })[key as Resource]}：{message}{' '}<button className="ui-link" onClick={() => void read(key as Resource)}>{text('重新读取', 'Reload')}</button></p>)}</div></div>}
+    {Object.keys(loadErrors).length > 0 && <div role="alert" className="settings-alert"><div>{Object.entries(loadErrors).map(([key, message]) => <p key={key}>{({ library: text('本地模型', 'Local models'), downloads: text('下载记录', 'Downloads'), settings: text('存储设置', 'Storage settings'), prepare: text('推荐模型', 'Recommended models') })[key as Resource]}：{message}{' '}<button className="ui-link" onClick={() => void queries[key as Resource].refetch()}>{text('重新读取', 'Reload')}</button></p>)}</div></div>}
     {notice && <p className="model-notice" role="status">{notice}</p>}
     {listsSettled && standaloneTasks.length > 0 && <section className="model-download-inline" aria-label={text('下载状态', 'Download status')}><h3>{text('下载状态', 'Download status')}</h3>{standaloneTasks.map(downloadTaskRow)}</section>}
     {familiesError && <div role="alert" className="settings-alert">{text('无法读取支持的模型系列。', 'Could not load supported model families.')}<button className={secondary} onClick={() => void refreshFamilies()}>{text('重试', 'Retry')}</button></div>}
@@ -280,7 +219,7 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
       {count === 0 ? <p className="model-empty">{text('没有匹配的记录。', 'No matching records.')}</p> : <div className="model-library-list">{slice(filteredModels).map(model => <div className="model-library-row" key={model.id}><div><strong>{basename(model.path)}</strong>{(model as ModelAsset & {purpose?:string}).purpose==='inference'&&<span className="model-ready">{text('仅采样','Sampling only')}</span>}<p>{!selectedFamily && <>{model.family} · </>}{label(model.kind)} · {model.dtype || '—'} · {formatBytes(model.size)} · {modelAssetUnsupportedReason(model) ? text('已停用', 'Retired') : model.exists ? text('可用', 'Available') : text('文件缺失', 'Missing file')}</p>{modelAssetUnsupportedReason(model) && <p className="model-help-text">{modelAssetUnsupportedReason(model)}</p>}<details><summary>{text('文件路径', 'File path')}</summary><code>{model.path}</code></details></div><div className="model-actions"><button type="button" className={secondary} disabled={busy || !selectedFamily || (model as ModelAsset & {purpose?:string}).purpose === 'inference' || !model.is_default && (!model.exists || !!modelAssetUnsupportedReason(model))} aria-label={`${model.is_default && modelAssetUnsupportedReason(model) ? text('取消默认', 'Clear default') : text('设为默认', 'Set default')} ${basename(model.path)}`} onClick={() => void action(async () => { await setModelDefault(model.id, !model.is_default); })}><Star size={14} fill={model.is_default ? 'currentColor' : 'none'}/>{model.is_default ? modelAssetUnsupportedReason(model) ? text('取消默认', 'Clear default') : text('默认', 'Default') : text('设为默认', 'Set default')}</button><button type="button" className={`${secondary} ui-btn-icon ui-btn-danger`} disabled={busy} onClick={() => setRemove(model)} aria-label={`${text('移除登记', 'Remove registration')} ${basename(model.path)}`}><Trash2 size={14}/></button></div></div>)}</div>}
     </>}
 
-    {dialog && <Dialog title={dialog === 'local' ? text('添加本地模型', 'Add local model') : text('自定义下载', 'Custom download')} onClose={closeForm} closeDisabled={busy} wide>{dialog === 'local' ? <LocalModelRegistration initialFamily={family} families={families} onClose={closeForm} onBusyChange={setBusy} onRegistered={async(family)=>{void refresh();window.dispatchEvent(new Event('studio-models-changed'));setDialog(null);updateParams({view:'library',family});setNotice(text('已登记模型。','Model registered.'));}}/> : <form className="model-source-form" data-testid="download-model-form" onSubmit={event => { event.preventDefault(); if(family==='krea2'&&kind==='dit'&&!variant){setFormError(text('请确认 Raw 或 Turbo。','Confirm Raw or Turbo.'));return;} void action(async () => {
+    {dialog && <Dialog title={dialog === 'local' ? text('添加本地模型', 'Add local model') : text('自定义下载', 'Custom download')} onClose={closeForm} closeDisabled={busy} wide>{dialog === 'local' ? <LocalModelRegistration initialFamily={family} families={families} onClose={closeForm} onBusyChange={setBusy} onRegistered={async(family)=>{window.dispatchEvent(new Event('studio-models-changed'));setDialog(null);updateParams({view:'library',family});setNotice(text('已登记模型。','Model registered.'));}}/> : <form className="model-source-form" data-testid="download-model-form" onSubmit={event => { event.preventDefault(); if(family==='krea2'&&kind==='dit'&&!variant){setFormError(text('请确认 Raw 或 Turbo。','Confirm Raw or Turbo.'));return;} void action(async () => {
       acceptDownload(await apiClient.post<ModelDownload>('/models/downloads', { family, kind, provider, dtype: dtype || null, is_default: variant === 'turbo' ? false : isDefault, ...(family === 'krea2' && kind === 'dit' ? {variant, purpose: variant === 'turbo' ? 'inference' : 'training'} : {}), ...(sourceMode === 'url' ? { url: url.trim() } : { repo_id: repo.trim(), filename: filename.trim(), revision: revision.trim() || (provider === 'modelscope' ? 'master' : 'main') }) } as ModelDownloadRequest));
       setDialog(null); updateParams({ view: 'prepare' });
     }, true); }}>
@@ -295,6 +234,6 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
       {formError && <div role="alert" className="settings-alert">{formError}</div>}
       <footer><button type="button" className={secondary} disabled={busy} onClick={closeForm}>{text('取消', 'Cancel')}</button><button className={primary} data-testid="model-download-start" disabled={busy} type="submit">{busy && <Loader2 size={14} className="animate-spin"/>}{text('开始下载', 'Start download')}</button></footer>
     </form>}</Dialog>}
-    {remove && <Dialog title={text('移除模型登记', 'Remove model registration')} onClose={() => !busy && setRemove(null)} closeDisabled={busy}><div className="model-source-form"><p>{text('移除后不再显示在模型库，磁盘文件会保留。已有项目路径不会改变。', 'The entry will be removed from the library. Its file and existing project paths are retained.')}</p><code>{remove.path}</code><footer><button className={secondary} disabled={busy} onClick={() => setRemove(null)}>{text('取消', 'Cancel')}</button><button type="button" className={`${primary} ui-btn-danger`} disabled={busy} onClick={() => void action(async () => { await apiClient.delete(`/models/${remove.id}`); cancelRead('library'); cancelRead('prepare'); setModels(previous => previous.filter(model => model.id !== remove.id)); setCatalog(previous => previous.map(entry => entry.model_id === remove.id ? { ...entry, model_id: null, is_default: false } : entry)); setRemove(null); })}>{text('移除登记', 'Remove registration')}</button></footer></div></Dialog>}
+    {remove && <Dialog title={text('移除模型登记', 'Remove model registration')} onClose={() => !busy && setRemove(null)} closeDisabled={busy}><div className="model-source-form"><p>{text('移除后不再显示在模型库，磁盘文件会保留。已有项目路径不会改变。', 'The entry will be removed from the library. Its file and existing project paths are retained.')}</p><code>{remove.path}</code><footer><button className={secondary} disabled={busy} onClick={() => setRemove(null)}>{text('取消', 'Cancel')}</button><button type="button" className={`${primary} ui-btn-danger`} disabled={busy} onClick={() => void action(async () => { await apiClient.delete(`/models/${remove.id}`); resources.removeModel(remove.id); setRemove(null); })}>{text('移除登记', 'Remove registration')}</button></footer></div></Dialog>}
   </div>;
 }

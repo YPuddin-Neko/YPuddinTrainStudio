@@ -699,6 +699,7 @@ class EnvironmentManager:
         self._latest: tuple[float, Any, dict] | None = None
         self._lora_latest: tuple[float, Any, float, dict] | None = None
         self._latest_lock = threading.Lock()
+        self._lora_latest_lock = threading.Lock()
         self._windows_catalog = windows_attention_catalog.Catalog()
         self._closed = False
         # What the task center shows of the operations this service changes; it reads them every
@@ -1109,6 +1110,11 @@ class EnvironmentManager:
         sources an installation uses: the configured pip source for bitsandbytes and ONNX Runtime, the
         PyTorch source for xFormers, the community builds for FlashAttention 2 and the vendor list on
         DTK. Kept an hour."""
+        requested_at = time.monotonic()
+        with self._latest_lock:
+            return self._latest_versions(refresh, requested_at)
+
+    def _latest_versions(self, refresh, requested_at):
         from . import package_releases
         from .network import ProxyPolicy
 
@@ -1117,15 +1123,34 @@ class EnvironmentManager:
         downloads = self.context.settings().get("downloads", {})
         fallback = downloads.get("fallback", True)
         options = {"opener_factory": policy.opener, "cache_key": policy}
-        cache_key = (policy, self.profile, runtime, json.dumps(downloads, sort_keys=True))
-        with self._latest_lock:
-            if (
-                not refresh
-                and self._latest
-                and self._latest[1] == cache_key
-                and time.monotonic() - self._latest[0] < 3600
-            ):
-                return self._latest[2]
+        hip = self.profile == "linux-dtk" or bool(runtime.get("hip_runtime"))
+        # GPU telemetry changes constantly; only compatibility inputs identify an online lookup.
+        identity = {name: runtime.get(name) for name in (
+            "python", "torch", "platform", "machine", "cuda_runtime", "hip_runtime",
+            "cuda_available", "gpu_capability", "installed_dtk",
+        )}
+        identity["gpus"] = [
+            {name: gpu.get(name) for name in ("cuda_available", "compute_capability")}
+            for gpu in runtime.get("gpus") or []
+        ]
+        matching = triton_catalog.matching_version(runtime, self.profile)
+        identity["triton"] = matching
+        if hip:
+            dependencies = {"torch"} | {
+                Requirement(value).name for wheel in dtk_catalog.WHEELS for value in wheel.requires_packages
+            }
+            identity["dtk_build"] = dtk_catalog.installed_build(runtime, versions)
+            identity["packages"] = {name: versions.get(name) for name in sorted(dependencies)}
+        sources = {"pypi": downloads.get("pypi", "auto"), "pytorch": downloads.get("pytorch", "auto"),
+                   "fallback": fallback}
+        cache_key = (policy, self.profile, json.dumps(identity, sort_keys=True), json.dumps(sources, sort_keys=True))
+        if (
+            self._latest
+            and self._latest[1] == cache_key
+            and time.monotonic() - self._latest[0] < 3600
+            and (not refresh or self._latest[0] >= requested_at)
+        ):
+            return self._latest[2]
 
         pypi = [("index-url", url) for url in pypi_sources(downloads.get("pypi", "auto"), fallback, **options)]
 
@@ -1152,7 +1177,6 @@ class EnvironmentManager:
                 return {"version": None, "source": kind, "error": policy.redact(exc)[-500:]}
 
         packages = {}
-        hip = self.profile == "linux-dtk" or bool(runtime.get("hip_runtime"))
         cuda = not hip and runtime.get("platform") in ("Windows", "Linux") and bool(runtime.get("cuda_runtime"))
         if hip:
             wheels = dtk_catalog.catalog(runtime, versions, self.profile).wheels
@@ -1161,7 +1185,9 @@ class EnvironmentManager:
                     [w.version for w in wheels if w.package == name and w.compatible], "dtk"
                 )
         elif cuda:
-            catalog = self.windows_wheels(refresh=refresh)
+            catalog = self.windows_wheels(
+                refresh=refresh, requested_at=requested_at, runtime=runtime, policy=policy,
+            )
             packages["flash-attn"] = newest(
                 [w.version for w in catalog.wheels if w.compatible], "community", catalog.error
             )
@@ -1176,39 +1202,44 @@ class EnvironmentManager:
         for name in ("onnxruntime", *(("onnxruntime-gpu",) if cuda else ())):
             packages[name] = online(name, "pypi", pypi, torch=False)
         packages["mtlattn"] = {"version": metal_attention_catalog.VERSION, "source": "pinned", "error": None}
-        if matching := triton_catalog.matching_version(runtime, self.profile):
+        if matching:
             packages[matching[0]] = matching[1]
         result = {"checked_at": time.time(), "packages": packages}
-        with self._latest_lock:
-            self._latest = (time.monotonic(), cache_key, result)
+        self._latest = (time.monotonic(), cache_key, result)
         return result
 
     def lora_environment(self, refresh=False):
         """The LyCORIS release the built-in adapters match and upstream's; upstream is kept an hour."""
+        requested_at = time.monotonic()
+        with self._lora_latest_lock:
+            return self._lora_environment(refresh, requested_at)
+
+    def _lora_environment(self, refresh, requested_at):
         from .lora_environment import local_lycoris, upstream_lycoris
         from .network import ProxyPolicy
 
         local = local_lycoris()
         policy = ProxyPolicy.from_context(self.context)
         key = policy
-        with self._latest_lock:
-            cached = self._lora_latest
-            if not refresh and cached and cached[1] == key and time.monotonic() - cached[0] < 3600:
-                return {"checked_at": cached[2], "local": local, "upstream": cached[3]}
+        cached = self._lora_latest
+        if (cached and cached[1] == key and time.monotonic() - cached[0] < 3600
+                and (not refresh or cached[0] >= requested_at)):
+            return {"checked_at": cached[2], "local": local, "upstream": cached[3]}
         try:
             upstream = upstream_lycoris(policy.opener())
         except Exception as exc:  # noqa: BLE001 - an unreachable upstream only leaves the versions unknown
             upstream = {"error": policy.redact(exc)[-500:]}
         checked = time.time()
-        with self._latest_lock:
-            self._lora_latest = (time.monotonic(), key, checked, upstream)
+        self._lora_latest = (time.monotonic(), key, checked, upstream)
         return {"checked_at": checked, "local": local, "upstream": upstream}
 
-    def windows_wheels(self, refresh=False):
+    def windows_wheels(self, refresh=False, *, requested_at=None, runtime=None, policy=None):
         from .network import ProxyPolicy
 
         return self._windows_catalog.snapshot(
-            self.runtime(), self.profile, proxy=ProxyPolicy.from_context(self.context), refresh=refresh
+            self.runtime() if runtime is None else runtime, self.profile,
+            proxy=ProxyPolicy.from_context(self.context) if policy is None else policy, refresh=refresh,
+            requested_at=requested_at,
         )
 
     def _wheel_provider(self, id_):

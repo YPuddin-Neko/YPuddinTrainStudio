@@ -1,7 +1,5 @@
-import React from 'react';
 import { Download, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
-import { apiClient } from '../api/client';
-import { formatApiError } from '../utils/errors';
+import { useEnvironmentRead } from './useEnvironmentRead';
 import { useWorkspaceText } from '../utils/workspaceText';
 import type { DtkCatalog } from './DtkWheelPicker';
 
@@ -11,24 +9,13 @@ const linkButton = 'ui-btn ui-btn-sm';
 
 export default function DtkRuntimePanel() {
   const text = useWorkspaceText();
-  const [catalog, setCatalog] = React.useState<DtkCatalog | null>(null);
-  const [error, setError] = React.useState('');
-  const [loading, setLoading] = React.useState(true);
-  const [revision, setRevision] = React.useState(0);
-  React.useEffect(() => {
-    let active = true;
-    setLoading(true); setError(''); setCatalog(null);
-    void apiClient.get<DtkCatalog>('/environment/dtk/wheels', {silent: true}).then(value => {
-      if (active) setCatalog(value);
-    }).catch(err => { if (active) setError(formatApiError(err)); }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [revision]);
+  const { data: catalog, error, loading, reload } = useEnvironmentRead<DtkCatalog>('/environment/dtk/wheels');
   const runtime = catalog?.runtime;
   const guidance = catalog?.guidance;
   const recommendation = guidance?.recommendation;
   return <section id="environment-torch" data-settings-section tabIndex={-1} className="settings-section" data-testid="dtk-runtime-guidance">
     <div className="settings-section-heading"><h2>{text('DTK 安装指南', 'DTK installation guide')}</h2>
-      <button type="button" className={linkButton} disabled={loading} onClick={() => setRevision(value => value + 1)}><RefreshCw size={13}/>{text('刷新推荐', 'Refresh recommendations')}</button>
+      <button type="button" className={linkButton} disabled={loading} onClick={() => void reload()}><RefreshCw size={13}/>{text('刷新推荐', 'Refresh recommendations')}</button>
     </div>
     {loading && !catalog && <p role="status" className="settings-note flex items-center gap-2"><Loader2 size={14} className="animate-spin motion-reduce:animate-none"/>{text('正在查找适合本机的安装包…', 'Finding packages for this system…')}</p>}
     {error && <p role="alert" className="settings-note break-words">{error}</p>}

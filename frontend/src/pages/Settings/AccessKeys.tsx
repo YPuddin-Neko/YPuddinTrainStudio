@@ -1,13 +1,15 @@
 import React from 'react';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
-import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
+import { apiClient } from '../../api/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { useResourceCacheEvents } from '../../api/resourcePolicy';
+import { useCredentialsStatus, type CredentialProvider, type CredentialStates } from '../../api/hooks/useCredentialsStatus';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { SettingsSections } from './SettingsSections';
 import './access-keys.css';
 
-export type CredentialProvider = 'huggingface' | 'modelscope' | 'danbooru' | 'gelbooru' | 'e621' | 'rule34';
-export type CredentialStates = Record<CredentialProvider, { configured: boolean }>;
+export type { CredentialProvider, CredentialStates } from '../../api/hooks/useCredentialsStatus';
 const providers: { id: CredentialProvider; name: string; url: string; account?: 'username' | 'user_id' }[] = [
   { id: 'huggingface', name: 'Hugging Face', url: 'https://huggingface.co/settings/tokens' },
   { id: 'modelscope', name: 'ModelScope', url: 'https://modelscope.cn/my/myaccesstoken' },
@@ -21,14 +23,21 @@ const emptyDraft = () => Object.fromEntries(providers.map(p => [p.id, { account:
 export default function AccessKeys() {
   const text = useWorkspaceText();
   const location = useLocation();
-  const [status, setStatus] = React.useState<Partial<CredentialStates> | null>(null);
+  const client = useQueryClient();
+  useResourceCacheEvents();
+  const query = useCredentialsStatus();
+  const [confirmed, setConfirmed] = React.useState<Partial<CredentialStates>>({});
+  const status = query.data ?? confirmed;
   const [draft, setDraft] = React.useState(emptyDraft);
   const [busy, setBusy] = React.useState<CredentialProvider | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [statusError, setStatusError] = React.useState('');
+  const loading = query.isFetching;
+  const [statusUnavailable, setStatusUnavailable] = React.useState(false);
+  React.useEffect(() => {
+    if (query.error) setStatusUnavailable(true);
+    else if (!query.isFetching && query.data !== undefined) setStatusUnavailable(false);
+  }, [query.data, query.error, query.isFetching]);
   const [feedback, setFeedback] = React.useState<Partial<Record<CredentialProvider, { error?: string; notice?: string }>>>({});
   const mounted = React.useRef(false);
-  const reading = React.useRef<AbortController | null>(null);
   const pendingSave = React.useRef(false);
   const loadError = text('无法读取密钥配置状态，请重试。', 'Could not load access-key status. Retry.');
   // Render only locally defined errors: even an older/misconfigured server may echo
@@ -39,24 +48,12 @@ export default function AccessKeys() {
     if (code === 503) return text('凭据文件暂时不可读写，请检查服务数据目录权限后重试。', 'The credentials file is unavailable. Check service data directory permissions and retry.');
     return text('操作失败，请重试。', 'The request failed. Please retry.');
   };
-  const refresh = React.useCallback(async () => {
-    reading.current?.abort();
-    const controller = new AbortController();
-    reading.current = controller;
-    const current = () => mounted.current && !controller.signal.aborted && reading.current === controller;
-    setLoading(true);
-    try {
-      const result = await apiClient.get<CredentialStates>('/credentials', { silent: true, signal: controller.signal, timeout: READ_TIMEOUT_MS });
-      if (current()) { setStatus(result); setStatusError(''); }
-    } catch {
-      if (current()) setStatusError(loadError);
-    } finally { if (current()) { setLoading(false); reading.current = null; } }
-  }, [loadError]);
+  const statusError = query.error || statusUnavailable ? loadError : '';
+  const refresh = () => query.refetch({ cancelRefetch: false });
   React.useEffect(() => {
     mounted.current = true;
-    void refresh();
-    return () => { mounted.current = false; reading.current?.abort(); };
-  }, [refresh]);
+    return () => { mounted.current = false; };
+  }, []);
   React.useEffect(() => {
     const id = location.hash.slice(1);
     if (providers.some(p => id === `credentials-${p.id}`)) {
@@ -67,7 +64,7 @@ export default function AccessKeys() {
   const save = async (provider: typeof providers[number], clear = false) => {
     if (pendingSave.current) return;
     pendingSave.current = true;
-    reading.current?.abort(); reading.current = null; setLoading(false);
+    void client.cancelQueries({ queryKey: ['credentials'], exact: true });
     setBusy(provider.id); setFeedback(old => ({ ...old, [provider.id]: {} }));
     const value = draft[provider.id];
     const payload = provider.account ? { [provider.account]: value.account.trim(), api_key: value.secret.trim() } : { token: value.secret.trim() };
@@ -75,15 +72,20 @@ export default function AccessKeys() {
       const result = clear
         ? await apiClient.delete<{ configured: boolean }>(`/credentials/${provider.id}`, { silent: true })
         : await apiClient.put<{ configured: boolean }>(`/credentials/${provider.id}`, payload, { silent: true });
+      const state = { configured: result.configured === true };
+      const hasFullStatus = client.getQueryData<Partial<CredentialStates>>(['credentials']) !== undefined;
+      if (hasFullStatus) client.setQueryData<Partial<CredentialStates>>(['credentials'], old => old ? { ...old, [provider.id]: state } : old);
       if (mounted.current) {
-        setStatus(old => ({ ...old, [provider.id]: result }));
+        setConfirmed(old => ({ ...old, [provider.id]: state }));
         setDraft(old => ({ ...old, [provider.id]: { account: '', secret: '' } }));
         const notice = clear ? text('已清除', 'Cleared') : text('已保存', 'Saved');
         setFeedback(old => ({ ...old, [provider.id]: { notice } }));
       }
+      const statusFailed = !!client.getQueryState(['credentials'])?.error;
       window.dispatchEvent(new Event('credentials.changed'));
+      if (statusFailed && mounted.current) void query.refetch();
     } catch (failure) { if (mounted.current) setFeedback(old => ({ ...old, [provider.id]: { error: safeError(failure) } })); }
-    finally { pendingSave.current = false; if (mounted.current) { setBusy(null); void refresh(); } }
+    finally { pendingSave.current = false; if (mounted.current) setBusy(null); }
   };
   return <div className="access-keys" data-testid="access-keys-settings"><SettingsSections sections={providers.map(p => ({ id: `credentials-${p.id}`, label: p.name }))}>
     {statusError && <div role="alert" className="settings-alert">{statusError}<button type="button" className="ui-link ml-2" disabled={loading || !!busy} onClick={() => void refresh()}>{text('重试读取', 'Retry status')}</button></div>}

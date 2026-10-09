@@ -1,8 +1,8 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTtsInstalledModels } from '../../api/hooks/useTtsModels';
 import { Download, FolderSearch, RefreshCw } from 'lucide-react';
-import { ttsModelKeys, ttsModelMatches, ttsModelSelectable, ttsModelsApi, ttsModelsUrl, type TtsInstalledModel, type TtsModelEngine, type TtsModelVariant } from '../../api/ttsModels';
+import { ttsModelMatches, ttsModelSelectable, ttsModelsUrl, type TtsInstalledModel, type TtsModelEngine, type TtsModelVariant } from '../../api/ttsModels';
 import StudioSelect from '../../components/StudioSelect';
 import Dialog from '../../components/Dialog';
 import { formatApiError } from '../../utils/errors';
@@ -21,14 +21,9 @@ export interface TtsModelPickerProps extends TtsModelScope {
 }
 
 export default function TtsModelPicker({ engine, variant, value, disabled, getScope, onSelect }: TtsModelPickerProps) {
-  const text = useWorkspaceText(), location = useLocation(), client = useQueryClient();
+  const text = useWorkspaceText(), location = useLocation();
   const [scope, setScope] = React.useState<TtsModelScope | null>(null), [chosen, setChosen] = React.useState('');
-  const models = useQuery({ queryKey: ttsModelKeys.installed, queryFn: ({ signal }) => ttsModelsApi.installed(signal), enabled: !!scope, refetchOnWindowFocus: true, staleTime: 0 });
-  React.useEffect(() => {
-    const refresh = () => { void client.invalidateQueries({ queryKey: ttsModelKeys.installed }); };
-    window.addEventListener('studio-tts-models-changed', refresh);
-    return () => window.removeEventListener('studio-tts-models-changed', refresh);
-  }, [client]);
+  const models = useTtsInstalledModels(!!scope);
   const compatible = (models.data || []).filter(model => scope && ttsModelMatches(model, scope.engine, scope.variant));
   const names = new Map<string, number>();
   compatible.forEach(model => names.set(model.name, (names.get(model.name) || 0) + 1));
@@ -40,7 +35,6 @@ export default function TtsModelPicker({ engine, variant, value, disabled, getSc
     const next = getScope ? getScope() : { engine, variant, value };
     if (!next) return;
     setChosen(''); setScope({ ...next });
-    void client.invalidateQueries({ queryKey: ttsModelKeys.installed });
   };
   return <><button type="button" className="ui-btn ui-btn-sm" disabled={disabled} onClick={open}><FolderSearch size={14}/>{text('选择模型', 'Choose model')}</button>{scope && <Dialog title={text('选择语音模型', 'Choose speech model')} onClose={() => setScope(null)}>
     <div className="tts-model-picker" data-testid="tts-model-picker"><div className="tts-model-picker-controls">

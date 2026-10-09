@@ -2,6 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { apiClient } from '../api/client';
 import { useEnvironmentRead } from './useEnvironmentRead';
+import { IDLE_POLL_MS, useLocalResourceSync } from '../api/resourcePolicy';
 import { useWorkspaceText } from '../utils/workspaceText';
 import { formatApiError } from '../utils/errors';
 import StudioSelect from './StudioSelect';
@@ -22,7 +23,8 @@ export default function TorchEnvironmentPanel({ disabled = false, statusUnavaila
   const [error, setError] = React.useState('');
   const sessionOperations = React.useRef(new Set<string>());
   const [polling, setPolling] = React.useState(false);
-  const snapshot = useEnvironmentRead<Snapshot>('/environment/torch', { interval: polling ? 1500 : false, onSuccess: data => {
+  useLocalResourceSync([['environment', '/environment/torch']], event => !!event.id?.startsWith('torch-'));
+  const snapshot = useEnvironmentRead<Snapshot>('/environment/torch', { interval: polling ? 1500 : IDLE_POLL_MS, onSuccess: data => {
     for (const op of data.operations) if (active(op) || op.status === 'ready') sessionOperations.current.add(op.id);
     setPolling(data.operations.some(active));
     const installed = data.operations.filter(op => op.status === 'completed' && op.environment_id);

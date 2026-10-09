@@ -1,7 +1,5 @@
-import React from 'react';
 import { ExternalLink, Loader2, RefreshCw } from 'lucide-react';
-import { apiClient } from '../api/client';
-import { formatApiError } from '../utils/errors';
+import { useEnvironmentRead } from './useEnvironmentRead';
 import { formatBytes } from '../utils/format';
 import { useWorkspaceText } from '../utils/workspaceText';
 import StudioSelect from './StudioSelect';
@@ -24,18 +22,7 @@ export default function WindowsAttentionWheelPicker({ selected, onSelect, disabl
   selected: WindowsAttentionWheel | null; onSelect: (wheel: WindowsAttentionWheel | null) => void; disabled: boolean;
 }) {
   const text = useWorkspaceText();
-  const [catalog, setCatalog] = React.useState<WindowsAttentionCatalog | null>(null);
-  const [error, setError] = React.useState('');
-  const [loading, setLoading] = React.useState(true);
-  const [revision, setRevision] = React.useState(0);
-  React.useEffect(() => {
-    let active = true;
-    setLoading(true); setError('');
-    void apiClient.get<WindowsAttentionCatalog>(`/environment/windows/wheels${revision ? '?refresh=true' : ''}`, {silent: true}).then(value => {
-      if (active) setCatalog(value);
-    }).catch(err => { if (active) setError(formatApiError(err)); }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [revision]);
+  const { data: catalog, error, loading, reload } = useEnvironmentRead<WindowsAttentionCatalog>('/environment/windows/wheels', { staleTime: 300_000, refetchOnVisible: false, refreshParam: true });
   const compatible = catalog?.wheels.filter(wheel => wheel.compatible) || [];
   const reasons: Record<string, [string, string]> = {
     requires_windows_cuda: ['需要 NVIDIA CUDA 环境', 'Requires NVIDIA CUDA'],
@@ -51,7 +38,7 @@ export default function WindowsAttentionWheelPicker({ selected, onSelect, disabl
       <strong className="text-sm">{text('社区预编译版本', 'Community builds')}</strong>
       <div className="flex flex-wrap items-center gap-2">
         <a className="ui-link" href={catalog?.source_url || source} target="_blank" rel="noreferrer">{text('维护者发布页', 'Publisher release')}<ExternalLink size={12}/></a>
-        <button type="button" className="ui-btn ui-btn-sm" disabled={disabled || loading} onClick={() => { onSelect(null); setRevision(value => value + 1); }}><RefreshCw size={13}/>{text('刷新版本', 'Refresh builds')}</button>
+        <button type="button" className="ui-btn ui-btn-sm" disabled={disabled || loading} onClick={() => { onSelect(null); void reload(true); }}><RefreshCw size={13}/>{text('刷新版本', 'Refresh builds')}</button>
       </div>
     </div>
     <p className="settings-note">{text('安装包由社区维护者 mjun0812 提供。', 'Packages provided by community maintainer mjun0812.')}</p>

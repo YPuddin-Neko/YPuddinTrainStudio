@@ -236,14 +236,15 @@ class Catalog:
         self._lock = threading.Lock()
         self._wheels = BUNDLED
         self._checked_at = None
-        self._attempted_at = 0.0
+        self._completed_at = 0.0
         self._error = None
         self._policy = None
         self._releases = [BUNDLED_RELEASE]
         self._limited = False
         self._unverified_assets = 0
 
-    def snapshot(self, runtime, profile, *, proxy=None, refresh=False):
+    def snapshot(self, runtime, profile, *, proxy=None, refresh=False, requested_at=None):
+        requested_at = time.monotonic() if requested_at is None else requested_at
         policy = proxy or ProxyPolicy()
         supported = (
             runtime.get("platform") in ("Windows", "Linux")
@@ -253,9 +254,10 @@ class Catalog:
         with self._lock:
             updated = False
             if supported and (
-                refresh or policy != self._policy or time.monotonic() - self._attempted_at > 300
+                policy != self._policy
+                or time.monotonic() - self._completed_at > 300
+                or refresh and self._completed_at < requested_at
             ):
-                self._attempted_at, self._policy = time.monotonic(), policy
                 try:
                     self._wheels, self._releases, self._limited, self._unverified_assets = discover(policy)
                     self._checked_at, self._error = time.time(), None
@@ -265,6 +267,8 @@ class Catalog:
                         "无法更新社区版本目录，已使用保存的版本信息。请检查网络或全局代理设置。\n"
                         + policy.redact(exc)
                     )
+                # Overlapping refreshes share this attempt, including a failed one.
+                self._completed_at, self._policy = time.monotonic(), policy
             wheels = [
                 w.model_copy(
                     update={

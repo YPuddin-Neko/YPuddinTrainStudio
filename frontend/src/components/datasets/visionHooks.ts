@@ -1,21 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { DatasetInfo, Settings, VisionCatalog, VisionModel, VlmService, VlmServices } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { versionConfigUrl } from '../../utils/projectVersions';
 import { formatApiError } from '../../utils/errors';
+import { IDLE_POLL_MS, useLocalResourceSync, useResourceQuery, useSharedSettings } from '../../api/resourcePolicy';
 
 export const ACTIVE_DOWNLOAD = ['queued', 'downloading', 'verifying'];
 
 /** Tagging and head-detection models with their download state; polls while one downloads. */
 export function useVisionModels() {
-  return useQuery({
+  useLocalResourceSync([['vision-models']], event => !!event.id?.startsWith('vision-'));
+  return useResourceQuery({
     queryKey: ['vision-models'],
     queryFn: ({ signal }) => apiClient.get<VisionCatalog>('/vision/models', { signal, silent: true, timeout: READ_TIMEOUT_MS }),
-    retry: false,
-    networkMode: 'always',
-    refetchInterval: query => !query.state.error && query.state.data?.models.some(model => ACTIVE_DOWNLOAD.includes(model.download?.status ?? '')) ? 1000 : false,
+    pollInterval: data => data?.models.some(model => ACTIVE_DOWNLOAD.includes(model.download?.status ?? '')) ? 1000 : IDLE_POLL_MS,
   });
 }
 
@@ -29,24 +29,7 @@ export type VlmSettings = NonNullable<TaggingSettings['vlm']>;
 /** 设置 → 打标: the vision model service and where models download from. Saving updates every open page. */
 export function useTaggingSettings() {
   const client = useQueryClient();
-  const query = useQuery({
-    queryKey: ['settings'],
-    queryFn: ({ signal }) => apiClient.get<Settings>('/settings', { signal, silent: true, timeout: READ_TIMEOUT_MS }),
-    retry: false,
-    networkMode: 'always',
-    staleTime: 30_000,
-  });
-  useEffect(() => {
-    const changed = (event: Event) => {
-      const detail = (event as CustomEvent<Settings>).detail;
-      if (detail) {
-        void client.cancelQueries({ queryKey: ['settings'], exact: true });
-        client.setQueryData(['settings'], detail);
-      } else void client.invalidateQueries({ queryKey: ['settings'] });
-    };
-    window.addEventListener('studio.settings.changed', changed);
-    return () => window.removeEventListener('studio.settings.changed', changed);
-  }, [client]);
+  const query = useSharedSettings();
   const save = async (tagging: TaggingSettings) => {
     const result = await apiClient.put<Settings>('/settings', { tagging }, { silent: true });
     await client.cancelQueries({ queryKey: ['settings'], exact: true });
