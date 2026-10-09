@@ -28,7 +28,6 @@
 .tts-checkpoint-table .tts-result-identity dd { max-width:250px; }
 .tts-result-player { display:grid; gap:7px; margin:0 0 10px; }
 .tts-result-player strong { font-size:12px; font-weight:500; overflow-wrap:anywhere; }
-.tts-result-player audio { width:100%; max-width:640px; height:36px; }
 .tts-sample-list { border:1px solid var(--studio-line); border-radius:7px; background:var(--studio-panel); }
 .tts-sample-record { min-width:0; padding:10px 12px; }
 .tts-sample-record + .tts-sample-record { border-top:1px solid var(--studio-line); }

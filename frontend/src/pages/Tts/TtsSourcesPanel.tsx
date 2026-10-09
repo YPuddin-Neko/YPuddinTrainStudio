@@ -18,7 +18,8 @@ import '../../components/datasets/dataset-pipeline.css';
 import '../../styles/project-results.css';
 import './tts-sources.css';
 
-interface Props { projectId: string; versionId: string; readOnly: boolean; engine?: TtsEngine }
+export interface TtsDataView { stage: 'sources' | 'rows' | 'issues'; split: TtsSplit }
+interface Props { projectId: string; versionId: string; readOnly: boolean; engine?: TtsEngine; view?: TtsDataView; onViewChange?: (view: TtsDataView) => void }
 type SourceDialog = { split: TtsSplit; action: 'put' | 'remove'; path: string; revision: number; conflict: boolean };
 const splits: TtsSplit[] = ['train', 'validation'];
 const complete = (source: TtsSource) => (source.state === 'valid' || source.state === 'invalid') && source.snapshot_id !== null;
@@ -89,16 +90,16 @@ function SourceRows({ source, refresh, gptSovits }: { source: TtsSource; refresh
       <th scope="col">{text('行', 'Line')}</th><th scope="col">{text('音频', 'Audio')}</th>{gptSovits && <><th scope="col">{text('语言', 'Language')}</th><th scope="col">{text('说话人', 'Speaker')}</th></>}<th scope="col">{text('转写', 'Transcript')}</th><th scope="col">{text('检查结果', 'Check results')}</th>
     </tr></thead><tbody>{rows.data.items.map(row => <tr key={row.id}>
       <td>{row.line}</td>
-      <td><div className="tts-source-audio-name">{row.audio_name || '—'}</div><small>{row.duration_seconds === null ? '—' : `${row.duration_seconds.toFixed(2)} s`} · {row.sample_rate === null ? '—' : `${row.sample_rate} Hz`} · {row.channels === null ? '—' : text(`${row.channels} 声道`, `${row.channels} ch`)}</small>
-        <div className="tts-source-row-actions"><button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" disabled={!ttsAudioUrl(row.audio_url)} onClick={() => play(row, false)} aria-label={text(`试听第 ${row.line} 行音频`, `Preview line ${row.line} audio`)}><Play size={12}/>{text('试听', 'Preview')}</button>
-          {!gptSovits && row.reference_audio_name && <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" disabled={!ttsAudioUrl(row.reference_audio_url)} title={row.reference_audio_name} onClick={() => play(row, true)} aria-label={text(`试听第 ${row.line} 行参考音频`, `Preview line ${row.line} reference audio`)}><Play size={12}/>{text('参考音频', 'Reference')}</button>}</div></td>
-      {gptSovits && <><td>{row.language || '—'}</td><td>{row.speaker || '—'}</td></>}<td className="tts-source-transcript">{row.text === null ? '—' : row.text}</td>
+      <td><div className="tts-source-audio-heading"><div className="tts-source-audio-name" tabIndex={0}>{row.audio_name || '—'}</div><button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" disabled={!ttsAudioUrl(row.audio_url)} onClick={() => play(row, false)} aria-label={text(`试听第 ${row.line} 行音频`, `Preview line ${row.line} audio`)}><Play size={12}/>{text('试听', 'Preview')}</button></div>
+        <small>{row.duration_seconds === null ? '—' : `${row.duration_seconds.toFixed(2)} s`} · {row.sample_rate === null ? '—' : `${row.sample_rate} Hz`} · {row.channels === null ? '—' : text(`${row.channels} 声道`, `${row.channels} ch`)}</small>
+        {!gptSovits && row.reference_audio_name && <div className="tts-source-row-actions"><button type="button" className="ui-btn ui-btn-sm ui-btn-quiet" disabled={!ttsAudioUrl(row.reference_audio_url)} title={row.reference_audio_name} onClick={() => play(row, true)} aria-label={text(`试听第 ${row.line} 行参考音频`, `Preview line ${row.line} reference audio`)}><Play size={12}/>{text('参考音频', 'Reference')}</button></div>}</td>
+      {gptSovits && <><td>{row.language || '—'}</td><td><span className="tts-source-speaker" tabIndex={0}>{row.speaker || '—'}</span></td></>}<td className="tts-source-transcript">{row.text === null ? '—' : row.text}</td>
       <td>{row.issues.length ? <IssueList issues={row.issues}/> : <span className="tts-source-muted">{text('通过', 'Passed')}</span>}</td>
     </tr>)}</tbody></table>{!rows.data.items.length && <p className="tts-source-muted">{text('没有音频条目。', 'No audio rows.')}</p>}</div>}
   </div>;
 }
 
-function SourcesForVersion({ projectId: pid, versionId: vid, readOnly, engine = 'voxcpm1.5' }: Props) {
+function SourcesForVersion({ projectId: pid, versionId: vid, readOnly, engine = 'voxcpm1.5', view, onViewChange }: Props) {
   const gptSovits = engine === 'gpt-sovits-v5';
   const text = useWorkspaceText();
   const client = useQueryClient();
@@ -111,8 +112,11 @@ function SourcesForVersion({ projectId: pid, versionId: vid, readOnly, engine = 
   const [dialog, setDialog] = React.useState<SourceDialog | null>(null);
   const [error, setError] = React.useState('');
   const [dialogError, setDialogError] = React.useState('');
-  const [browsing, setBrowsing] = React.useState<TtsSplit | null>(null);
-  const [stage, setStage] = React.useState<'sources' | 'rows' | 'issues'>('sources');
+  const [localView, setLocalView] = React.useState<TtsDataView>({ stage: 'sources', split: 'train' });
+  const { stage, split: browsing } = view || localView;
+  const changeView = (next: TtsDataView) => { setLocalView(next); onViewChange?.(next); };
+  const setStage = (next: TtsDataView['stage']) => changeView({ stage: next, split: browsing });
+  const setBrowsing = (next: TtsSplit | null) => changeView({ stage, split: next || 'train' });
   const stageId = React.useId();
   const stageBody = useEnterAnimation<HTMLDivElement>(stage, { skipFirst: true });
   React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -194,7 +198,7 @@ function SourcesForVersion({ projectId: pid, versionId: vid, readOnly, engine = 
   const visibleSplits = splits.filter(split => !gptSovits || split === 'train' || sourceFor(split));
   const chosenSplit = browsing && visibleSplits.includes(browsing) ? browsing : 'train';
   const selectedSource = sourceFor(chosenSplit);
-  const browse = (split: TtsSplit) => { setBrowsing(split); setStage('rows'); };
+  const browse = (split: TtsSplit) => changeView({ stage: 'rows', split });
   const formatHelp = gptSovits
     ? text('JSONL：每行包含 audio、text、language，可选 speaker。\n.list：使用 audio|speaker|language|text 四列。\n语言支持 zh、en、ja、ko、yue。音频须为 32000、44100 或 48000 Hz 单声道 PCM WAV。\nGPT-SoVITS 不使用 ref_audio、dataset_id 或独立验证清单；数据检查保留原始音频。', 'JSONL: each line contains audio, text, language and optional speaker.\n.list: use four columns, audio|speaker|language|text.\nSupported languages: zh, en, ja, ko, yue. Audio must be 32000, 44100 or 48000 Hz mono PCM WAV.\nGPT-SoVITS does not use ref_audio, dataset_id or a separate validation manifest. Data checks preserve the original audio.')
     : text('JSONL：每行包含 audio 和 text；参考音频使用 ref_audio。\n音频须为 44100 Hz 单声道 PCM WAV。\n验证清单可选，留空时不运行验证。登记与检查不会修改原始音频。', 'JSONL: each line contains audio and text; use ref_audio for reference audio.\nAudio must be 44100 Hz mono PCM WAV.\nA validation manifest is optional. Without one, validation will not run. Registration and checks preserve the original audio.');
@@ -235,7 +239,7 @@ function SourcesForVersion({ projectId: pid, versionId: vid, readOnly, engine = 
           {source && <>
             <dl className="tts-source-summary"><div><dt>{text('音频条目', 'Audio rows')}</dt><dd>{summary?.clips_count.toLocaleString() ?? '—'}</dd></div><div><dt>{text('有效条目', 'Valid rows')}</dt><dd>{summary?.valid_clips_count.toLocaleString() ?? '—'}</dd></div><div><dt>{text('无效条目', 'Invalid rows')}</dt><dd>{summary?.invalid_count.toLocaleString() ?? '—'}</dd></div><div><dt>{text('总时长', 'Total duration')}</dt><dd>{summary ? `${summary.duration_seconds.toFixed(1)} s` : '—'}</dd></div></dl>
             <footer className="tts-source-footer"><details className="tts-source-location"><summary>{text('清单路径', 'Manifest path')}</summary><div className="tts-source-path" tabIndex={0}>{source.path}</div></details>
-              {!!source.issues.length && <button type="button" className="ui-link" onClick={() => { setBrowsing(split); setStage('issues'); }}>{text('查看检查问题', 'View check issues')}{source.issues_total !== null && ` (${source.issues_total})`}</button>}
+              {!!source.issues.length && <button type="button" className="ui-link" onClick={() => changeView({ stage: 'issues', split })}>{text('查看检查问题', 'View check issues')}{source.issues_total !== null && ` (${source.issues_total})`}</button>}
               {complete(source) && <button type="button" className="ui-link tts-source-browse" onClick={() => browse(split)}>{text('浏览音频明细', 'Browse audio rows')}<ChevronRight size={13}/></button>}
             </footer>
           </>}

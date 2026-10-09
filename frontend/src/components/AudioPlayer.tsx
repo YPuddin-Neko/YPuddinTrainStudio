@@ -148,10 +148,11 @@ function AudioControls({ src, label, autoPlay = false, playRequest = 0, loadErro
       onPause={stopped} onEnded={stopped}
       onError={() => { if (active.current) { stopped(); setFailure('load'); } }}/>
     <div className="studio-audio-controls">
-      <button type="button" className="ui-btn ui-btn-sm ui-btn-icon ui-btn-quiet" onClick={toggle} aria-label={playLabel} title={playLabel}>
+      <button type="button" className="ui-btn ui-btn-icon studio-audio-play" onClick={toggle} aria-label={playLabel} title={playLabel}>
         {busy ? <Loader2 size={16} className="studio-audio-loading" aria-hidden="true"/> : playing ? <Pause size={16} aria-hidden="true"/> : <Play size={16} aria-hidden="true"/>}
       </button>
       <input className="studio-audio-seek" type="range" min={0} max={duration || 1} step={0.1} value={Math.min(time, duration || 0)} disabled={!duration}
+        style={{ '--audio-fill': `${duration ? Math.min(100, time / duration * 100) : 0}%` } as React.CSSProperties}
         aria-label={text('播放进度', 'Playback position')} aria-valuetext={text(`${elapsed}，共 ${total}`, `${elapsed} of ${total}`)}
         onChange={event => seek(Number(event.target.value))} onKeyDown={seekKey}/>
       <span className="studio-audio-time" aria-hidden="true">{elapsed}<span> / </span>{total}</span>
@@ -160,6 +161,7 @@ function AudioControls({ src, label, autoPlay = false, playRequest = 0, loadErro
           {silent ? <VolumeX size={15} aria-hidden="true"/> : <Volume2 size={15} aria-hidden="true"/>}
         </button>
         <input type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume} onChange={event => changeVolume(Number(event.target.value))}
+          style={{ '--audio-fill': `${(muted ? 0 : volume) * 100}%` } as React.CSSProperties}
           aria-label={text('音量', 'Volume')} aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)}%`}/>
       </div>
     </div>

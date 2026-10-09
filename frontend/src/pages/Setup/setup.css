@@ -62,6 +62,12 @@
 .setup-tts-description .ui-link { display:inline-flex; align-items:center; gap:3px; }
 .setup-tts-description .setup-error { margin:8px 0 0; }
 .setup-tts-actions { flex-shrink:0; display:flex; align-items:center; min-height:30px; }
+.setup-tts-actions .model-button-downloading { position:relative; min-width:76px; }
+.setup-tts-actions .model-download-cancel-label { display:none; align-items:center; gap:4px; }
+.setup-tts-actions .ui-btn.model-button-downloading:is(:hover,:focus-visible):not(:disabled) { color:var(--studio-danger); background:var(--control-danger-soft); border-color:var(--studio-danger); }
+.setup-tts-actions .model-button-downloading:is(:hover,:focus-visible):not(:disabled) .model-download-active-label { display:none; }
+.setup-tts-actions .model-button-downloading:is(:hover,:focus-visible):not(:disabled) .model-download-cancel-label { display:inline-flex; }
+@media(hover:none) { .setup-tts-actions .model-button-downloading .model-download-active-label { display:none; }.setup-tts-actions .model-button-downloading .model-download-cancel-label { display:inline-flex; } }
 .setup-tts-transfer { color:var(--studio-dim); font-size:11px; line-height:1.65; margin:8px 0 0; }
 .setup-tts-path { display:block; max-width:100%; color:var(--studio-dim); font-size:11px; overflow-wrap:anywhere; margin-top:6px; }
 .setup-tts-progress { margin-top:9px; }
