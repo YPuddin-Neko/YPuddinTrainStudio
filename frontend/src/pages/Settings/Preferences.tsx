@@ -154,8 +154,8 @@ export default function Preferences() {
         {changeNotice('paths', 'bootstrap_env_dir', true)}
         {changed('paths', 'bootstrap_env_dir').edited && <p className="settings-note">{text('新目录需安装依赖，旧环境保留。', 'The new directory needs dependencies; the old environment is retained.')}</p>}
       </div></div>
-      <div className="settings-field"><label htmlFor="preferences-output-mode">{text('训练产物位置', 'Training output location')}</label><div className="settings-field-control">
-        <StudioSelect disabled={saving} id="preferences-output-mode" aria-label={text('训练产物位置', 'Training output location')} value={settings.paths.output_mode === 'custom' ? 'custom' : 'project'}
+      <div className="settings-field"><label htmlFor="preferences-output-mode">{text('训练产物目录', 'Training output directory')}</label><div className="settings-field-control">
+        <StudioSelect disabled={saving} id="preferences-output-mode" aria-label={text('训练产物目录', 'Training output directory')} value={settings.paths.output_mode === 'custom' ? 'custom' : 'project'}
           options={[{value:'project',label:text('项目版本目录（默认）','Project version directory (default)')},{value:'custom',label:text('自定义输出根目录','Custom output root')}]}
           onValueChange={value => update(s => ({...s,paths:{...s.paths,output_mode:value === 'custom' ? 'custom' : 'project'}}))}/>
         {settings.paths.output_mode === 'custom' ? <><div className="mt-2"><PathInput directoryOnly allowMissingDirectory ariaLabel={t('settings.outputDir')} value={settings.paths.output_dir} onChange={value => update(s => ({...s,paths:{...s.paths,output_dir:value}}))}/></div><p className="settings-note">{text('只放训练产物，按项目、版本和任务分开保存。','Holds training outputs only, organized by project, version and job.')}</p></>

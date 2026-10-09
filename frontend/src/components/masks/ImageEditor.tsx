@@ -13,6 +13,7 @@ import { SlidingIndicator } from '../motion';
 import { LoadingNote } from '../Loading';
 import OverflowStrip from '../OverflowStrip';
 import { useConfirmation } from '../useConfirmation';
+import { useImageViewport } from './useImageViewport';
 
 type Mode = 'paint' | 'mask';
 type Tool = 'brush' | 'erase' | 'pan' | 'pick';
@@ -51,7 +52,6 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
   const closeButton = React.useRef<HTMLButtonElement>(null);
   const cursor = React.useRef<HTMLDivElement>(null);
   const stroke = React.useRef<PaintStroke|Extract<MaskOperation,{kind:'stroke'}>|null>(null);
-  const pan = React.useRef<{x:number;y:number;left:number;top:number}|null>(null);
   const frame = React.useRef<number|null>(null);
   const titleId = React.useId();
   const dirty = () => !!paint.current?.dirty || !!mask.current?.dirty || !!stroke.current;
@@ -99,7 +99,8 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
   React.useEffect(()=>{renderView();},[revision,renderView,loading]);
   React.useEffect(()=>{
     const host=viewport.current;if(!host)return;
-    const update=()=>setBounds({width:host.clientWidth||900,height:host.clientHeight||550});update();
+    // Scrollbars must not change the fit scale after a wheel zoom.
+    const update=()=>setBounds({width:host.offsetWidth||900,height:host.offsetHeight||550});update();
     const observer=new ResizeObserver(update);observer.observe(host);return()=>observer.disconnect();
   },[loading]);
   React.useEffect(()=>{
@@ -126,13 +127,12 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
       if('color' in stroke.current)paint.current?.apply(stroke.current,true);else mask.current?.apply(stroke.current,true);
       stroke.current=null;setMessage('');redraw();
     }
-    pan.current=null;
   };
+  const { panning, viewportEvents } = useImageViewport({ viewport, canvas, preview:cursor, zoom, setZoom, enabled:!!info&&!loading&&!saving, panTool:tool==='pan', isDrawing:()=>!!stroke.current, finishStroke });
   const point=(event:React.PointerEvent<HTMLCanvasElement>)=>imagePoint(event.clientX,event.clientY,event.currentTarget.getBoundingClientRect(),info!.width,info!.height);
   const pointerDown=(event:React.PointerEvent<HTMLCanvasElement>)=>{
     if(!paint.current||!mask.current||saving||loading||event.button!==0)return;
     event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);
-    if(tool==='pan'){pan.current={x:event.clientX,y:event.clientY,left:viewport.current?.scrollLeft||0,top:viewport.current?.scrollTop||0};return;}
     const at=point(event);
     if(mode==='paint'&&(tool==='pick'||event.altKey)){setColor(paint.current.colorAt(at));setTool('brush');return;}
     if(mode==='paint'){
@@ -146,7 +146,6 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
   };
   const pointerMove=(event:React.PointerEvent<HTMLCanvasElement>)=>{
     if(cursor.current){const rect=event.currentTarget.getBoundingClientRect();cursor.current.style.left=`${event.clientX-rect.left}px`;cursor.current.style.top=`${event.clientY-rect.top}px`;cursor.current.style.visibility=tool==='pan'||tool==='pick'?'hidden':'visible';}
-    if(pan.current&&viewport.current){viewport.current.scrollLeft=pan.current.left-(event.clientX-pan.current.x);viewport.current.scrollTop=pan.current.top-(event.clientY-pan.current.y);return;}
     if(!stroke.current||!paint.current||!mask.current)return;
     const at=point(event),previous=stroke.current.points.at(-1)!;
     if('color' in stroke.current)paint.current.segment(previous,at,stroke.current.diameter,stroke.current.color,stroke.current.erase);
@@ -226,10 +225,10 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
         {mode==='mask'&&<><label>{text('叠加透明度','Overlay opacity')}<input aria-label={text('叠加透明度','Overlay opacity')} type="range" min={0} max={1} step={.05} value={opacity} onChange={event=>setOpacity(Number(event.target.value))}/></label><Switch checked={maskOnly} onCheckedChange={setMaskOnly}>{text('仅看遮罩','Mask only')}</Switch></>}
         <button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('缩小','Zoom out')} title={text('缩小','Zoom out')} onClick={()=>setZoom(value=>Math.max(.25,value/1.5))}><ZoomOut size={14}/></button><button type="button" className="ui-btn ui-btn-sm" onClick={()=>{setZoom(1);viewport.current?.scrollTo(0,0);}}>{text('适应','Fit')} {Math.round(scale*100)}%</button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('放大','Zoom in')} title={text('放大','Zoom in')} onClick={()=>setZoom(value=>Math.min(8,value*1.5))}><ZoomIn size={14}/></button>
       </div>
-      <p className="image-editor-hint">{mode==='paint'?text('Alt + 点击取色；擦回原图可恢复本次编辑前的像素。','Alt + click picks a color. Erase restores pixels from before this editing session.'):text('白色参与训练，黑色忽略；红色为忽略区域。无独立遮罩时使用图片透明度。','White trains, black is ignored; red marks ignored areas. Without a separate mask, image transparency is used.')}</p>
+      <p className="image-editor-hint">{text('滚轮缩放，中键拖动。','Scroll to zoom; drag with the middle mouse button.')} {mode==='paint'?text('Alt + 点击取色；擦回原图可恢复本次编辑前的像素。','Alt + click picks a color. Erase restores pixels from before this editing session.'):text('白色参与训练，黑色忽略；红色为忽略区域。无独立遮罩时使用图片透明度。','White trains, black is ignored; red marks ignored areas. Without a separate mask, image transparency is used.')}</p>
       {error&&<p className="image-editor-status" role="alert">{error} {requiresReopen?<><span>{text('图片身份或文件已变化，请刷新列表后重新打开。','The image identity or files changed. Refresh the list and reopen the image.')}</span><button type="button" className="ui-btn ui-btn-sm" disabled={saving} onClick={()=>void closeAndRefresh()}>{text('关闭并刷新列表','Close and refresh list')}</button></>:<button type="button" className="ui-btn ui-btn-sm" disabled={saving} onClick={()=>void reloadImage()}>{text('重新读取','Reload')}</button>}</p>}
       {navigationError&&<p className="image-editor-status" role="alert">{navigationError}</p>}
-      {loading?<LoadingNote className="image-editor-status" label={text('正在读取图片与遮罩…','Loading image and mask…')}/>:info&&<div ref={viewport} className="image-editor-viewport" data-testid="paint-viewport"><div className="image-editor-stage" style={{width:Math.max(1,info.width*scale),height:Math.max(1,info.height*scale)}}><canvas ref={canvas} aria-label={text('图像与遮罩绘制画布','Image and mask drawing canvas')} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={finishStroke} onPointerCancel={finishStroke} onLostPointerCapture={finishStroke} onPointerLeave={()=>{if(cursor.current)cursor.current.style.visibility='hidden';}} style={{cursor:tool==='pan'?'grab':tool==='pick'?'copy':'crosshair'}}/><div ref={cursor} aria-hidden="true" className="image-editor-cursor" style={{visibility:'hidden',width:diameter*scale,height:diameter*scale}}/></div></div>}
+      {loading?<LoadingNote className="image-editor-status" label={text('正在读取图片与遮罩…','Loading image and mask…')}/>:info&&<div ref={viewport} {...viewportEvents} className="image-editor-viewport" data-testid="paint-viewport" style={{cursor:panning?'grabbing':tool==='pan'?'grab':undefined}}><div className="image-editor-stage" style={{width:Math.max(1,info.width*scale),height:Math.max(1,info.height*scale)}}><canvas ref={canvas} aria-label={text('图像与遮罩绘制画布','Image and mask drawing canvas')} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={finishStroke} onPointerCancel={finishStroke} onLostPointerCapture={finishStroke} onPointerLeave={()=>{if(cursor.current)cursor.current.style.visibility='hidden';}} style={{cursor:panning?'grabbing':tool==='pan'?'grab':tool==='pick'?'copy':'crosshair'}}/><div ref={cursor} aria-hidden="true" className="image-editor-cursor" style={{visibility:'hidden',width:diameter*scale,height:diameter*scale}}/></div></div>}
       {message&&<p role="status" className="image-editor-status">{message}</p>}
       <footer><small>{dirty()?text('有未保存修改','Unsaved changes'):text('已同步','Up to date')} · {text('Ctrl/Cmd + Z 撤销，Ctrl/Cmd + S 保存','Ctrl/Cmd + Z to undo, Ctrl/Cmd + S to save')}</small><div className="image-editor-footer-actions"><button type="button" className="ui-btn" disabled={saving||loading||requiresReopen||!info?.can_restore} onClick={()=>void restore()}>{text('恢复上次保存前','Restore previous save')}</button><button type="button" className="ui-btn" disabled={saving} onClick={close}>{text('返回图片列表','Back to images')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={saving||loading||requiresReopen||!info||!dirty()} onClick={()=>void save()}>{saving?text('保存中…','Saving…'):text('保存修改','Save changes')}</button>{mode==='mask'&&onEnableTraining&&<button type="button" className="ui-btn" disabled={saving||loading||requiresReopen||!info} onClick={()=>void save(true)}>{text('保存并启用遮罩训练','Save and enable masked training')}</button>}</div></footer>
     </section>

@@ -10,6 +10,7 @@ import Switch from '../Switch';
 import { SlidingIndicator } from '../motion';
 import OverflowStrip from '../OverflowStrip';
 import { useConfirmation } from '../useConfirmation';
+import { useImageViewport } from './useImageViewport';
 
 interface Props { datasetId: string; imageId: string; relPath: string; onClose: () => void; onSaved: () => void; onEnableTraining: () => Promise<void>; allowPaint?: boolean }
 const control = 'ui-btn ui-btn-sm';
@@ -41,7 +42,6 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
   const dialog = React.useRef<HTMLDivElement>(null);
   const closeButton = React.useRef<HTMLButtonElement>(null);
   const stroke = React.useRef<Extract<MaskOperation, { kind: 'stroke' }> | null>(null);
-  const pan = React.useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const frame = React.useRef<number | null>(null);
   const titleId = React.useId();
 
@@ -83,7 +83,8 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
   React.useEffect(() => { renderView(); }, [revision, renderView, info, loading]);
   React.useEffect(() => {
     const element = viewport.current; if (!element) return;
-    const resize = () => { setHostWidth(element.clientWidth || 800); setHostHeight(element.clientHeight || 484); };
+    // Keep the fit scale stable when zooming introduces scrollbars.
+    const resize = () => { setHostWidth(element.offsetWidth || 800); setHostHeight(element.offsetHeight || 484); };
     resize(); const observer = new ResizeObserver(resize); observer.observe(element); return () => observer.disconnect();
   }, [loading]);
   React.useEffect(() => {
@@ -106,13 +107,12 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
   const redo = () => { if (!saving && !stroke.current) { doc.current?.redo(); setMessage(''); redraw(); } };
   const finishStroke = () => {
     if (stroke.current && doc.current) { doc.current.apply(stroke.current, true); stroke.current = null; setMessage(''); redraw(); }
-    pan.current = null;
   };
+  const { panning, viewportEvents } = useImageViewport({ viewport, canvas, preview:brushPreview, zoom, setZoom, enabled:!!info&&!loading&&!saving, panTool:tool==='pan', isDrawing:()=>!!stroke.current, finishStroke });
   const point = (event: React.PointerEvent<HTMLCanvasElement>): MaskPoint => imagePoint(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect(), doc.current!.width, doc.current!.height);
   const pointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!doc.current || saving || event.button !== 0) return;
     event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
-    if (tool === 'pan') { pan.current = { x: event.clientX, y: event.clientY, left: viewport.current?.scrollLeft || 0, top: viewport.current?.scrollTop || 0 }; return; }
     const at = point(event); stroke.current = { kind: 'stroke', points: [at], diameter, value: tool === 'brush' ? 255 : 0 };
     paintSegment(doc.current.pixels, doc.current.width, doc.current.height, at, at, diameter, stroke.current.value); scheduleRender();
   };
@@ -123,7 +123,6 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
       brushPreview.current.style.top = `${event.clientY - bounds.top}px`;
       brushPreview.current.style.visibility = tool === 'pan' ? 'hidden' : 'visible';
     }
-    if (pan.current && viewport.current) { viewport.current.scrollLeft = pan.current.left - (event.clientX - pan.current.x); viewport.current.scrollTop = pan.current.top - (event.clientY - pan.current.y); return; }
     if (!stroke.current || !doc.current) return;
     const at = point(event); const previous = stroke.current.points.at(-1)!;
     paintSegment(doc.current.pixels, doc.current.width, doc.current.height, previous, at, stroke.current.diameter, stroke.current.value);
@@ -163,7 +162,7 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
         <button ref={closeButton} type="button" aria-label={text('关闭遮罩编辑器', 'Close mask editor')} className="ui-btn ui-btn-quiet ui-btn-icon" disabled={saving} onClick={close}><X className="h-4 w-4" /></button>
       </header>
       <div className="space-y-2.5 p-3">
-        <p className="text-xs text-slate-600 dark:text-slate-300">{text('白色参与训练，黑色忽略。叠加预览中，红色表示被忽略的区域。', 'White participates in training; black is ignored. The red overlay marks ignored areas.')}</p>
+        <p className="text-xs text-slate-600 dark:text-slate-300">{text('滚轮缩放，中键拖动。', 'Scroll to zoom; drag with the middle mouse button.')} {text('白色参与训练，黑色忽略。叠加预览中，红色表示被忽略的区域。', 'White participates in training; black is ignored. The red overlay marks ignored areas.')}</p>
         {loading && <p role="status" className="flex items-center gap-2 py-8"><Loader2 className="h-5 w-5 animate-spin" />{text('正在读取原图尺寸与已有遮罩…', 'Loading image dimensions and existing mask…')}</p>}
         {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"><p className="whitespace-pre-line break-words">{error}</p><button type="button" className="ui-link mt-2" disabled={saving} onClick={() => void reloadMask()}>{text('重新读取遮罩', 'Reload mask')}</button></div>}
         {info && !loading && <>
@@ -182,10 +181,10 @@ function TrainingMaskEditor({ datasetId, imageId, relPath, onClose, onSaved, onE
             <div className="flex items-center gap-1"><button type="button" className={`${control} ui-btn-icon`} onClick={() => setZoom((value) => Math.max(0.25, value / 1.5))} aria-label={text('缩小', 'Zoom out')}><ZoomOut className="h-4 w-4" /></button><button type="button" className={control} onClick={() => { setZoom(1); viewport.current?.scrollTo(0, 0); }}><Maximize className="h-4 w-4" />{text('适应', 'Fit')}</button><button type="button" className={`${control} ui-btn-icon`} onClick={() => setZoom((value) => Math.min(8, value * 1.5))} aria-label={text('放大', 'Zoom in')}><ZoomIn className="h-4 w-4" /></button><span className="ml-1 text-xs font-mono">{Math.round(scale * 100)}%</span></div>
           </div>
           <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-500 dark:text-slate-400"><span>{text('来源：', 'Source: ')}{info.source === 'sidecar' ? info.filename : info.source === 'alpha' ? text('原图 Alpha 通道', 'Image alpha channel') : text('无遮罩或 Alpha，默认全图参与', 'No mask or alpha; the full image participates')}{info.resized && text('（已有遮罩尺寸已适配原图）', ' (existing mask fitted to image dimensions)')}</span><span>{text('参与比例', 'Participation')} {Math.round(coverage * 100)}% · {doc.current?.dirty ? text('有未保存修改', 'Unsaved changes') : text('已同步', 'Up to date')}</span></div>
-          <div ref={viewport} className="relative h-[52vh] min-h-52 max-h-[580px] overflow-auto rounded-lg bg-slate-950 p-3" data-testid="mask-viewport">
+          <div ref={viewport} {...viewportEvents} className="relative h-[52vh] min-h-52 max-h-[580px] overflow-auto rounded-lg bg-slate-950 p-3" data-testid="mask-viewport" style={{cursor:panning?'grabbing':tool==='pan'?'grab':undefined}}>
             <div className="relative mx-auto" style={{ width: Math.max(1, info.width * scale), height: Math.max(1, info.height * scale) }}>
               <img src={apiUrl(maskEndpoint(datasetId, imageId, relPath, '/source'))} alt={relPath} draggable={false} onError={() => setError(text('原图预览加载失败，请重新读取或检查训练机连接。', 'Source preview failed to load. Reload or check the trainer connection.'))} className="absolute inset-0 h-full w-full" />
-              <canvas ref={canvas} aria-label={text('遮罩绘制画布', 'Mask drawing canvas')} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerLeave={() => { if (brushPreview.current) brushPreview.current.style.visibility = 'hidden'; }} onPointerUp={finishStroke} onPointerCancel={finishStroke} onLostPointerCapture={finishStroke} className={`absolute inset-0 h-full w-full touch-none ${tool === 'pan' ? 'cursor-grab' : 'cursor-crosshair'}`} />
+              <canvas ref={canvas} aria-label={text('遮罩绘制画布', 'Mask drawing canvas')} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerLeave={() => { if (brushPreview.current) brushPreview.current.style.visibility = 'hidden'; }} onPointerUp={finishStroke} onPointerCancel={finishStroke} onLostPointerCapture={finishStroke} className="absolute inset-0 h-full w-full touch-none" style={{cursor:panning?'grabbing':tool==='pan'?'grab':'crosshair'}} />
               <div ref={brushPreview} aria-hidden="true" className="pointer-events-none invisible absolute rounded-full border border-white shadow-[0_0_0_1px_black]" style={{ width: diameter * scale, height: diameter * scale, transform: 'translate(-50%, -50%)' }} />
             </div>
           </div>
