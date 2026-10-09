@@ -8,7 +8,3 @@ export const gptSovitsAdvancedParameters = new Set([
   'gpt.decay_steps', 'gpt.dpo', 'gpt.save_latest', 'sovits.seed', 'sovits.adam_beta1',
   'sovits.adam_beta2', 'sovits.adam_epsilon', 'sovits.lr_decay', 'sovits.log_interval', 'sovits.save_latest',
 ]);
-
-export function ttsParameterHelp(...parts: string[]) {
-  return parts.filter(Boolean).join('\n').replace(/\n[\t ]*\n+/g, '\n');
-}

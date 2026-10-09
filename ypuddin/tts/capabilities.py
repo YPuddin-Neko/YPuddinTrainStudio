@@ -121,6 +121,10 @@ GROUPS = (
     ),
 )
 
+GSV_IGNORED_GPT_SCHEDULE_FIELDS = (
+    "learning_rate", "initial_learning_rate", "final_learning_rate", "warmup_steps", "decay_steps",
+)
+
 
 def _fixed() -> list[TtsCapabilitySetting]:
     rows = (
@@ -176,6 +180,8 @@ def _gsv_fixed() -> list[TtsCapabilitySetting]:
         ("checkpoint_pair", ["gpt.ckpt", "sovits.pth"], "每个结果包含配套 GPT 与 SoVITS 权重；单阶段训练配对未训练阶段的底模。"),
         ("save_every_weights", True, "各阶段保留间隔权重；任务完成后发布配套结果用于试听。"),
         ("gpt_accumulation", "upstream", "沿用上游 GPT 手动优化循环：首次更新累计 5 批，随后每 4 批更新。"),
+        ("gpt_learning_rate", {"initial_optimizer_lr": 0.01, "after_first_scheduler_step_lr": 0.002},
+         "GPT 优化器初始学习率为 1e-2；首次调用调度器后固定为 2e-3。"),
         ("out_sample_rate", 48000, "v5 使用配套声码器输出 48000 Hz 音频。"),
     )
     return [TtsCapabilitySetting(key=k, value=v, reason_code=f"tts.gpt_sovits.fixed.{k}", reason=r) for k, v, r in rows]
@@ -191,14 +197,24 @@ def _gsv_unsupported() -> list[TtsCapabilitySetting]:
         ("sovits_full_finetune", "此入口使用上游 SoVITS LoRA 训练脚本，保留其非 CFM 模块训练行为。"),
         ("dataset_tools", "请提供已切分和校对文本的录音；此入口不执行 ASR、降噪或人声分离。"),
     )
-    return [TtsCapabilitySetting(key=k, reason_code=f"tts.gpt_sovits.unsupported.{k}", reason=r) for k, r in rows]
+    settings = [TtsCapabilitySetting(key=k, reason_code=f"tts.gpt_sovits.unsupported.{k}", reason=r) for k, r in rows]
+    settings.extend(TtsCapabilitySetting(
+        key=f"gpt.{field}", reason_code=f"tts.gpt_sovits.unsupported.gpt.{field}",
+        reason="当前 GPT 训练入口使用固定学习率，此字段保留原有配置值，不控制实际学习率。",
+    ) for field in GSV_IGNORED_GPT_SCHEDULE_FIELDS)
+    return settings
 
 
 def get_train_schema(engine: str = "voxcpm1.5") -> TtsTrainSchema:
     if engine == "gpt-sovits-v5":
+        schema = GptSovitsVersionConfig.model_json_schema()
+        for field in GSV_IGNORED_GPT_SCHEDULE_FIELDS:
+            schema["$defs"]["GptSettings"]["properties"][field].update(
+                {"readOnly": True, "deprecated": True, "x-training-effect": "ignored"}
+            )
         return TtsTrainSchema(
             engine=engine,
-            json_schema=GptSovitsVersionConfig.model_json_schema(),
+            json_schema=schema,
             groups=[
                 TtsSchemaGroup(id="environment", fields=[k for k in GptSovitsVersionConfig.model_fields if k not in {"gpt", "sovits"}]),
                 TtsSchemaGroup(id="gpt", fields=[f"gpt.{k}" for k in GptSettings.model_fields]),

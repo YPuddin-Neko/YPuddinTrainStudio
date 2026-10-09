@@ -13,6 +13,7 @@ import type { TtsEditorHandle, TtsEditorProps } from './TtsVersionEditor';
 import '../../schema/SchemaForm/config-fields.css';
 import TtsParameterForm, { TtsParameterToolbar } from './TtsParameterForm';
 import { gptSovitsParameterGroups } from './gptSovitsParameterPresentation';
+import { ignoredGptLearningRateFields, resolveGptSovitsFixedLearningRate } from './gptSovitsLearningRate';
 
 type Props = Omit<TtsEditorProps, 'initial'> & { initial: GptSovitsConfigResponse };
 
@@ -26,6 +27,7 @@ const GptSovitsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function
   const [base, setBase] = React.useState(local?.base || initial);
   const stored = React.useRef(base);
   const resolved = schema ? resolveTrainingSchema(schema) : null;
+  const fixedLearningRate = resolved ? resolveGptSovitsFixedLearningRate(schema) : undefined;
   const schemaUnavailable = !!schema && !resolved;
   const properties = resolved?.properties || fieldSchemas, orderedGroups = resolved?.groups || groups;
   const [draft, setDraft] = React.useState<TtsDraft>(local?.draft || toDraft(initial.config));
@@ -76,9 +78,10 @@ const GptSovitsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function
     setClosed(previous => new Set([...previous].filter(id => !issues.some(issue => issue.field === id)
       && !orderedGroups.find(group => group.id === id)?.fields.some(field => issues.some(issue => issue.field === field)))));
     requestAnimationFrame(() => {
-      const field = [...(form.current?.querySelectorAll<HTMLElement>('[data-field]') || [])].find(node => node.dataset.field === issues[0]?.field);
+      const focusField = fixedLearningRate && ignoredGptLearningRateFields.includes(issues[0]?.field as TtsField) ? 'gpt.learning_rate' : issues[0]?.field;
+      const field = [...(form.current?.querySelectorAll<HTMLElement>('[data-field]') || [])].find(node => node.dataset.field === focusField);
       const group = [...(form.current?.querySelectorAll<HTMLElement>('[data-stage]') || [])].find(node => node.dataset.stage === issues[0]?.field);
-      const element = field?.querySelector<HTMLElement>('.config-field-control input:not(:disabled), .config-field-control button:not(:disabled)') || group?.querySelector<HTMLElement>('.config-group-title');
+      const element = field?.querySelector<HTMLElement>('[data-restore-legacy-learning-rate]:not(:disabled), .config-field-control input:not(:disabled), .config-field-control button:not(:disabled)') || group?.querySelector<HTMLElement>('.config-group-title');
       element?.focus();
     });
   };
@@ -130,7 +133,18 @@ const GptSovitsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function
     setDraft(previous => ({ ...previous, [field]: value })); setNotice('');
     setProblems(previous => previous.filter(problem => problem.field !== field));
   };
-  const presentationGroups = gptSovitsParameterGroups({ draft, properties, problems, orderedGroups, readOnly, saving, english, text, change, schemaUnavailable });
+  const restoreLegacyLearningRate = () => {
+    if (readOnly || saving || schemaUnavailable || !fixedLearningRate) return;
+    const original = toDraft(base.config);
+    setDraft(previous => {
+      const next = { ...previous };
+      for (const field of ignoredGptLearningRateFields) next[field] = original[field];
+      return next;
+    });
+    setProblems(previous => previous.filter(problem => !ignoredGptLearningRateFields.includes(problem.field as TtsField)));
+    setNotice('');
+  };
+  const presentationGroups = gptSovitsParameterGroups({ draft, properties, problems, orderedGroups, readOnly, saving, english, text, change, schemaUnavailable, fixedLearningRate, onRestoreLegacyLearningRate: restoreLegacyLearningRate });
   const remoteConfig = conflict && isGptSovitsConfigResponse(conflict) ? conflict.config : null;
   const differences = remoteConfig ? fields.filter(field => JSON.stringify(draft[field]) !== JSON.stringify(toDraft(remoteConfig)[field])) : [];
   const displayValue = (field: TtsField, value: unknown) => {

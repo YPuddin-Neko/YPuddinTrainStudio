@@ -6,21 +6,18 @@ import { PathInput } from '../../components/PathBrowser';
 import { gptSovitsFieldCopy as fieldCopy, isScientificField, type GptSovitsDraft as TtsDraft, type GptSovitsField as TtsField, type GptSovitsFieldProblem as FieldProblem, type GptSovitsFieldSchema } from './gptSovitsVersionFields';
 import type { TtsParameterGroup } from './TtsParameterForm';
 import { TtsDecimalInput, TtsScientificBadge } from './ttsParameterControls';
-import { ttsParameterHelp, gptSovitsAdvancedParameters } from './ttsParameterMetadata';
+import { gptSovitsAdvancedParameters } from './ttsParameterMetadata';
+import { ignoredGptLearningRateFields } from './gptSovitsLearningRate';
 
 type Props = {
   draft: TtsDraft; properties: Record<TtsField, GptSovitsFieldSchema>; problems: FieldProblem[];
   orderedGroups: { id: string; zh: string; en: string; fields: TtsField[] }[];
   readOnly: boolean; saving: boolean; english: boolean; preset?: boolean; schemaUnavailable?: boolean;
+  fixedLearningRate?: { initial_optimizer_lr: number; after_first_scheduler_step_lr: number };
+  onRestoreLegacyLearningRate?: () => void;
   text: (zh: string, en: string) => string; change: (field: TtsField, value: TtsDraft[TtsField]) => void;
 };
-export function gptSovitsParameterGroups({ draft, properties, problems, orderedGroups, readOnly, saving, english, text, change, preset = false, schemaUnavailable = false }: Props): TtsParameterGroup[] {
-  const bounds = (field: TtsField) => {
-    const rule = properties[field];
-    return [rule.type === 'integer' ? text('整数', 'Integer') : rule.type === 'number' ? text('数值', 'Number') : '',
-      rule.minimum != null ? `≥ ${rule.minimum}` : rule.exclusiveMinimum != null ? `> ${rule.exclusiveMinimum}` : '',
-      rule.maximum != null ? `≤ ${rule.maximum}` : rule.exclusiveMaximum != null ? `< ${rule.exclusiveMaximum}` : ''].filter(Boolean).join(' · ');
-  };
+export function gptSovitsParameterGroups({ draft, properties, problems, orderedGroups, readOnly, saving, english, text, change, preset = false, schemaUnavailable = false, fixedLearningRate, onRestoreLegacyLearningRate }: Props): TtsParameterGroup[] {
   const optionLabel = (field: TtsField, option: string | number) => {
     if (field === 'stage') return ({ both: text('两阶段（SoVITS → GPT）', 'Both (SoVITS → GPT)'), gpt: text('仅 GPT', 'GPT only'), sovits: text('仅 SoVITS', 'SoVITS only') })[String(option) as 'both' | 'gpt' | 'sovits'];
     if (field === 'gpt.precision') return option === '16-mixed' ? text('FP16（混合精度）', 'FP16 (mixed precision)') : text('FP32（全精度）', 'FP32 (full precision)');
@@ -29,11 +26,20 @@ export function gptSovitsParameterGroups({ draft, properties, problems, orderedG
   };
   const renderField = (field: TtsField): React.ReactNode => {
     if (field === 'engine') return null;
+    if (field === 'gpt.learning_rate' && fixedLearningRate) {
+      const legacyProblems = problems.filter(issue => ignoredGptLearningRateFields.includes(issue.field as typeof ignoredGptLearningRateFields[number]));
+      const id = 'tts-gsv-fixed-learning-rate';
+      return <div key={field} data-field={field} className={`config-field${legacyProblems.length ? ' config-field-invalid' : ''}`}>
+        <div className="config-field-heading"><label htmlFor={id}>{text('GPT 学习率', 'GPT learning rate')}</label><span className="config-field-reference"><ConfigHelp label={text('GPT 学习率 · 说明', 'GPT learning rate · Help')}>{text(`优化器初始学习率为 ${fixedLearningRate.initial_optimizer_lr}，第一次调度后固定为 ${fixedLearningRate.after_first_scheduler_step_lr}。此模型的 GPT 学习率无法调整，不使用预热或余弦衰减。`, `The optimizer starts at ${fixedLearningRate.initial_optimizer_lr}; after the first scheduler call, its learning rate is fixed at ${fixedLearningRate.after_first_scheduler_step_lr}. This model does not expose GPT learning-rate tuning, warmup or cosine decay.`)}</ConfigHelp></span></div>
+        <div className="config-field-control"><div className="config-managed-value"><output id={id}>{text(`初始 ${fixedLearningRate.initial_optimizer_lr}；调度后 ${fixedLearningRate.after_first_scheduler_step_lr}`, `Initial ${fixedLearningRate.initial_optimizer_lr}; after scheduling ${fixedLearningRate.after_first_scheduler_step_lr}`)}</output><span>{text('固定', 'Fixed')}</span></div></div>
+        <div className="config-field-footer"><p className="config-field-hint">{text('控制 GPT 模型每次参数更新的幅度。', 'Controls the size of each GPT parameter update.')}</p>{legacyProblems.length > 0 && <><p role="alert" className="config-field-error">{text('旧版学习率参数无效。', 'Legacy learning-rate settings are invalid.')}</p><button type="button" data-restore-legacy-learning-rate className="ui-link" disabled={readOnly || saving || schemaUnavailable} onClick={onRestoreLegacyLearningRate}>{text('恢复原值', 'Restore values')}</button></>}</div>
+      </div>;
+    }
     const property = properties[field], copy = fieldCopy(field, english), value = draft[field];
     const pathField = property.type === 'string' && !property.enum;
     const id = `tts-gsv-${field}`, problem = problems.filter(issue => issue.field === field).map(issue => issue.message).join(' ');
     const describedBy = `${copy.hint ? `${id}-hint` : ''}${problem ? ` ${id}-error` : ''}`.trim() || undefined;
-    const help = ttsParameterHelp(copy.help, bounds(field), isScientificField(field) ? text('支持科学计数法，例如 1e-4；数值必须大于 0。', 'Accepts scientific notation, e.g. 1e-4; the value must be greater than 0.') : '');
+    const help = copy.help;
     if (property.type === 'boolean') return <div key={field} data-field={field} className={`config-field config-field-boolean${problem ? ' config-field-invalid' : ''}`}>
       <fieldset className="config-field-control">
         <Switch id={id} aria-label={copy.label} aria-invalid={!!problem} aria-describedby={describedBy} disabled={readOnly || saving || schemaUnavailable} checked={value === true} onCheckedChange={checked => change(field, checked)}/>
@@ -64,9 +70,10 @@ export function gptSovitsParameterGroups({ draft, properties, problems, orderedG
     ];
     return { id: group.id, label: preset && group.id === 'environment' ? text('训练阶段', 'Training stages') : english ? group.en : group.zh, inactive,
       notice: <>{inactive && <p className="config-field-hint" role="status">{text('此阶段的参数会保留，本次任务不执行该阶段。', 'These settings are retained; this stage will not run in the current job.')}</p>}{problems.filter(issue => issue.field === group.id).map(issue => <p key={issue.message} role="alert" className="config-field-error">{issue.message}</p>)}</>,
-      sections: buckets.map(bucket => ({ label: bucket.label, fields: group.fields.filter(field => bucket.fields.includes(field)).map(field => {
+      sections: buckets.map(bucket => ({ label: bucket.label, fields: group.fields.filter(field => bucket.fields.includes(field) && (!fixedLearningRate || field === 'gpt.learning_rate' || !ignoredGptLearningRateFields.includes(field as typeof ignoredGptLearningRateFields[number]))).map(field => {
         const copy = fieldCopy(field, english);
-        return { id: field, advanced: gptSovitsAdvancedParameters.has(field), search: `${field} ${copy.label} ${copy.hint} ${copy.help}`, node: renderField(field), toggle: properties[field].type === 'boolean' };
+        const legacySearch = field === 'gpt.learning_rate' && fixedLearningRate ? ignoredGptLearningRateFields.map(key => { const oldCopy = fieldCopy(key, english); return `${key} ${oldCopy.label}`; }).join(' ') : '';
+        return { id: field, advanced: gptSovitsAdvancedParameters.has(field), search: `${field} ${copy.label} ${copy.hint} ${copy.help} ${legacySearch}`, node: renderField(field), toggle: properties[field].type === 'boolean' };
       }) })).filter(section => section.fields.length),
     };
   });

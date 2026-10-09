@@ -16,5 +16,6 @@ FILES = {
   "GPT_SoVITS/prepare_datasets/3-get-semantic.py": "992c7cbc26b61b2c8bf30938dd206441eec5a6021925746c6b0214c951ea3a4a",
   "GPT_SoVITS/TTS_infer_pack/TTS.py": "a07f54d9bb28fddeef6a82f3e24a877241483043905fe455bfe28a5bc32a38f5",
   "GPT_SoVITS/AR/models/t2s_lightning_module.py": "6a4d3173181000a6012bbdf055ca8a29ea6e48ce5a09605a579b509a548f8588",
+  "GPT_SoVITS/AR/modules/lr_schedulers.py": "5dfad3ef8bef60552b4619b510c84811eca6a9f9952d3e83ab027e29ee15526f",
   "GPT_SoVITS/AR/data/dataset.py": "6e96c7fce89b828c5448b749cea38e2211d04947f3891baedfd3558ba81e9ddb"
 }

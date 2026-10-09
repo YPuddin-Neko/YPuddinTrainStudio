@@ -211,28 +211,47 @@ def train_stage(request, stage):
     if stage == "gpt":
         import pytorch_lightning as pl
 
+        from .lr_metrics import OptimizerStepLearningRate
+
         original_fit = pl.Trainer.fit
 
         class Progress(pl.Callback):
+            def __init__(self):
+                self.learning_rate = OptimizerStepLearningRate()
+
+            def on_fit_start(self, trainer, pl_module):
+                self.learning_rate.attach(trainer.optimizers)
+
+            def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+                self.learning_rate.begin_batch(trainer.global_step)
+
             def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
                 metrics = {}
-                for key in ("total_loss", "lr", "top_3_acc"):
+                for key in ("total_loss", "top_3_acc"):
                     value = trainer.callback_metrics.get(key)
                     if value is not None:
                         metrics[key] = float(value.detach().cpu())
+                rate = self.learning_rate.end_batch(trainer.global_step)
+                if rate is not None:
+                    metrics["lr"] = rate
+                latest_metrics.pop("lr", None)
                 latest_metrics.update(metrics)
                 training_event(events, "gpt", int(trainer.global_step), metrics, trainer.current_epoch + 1, offset=offset)
 
         def fit(trainer, *args, **kwargs):
-            trainer.callbacks.append(Progress())
-            result = original_fit(trainer, *args, **kwargs)
+            progress = Progress()
+            trainer.callbacks.append(progress)
+            try:
+                result = original_fit(trainer, *args, **kwargs)
+            finally:
+                progress.learning_rate.close()
+                trainer.callbacks.remove(progress)
             if trainer.current_epoch != config.gpt.epochs or trainer.global_step <= 0:
                 raise RuntimeError("GPT 没有完成指定训练轮数或未执行优化步骤。")
             outcome.update(epoch=config.gpt.epochs, global_step=int(trainer.global_step),
                            path=str(output / "gpt_exports" / f"studio-e{config.gpt.epochs}.ckpt"))
             return result
 
-        pl.Trainer.fit = fit
         script = work / "GPT_SoVITS/s1_train.py"
         sys.argv = [str(script), "--config_file", request["settings"]["gpt"]]
     else:
@@ -282,7 +301,13 @@ def train_stage(request, stage):
         process_ckpt.savee = save
         script = work / "GPT_SoVITS/s2_train_v3_lora.py"
         sys.argv = [str(script), "--config", request["settings"]["sovits"]]
-    runpy.run_path(str(script), run_name="__main__")
+    try:
+        if stage == "gpt":
+            pl.Trainer.fit = fit
+        runpy.run_path(str(script), run_name="__main__")
+    finally:
+        if stage == "gpt":
+            pl.Trainer.fit = original_fit
     target_epochs = config.gpt.epochs if stage == "gpt" else config.sovits.epochs
     if outcome.get("epoch") != target_epochs or not Path(outcome.get("path", "")).is_file():
         raise RuntimeError(f"{stage} 训练没有产出最后一轮的有效权重。")
