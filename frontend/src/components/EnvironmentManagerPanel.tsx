@@ -10,6 +10,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, ChevronRight, Download, ExternalLink, Loader2, RefreshCw, Upload, X } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { useEnvironmentRead } from './useEnvironmentRead';
 import { formatApiError } from '../utils/errors';
 import { formatBytes, formatEta } from '../utils/format';
 import { SettingsSections } from '../pages/Settings/SettingsSections';
@@ -20,7 +21,7 @@ interface PackageStatus {
   supported: boolean; reason: string; importable: boolean; kernel_tested: boolean;
   available: boolean; wheel_required: boolean; error: string | null;
 }
-interface EnvironmentStatus {
+export interface EnvironmentStatus {
   runtime: {
     environment_profile?: string;
     python: string; python_executable: string; platform: string; machine: string; torch: string;
@@ -30,7 +31,7 @@ interface EnvironmentStatus {
     cuda_device_count?: number; distributed_available?: boolean; nccl_available?: boolean;
     cuda_applicable?: boolean; nccl_applicable?: boolean; multi_gpu_training?: boolean; training_device_policy?: string;
     gloo_available?: boolean; multi_gpu_backend?: 'nccl' | 'gloo' | null; multi_gpu_probe_required?: boolean;
-    gpus: { name: string; device?: string | null; cuda_available?: boolean; memory_scope?: string; mem_total_mb?: number; telemetry_source?: string; telemetry_note?: string; driver_version?: string }[];
+    gpus: { name: string; kind?: string; device?: string | null; cuda_available?: boolean; memory_scope?: string; mem_total_mb?: number; telemetry_source?: string; telemetry_note?: string; driver_version?: string }[];
   };
   packages: PackageStatus[]; attention_default: string; restart_required: boolean;
   maintenance: boolean; running_jobs: boolean; probe_deferred: boolean;
@@ -83,52 +84,34 @@ function DownloadProgress({ operation, copy }: {operation: Operation; copy: (zh:
   </div>;
 }
 
-export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?: string; mode?: 'onboarding-attention' } = {}) {
+export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onStatusChange }: { focusPackage?: string; mode?: 'onboarding-attention'; initialStatus?: EnvironmentStatus; onStatusChange?: (status: EnvironmentStatus) => void } = {}) {
   const onboardingAttention = mode === 'onboarding-attention';
   const { i18n } = useTranslation();
   const en = i18n.resolvedLanguage?.startsWith('en');
   const copy = (zh: string, english: string) => en ? english : zh;
-  const [status, setStatus] = React.useState<EnvironmentStatus | null>(null);
+  const runtimeRead = useEnvironmentRead<EnvironmentStatus>('/environment', { interval: 15_000, refreshParam: true, probe: true, initialData: initialStatus, onSuccess: next => onStatusChange?.(next) });
+  const status = runtimeRead.data, loading = runtimeRead.loading, probing = runtimeRead.probing;
+  const operationsRead = useEnvironmentRead<Operation[]>('/environment/operations', { interval: 1500, onSuccess: (next, previous) => {
+    if (previous?.some(op => busyStatus(op) && !next.some(current => current.id === op.id && busyStatus(current)))) void runtimeRead.read();
+  } });
+  const operations = React.useMemo(() => operationsRead.data || [], [operationsRead.data]);
+  const [latest, setLatest] = React.useState<LatestVersions | null>(null);
+  const [lora, setLora] = React.useState<LoraEnvironment | null>(null);
+  const latestRead = useEnvironmentRead<LatestVersions>('/environment/latest', { enabled: !onboardingAttention, refreshParam: true, onSuccess: next => {
+    setLatest(previous => ({ ...next, packages: Object.fromEntries(Object.entries(next.packages).map(([name, release]) => [name,
+      release.error && previous?.packages[name] ? { ...previous.packages[name], error: release.error } : release,
+    ])) }));
+  } });
+  const latestError = latestRead.error, refreshLatest = latestRead.reload;
+  const loraRead = useEnvironmentRead<LoraEnvironment>('/environment/lora', { enabled: !onboardingAttention, refreshParam: true, onSuccess: next => {
+    setLora(previous => ({ ...next, upstream: next.upstream.error && previous ? { ...previous.upstream, error: next.upstream.error } : next.upstream }));
+  } });
+  const loraError = loraRead.error, refreshLora = loraRead.reload;
   const reportRestart = React.useContext(RestartRequiredContext);
   const restartRequired = status?.restart_required;
   React.useEffect(() => { if (restartRequired !== undefined) reportRestart(restartRequired); }, [restartRequired, reportRestart]);
-  const [operations, setOperations] = React.useState<Operation[]>([]);
-  const operationsRef = React.useRef<Operation[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [probing, setProbing] = React.useState(false);
-  const [latest, setLatest] = React.useState<LatestVersions | null>(null);
-  const [latestLoading, setLatestLoading] = React.useState(true);
-  const [latestError, setLatestError] = React.useState('');
-  const latestController = React.useRef<AbortController | null>(null);
-  const refreshLatest = React.useCallback(async (refresh = false) => {
-    latestController.current?.abort();
-    const controller = new AbortController();
-    latestController.current = controller;
-    setLatestLoading(true); setLatestError('');
-    try {
-      const result = await apiClient.get<LatestVersions>('/environment/latest', { params: { refresh }, signal: controller.signal, silent: true });
-      if (!controller.signal.aborted) setLatest(result);
-    } catch (err) { if (!controller.signal.aborted) { setLatest(null); setLatestError(formatApiError(err)); } }
-    finally { if (!controller.signal.aborted) setLatestLoading(false); }
-  }, []);
-  React.useEffect(() => { if (!onboardingAttention) void refreshLatest(); return () => latestController.current?.abort(); }, [onboardingAttention, refreshLatest]);
-  const [lora, setLora] = React.useState<LoraEnvironment | null>(null);
-  const [loraLoading, setLoraLoading] = React.useState(true);
-  const [loraError, setLoraError] = React.useState('');
-  const loraController = React.useRef<AbortController | null>(null);
-  const refreshLora = React.useCallback(async (refresh = false) => {
-    loraController.current?.abort();
-    const controller = new AbortController();
-    loraController.current = controller;
-    setLoraLoading(true); setLoraError('');
-    try {
-      const result = await apiClient.get<LoraEnvironment>('/environment/lora', { params: { refresh }, signal: controller.signal, silent: true });
-      if (!controller.signal.aborted) setLora(result);
-    } catch (err) { if (!controller.signal.aborted) { setLora(null); setLoraError(formatApiError(err)); } }
-    finally { if (!controller.signal.aborted) setLoraLoading(false); }
-  }, []);
-  React.useEffect(() => { if (!onboardingAttention) void refreshLora(); return () => loraController.current?.abort(); }, [onboardingAttention, refreshLora]);
   const [busy, setBusy] = React.useState(false);
+  const writeInFlight = React.useRef(false);
   const [error, setError] = React.useState('');
   const errorRef = React.useRef<HTMLDivElement>(null);
   const wheelInputRef = React.useRef<HTMLInputElement>(null);
@@ -182,45 +165,28 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
     document.getElementById(`environment-package-${focusTarget}`)?.scrollIntoView?.({ block: 'start' });
   }, [focusAvailable, focusTarget]);
 
+  const refreshRuntime = runtimeRead.reload, refreshOperations = operationsRead.reload;
   const refresh = React.useCallback(async (probe = false) => {
-    setLoading(true);
-    if (probe) setProbing(true);
-    try {
-      const [state, tasks] = await Promise.all([
-        apiClient.get<EnvironmentStatus>('/environment', { params: { refresh: probe }, silent: true }),
-        apiClient.get<Operation[]>('/environment/operations', { silent: true }),
-      ]);
-      setStatus(state); setOperations(tasks); operationsRef.current = tasks; setError('');
-    } catch (err) { setError(formatApiError(err)); }
-    finally { setLoading(false); if (probe) setProbing(false); }
-  }, []);
-  React.useEffect(() => { void refresh(); }, [refresh]);
-  React.useEffect(() => {
-    const timer = window.setInterval(() => {
-      void apiClient.get<Operation[]>('/environment/operations', { silent: true }).then(next => {
-        const finished = operationsRef.current.some(p => busyStatus(p) && !next.some(n => n.id === p.id && busyStatus(n)));
-        operationsRef.current = next; setOperations(next);
-        if (finished) void refresh();
-      }).catch(err => setError(formatApiError(err)));
-    }, 1500);
-    // A job can start or finish in another tab. Refresh admission state as well as
-    // operation logs; the server remains authoritative at both Plan and Apply.
-    const stateTimer = window.setInterval(() => {
-      void apiClient.get<EnvironmentStatus>('/environment', { silent: true }).then(setStatus).catch(err => setError(formatApiError(err)));
-    }, 15000);
-    return () => { window.clearInterval(timer); window.clearInterval(stateTimer); };
-  }, [refresh]);
+    await Promise.all([refreshRuntime(probe), refreshOperations()]);
+  }, [refreshRuntime, refreshOperations]);
 
-  const execute = async (fn: () => Promise<unknown>) => {
-    setBusy(true); setError('');
-    try { await fn(); await refresh(); }
-    catch (err) { setError(formatApiError(err)); }
-    finally { setBusy(false); }
+  const execute = async (fn: () => Promise<Operation>) => {
+    if (writeInFlight.current) return;
+    writeInFlight.current = true; setBusy(true); setError('');
+    try {
+      const op = await fn();
+      operationsRead.updateData(previous => previous?.some(item => item.id === op.id)
+        ? previous.map(item => item.id === op.id ? op : item) : [op, ...(previous || [])]);
+      if (op.restart_required) runtimeRead.updateData(previous => previous ? { ...previous, restart_required: true, maintenance: true } : previous);
+      void refresh();
+    } catch (err) { setError(formatApiError(err)); }
+    finally { writeInFlight.current = false; setBusy(false); }
   };
   const plan = async (name: string, action: string) => {
     await execute(async () => {
       const op = await apiClient.post<Operation>('/environment/operations', { package: name, action, ...(name === 'mtlattn' && action !== 'uninstall' ? { version: metalFlashVersion } : action === 'install' && version.trim() ? { version: version.trim() } : {}), ...(name !== 'mtlattn' && action !== 'uninstall' && wheel ? { wheel_id: wheel.wheel_id } : {}), ...(name !== 'mtlattn' && action !== 'uninstall' && vendorWheel ? {vendor_wheel_id: vendorWheel.id} : {}) }, { silent: true });
       setCreatedOperations(previous => new Set(previous).add(op.id)); setExpanded(op.id); setSelected(null); setVersion(''); setWheel(null); setVendorWheel(null);
+      return op;
     });
   };
   const upload = async (file: File, name: string) => {
@@ -293,16 +259,21 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
     if (!status?.probed_at && !pkg.error) return copy('已安装 · 待验证运行', 'Installed · runtime check pending');
     return pkg.name === 'triton' ? copy('检测失败', 'Probe failed') : copy('检测失败，展开查看', 'Probe failed; expand for details');
   };
+  const onlineLookup = (value: string | null | undefined, failed: boolean, resource: typeof latestRead | typeof loraRead, name: string) => <span className="inline-flex flex-wrap items-baseline gap-x-2" aria-live="polite">
+    {value && <span>{value}</span>}
+    {resource.loading || failed ? <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
+      <span className={resource.loading ? 'text-slate-500 dark:text-slate-400' : 'text-red-600 dark:text-red-300'}>{resource.loading ? copy('查询中…', 'Checking…') : copy('查询失败', 'Lookup failed')}</span>
+      {failed && <button type="button" className="ui-link" disabled={resource.loading} aria-label={copy(`重试 ${name} 在线版本`, `Retry ${name} online version`)} onClick={() => void resource.reload(true)}>{copy('重试', 'Retry')}</button>}
+    </span> : !value && copy('未找到匹配版本', 'No matching release found')}
+  </span>;
   const onlineVersion = (pkg: PackageStatus) => {
     const release = latest?.packages[pkg.name];
-    if (latestLoading) return copy('查询中…', 'Checking…');
     if (tritonRow(pkg.name) && !release?.version) return '—';
-    if (latestError || release?.error) return copy('查询失败', 'Lookup failed');
-    return release?.version || copy('未找到匹配版本', 'No matching release found');
+    return onlineLookup(release?.version, !!(release?.error || latestError), latestRead, packageLabel(pkg.name));
   };
   const sourceHost = (url: string) => { try { return new URL(url).host; } catch { return url; } };
   const textUnavailable = () => copy(' · 驱动可见，当前 PyTorch 不可用',' · visible to driver, unavailable to current PyTorch');
-  const locked = busy || uploading || operations.some(busyStatus) || !!status?.running_jobs;
+  const locked = busy || uploading || !status || !!runtimeRead.error || !operationsRead.data || !!operationsRead.error || operations.some(busyStatus) || !!status?.running_jobs;
   const profileLabel = ({ 'windows-cuda': 'Windows CUDA', 'linux-cuda': 'Linux CUDA', 'linux-dtk': 'Linux DTK', 'macos-mps': 'macOS MPS', 'windows-cpu': 'Windows CPU', 'linux-cpu': 'Linux CPU', 'macos-cpu': 'macOS CPU', legacy: copy('旧版环境', 'Legacy environment') } as Record<string, string>)[profile] || copy('未知环境', 'Unknown environment');
   const wheelUpload = (packageName: string) => <>
     <button type="button" className={button} disabled={locked} onClick={() => wheelInputRef.current?.click()}><Upload size={13}/>{uploading ? copy('上传并校验…', 'Uploading and checking…') : copy('上传 wheel', 'Upload wheel')}</button>
@@ -316,7 +287,7 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
       }<p className="settings-dependency-purpose">{purpose(pkg.name)}{tritonRow(pkg.name) && <ConfigHelp label={copy('Triton 说明', 'Triton help')}>{tritonHelp()}</ConfigHelp>}</p></div>
       {(!onboardingAttention || pkg.version) && <dl className="settings-dependency-version text-xs">
         <div><dt>{onboardingAttention ? copy('版本：', 'Version:') : copy('本地服务端版本：', 'Local server version:')}</dt><dd>{pkg.version || copy('未安装', 'Not installed')}</dd></div>
-        {!onboardingAttention && <div title={latestError || latest?.packages[pkg.name]?.error || (latest?.packages[pkg.name]?.index ? copy(`来自 ${sourceHost(latest.packages[pkg.name].index!)}`, `From ${sourceHost(latest.packages[pkg.name].index!)}`) : tritonRow(pkg.name) ? copy('与当前 PyTorch 配套的版本', 'The version that matches the current PyTorch') : copy('当前环境可用的发布版本', 'Release available for this runtime'))}><dt>{pkg.name === 'mtlattn' ? copy('兼容版本：', 'Compatible version:') : tritonRow(pkg.name) ? copy('配套版本：', 'Matching version:') : copy('云端版本：', 'Online version:')}</dt><dd>{onlineVersion(pkg)}</dd></div>}
+        {!onboardingAttention && <div title={latest?.packages[pkg.name]?.index ? copy(`来自 ${sourceHost(latest.packages[pkg.name].index!)}`, `From ${sourceHost(latest.packages[pkg.name].index!)}`) : undefined}><dt>{pkg.name === 'mtlattn' ? copy('兼容版本：', 'Compatible version:') : tritonRow(pkg.name) ? copy('配套版本：', 'Matching version:') : copy('云端版本：', 'Online version:')}</dt><dd>{onlineVersion(pkg)}</dd></div>}
       </dl>}
       <span title={pkg.version && pkg.supported && !status?.probed_at && !pkg.available && !pkg.error ? checkHint(pkg.name) : undefined} className={`settings-dependency-state text-xs ${pkg.available ? 'text-emerald-700 dark:text-emerald-400' : (pkg.error && pkg.supported) || ['triton_missing', 'triton_version_mismatch'].includes(pkg.reason) ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{reason(pkg)}</span>
       <div className="settings-dependency-actions flex flex-wrap gap-1.5 justify-end">{(!tritonRow(pkg.name) || pkg.name === 'triton-windows' && pkg.supported) && <button className={button} disabled={locked || !pkg.supported && !hipBackend} onClick={() => { setSelected(pkg.name); setVersion(''); setWheel(null); setVendorWheel(null); }}>{copy('管理', 'Manage')}</button>}<a className={`${button} ui-btn-icon`} href={pkg.docs_url} target="_blank" rel="noreferrer" aria-label={`${pkg.name} ${copy('文档', 'documentation')}`}><ExternalLink size={12} /></a></div>
@@ -373,8 +344,13 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
   ];
   const detectedDevices = status && status.runtime.gpus.length > 0 && <ul className="space-y-1" aria-label={copy('已检测设备', 'Detected devices')}>{status.runtime.gpus.map((gpu, index) => <li key={`${gpu.device || index}:${gpu.name}`}><strong>{gpu.name}</strong><span className="settings-note"> · {gpu.device || `GPU ${index + 1}`}{gpu.mem_total_mb != null ? ` · ${formatGpuMemory(gpu.mem_total_mb)} ${gpu.memory_scope === 'unified_system' ? copy('统一内存', 'unified memory') : copy('设备内存', 'device memory')}` : ''}{gpu.cuda_available === false ? textUnavailable() : ''}</span></li>)}</ul>;
 
-  const installation = <section id="environment-installation" data-settings-section tabIndex={-1} hidden={!visibleOperations.length && !torchOperationsVisible} className="settings-section space-y-3" data-testid={visibleOperations.length || torchOperationsVisible ? 'environment-operations' : undefined}>
-      {(visibleOperations.length > 0 || torchOperationsVisible) && <div className="settings-section-heading"><h2>{copy('安装日志', 'Installation log')}</h2></div>}
+  const readFailure = (label: string, resource: { error: string; loading: boolean; reload: (refresh?: boolean) => Promise<void> }) => resource.error && <p role="alert" className="settings-alert">
+    <span>{label}：{resource.error}</span>{' '}<button type="button" className="ui-link" disabled={resource.loading} onClick={() => void resource.reload()}>{copy('重新读取', 'Reload')}</button>
+  </p>;
+
+  const installation = <section id="environment-installation" data-settings-section tabIndex={-1} hidden={!visibleOperations.length && !torchOperationsVisible && !operationsRead.error} className="settings-section space-y-3" data-testid={visibleOperations.length || torchOperationsVisible ? 'environment-operations' : undefined}>
+      {(visibleOperations.length > 0 || torchOperationsVisible || !!operationsRead.error) && <div className="settings-section-heading"><h2>{copy('安装日志', 'Installation log')}</h2></div>}
+      {readFailure(copy('安装记录', 'Installation records'), operationsRead)}
       <div ref={setTorchOperationsTarget} className="space-y-3"/>
       {visibleOperations.map(op => <InstallationOperation key={op.id} title={packageLabel(op.package)}
         action={op.action === 'uninstall' ? copy('卸载', 'Uninstall') : op.action === 'repair' ? copy('重装', 'Reinstall') : copy('安装', 'Install')}
@@ -383,8 +359,8 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
         <DownloadProgress operation={op} copy={copy}/>
         {op.plan.length > 0 && <div className="space-y-1 text-xs">{op.plan.map(item => <p key={item.name} className="break-words"><span className="font-mono">{item.name}</span> · {item.from_version || copy('未安装', 'not installed')} → <strong>{item.version || copy('移除', 'remove')}</strong></p>)}</div>}
         {op.error && <p role="alert" className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-300">{op.error}</p>}
-        {op.status === 'ready' && <div className="flex flex-wrap items-center gap-2"><button className={`${button} ui-btn-primary`} disabled={locked} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/apply`, {}, { silent: true }))}>{op.action === 'uninstall' ? copy('确认卸载', 'Confirm uninstall') : op.action === 'repair' ? copy('确认重装', 'Confirm reinstall') : copy('确认安装', 'Confirm install')}</button><span className="text-xs text-slate-500 dark:text-slate-400">{copy('执行后需要重启 Studio。', 'Restart Studio after applying.')}</span></div>}
-        {['planning', 'ready'].includes(op.status) && <button className={button} disabled={busy} onClick={() => void execute(() => apiClient.post(`/environment/operations/${op.id}/cancel`, {}, { silent: true }))}>{op.action === 'uninstall' ? copy('取消卸载', 'Cancel uninstall') : op.phase === 'download' ? copy('取消下载', 'Cancel download') : copy('取消安装', 'Cancel installation')}</button>}
+        {op.status === 'ready' && <div className="flex flex-wrap items-center gap-2"><button className={`${button} ui-btn-primary`} disabled={locked} onClick={() => void execute(() => apiClient.post<Operation>(`/environment/operations/${op.id}/apply`, {}, { silent: true }))}>{op.action === 'uninstall' ? copy('确认卸载', 'Confirm uninstall') : op.action === 'repair' ? copy('确认重装', 'Confirm reinstall') : copy('确认安装', 'Confirm install')}</button><span className="text-xs text-slate-500 dark:text-slate-400">{copy('执行后需要重启 Studio。', 'Restart Studio after applying.')}</span></div>}
+        {['planning', 'ready'].includes(op.status) && <button className={button} disabled={busy} onClick={() => void execute(() => apiClient.post<Operation>(`/environment/operations/${op.id}/cancel`, {}, { silent: true }))}>{op.action === 'uninstall' ? copy('取消卸载', 'Cancel uninstall') : op.phase === 'download' ? copy('取消下载', 'Cancel download') : copy('取消安装', 'Cancel installation')}</button>}
         {['installing', 'verifying'].includes(op.status) && <p className="text-xs text-slate-500 dark:text-slate-400">{copy('安装中，请勿关闭服务。', 'Installation in progress. Keep the service running.')}</p>}
         {op.logs.length > 0 && <InstallationLog label={copy('安装日志', 'Installation log')} logs={op.logs}/>}
       </InstallationOperation>)}
@@ -392,9 +368,10 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
 
   if (onboardingAttention) return <div className="environment-onboarding" data-testid="environment-manager">
     <section id="environment-attention" className="settings-section">
-      <div className="settings-section-heading"><h2>{copy('注意力加速', 'Attention acceleration')}</h2>{!(status && cpuProfile) && <button type="button" className={button} disabled={loading || locked || !!status?.maintenance} onClick={() => void refresh(true)}><RefreshCw size={14} className={probing ? 'animate-spin' : ''}/>{probing ? copy('检查中…', 'Checking…') : copy('运行检查', 'Run checks')}</button>}</div>
+      <div className="settings-section-heading"><h2>{copy('注意力加速', 'Attention acceleration')}</h2><button type="button" className={button} disabled={loading || locked || !!status?.maintenance} onClick={() => void refresh(true)}><RefreshCw size={14} className={probing ? 'animate-spin' : ''}/>{probing ? copy('检查中…', 'Checking…') : copy('重新检测', 'Refresh probes')}</button></div>
       <p className="settings-note" role={restartRequired ? 'status' : undefined}>{status && cpuProfile ? copy('CPU 使用 PyTorch 内置 SDPA，无需安装注意力扩展。', 'CPU uses built-in PyTorch SDPA; no attention extension is needed.') : copy('安装后需重启训练器生效。', 'Restart the trainer after installation for changes to take effect.')}</p>
       {error && <div ref={errorRef} role="alert" className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
+      {readFailure(copy('当前环境', 'Current runtime'), runtimeRead)}
       {loading && !status && <p role="status" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 size={16} className="animate-spin" />{copy('检测当前环境与已安装扩展…', 'Checking runtime and installed extensions…')}</p>}
       {status?.running_jobs && <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{copy('任务运行中，完成或停止后可修改环境。', 'Finish or stop running tasks before changing the environment.')}</p>}
       <div className="settings-dependencies">{visiblePackages.map(packageItem)}</div>
@@ -416,6 +393,7 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
       <button className={button} disabled={loading || busy} onClick={() => { void refresh(true); void refreshLatest(true); void refreshLora(true); }}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />{copy('重新检测', 'Refresh probes')}</button>
     </div>
     {error && <div ref={errorRef} role="alert" className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
+    {readFailure(copy('当前环境', 'Current runtime'), runtimeRead)}
     {loading && !status && <p role="status" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 size={16} className="animate-spin" />{copy('检测当前环境与已安装扩展…', 'Checking runtime and installed extensions…')}</p>}
     {status && <>
       <dl className="settings-facts">{facts?.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-slate-500 dark:text-slate-400">{label}</dt><dd className="mt-1 break-words text-sm font-medium">{value}</dd></div>)}<div className="min-w-0"><dt className="text-xs text-slate-500 dark:text-slate-400">{copy('设备', 'Device')}</dt><dd className="mt-1 break-words text-sm font-medium">{cpuProfile ? 'CPU' : detectedDevices || (status.runtime.mps_available ? 'Apple GPU' : 'CPU')}</dd></div></dl>
@@ -425,7 +403,7 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
     </>}
     </section>
     {status && <>
-      {profile === 'linux-dtk' ? <DtkRuntimePanel/> : <TorchEnvironmentPanel showAttentionExtensions={showAttentionExtensions} disabled={status.running_jobs || busy || operations.some(busyStatus)} operationsTarget={torchOperationsTarget} onOperationsVisible={setTorchOperationsVisible}/>}
+      {profile === 'linux-dtk' ? <DtkRuntimePanel/> : <TorchEnvironmentPanel showAttentionExtensions={showAttentionExtensions} disabled={status.running_jobs || busy || operations.some(busyStatus)} statusUnavailable={!operationsRead.data || !!operationsRead.error || !!runtimeRead.error} operationsTarget={torchOperationsTarget} onOperationsVisible={setTorchOperationsVisible}/>}
       <section id="environment-attention" data-settings-section tabIndex={-1} className="settings-section">
         <div className="settings-section-heading"><div><h2>{copy('注意力加速', 'Attention acceleration')}</h2>{target !== 'mps' && <p className="settings-note">{hipBackend ? copy('内置 PyTorch SDPA；FlashAttention、xFormers 需使用匹配 DTK / PyTorch 的厂商构建。', 'PyTorch SDPA is built in. FlashAttention and xFormers require vendor builds matching DTK / PyTorch.') : showAttentionExtensions ? copy('内置 PyTorch SDPA；可选扩展用于 CUDA 加速。', 'PyTorch SDPA is built in. Optional extensions provide CUDA acceleration.') : copy('CPU 使用 PyTorch 内置 SDPA，无需安装额外注意力扩展。', 'CPU uses built-in PyTorch SDPA; no additional attention extension is needed.')}</p>}</div>{!cpuProfile && <button type="button" className={button} disabled={loading || locked || status.maintenance} title={status.running_jobs ? copy('任务结束或暂停后可运行检查', 'Run checks after the task finishes or pauses') : undefined} onClick={() => void refresh(true)}><RefreshCw size={14} className={probing ? 'animate-spin' : ''}/>{probing ? copy('检查中…', 'Checking…') : copy('运行检查', 'Run checks')}</button>}</div>
       {(hipBackend || target === 'mps') && <div className="settings-sdpa-status" data-testid="environment-sdpa">
@@ -442,10 +420,9 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
         <div className="settings-dependency-row settings-dependency-row-reference" data-testid="environment-lycoris">
           <div className="settings-dependency-info"><span className="settings-dependency-name settings-dependency-name-static">LyCORIS</span></div>
           <dl className="settings-dependency-version text-xs">
-            <div><dt>{copy('本地服务端版本：', 'Local server version:')}</dt><dd>{loraLoading && !lora ? copy('查询中…', 'Checking…') : lora?.local.version
+            <div><dt>{copy('本地服务端版本：', 'Local server version:')}</dt><dd>{lora?.local.version
               ? copy(`内置实现 · 格式参考 ${[lora.local.version, lora.local.commit].filter(Boolean).join(' · ')}`, `Built in · format reference ${[lora.local.version, lora.local.commit].filter(Boolean).join(' · ')}`) : copy('内置实现', 'Built in')}</dd></div>
-            <div title={loraError || lora?.upstream.error || undefined}><dt>{copy('云端版本：', 'Online version:')}</dt><dd>{loraLoading ? copy('查询中…', 'Checking…')
-              : loraError || lora?.upstream.error || !lora?.upstream.version ? copy('查询失败', 'Lookup failed') : [lora.upstream.version, lora.upstream.commit].filter(Boolean).join(' · ')}</dd></div>
+            <div><dt>{copy('云端版本：', 'Online version:')}</dt><dd>{onlineLookup(lora?.upstream.version ? [lora.upstream.version, lora.upstream.commit].filter(Boolean).join(' · ') : null, !!(loraError || lora?.upstream.error), loraRead, 'LyCORIS')}</dd></div>
             {!!lora?.upstream.head && <div><dt>{copy('主分支：', 'Main branch:')}</dt><dd>{[lora.upstream.head, lora.upstream.head_date].filter(Boolean).join(' · ')}</dd></div>}
           </dl>
           <div className="settings-dependency-actions flex justify-end"><a className={`${button} ui-btn-icon`} href="https://github.com/KohakuBlueleaf/LyCORIS" target="_blank" rel="noreferrer" aria-label={`LyCORIS ${copy('代码仓库', 'repository')}`}><ExternalLink size={12} /></a></div>
@@ -454,7 +431,7 @@ export function EnvironmentManagerPanel({ focusPackage, mode }: { focusPackage?:
     </section>
     <section id="environment-vision" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><h2>{copy('打标与遮罩', 'Tagging and masks')}</h2></div>
-      {status ? <div className="settings-dependencies">{visionPackages.map(packageItem)}</div> : <LoadingNote label={copy('检测扩展包…', 'Checking packages…')}/>}
+      {status ? <div className="settings-dependencies">{visionPackages.map(packageItem)}</div> : !runtimeRead.error && <LoadingNote label={copy('检测扩展包…', 'Checking packages…')}/>}
     </section>
     {installation}
   </SettingsSections></div>;

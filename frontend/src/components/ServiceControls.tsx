@@ -23,8 +23,7 @@ const reasons: Record<string, [string,string]> = {
   version_operation_running:['等待版本操作完成。','Wait for the version operation to finish.'],
 };
 
-async function requestWithTimeout<T>(request: (signal: AbortSignal) => Promise<T>, timeoutMs: number, controllers: Set<AbortController>): Promise<T> {
-  const controller = new AbortController();
+async function requestWithTimeout<T>(request: (signal: AbortSignal) => Promise<T>, timeoutMs: number, controllers: Set<AbortController>, controller = new AbortController()): Promise<T> {
   controllers.add(controller);
   let timer: number | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
@@ -47,9 +46,28 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
   const [nextAddress,setNextAddress] = React.useState('');
   const cancelled=React.useRef(false);
   const controllers=React.useRef(new Set<AbortController>());
-  const refresh=React.useCallback(async(timeoutMs=3000)=> {const value=await requestWithTimeout(signal=>apiClient.get<ServiceRuntime>('/service/runtime',{silent:true,signal}),timeoutMs,controllers.current);if(!cancelled.current){setRuntime(value);reportRestart(!!value.restart_required);}return value;},[reportRestart]);
-  React.useEffect(()=>{let active=true;const activeControllers=controllers.current;cancelled.current=false;void refresh().catch(e=>{if(active&&!cancelled.current)setError(formatApiError(e));});return()=>{active=false;cancelled.current=true;for(const controller of activeControllers)controller.abort();};},[refresh]);
-  React.useEffect(()=>{if(refreshKey)void refresh().catch(e=>setError(formatApiError(e)));},[refreshKey,refresh]);
+  const statusRead=React.useRef<{controller:AbortController;promise:Promise<ServiceRuntime>}|null>(null);
+  const refresh=React.useCallback((timeoutMs=3000,replace=false):Promise<ServiceRuntime>=> {
+    if(statusRead.current&&!replace)return statusRead.current.promise;
+    statusRead.current?.controller.abort();
+    const controller=new AbortController();
+    const current=()=>!cancelled.current&&statusRead.current?.controller===controller;
+    const promise=requestWithTimeout(signal=>apiClient.get<ServiceRuntime>('/service/runtime',{silent:true,signal}),timeoutMs,controllers.current,controller)
+      .then(value=>{
+        if(!current()||controller.signal.aborted)throw Object.assign(new Error('Request replaced'),{name:'AbortError'});
+        setRuntime(value);reportRestart(!!value.restart_required);return value;
+      }).catch(failure=>{
+        if(!current())throw Object.assign(new Error('Request replaced'),{name:'AbortError'});
+        throw failure;
+      }).finally(()=>{if(statusRead.current?.controller===controller)statusRead.current=null;});
+    statusRead.current={controller,promise};
+    return promise;
+  },[reportRestart]);
+  const showReadError=React.useCallback((failure:unknown)=>{
+    if(!cancelled.current&&!(failure instanceof Error&&failure.name==='AbortError'))setError(formatApiError(failure));
+  },[]);
+  React.useEffect(()=>{const activeControllers=controllers.current;cancelled.current=false;void refresh().catch(showReadError);return()=>{cancelled.current=true;statusRead.current=null;for(const controller of activeControllers)controller.abort();};},[refresh,showReadError]);
+  React.useEffect(()=>{if(refreshKey)void refresh(3000,true).catch(showReadError);},[refreshKey,refresh,showReadError]);
   const restart=async(options:Record<string,unknown>)=>{
     setBusy(true);setError('');setNotice('');setNextAddress('');
     const deadline=Date.now()+60000;
@@ -95,7 +113,7 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
   // A saved setting or an environment change the running service has not applied yet. The saved and
   // running addresses are not compared: a launcher --port override would look pending forever.
   const restartHint = !environmentId && (pending || !!runtime?.restart_required);
-  const refreshButton = <button type="button" className="ui-btn service-refresh" disabled={busy || disabled} onClick={()=>void refresh().then(current=>{setError('');if(environmentId&&current.selected_environment===environmentId){setNotice(text('当前正在使用此环境。','This environment is currently active.'));onRestarted?.();}}).catch(e=>setError(formatApiError(e)))}><RefreshCw size={14}/>{text('刷新状态','Refresh status')}</button>;
+  const refreshButton = <button type="button" className="ui-btn service-refresh" disabled={busy || disabled} onClick={()=>void refresh(3000,true).then(current=>{setError('');if(environmentId&&current.selected_environment===environmentId){setNotice(text('当前正在使用此环境。','This environment is currently active.'));onRestarted?.();}}).catch(showReadError)}><RefreshCw size={14}/>{text('刷新状态','Refresh status')}</button>;
   return <div className={`service-controls${secondary ? ' service-controls-secondary' : ''}`}>
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" className={secondary ? "ui-btn" : "ui-btn ui-btn-primary"} disabled={busy||disabled||!runtime?.can_restart} onClick={()=>void restart(environmentId?{environment_id:environmentId}:applySavedAddress?{apply_saved_address:true}:{})}>{busy?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} {environmentId?text('重启并切换到此环境','Restart in this environment'):text('重启服务','Restart service')}</button>

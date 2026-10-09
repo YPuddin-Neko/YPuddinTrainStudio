@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../../api/client';
+import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { DatasetInfo, Settings, VisionCatalog, VisionModel, VlmService, VlmServices } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { versionConfigUrl } from '../../utils/projectVersions';
@@ -12,8 +12,10 @@ export const ACTIVE_DOWNLOAD = ['queued', 'downloading', 'verifying'];
 export function useVisionModels() {
   return useQuery({
     queryKey: ['vision-models'],
-    queryFn: ({ signal }) => apiClient.get<VisionCatalog>('/vision/models', { signal, silent: true }),
-    refetchInterval: query => query.state.data?.models.some(model => ACTIVE_DOWNLOAD.includes(model.download?.status ?? '')) ? 1000 : false,
+    queryFn: ({ signal }) => apiClient.get<VisionCatalog>('/vision/models', { signal, silent: true, timeout: READ_TIMEOUT_MS }),
+    retry: false,
+    networkMode: 'always',
+    refetchInterval: query => !query.state.error && query.state.data?.models.some(model => ACTIVE_DOWNLOAD.includes(model.download?.status ?? '')) ? 1000 : false,
   });
 }
 
@@ -29,16 +31,25 @@ export function useTaggingSettings() {
   const client = useQueryClient();
   const query = useQuery({
     queryKey: ['settings'],
-    queryFn: ({ signal }) => apiClient.get<Settings>('/settings', { signal, silent: true }),
+    queryFn: ({ signal }) => apiClient.get<Settings>('/settings', { signal, silent: true, timeout: READ_TIMEOUT_MS }),
+    retry: false,
+    networkMode: 'always',
     staleTime: 30_000,
   });
   useEffect(() => {
-    const changed = (event: Event) => { const detail = (event as CustomEvent<Settings>).detail; if (detail) client.setQueryData(['settings'], detail); else void client.invalidateQueries({ queryKey: ['settings'] }); };
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<Settings>).detail;
+      if (detail) {
+        void client.cancelQueries({ queryKey: ['settings'], exact: true });
+        client.setQueryData(['settings'], detail);
+      } else void client.invalidateQueries({ queryKey: ['settings'] });
+    };
     window.addEventListener('studio.settings.changed', changed);
     return () => window.removeEventListener('studio.settings.changed', changed);
   }, [client]);
   const save = async (tagging: TaggingSettings) => {
     const result = await apiClient.put<Settings>('/settings', { tagging }, { silent: true });
+    await client.cancelQueries({ queryKey: ['settings'], exact: true });
     client.setQueryData(['settings'], result);
     window.dispatchEvent(new CustomEvent('studio.settings.changed', { detail: result }));
     return result;
@@ -82,7 +93,9 @@ export function useScopeOptions(projectId: string, versionId: string) {
 export function useVlmServices() {
   return useQuery({
     queryKey: ['vlm-services'],
-    queryFn: ({ signal }) => apiClient.get<VlmServices>('/vlm/services', { signal, silent: true }),
+    queryFn: ({ signal }) => apiClient.get<VlmServices>('/vlm/services', { signal, silent: true, timeout: READ_TIMEOUT_MS }),
+    retry: false,
+    networkMode: 'always',
   });
 }
 
@@ -90,7 +103,8 @@ export function useVlmServices() {
 export function useVlmModels(provider: string, baseUrl: string, enabled: boolean) {
   return useQuery({
     queryKey: ['vlm-models', provider, baseUrl],
-    queryFn: () => apiClient.post<{ models: string[] }>(`/vlm/services/${provider}/models`, { base_url: baseUrl || null }, { silent: true }),
+    queryFn: ({ signal }) => apiClient.post<{ models: string[] }>(`/vlm/services/${provider}/models`, { base_url: baseUrl || null }, { signal, silent: true, timeout: READ_TIMEOUT_MS }),
+    networkMode: 'always',
     enabled,
     retry: false,
     staleTime: 5 * 60_000,

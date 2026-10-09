@@ -35,18 +35,24 @@ export function VisionModelState({ model, disabled }: { model: VisionModel; disa
   const task = model.download;
   const active = ACTIVE_DOWNLOAD.includes(task?.status ?? '');
   const source = model.sources.includes(tagging?.model_source as never) ? tagging!.model_source : 'huggingface';
-  const act = async (request: () => Promise<unknown>) => {
+  const act = async (request: () => Promise<VisionModel>) => {
     if (requestPending.current) return;
     requestPending.current = true; setPending(true); setError('');
     try {
-      try { await request(); } catch (e) { setError(formatApiError(e)); }
-      await client.invalidateQueries({ queryKey: ['vision-models'] });
+      try {
+        const result = await request();
+        await client.cancelQueries({ queryKey: ['vision-models'], exact: true });
+        client.setQueryData<VisionCatalog>(['vision-models'], current => current && ({
+          ...current, models: current.models.map(item => item.id === result.id ? result : item),
+        }));
+      } catch (e) { setError(formatApiError(e)); }
+      void client.invalidateQueries({ queryKey: ['vision-models'] });
     } finally { requestPending.current = false; setPending(false); }
   };
   const remove = async () => {
     if (disabled || requestPending.current) return;
     if (!await confirm({ title: text('删除模型文件', 'Delete model files'), message: text(`删除 ${model.label} 的模型文件？`, `Delete the ${model.label} model files?`), confirmLabel: text('删除', 'Delete'), danger: true })) return;
-    await act(() => apiClient.delete(`/vision/models/${model.id}`, { silent: true }));
+    await act(() => apiClient.delete<VisionModel>(`/vision/models/${model.id}`, { silent: true }));
   };
   const percent = task?.total_bytes ? Math.min(100, Math.floor((task.downloaded_bytes || 0) / task.total_bytes * 100)) : 0;
   const failure = error || (task?.status === 'failed' ? task.error : '');
@@ -56,8 +62,8 @@ export function VisionModelState({ model, disabled }: { model: VisionModel; disa
     : active ? <span className="vision-model-progress" role="status">
       <span className="vision-model-bar" aria-hidden="true"><span style={{ width: `${task?.status === 'verifying' ? 100 : percent}%` }}/></span>
       <span className="vision-model-state">{task?.status === 'verifying' ? text('校验文件…', 'Verifying…') : task?.status === 'queued' ? text('等待下载…', 'Waiting…') : `${formatBytes(task?.downloaded_bytes || 0)} / ${formatBytes(model.size)} · ${percent}%`}</span>
-      <button type="button" className="ui-btn ui-btn-quiet ui-btn-icon ui-btn-sm" aria-label={text('取消下载', 'Cancel download')} title={text('取消下载', 'Cancel download')} onClick={() => void act(() => apiClient.post(`/vision/models/${model.id}/cancel`, {}, { silent: true }))}><X size={13}/></button></span>
-    : <button type="button" className="ui-btn" disabled={disabled || !!(model.token_required && !model.token_configured)} title={model.token_required && !model.token_configured ? text('请先在设置 → 访问密钥中保存 Hugging Face 令牌', 'Save a Hugging Face token under Settings → Access keys first') : source === 'modelscope' ? text('从魔搭社区下载', 'From ModelScope') : text('从 Hugging Face 下载', 'From Hugging Face')} onClick={() => void act(() => apiClient.post(`/vision/models/${model.id}/download`, { source }, { silent: true }))}><Download size={14}/>{text(`下载模型 · ${formatBytes(model.size)}`, `Download · ${formatBytes(model.size)}`)}</button>;
+      <button type="button" className="ui-btn ui-btn-quiet ui-btn-icon ui-btn-sm" aria-label={text('取消下载', 'Cancel download')} title={text('取消下载', 'Cancel download')} disabled={disabled || pending} onClick={() => void act(() => apiClient.post<VisionModel>(`/vision/models/${model.id}/cancel`, {}, { silent: true }))}><X size={13}/></button></span>
+    : <button type="button" className="ui-btn" disabled={disabled || pending || !!(model.token_required && !model.token_configured)} title={model.token_required && !model.token_configured ? text('请先在设置 → 访问密钥中保存 Hugging Face 令牌', 'Save a Hugging Face token under Settings → Access keys first') : source === 'modelscope' ? text('从魔搭社区下载', 'From ModelScope') : text('从 Hugging Face 下载', 'From Hugging Face')} onClick={() => void act(() => apiClient.post<VisionModel>(`/vision/models/${model.id}/download`, { source }, { silent: true }))}><Download size={14}/>{text(`下载模型 · ${formatBytes(model.size)}`, `Download · ${formatBytes(model.size)}`)}</button>;
   return <>{state}{failure && <p role="alert" className="vision-model-error">{failure}</p>}{confirmation}</>;
 }
 

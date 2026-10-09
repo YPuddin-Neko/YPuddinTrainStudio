@@ -1,7 +1,7 @@
 import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Cpu, HardDrive, FolderCog, Palette, KeyRound, Download, Tags, Settings as SettingsIcon, CircleAlert, RefreshCw } from 'lucide-react';
-import { apiClient } from '../../api/client';
+import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import { RestartRequiredContext } from '../../components/restartRequiredContext';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { SlidingIndicator } from '../../components/motion';
@@ -23,12 +23,12 @@ export default function Settings() {
   const reported = React.useRef(false);
   const reportRestart = React.useCallback((required: boolean) => { reported.current = true; setRestartRequired(required); }, []);
   React.useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     // A page that reads the flag itself reports a newer value than this first look.
-    apiClient.get<{ restart_required?: boolean }>('/service/runtime', { silent: true })
-      .then(runtime => { if (active && !reported.current) setRestartRequired(!!runtime.restart_required); })
+    apiClient.get<{ restart_required?: boolean }>('/service/runtime', { silent: true, signal: controller.signal, timeout: READ_TIMEOUT_MS })
+      .then(runtime => { if (!controller.signal.aborted && !reported.current) setRestartRequired(!!runtime.restart_required); })
       .catch(() => {});
-    return () => { active = false; };
+    return () => controller.abort();
   }, []);
   const tabs = [
     { id: 'runtime', label: text('运行环境', 'Runtime'), Icon: Cpu },

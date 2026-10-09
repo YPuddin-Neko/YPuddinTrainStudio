@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
 from .errors import ApiError
+from .network import ProxyPolicy
 
 Provider = Literal["huggingface", "modelscope"]
 PROVIDERS = ("huggingface", "modelscope")
@@ -107,7 +108,7 @@ class ModelCredentials:
                 status=503,
             ) from None
 
-    def token(self, provider: Provider) -> str | None:
+    def token(self, provider: Provider, *, policy: ProxyPolicy | None = None) -> str | None:
         with self.lock:
             stored = self._read().get("model_sources", {})
             if provider in stored:
@@ -117,15 +118,29 @@ class ModelCredentials:
                 return value or None
         if provider == "modelscope":
             return os.environ.get("MODELSCOPE_API_TOKEN", "").strip() or None
-        try:
-            from huggingface_hub import get_token
+        from .hf_credentials import resolve_token
 
-            return get_token()
-        except ImportError:
-            return os.environ.get("HF_TOKEN", "").strip() or None
+        return resolve_token(policy or ProxyPolicy())
 
     def state(self) -> dict[str, dict[str, bool]]:
-        return {provider: {"configured": bool(self.token(provider))} for provider in PROVIDERS}
+        return {provider: {"configured": self.configured(provider)} for provider in PROVIDERS}
+
+    def configured(self, provider: Provider) -> bool:
+        """Report local presence without refreshing or validating a remote credential."""
+        with self.lock:
+            stored = self._read().get("model_sources", {})
+            if provider in stored:
+                value = stored[provider]
+                if not isinstance(value, str):
+                    raise ApiError("Invalid local credential entry.", code="credentials.read", status=503)
+                return bool(value)
+        if provider == "modelscope":
+            return bool(os.environ.get("MODELSCOPE_API_TOKEN", "").strip())
+        if os.environ.get("HF_OIDC_RESOURCE"):
+            return True
+        from .hf_credentials import local_token
+
+        return bool(local_token())
 
     def site(self, provider: SiteProvider) -> tuple[str, str]:
         """Return a private per-operation snapshot; never serialize this tuple in task records."""

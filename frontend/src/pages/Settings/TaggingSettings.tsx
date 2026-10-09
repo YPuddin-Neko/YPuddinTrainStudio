@@ -2,7 +2,8 @@ import React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, Loader2, RefreshCw } from 'lucide-react';
 import { apiClient } from '../../api/client';
-import type { VlmService } from '../../api/types';
+import type { VlmService, VlmServices } from '../../api/types';
+import type { components } from '../../api/generated';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../../components/StudioSelect';
@@ -43,17 +44,28 @@ function KeyField({ service }: { service: VlmService }) {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
   const confirming = React.useRef(false);
-  const act = async (request: () => Promise<unknown>) => {
-    setBusy(true); setError('');
-    try { await request(); setEditing(false); setValue(''); await client.invalidateQueries({ queryKey: ['vlm-services'] }); } catch (e) { setError(formatApiError(e)); } finally { setBusy(false); }
+  const writing = React.useRef(false);
+  type CredentialState = components['schemas']['CredentialState'];
+  const act = async (request: () => Promise<CredentialState>) => {
+    if (writing.current) return;
+    writing.current = true; setBusy(true); setError('');
+    try {
+      const result = await request();
+      await client.cancelQueries({ queryKey: ['vlm-services'], exact: true });
+      client.setQueryData<VlmServices>(['vlm-services'], current => current && ({
+        ...current, services: current.services.map(item => item.id === service.id ? { ...item, key_configured: result.configured } : item),
+      }));
+      setEditing(false); setValue('');
+      void client.invalidateQueries({ queryKey: ['vlm-services'] });
+    } catch (e) { setError(formatApiError(e)); } finally { writing.current = false; setBusy(false); }
   };
-  const save = (event: React.FormEvent) => { event.preventDefault(); if (value.trim()) void act(() => apiClient.put(`/vlm/services/${service.id}/key`, { api_key: value.trim() }, { silent: true })); };
+  const save = (event: React.FormEvent) => { event.preventDefault(); if (value.trim()) void act(() => apiClient.put<CredentialState>(`/vlm/services/${service.id}/key`, { api_key: value.trim() }, { silent: true })); };
   const remove = async () => {
     if (busy || confirming.current) return;
     confirming.current = true; setBusy(true);
     try {
       if (await confirm({ title: text('删除 API 密钥', 'Delete API key'), message: text('删除保存的 API 密钥？', 'Delete the saved API key?'), confirmLabel: text('删除', 'Delete'), danger: true })) {
-        await act(() => apiClient.delete(`/vlm/services/${service.id}/key`, { silent: true }));
+        await act(() => apiClient.delete<CredentialState>(`/vlm/services/${service.id}/key`, { silent: true }));
       }
     } finally { confirming.current = false; setBusy(false); }
   };
@@ -133,8 +145,8 @@ export default function TaggingSettings() {
     { id: 'tagging-requests', label: text('请求参数', 'Requests') },
     { id: 'tagging-models', label: text('打标与遮罩模型', 'Tagging and mask models') },
   ];
-  if (query.isPending || services.isPending) return <LoadingNote block label={text('正在读取打标设置…', 'Loading tagging settings…')}/>;
-  if (query.error || services.error || !current) return <div role="alert" className="settings-alert">{formatApiError(query.error || services.error)}<button type="button" className="ui-link ml-2" onClick={() => { void query.refetch(); void services.refetch(); }}>{text('重新读取', 'Reload')}</button></div>;
+  if (!current && query.isPending) return <LoadingNote block label={text('正在读取打标设置…', 'Loading tagging settings…')}/>;
+  if (!current) return <div role="alert" className="settings-alert">{formatApiError(query.error)}<button type="button" className="ui-link ml-2" disabled={query.isFetching} onClick={() => void query.refetch()}>{text('重新读取', 'Reload')}</button></div>;
   const models = catalog.data?.models || [];
   const taggers = models.filter(model => model.role === 'tagger');
   const detectors = models.filter(model => model.role !== 'tagger');
@@ -144,12 +156,16 @@ export default function TaggingSettings() {
       <span>{model.license === 'unspecified' ? text('未声明许可', 'No licence stated') : model.license}{model.token_required ? text(' · 需要 Hugging Face 令牌', ' · Hugging Face token needed') : ''}</span></div>
     <div className="tagging-settings-model-state"><VisionModelState model={model}/></div>
   </div>;
-  return <div className="tagging-settings" data-testid="tagging-settings"><SettingsSections sections={sections}>
+  return <div className="tagging-settings" data-testid="tagging-settings">
+    {query.error && <div role="alert" className="settings-alert">{formatApiError(query.error)}<button type="button" className="ui-link ml-2" disabled={query.isFetching} onClick={() => void query.refetch()}>{text('重新读取设置', 'Reload settings')}</button></div>}
+    <SettingsSections sections={sections}>
     <section id="tagging-vlm" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><div><h2>{text('视觉大模型', 'Vision model')}</h2><p className="settings-note">{text('视觉大模型打标和辅助打标使用这个服务。', 'Vision model tagging and assisted tagging use this service.')}</p></div></div>
-      <Field id="tagging-vlm-service" label={text('服务', 'Service')} hint={text('OpenAI 兼容接口；本地模型可用 Ollama 或 LM Studio。', 'Any OpenAI-compatible API; Ollama or LM Studio for local models.')}>
+      {services.isPending && <LoadingNote label={text('读取服务列表…', 'Loading services…')}/>}
+      {services.error && <div role="alert" className="settings-alert">{formatApiError(services.error)}<button type="button" className="ui-link ml-2" disabled={services.isFetching} onClick={() => void services.refetch()}>{text('重新读取服务', 'Reload services')}</button></div>}
+      {services.data && <Field id="tagging-vlm-service" label={text('服务', 'Service')} hint={text('OpenAI 兼容接口；本地模型可用 Ollama 或 LM Studio。', 'Any OpenAI-compatible API; Ollama or LM Studio for local models.')}>
         <StudioSelect id="tagging-vlm-service" value={resolved?.service.id || ''} onValueChange={provider => changeVlm({ provider: provider as VlmSettings['provider'] })} options={(services.data?.services || []).map(item => ({ value: item.id, label: name(item.id) }))}/>
-      </Field>
+      </Field>}
       {resolved && <>
         <Field id="tagging-vlm-address" label={text('接口地址', 'Address')} hint={resolved.service.editable ? text('由训练服务器发出请求，同一台机器上的服务填 127.0.0.1。', 'The training server sends the requests; use 127.0.0.1 for a service on the same machine.') : text('该服务使用固定地址。', 'This service has a fixed address.')}>
           <input id="tagging-vlm-address" className="settings-input" type="text" value={resolved.baseUrl} disabled={!resolved.service.editable} readOnly={!resolved.service.editable} spellCheck={false} maxLength={500} placeholder="http://127.0.0.1:8000/v1" onChange={event => changeVlm({ base_urls: { ...(vlm.base_urls || {}), [resolved.service.id]: event.target.value.trim() } })}/>
@@ -176,7 +192,9 @@ export default function TaggingSettings() {
       <Field id="tagging-source" label={text('下载来源', 'Download source')} hint={text('没有魔搭社区副本的模型从 Hugging Face 下载。', 'Models without a ModelScope copy come from Hugging Face.')}>
         <StudioSelect id="tagging-source" value={current.model_source} onValueChange={value => change({ model_source: value as Tagging['model_source'] })} options={[{ value: 'huggingface', label: 'Hugging Face' }, { value: 'modelscope', label: text('魔搭社区', 'ModelScope') }]}/>
       </Field>
-      {catalog.isPending ? <LoadingNote label={text('读取模型列表…', 'Loading models…')}/> : catalog.error ? <p role="alert" className="settings-alert">{formatApiError(catalog.error)}</p> : <>
+      {catalog.isPending && <LoadingNote label={text('读取模型列表…', 'Loading models…')}/>}
+      {catalog.error && <div role="alert" className="settings-alert">{formatApiError(catalog.error)}<button type="button" className="ui-link ml-2" disabled={catalog.isFetching} onClick={() => void catalog.refetch()}>{text('重新读取模型', 'Reload models')}</button></div>}
+      {catalog.data && <>
         <h3 className="tagging-settings-group">{text('Tagger 模型', 'Tagger models')}</h3>
         <div className="tagging-settings-tabs" role="tablist" aria-label={text('Tagger 模型系列', 'Tagger model series')}>
           {['wd', 'cl', 'pixai'].filter(family => taggers.some(model => model.family === family)).map(family => <button key={family} type="button" role="tab" aria-selected={taggerFamily === family} onClick={() => setTaggerFamily(family)}>{TAGGER_SERIES[family] || family}</button>)}

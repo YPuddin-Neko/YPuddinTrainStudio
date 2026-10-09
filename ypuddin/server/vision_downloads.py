@@ -106,7 +106,7 @@ class VisionModels:
     # ----------------------------------------------------------------- catalog
     def catalog(self) -> list[dict[str, Any]]:
         self.migrate()
-        token = bool(self.credentials and self.credentials.token("huggingface"))
+        token = bool(self.credentials and self.credentials.configured("huggingface"))
         rows = []
         for model_id, entry in VISION_MODELS.items():
             task = self.tasks.get(model_id) or {}
@@ -159,7 +159,7 @@ class VisionModels:
             if self.ready(model_id):
                 raise ApiError("this model is already downloaded", code="vision.ready", status=409)
             if entry.get("token_required") and not (
-                self.credentials and self.credentials.token("huggingface")
+                self.credentials and self.credentials.configured("huggingface")
             ):
                 raise ApiError(
                     f"{entry['label']} needs a Hugging Face access token; save one under Settings → Access keys",
@@ -218,10 +218,10 @@ class VisionModels:
             shutil.rmtree(stage, ignore_errors=True)
             stage.mkdir(parents=True)
             self._update(model_id, status="downloading")
+            token = self.credentials.token(provider, policy=policy) if self.credentials else None
             verified = {}
             for repo_path, (name, size, sha256) in entry["files"].items():
                 headers = {"User-Agent": "YPuddinTrainStudio", "Accept-Encoding": "identity"}
-                token = self.credentials.token(provider) if self.credentials else None
                 if token:
                     headers["Cookie" if provider == "modelscope" else "Authorization"] = (
                         f"m_session_id={token}" if provider == "modelscope" else f"Bearer {token}"

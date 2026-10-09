@@ -540,6 +540,7 @@ class TtsModelDownloads:
                                              encoding="utf-8")
             payload.mkdir()
             done, expected = 0, {}
+            credentials_resolved = False
             for item in package.files:
                 self._check(id_)
                 destination = payload / item.path
@@ -549,7 +550,9 @@ class TtsModelDownloads:
                     self._update(id_, status="downloading", phase="download", current_file=item.path,
                                  bytes_per_second=0, eta_seconds=None)
                     policy = ProxyPolicy.from_context(self.context)
-                    token = self.credentials.token("huggingface")
+                    if not credentials_resolved:
+                        token = self.credentials.token("huggingface", policy=policy)
+                        credentials_resolved = True
                     headers = {"User-Agent": "YPuddinTrainStudio", "Accept-Encoding": "identity"}
                     if token:
                         headers["Authorization"] = f"Bearer {token}"

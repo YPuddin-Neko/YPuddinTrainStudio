@@ -71,6 +71,7 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
   const [loadErrors, setLoadErrors] = React.useState<Partial<Record<Resource, string>>>({});
   const [notice, setNotice] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const pendingAction = React.useRef(false);
   const [provider, setProvider] = React.useState<Provider>(() => {
     try { return localStorage.getItem('studio.model-download-provider') === 'modelscope' ? 'modelscope' : 'huggingface'; } catch { return 'huggingface'; }
   });
@@ -102,22 +103,28 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
   };
   // The newest read of each list, the newest one shown, and the page's lifetime (aborted on leaving).
   const reading = React.useRef<Partial<Record<Resource, number>>>({});
+  const controllers = React.useRef<Partial<Record<Resource, AbortController>>>({});
   const shown = React.useRef<Partial<Record<Resource, number>>>({});
+  const failedReads = React.useRef(new Set<Resource>());
   const reads = React.useRef(0);
   const lifetime = React.useRef<AbortController | null>(null);
   const read = React.useCallback(async (resource: Resource, poll = false) => {
     // A poll waits for the previous read of the same list instead of queueing behind it.
-    if (poll && reading.current[resource] !== undefined) return;
+    if (poll && (reading.current[resource] !== undefined || failedReads.current.has(resource))) return;
+    controllers.current[resource]?.abort();
+    const controller = new AbortController();
+    controllers.current[resource] = controller;
     const id = ++reads.current;
-    const signal = lifetime.current?.signal;
+    const signal = controller.signal;
     reading.current[resource] = id;
     const show = (apply: () => void) => {
-      if (signal?.aborted || (shown.current[resource] ?? 0) > id) return; // a newer answer is already shown
+      if (signal.aborted || lifetime.current?.signal.aborted || reading.current[resource] !== id || (shown.current[resource] ?? 0) > id) return;
       shown.current[resource] = id; apply();
     };
     try {
       const value = await apiClient.get<unknown>(resources[resource], { silent: true, signal, timeout: READ_TIMEOUT_MS });
       show(() => {
+        failedReads.current.delete(resource);
         if (resource === 'library') setModels(value as ModelAsset[]);
         else if (resource === 'downloads') setDownloads(value as ModelDownload[]);
         else if (resource === 'settings') setSettings(value as Settings);
@@ -129,24 +136,45 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
         });
       });
     } catch (failure) {
-      show(() => setLoadErrors(current => ({ ...current, [resource]: formatApiError(failure) })));
+      show(() => { failedReads.current.add(resource); setLoadErrors(current => ({ ...current, [resource]: formatApiError(failure) })); });
     } finally {
       if (reading.current[resource] === id) delete reading.current[resource];
+      if (controllers.current[resource] === controller) delete controllers.current[resource];
     }
   }, []);
   const refresh = React.useCallback(async () => { await Promise.all(resourceKeys.map(resource => read(resource))); }, [read]);
   React.useEffect(() => {
     lifetime.current = new AbortController();
     const current = lifetime.current;
+    const activeReads = controllers.current;
     void refresh();
     const timer = window.setInterval(() => resourceKeys.forEach(resource => void read(resource, true)), 2500);
-    return () => { current.abort(); clearInterval(timer); };
+    return () => { current.abort(); Object.values(activeReads).forEach(controller => controller?.abort()); clearInterval(timer); };
   }, [read, refresh]);
+  const cancelRead = (resource: Resource) => {
+    controllers.current[resource]?.abort();
+    delete controllers.current[resource]; delete reading.current[resource];
+  };
+  const acceptDownload = (task: ModelDownload) => {
+    if (lifetime.current?.signal.aborted) return;
+    cancelRead('downloads');
+    setDownloads(previous => [task, ...previous.filter(item => item.id !== task.id)]);
+  };
+  const acceptModel = (model: ModelAsset, recommendationId?: string) => {
+    if (lifetime.current?.signal.aborted) return;
+    cancelRead('library'); cancelRead('prepare');
+    setModels(previous => [...previous.filter(item => item.id !== model.id).map(item => model.is_default && item.family === model.family && item.kind === model.kind ? { ...item, is_default: false } : item), model]);
+    setCatalog(previous => previous.map(entry => entry.id === recommendationId || entry.model_id === model.id || entry.available_path === model.path
+      ? { ...entry, model_id: model.id, available_path: model.path, is_default: model.is_default }
+      : model.is_default && entry.family === model.family && entry.kind === model.kind ? { ...entry, is_default: false } : entry));
+  };
+  const setModelDefault = async (id: string, isDefault: boolean) => acceptModel(await apiClient.patch<ModelAsset>(`/models/${id}`, { is_default: isDefault }));
   const action = async (operation: () => Promise<void>, inForm = false) => {
-    setBusy(true); setError(''); setFormError(''); setNotice('');
-    try { await operation(); await refresh(); window.dispatchEvent(new Event('studio-models-changed')); }
-    catch (error) { (inForm ? setFormError : setError)(formatApiError(error)); }
-    finally { setBusy(false); }
+    if (pendingAction.current) return;
+    pendingAction.current = true; setBusy(true); setError(''); setFormError(''); setNotice('');
+    try { await operation(); if (!lifetime.current?.signal.aborted) void refresh(); window.dispatchEvent(new Event('studio-models-changed')); }
+    catch (error) { if (!lifetime.current?.signal.aborted) (inForm ? setFormError : setError)(formatApiError(error)); }
+    finally { pendingAction.current = false; if (!lifetime.current?.signal.aborted) setBusy(false); }
   };
   const openForm = (mode: 'local' | 'download', component = 'dit') => {
     if (!selectedFamily || family === 'toy' || !kinds.includes(component)) { setError(text('请选择训练服务支持的模型系列和组件。','Choose a model family and component supported by the training service.')); return; }
@@ -155,7 +183,12 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
     setDialog(mode); setFormError(''); setSourceMode('repo');
   };
   const closeForm = () => { if (!busy) setDialog(null); };
-  const selected = models.filter(model => model.family === family);
+  const selected = models.filter(model => !family || model.family === family);
+  const familyOptions = trainingFamilyOptions(families);
+  const localFamilyOptions = families.length ? familyOptions : [
+    { value: '', label: text('全部模型系列', 'All model families') },
+    ...[...new Set(models.map(model => model.family))].map(value => ({ value, label: value })),
+  ];
   const supportedSelected = selected.filter(model => !modelAssetUnsupportedReason(model) && (model as ModelAsset & {purpose?:string}).purpose !== 'inference');
   const entries = catalog.filter(entry => entry.family === family && !models.some(model => modelAssetUnsupportedReason(model) && (model.id === entry.model_id || model.path === entry.available_path)));
   const catalogProviders = (['huggingface', 'modelscope'] as Provider[]).filter(item => entries.some(entry => entry.sources.some(source => source.provider === item)));
@@ -182,13 +215,13 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
   const missing = required.filter(kind => !ready.includes(kind)).map(kind => entries.find(entry => entry.kind === kind && entry.recommended && entry.purpose !== 'inference')).filter((entry): entry is Recommendation => Boolean(entry));
   const taskFor = (entry: Recommendation) => tasks.find(task => task.recommendation_id === entry.id);
   const startEntry = async (entry: Recommendation) => {
-    if (entry.available_path) await apiClient.post(`/models/recommendations/${entry.id}/use`, {});
-    else await apiClient.post(`/models/recommendations/${entry.id}/download`, { provider: catalogProvider, is_default: entry.purpose !== 'inference' && !ready.includes(entry.kind) });
+    if (entry.available_path) acceptModel(await apiClient.post<ModelAsset>(`/models/recommendations/${entry.id}/use`, {}), entry.id);
+    else acceptDownload(await apiClient.post<ModelDownload>(`/models/recommendations/${entry.id}/download`, { provider: catalogProvider, is_default: entry.purpose !== 'inference' && !ready.includes(entry.kind) }));
   };
   const retryTask = (task: ModelDownload) => void action(async () => {
-    await apiClient.post(`/models/downloads/${task.id}/retry`, task.recommendation_id ? { provider: catalogProvider } : {});
+    acceptDownload(await apiClient.post<ModelDownload>(`/models/downloads/${task.id}/retry`, task.recommendation_id ? { provider: catalogProvider } : {}));
   });
-  const cancelButton = (task: ModelDownload) => <button type="button" className={`${secondary} model-button-downloading`} disabled={busy} aria-label={`${text('取消下载', 'Cancel download')} ${task.filename}`} title={text('取消下载', 'Cancel download')} onClick={() => void action(async () => { await apiClient.post(`/models/downloads/${task.id}/cancel`, {}); })}><span className="model-download-active-label">{statusLabel(task)}</span><span className="model-download-cancel-label"><X size={13}/>{text('取消', 'Cancel')}</span></button>;
+  const cancelButton = (task: ModelDownload) => <button type="button" className={`${secondary} model-button-downloading`} disabled={busy} aria-label={`${text('取消下载', 'Cancel download')} ${task.filename}`} title={text('取消下载', 'Cancel download')} onClick={() => void action(async () => { acceptDownload(await apiClient.post<ModelDownload>(`/models/downloads/${task.id}/cancel`, {})); })}><span className="model-download-active-label">{statusLabel(task)}</span><span className="model-download-cancel-label"><X size={13}/>{text('取消', 'Cancel')}</span></button>;
   const searchValue = query.trim().toLocaleLowerCase();
   const filteredModels = selected.filter(model => `${model.path} ${label(model.kind)}`.toLocaleLowerCase().includes(searchValue));
   const count = filteredModels.length;
@@ -215,17 +248,17 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
         {settings?.paths.models_dir && <div className="models-heading-path" title={settings.paths.models_dir}><span>{text('模型目录', 'Model directory')}</span><strong>{settings.paths.models_dir}</strong><Link className="ui-link" to="/settings/preferences?section=storage" replace state={location.state}>{text('更改', 'Change')}</Link></div>}
         <div className="model-actions"><Link to={settingsLink('credentials')} replace state={location.state} className={secondary}><KeyRound size={14}/>{text('访问密钥', 'Access keys')}</Link><button type="button" className={`${secondary} ui-btn-icon`} onClick={() => void refresh()} aria-label={text('刷新模型', 'Refresh models')} title={text('刷新模型', 'Refresh models')}><RefreshCw size={14}/></button></div>
       </div>
-      <div className="models-filters">{typeSelector}<StudioSelect aria-label={text('模型系列', 'Model family')} value={family} disabled={familiesLoading || !!familiesError} options={trainingFamilyOptions(families)} onValueChange={family => updateParams({ family })}/>
+      <div className="models-filters">{typeSelector}<StudioSelect aria-label={text('模型系列', 'Model family')} value={family} disabled={view === 'prepare' && (familiesLoading || (!!familiesError && !families.length))} options={view === 'library' ? localFamilyOptions : familyOptions} onValueChange={family => updateParams({ family })}/>
         <div className="models-view-tabs ui-segmented" role="tablist" aria-label={text('模型管理视图', 'Model management views')}>{tabs.map(tab => <button key={tab.key} type="button" role="tab" aria-selected={view === tab.key} onClick={() => updateParams({ view: tab.key })}>{tab.label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div>
       </div>
     </div>
     {error && <div role="alert" className="settings-alert">{error}<button className={secondary} onClick={() => void refresh()}>{text('重试', 'Retry')}</button></div>}
-    {Object.keys(loadErrors).length > 0 && <div role="alert" className="settings-alert"><div>{Object.entries(loadErrors).map(([key, message]) => <p key={key}>{({ library: text('本地模型', 'Local models'), downloads: text('下载记录', 'Downloads'), settings: text('存储设置', 'Storage settings'), prepare: text('推荐模型', 'Recommended models') })[key as Resource]}：{message}</p>)}</div><button className={secondary} onClick={() => void refresh()}>{text('重新读取', 'Reload')}</button></div>}
+    {Object.keys(loadErrors).length > 0 && <div role="alert" className="settings-alert"><div>{Object.entries(loadErrors).map(([key, message]) => <p key={key}>{({ library: text('本地模型', 'Local models'), downloads: text('下载记录', 'Downloads'), settings: text('存储设置', 'Storage settings'), prepare: text('推荐模型', 'Recommended models') })[key as Resource]}：{message}{' '}<button className="ui-link" onClick={() => void read(key as Resource)}>{text('重新读取', 'Reload')}</button></p>)}</div></div>}
     {notice && <p className="model-notice" role="status">{notice}</p>}
     {listsSettled && standaloneTasks.length > 0 && <section className="model-download-inline" aria-label={text('下载状态', 'Download status')}><h3>{text('下载状态', 'Download status')}</h3>{standaloneTasks.map(downloadTaskRow)}</section>}
     {familiesError && <div role="alert" className="settings-alert">{text('无法读取支持的模型系列。', 'Could not load supported model families.')}<button className={secondary} onClick={() => void refreshFamilies()}>{text('重试', 'Retry')}</button></div>}
     {family === 'flux' && <p role="alert" className="settings-alert">{text('FLUX.1 已停用。已有模型文件保持原样，请选择受支持的模型系列。', 'FLUX.1 is retired. Existing model files are preserved; choose a supported model family.')}</p>}
-    {familiesLoading ? <LoadingNote block className="model-empty" label={text('正在读取模型系列…', 'Loading model families…')}/> : !selectedFamily ? <p className="model-empty">{text('请选择训练服务支持的模型系列。', 'Choose a model family supported by the training service.')}</p> : loadErrors[view] ? <p className="model-empty">{text('此列表暂时无法读取，请重试。其他视图仍可查看。', 'This list is unavailable. Retry or open another view.')}</p> : !viewReady ? <LoadingNote block className="model-empty" label={view === 'prepare' ? text('正在读取推荐模型…', 'Loading recommended models…') : text('正在读取本地模型…', 'Loading local models…')}/> : view === 'prepare' ? <>
+    {view === 'prepare' && familiesLoading ? <LoadingNote block className="model-empty" label={text('正在读取模型系列…', 'Loading model families…')}/> : view === 'prepare' && !selectedFamily ? <p className="model-empty">{text('请选择训练服务支持的模型系列。', 'Choose a model family supported by the training service.')}</p> : loadErrors[view] && !viewReady ? <p className="model-empty">{text('此列表暂时无法读取，请重试。其他视图仍可查看。', 'This list is unavailable. Retry or open another view.')}</p> : !viewReady ? <LoadingNote block className="model-empty" label={view === 'prepare' ? text('正在读取推荐模型…', 'Loading recommended models…') : text('正在读取本地模型…', 'Loading local models…')}/> : view === 'prepare' ? <>
       {family === 'toy' ? <p className="model-empty">{text('Toy 测试模型已内置，无需下载权重。', 'The Toy test model is built in; no weights required.')}</p> : <>
         <div className="models-source-bar"><label>{text('下载来源', 'Download source')}<StudioSelect value={catalogProvider} aria-label={text('下载来源', 'Download source')} data-testid="model-provider" options={(catalogProviders.length ? catalogProviders : ['huggingface', 'modelscope']).map(value => ({ value, label: value === 'huggingface' ? 'Hugging Face' : '魔搭 ModelScope' }))} onValueChange={value => setProvider(value as Provider)}/></label>{loaded.library && <span>{text('必需组件', 'Required components')} {readyRequired.length} / {required.length}</span>}<button className={primary} disabled={busy || !loaded.downloads || !loaded.library || !!loadErrors.library || !!loadErrors.downloads || missing.length === 0 || missing.every(entry => taskFor(entry) || (!entry.available_path && !entry.sources.some(source => source.provider === catalogProvider)))} onClick={() => void action(async () => { for (const entry of missing) if (!taskFor(entry) && (entry.available_path || entry.sources.some(source => source.provider === catalogProvider))) await startEntry(entry); })}><Download size={14}/>{text('准备缺失组件', 'Prepare missing components')}</button></div>
         {entries.length === 0 && <p className="model-help-text">{text('添加已有模型，或通过自定义下载填写模型的来源。', 'Add an existing model or enter its source in Custom download.')}</p>}
@@ -237,18 +270,18 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
               <div className="model-catalog-action">{entry.is_default && entry.available_path ? <span className="model-ready"><Check size={14}/>{text('当前默认', 'Current default')}</span> : task ? isActive(task) ? cancelButton(task) : <button className={secondary} disabled={busy} onClick={() => retryTask(task)}>{text('重试', 'Retry')}</button> : <button className={entry.available_path ? secondary : primary} disabled={busy || !loaded.downloads || !loaded.library || (!source && !entry.available_path) || !!loadErrors.library || !!loadErrors.downloads} onClick={() => void action(async () => { await startEntry(entry); setNotice(entry.available_path ? entry.purpose === 'inference' ? text('已登记为仅采样模型。', 'Registered for sampling only.') : text('已设为默认组件。', 'Default component selected.') : ''); })}>{entry.available_path ? <Check size={14}/> : <Download size={14}/>} {entry.available_path ? entry.purpose === 'inference' ? text('仅采样 · 已就绪', 'Sampling only · ready') : text('设为默认', 'Use as default') : text('下载', 'Download')}</button>}</div>
             </div>;
           })}
-          {supportedSelected.some(model => model.kind === kind) && <div className="model-default-row"><label>{text('本地默认', 'Local default')}</label><StudioSelect aria-label={`${label(kind)} ${text('默认模型', 'default model')}`} value={supportedSelected.find(model => model.kind === kind && model.is_default)?.id || ''} options={[{ value: '', label: text('清除默认模型', 'Clear default model'), displayLabel: text('未设置默认模型', 'No default model') }, ...supportedSelected.filter(model => model.kind === kind).map(model => ({ value: model.id, label: `${basename(model.path)}${!model.exists ? text('（文件缺失）', ' (missing)') : ''}`, disabled: !model.exists }))]} disabled={busy} onValueChange={id => void action(async () => { const previous = selected.find(model => model.kind === kind && model.is_default); if (id) await apiClient.patch(`/models/${id}`, { is_default: true }); else if (previous) await apiClient.patch(`/models/${previous.id}`, { is_default: false }); })}/></div>}
+          {supportedSelected.some(model => model.kind === kind) && <div className="model-default-row"><label>{text('本地默认', 'Local default')}</label><StudioSelect aria-label={`${label(kind)} ${text('默认模型', 'default model')}`} value={supportedSelected.find(model => model.kind === kind && model.is_default)?.id || ''} options={[{ value: '', label: text('清除默认模型', 'Clear default model'), displayLabel: text('未设置默认模型', 'No default model') }, ...supportedSelected.filter(model => model.kind === kind).map(model => ({ value: model.id, label: `${basename(model.path)}${!model.exists ? text('（文件缺失）', ' (missing)') : ''}`, disabled: !model.exists }))]} disabled={busy} onValueChange={id => void action(async () => { const previous = selected.find(model => model.kind === kind && model.is_default); if (id) await setModelDefault(id, true); else if (previous) await setModelDefault(previous.id, false); })}/></div>}
         </section>)}
         <div className="model-actions"><button className={secondary} data-testid="download-model-btn" onClick={() => openForm('download')}><Plus size={14}/>{text('自定义下载', 'Custom download')}</button><button className={secondary} data-testid="add-model-btn" onClick={() => openForm('local')}><Plus size={14}/>{text('添加本地模型', 'Add local model')}</button></div>
       </>}
     </> : <>
-      <div className="models-list-toolbar"><label className="model-search"><Search size={15}/><input value={query} aria-label={text('搜索模型', 'Search models')} placeholder={text('搜索名称或路径', 'Search name or path')} onChange={event => { setQuery(event.target.value); setPage(1); }}/></label><div className="model-actions"><button className={secondary} onClick={() => openForm('local')}><Plus size={14}/>{text('本地文件', 'Local file')}</button><button className={secondary} disabled={busy} onClick={() => void action(async () => { const found = await apiClient.post<ModelAsset[]>('/models/scan', { family }); setNotice(`${text('新登记文件', 'Newly registered files')}：${found.length}。${text('未识别文件请使用“本地文件”逐个确认。','Review unidentified files through Local file.')}`); })}><FolderSearch size={14}/>{text('扫描模型目录', 'Scan model directory')}</button></div></div>
+      <div className="models-list-toolbar"><label className="model-search"><Search size={15}/><input value={query} aria-label={text('搜索模型', 'Search models')} placeholder={text('搜索名称或路径', 'Search name or path')} onChange={event => { setQuery(event.target.value); setPage(1); }}/></label><div className="model-actions"><button className={secondary} disabled={busy || !selectedFamily} onClick={() => openForm('local')}><Plus size={14}/>{text('本地文件', 'Local file')}</button><button className={secondary} disabled={busy || !selectedFamily} onClick={() => void action(async () => { const found = await apiClient.post<ModelAsset[]>('/models/scan', { family }); found.forEach(model => acceptModel(model)); setNotice(`${text('新登记文件', 'Newly registered files')}：${found.length}。${text('未识别文件请使用“本地文件”逐个确认。','Review unidentified files through Local file.')}`); })}><FolderSearch size={14}/>{text('扫描模型目录', 'Scan model directory')}</button></div></div>
       <div className="models-pagination"><span>{count} {text('项', 'items')}</span><button className={secondary} disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>{text('上一页', 'Previous')}</button><span>{currentPage} / {pages}</span><button className={secondary} disabled={currentPage === pages} onClick={() => setPage(currentPage + 1)}>{text('下一页', 'Next')}</button></div>
-      {count === 0 ? <p className="model-empty">{text('没有匹配的记录。', 'No matching records.')}</p> : <div className="model-library-list">{slice(filteredModels).map(model => <div className="model-library-row" key={model.id}><div><strong>{basename(model.path)}</strong>{(model as ModelAsset & {purpose?:string}).purpose==='inference'&&<span className="model-ready">{text('仅采样','Sampling only')}</span>}<p>{label(model.kind)} · {model.dtype || '—'} · {formatBytes(model.size)} · {modelAssetUnsupportedReason(model) ? text('已停用', 'Retired') : model.exists ? text('可用', 'Available') : text('文件缺失', 'Missing file')}</p>{modelAssetUnsupportedReason(model) && <p className="model-help-text">{modelAssetUnsupportedReason(model)}</p>}<details><summary>{text('文件路径', 'File path')}</summary><code>{model.path}</code></details></div><div className="model-actions"><button type="button" className={`${secondary} ui-btn-icon`} disabled={busy || (model as ModelAsset & {purpose?:string}).purpose === 'inference' || !model.is_default && (!model.exists || !!modelAssetUnsupportedReason(model))} aria-label={`${model.is_default && modelAssetUnsupportedReason(model) ? text('取消默认', 'Clear default') : text('设为默认', 'Set default')} ${basename(model.path)}`} onClick={() => void action(async () => { await apiClient.patch(`/models/${model.id}`, { is_default: !model.is_default }); })}><Star size={14} fill={model.is_default ? 'currentColor' : 'none'}/>{model.is_default ? modelAssetUnsupportedReason(model) ? text('取消默认', 'Clear default') : text('默认', 'Default') : text('设为默认', 'Set default')}</button><button type="button" className={`${secondary} ui-btn-icon ui-btn-danger`} disabled={busy} onClick={() => setRemove(model)} aria-label={`${text('移除登记', 'Remove registration')} ${basename(model.path)}`}><Trash2 size={14}/></button></div></div>)}</div>}
+      {count === 0 ? <p className="model-empty">{text('没有匹配的记录。', 'No matching records.')}</p> : <div className="model-library-list">{slice(filteredModels).map(model => <div className="model-library-row" key={model.id}><div><strong>{basename(model.path)}</strong>{(model as ModelAsset & {purpose?:string}).purpose==='inference'&&<span className="model-ready">{text('仅采样','Sampling only')}</span>}<p>{!selectedFamily && <>{model.family} · </>}{label(model.kind)} · {model.dtype || '—'} · {formatBytes(model.size)} · {modelAssetUnsupportedReason(model) ? text('已停用', 'Retired') : model.exists ? text('可用', 'Available') : text('文件缺失', 'Missing file')}</p>{modelAssetUnsupportedReason(model) && <p className="model-help-text">{modelAssetUnsupportedReason(model)}</p>}<details><summary>{text('文件路径', 'File path')}</summary><code>{model.path}</code></details></div><div className="model-actions"><button type="button" className={secondary} disabled={busy || !selectedFamily || (model as ModelAsset & {purpose?:string}).purpose === 'inference' || !model.is_default && (!model.exists || !!modelAssetUnsupportedReason(model))} aria-label={`${model.is_default && modelAssetUnsupportedReason(model) ? text('取消默认', 'Clear default') : text('设为默认', 'Set default')} ${basename(model.path)}`} onClick={() => void action(async () => { await setModelDefault(model.id, !model.is_default); })}><Star size={14} fill={model.is_default ? 'currentColor' : 'none'}/>{model.is_default ? modelAssetUnsupportedReason(model) ? text('取消默认', 'Clear default') : text('默认', 'Default') : text('设为默认', 'Set default')}</button><button type="button" className={`${secondary} ui-btn-icon ui-btn-danger`} disabled={busy} onClick={() => setRemove(model)} aria-label={`${text('移除登记', 'Remove registration')} ${basename(model.path)}`}><Trash2 size={14}/></button></div></div>)}</div>}
     </>}
 
-    {dialog && <Dialog title={dialog === 'local' ? text('添加本地模型', 'Add local model') : text('自定义下载', 'Custom download')} onClose={closeForm} closeDisabled={busy} wide>{dialog === 'local' ? <LocalModelRegistration initialFamily={family} families={families} onClose={closeForm} onBusyChange={setBusy} onRegistered={async(family)=>{await refresh();window.dispatchEvent(new Event('studio-models-changed'));setDialog(null);updateParams({view:'library',family});setNotice(text('已登记模型。','Model registered.'));}}/> : <form className="model-source-form" data-testid="download-model-form" onSubmit={event => { event.preventDefault(); if(family==='krea2'&&kind==='dit'&&!variant){setFormError(text('请确认 Raw 或 Turbo。','Confirm Raw or Turbo.'));return;} void action(async () => {
-      await apiClient.post('/models/downloads', { family, kind, provider, dtype: dtype || null, is_default: variant === 'turbo' ? false : isDefault, ...(family === 'krea2' && kind === 'dit' ? {variant, purpose: variant === 'turbo' ? 'inference' : 'training'} : {}), ...(sourceMode === 'url' ? { url: url.trim() } : { repo_id: repo.trim(), filename: filename.trim(), revision: revision.trim() || (provider === 'modelscope' ? 'master' : 'main') }) } as ModelDownloadRequest);
+    {dialog && <Dialog title={dialog === 'local' ? text('添加本地模型', 'Add local model') : text('自定义下载', 'Custom download')} onClose={closeForm} closeDisabled={busy} wide>{dialog === 'local' ? <LocalModelRegistration initialFamily={family} families={families} onClose={closeForm} onBusyChange={setBusy} onRegistered={async(family)=>{void refresh();window.dispatchEvent(new Event('studio-models-changed'));setDialog(null);updateParams({view:'library',family});setNotice(text('已登记模型。','Model registered.'));}}/> : <form className="model-source-form" data-testid="download-model-form" onSubmit={event => { event.preventDefault(); if(family==='krea2'&&kind==='dit'&&!variant){setFormError(text('请确认 Raw 或 Turbo。','Confirm Raw or Turbo.'));return;} void action(async () => {
+      acceptDownload(await apiClient.post<ModelDownload>('/models/downloads', { family, kind, provider, dtype: dtype || null, is_default: variant === 'turbo' ? false : isDefault, ...(family === 'krea2' && kind === 'dit' ? {variant, purpose: variant === 'turbo' ? 'inference' : 'training'} : {}), ...(sourceMode === 'url' ? { url: url.trim() } : { repo_id: repo.trim(), filename: filename.trim(), revision: revision.trim() || (provider === 'modelscope' ? 'master' : 'main') }) } as ModelDownloadRequest));
       setDialog(null); updateParams({ view: 'prepare' });
     }, true); }}>
       <fieldset disabled={busy}><div className="model-form-intro"><p className="model-help-text">{text('从对应平台填写仓库和完整文件路径，或粘贴单文件链接。', 'Enter a repository and complete file path on the selected platform, or paste a single-file URL.')}</p><Switch className="model-switch" checked={variant==='turbo'?false:isDefault} disabled={variant==='turbo'} onCheckedChange={setIsDefault}>{text('完成后设为本系列默认组件', 'Set as the default component when ready')}</Switch></div>{family==='krea2'&&kind==='dit'&&<label>{text('Krea 2 版本 / 用途','Krea 2 variant / purpose')}<StudioSelect aria-label={text('Krea 2 版本 / 用途','Krea 2 variant / purpose')} value={variant} onValueChange={value=>{setVariant(value);if(value==='turbo')setIsDefault(false);}} placeholder={text('请按发布说明选择','Choose from publisher description')} options={[{value:'raw',label:text('Raw (训练与采样)','Raw')},{value:'turbo',label:text('Turbo (仅采样)','Turbo')}]}/></label>}
@@ -262,6 +295,6 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
       {formError && <div role="alert" className="settings-alert">{formError}</div>}
       <footer><button type="button" className={secondary} disabled={busy} onClick={closeForm}>{text('取消', 'Cancel')}</button><button className={primary} data-testid="model-download-start" disabled={busy} type="submit">{busy && <Loader2 size={14} className="animate-spin"/>}{text('开始下载', 'Start download')}</button></footer>
     </form>}</Dialog>}
-    {remove && <Dialog title={text('移除模型登记', 'Remove model registration')} onClose={() => !busy && setRemove(null)} closeDisabled={busy}><div className="model-source-form"><p>{text('移除后不再显示在模型库，磁盘文件会保留。已有项目路径不会改变。', 'The entry will be removed from the library. Its file and existing project paths are retained.')}</p><code>{remove.path}</code><footer><button className={secondary} disabled={busy} onClick={() => setRemove(null)}>{text('取消', 'Cancel')}</button><button type="button" className={`${primary} ui-btn-danger`} disabled={busy} onClick={() => void action(async () => { await apiClient.delete(`/models/${remove.id}`); setRemove(null); })}>{text('移除登记', 'Remove registration')}</button></footer></div></Dialog>}
+    {remove && <Dialog title={text('移除模型登记', 'Remove model registration')} onClose={() => !busy && setRemove(null)} closeDisabled={busy}><div className="model-source-form"><p>{text('移除后不再显示在模型库，磁盘文件会保留。已有项目路径不会改变。', 'The entry will be removed from the library. Its file and existing project paths are retained.')}</p><code>{remove.path}</code><footer><button className={secondary} disabled={busy} onClick={() => setRemove(null)}>{text('取消', 'Cancel')}</button><button type="button" className={`${primary} ui-btn-danger`} disabled={busy} onClick={() => void action(async () => { await apiClient.delete(`/models/${remove.id}`); cancelRead('library'); cancelRead('prepare'); setModels(previous => previous.filter(model => model.id !== remove.id)); setCatalog(previous => previous.map(entry => entry.model_id === remove.id ? { ...entry, model_id: null, is_default: false } : entry)); setRemove(null); })}>{text('移除登记', 'Remove registration')}</button></footer></div></Dialog>}
   </div>;
 }

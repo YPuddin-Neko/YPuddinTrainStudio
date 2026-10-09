@@ -17,6 +17,12 @@ export function ttsModelIssueText(issue: components['schemas']['TtsModelIssue'],
   return message && issue.message === message[0] ? text(...message) : issue.message;
 }
 
+export function ttsModelDownloadErrorText(task: Pick<TtsModelDownload, 'error_code' | 'error'>, text: (zh: string, en: string) => string): string {
+  if (task.error_code === 'credentials.refresh_timeout') return text('Hugging Face 登录刷新超时', 'Hugging Face login refresh timed out.');
+  if (task.error_code === 'credentials.resolve') return text('无法获取 Hugging Face 登录凭据，请检查登录', 'Could not obtain Hugging Face credentials. Check your login.');
+  return task.error || text('下载失败，请重试。', 'Download failed. Retry the download.');
+}
+
 export const ttsModelKeys = {
   catalog: ['tts-models', 'catalog'] as const,
   installed: ['tts-models', 'installed'] as const,

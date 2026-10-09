@@ -2,9 +2,9 @@ import React from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Download, ExternalLink, KeyRound, RefreshCw, Search, X } from 'lucide-react';
-import { apiClient } from '../../api/client';
+import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { Settings } from '../../api/types';
-import { latestTtsDownloads, ttsDownloadActive, ttsModelIssueText, ttsModelKeys, ttsModelsApi, type TtsInstalledModel, type TtsModelDownload, type TtsModelPackage } from '../../api/ttsModels';
+import { latestTtsDownloads, ttsDownloadActive, ttsModelDownloadErrorText, ttsModelIssueText, ttsModelKeys, ttsModelsApi, type TtsInstalledModel, type TtsModelDownload, type TtsModelPackage } from '../../api/ttsModels';
 import StudioSelect from '../../components/StudioSelect';
 import ProgressBar from '../../components/ProgressBar';
 import { SlidingIndicator } from '../../components/motion';
@@ -27,10 +27,10 @@ export default function TtsModels({ embedded = false, typeSelector }: { embedded
   const [params, setParams] = useSearchParams();
   const engine = params.get('engine') === 'gpt-sovits-v5' ? 'gpt-sovits-v5' : 'voxcpm1.5';
   const view = params.get('view') === 'library' ? 'library' : 'prepare';
-  const catalog = useQuery({ queryKey: ttsModelKeys.catalog, queryFn: ({ signal }) => ttsModelsApi.catalog(signal) });
-  const models = useQuery({ queryKey: ttsModelKeys.installed, queryFn: ({ signal }) => ttsModelsApi.installed(signal), refetchInterval: activeInterval });
-  const downloads = useQuery({ queryKey: ttsModelKeys.downloads, queryFn: ({ signal }) => ttsModelsApi.downloads(signal), refetchInterval: activeInterval });
-  const settings = useQuery({ queryKey: ['tts-model-settings'], queryFn: ({ signal }) => apiClient.get<Settings>('/settings', { silent: true, signal }) });
+  const catalog = useQuery({ queryKey: ttsModelKeys.catalog, queryFn: ({ signal }) => ttsModelsApi.catalog(signal), retry: false, networkMode: 'always' });
+  const models = useQuery({ queryKey: ttsModelKeys.installed, queryFn: ({ signal }) => ttsModelsApi.installed(signal), refetchInterval: query => query.state.status === 'error' ? false : activeInterval, retry: false, networkMode: 'always' });
+  const downloads = useQuery({ queryKey: ttsModelKeys.downloads, queryFn: ({ signal }) => ttsModelsApi.downloads(signal), refetchInterval: query => query.state.status === 'error' ? false : activeInterval, retry: false, networkMode: 'always' });
+  const settings = useQuery({ queryKey: ['tts-model-settings'], queryFn: ({ signal }) => apiClient.get<Settings>('/settings', { silent: true, signal, timeout: READ_TIMEOUT_MS }), retry: false, networkMode: 'always' });
   const [error, setError] = React.useState(''), [busy, setBusy] = React.useState(false);
   const [query, setQuery] = React.useState(''), [page, setPage] = React.useState(1);
   const [observedAt, setObservedAt] = React.useState(() => Date.now() / 1000);
@@ -53,8 +53,9 @@ export default function TtsModels({ embedded = false, typeSelector }: { embedded
     pending.current = true; setBusy(true); setError('');
     try {
       const task = await operation();
+      await client.cancelQueries({ queryKey: ttsModelKeys.downloads });
       client.setQueryData<TtsModelDownload[]>(ttsModelKeys.downloads, previous => [task, ...(previous || []).filter(item => item.id !== task.id)]);
-      await Promise.all([client.invalidateQueries({ queryKey: ttsModelKeys.downloads }), client.invalidateQueries({ queryKey: ttsModelKeys.installed })]);
+      void Promise.all([client.invalidateQueries({ queryKey: ttsModelKeys.downloads }), client.invalidateQueries({ queryKey: ttsModelKeys.installed })]);
       window.dispatchEvent(new Event('studio-tts-models-changed'));
     } catch (failure) { if (alive.current) setError(formatApiError(failure)); }
     finally { pending.current = false; if (alive.current) setBusy(false); }
@@ -87,7 +88,7 @@ export default function TtsModels({ embedded = false, typeSelector }: { embedded
   const startButton = (entry: TtsModelPackage, again: boolean) => <button type="button" className={primary} disabled={busy || !listsReady || !settings.data || !!settings.error || !entry.providers?.includes('huggingface')} onClick={() => void action(() => ttsModelsApi.start(entry.id))}><Download size={14}/>{again ? text('重新下载', 'Download again') : text('下载', 'Download')}</button>;
   const recoveryHelp = () => <p className="model-help-text">{text('下载到当前模型目录。原目录仍存在时，请先', 'Downloads use the current model directory. If the original folder still exists, ')}<Link className="ui-link" to="/settings/preferences?section=storage" replace state={location.state}>{text('更改模型目录', 'change the model directory')}</Link>{text('。原文件会保留。', '. Existing files are preserved.')}</p>;
   const taskStatus = (task: TtsModelDownload) => {
-    if (!ttsDownloadActive(task)) return task.status === 'failed' ? <p role="alert" className="model-download-error">{task.error || text('下载失败，请重试。', 'Download failed. Retry the download.')}</p> : <p className="model-transfer-status" role="status">{statusLabel(task)}</p>;
+    if (!ttsDownloadActive(task)) return task.status === 'failed' ? <p role="alert" className="model-download-error">{ttsModelDownloadErrorText(task, text)}</p> : <p className="model-transfer-status" role="status">{statusLabel(task)}</p>;
     const transferring = task.phase === 'download' && task.status === 'downloading';
     const recent = task.progress_at != null && observedAt - task.progress_at < 10;
     const rate = transferring && recent && Number.isFinite(task.bytes_per_second) ? task.bytes_per_second : 0;
@@ -100,13 +101,13 @@ export default function TtsModels({ embedded = false, typeSelector }: { embedded
     <div className="models-toolbar"><div className="models-heading"><div><h2>{text('模型权重', 'Model weights')}</h2>{!embedded && <p>{text('准备模型组件，供项目选择。', 'Prepare components for your projects.')}</p>}</div>
       {settings.data?.paths.models_dir && <div className="models-heading-path" title={settings.data.paths.models_dir}><span>{text('模型目录', 'Model directory')}</span><strong>{settings.data.paths.models_dir}</strong><Link className="ui-link" to="/settings/preferences?section=storage" replace state={location.state}>{text('更改', 'Change')}</Link></div>}
       <div className="model-actions"><Link to="/settings/environment?tab=credentials&type=tts" replace state={location.state} className={secondary}><KeyRound size={14}/>{text('访问密钥', 'Access keys')}</Link><button type="button" className={`${secondary} ui-btn-icon`} disabled={refreshing} onClick={() => void refresh()} aria-label={text('刷新模型', 'Refresh models')} title={text('刷新模型', 'Refresh models')}><RefreshCw size={14}/></button></div>
-    </div><div className="models-filters">{typeSelector}<StudioSelect aria-label={text('模型系列', 'Model family')} value={engine} options={[{ value: 'voxcpm1.5', label: 'VoxCPM 1.5' }, { value: 'gpt-sovits-v5', label: 'GPT-SoVITS' }]} onValueChange={value => updateParams({ engine: value })}/>
+    </div><div className="models-filters">{typeSelector}<StudioSelect aria-label={text('模型系列', 'Model family')} value={engine} options={[{ value: 'voxcpm1.5', label: ttsEngineLabel('voxcpm1.5') }, { value: 'gpt-sovits-v5', label: ttsEngineLabel('gpt-sovits-v5') }]} onValueChange={value => updateParams({ engine: value })}/>
       <div className="models-view-tabs ui-segmented" role="tablist" aria-label={text('模型管理视图', 'Model management views')}>{[{ key: 'prepare', label: text('准备模型', 'Prepare models') }, { key: 'library', label: `${text('本地模型', 'Local models')}${models.data ? ` · ${selected.length}` : ''}` }].map(tab => <button type="button" key={tab.key} role="tab" aria-selected={view === tab.key} onClick={() => updateParams({ view: tab.key })}>{tab.label}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div>
     </div></div>
     {error && <div role="alert" className="settings-alert">{error}</div>}
-    {!!loadErrors.length && <div role="alert" className="settings-alert"><div>{loadErrors.map(item => <p key={item.label}>{item.label}：{formatApiError(item.query.error)}</p>)}</div><button type="button" className={secondary} disabled={refreshing} onClick={() => void refresh()}>{text('重新读取', 'Reload')}</button></div>}
-    {standalone.length > 0 && <section className="model-download-inline" aria-label={text('下载状态', 'Download status')}><h3>{text('下载状态', 'Download status')}</h3>{standalone.map(task => <div className="model-download-inline-row" key={task.id}><div className="model-download-heading"><div><strong>{task.name}</strong><p className="model-help-text">{task.target_path}</p></div><div className="model-actions">{taskAction(task)}</div></div>{taskStatus(task)}</div>)}</section>}
-    {viewQuery.error ? <p className="model-empty">{text('此列表暂时无法读取，请重试。其他视图仍可查看。', 'This list is unavailable. Retry or open another view.')}</p> : viewQuery.isPending ? <LoadingNote block className="model-empty" label={view === 'prepare' ? text('正在读取模型包…', 'Loading model packages…') : text('正在读取本地模型…', 'Loading local models…')}/> : view === 'prepare' ? <>
+    {!!loadErrors.length && <div role="alert" className="settings-alert"><div>{loadErrors.map(item => <p key={item.label}>{item.label}：{formatApiError(item.query.error)}{' '}<button type="button" className="ui-link" disabled={item.query.isFetching} onClick={() => void item.query.refetch()}>{text('重新读取', 'Reload')}</button></p>)}</div></div>}
+    {standalone.length > 0 && <section className="model-download-inline" aria-label={text('下载状态', 'Download status')}><h3>{text('下载状态', 'Download status')}</h3>{standalone.map(task => <div className="model-download-inline-row" key={task.id}><div className="model-download-heading"><div><strong>{task.name}</strong></div><div className="model-actions">{taskAction(task)}</div></div>{taskStatus(task)}</div>)}</section>}
+    {viewQuery.error && !viewQuery.data ? <p className="model-empty">{text('此列表暂时无法读取，请重试。其他视图仍可查看。', 'This list is unavailable. Retry or open another view.')}</p> : viewQuery.isPending ? <LoadingNote block className="model-empty" label={view === 'prepare' ? text('正在读取模型包…', 'Loading model packages…') : text('正在读取本地模型…', 'Loading local models…')}/> : view === 'prepare' ? <>
       <div className="models-source-bar"><label>{text('下载来源', 'Download source')}<StudioSelect value="huggingface" aria-label={text('下载来源', 'Download source')} options={[{ value: 'huggingface', label: 'Hugging Face' }]} disabled onValueChange={() => {}}/></label><span>{text('包含训练与试听所需的模型资源', 'Includes model resources for training and previews')}</span></div>
       {entries.length ? <section className="model-component" aria-label={text('完整模型包', 'Complete model packages')}><header><h3>{text('完整模型包', 'Complete model packages')}</h3></header>{entries.map(entry => {
         const task = taskFor(entry), ready = readyFor(entry), installations = installationsFor(entry);

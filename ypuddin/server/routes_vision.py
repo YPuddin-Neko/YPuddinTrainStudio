@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict
 
 from .vision_downloads import VisionModels
@@ -73,10 +72,10 @@ class VisionDownloadRequest(BaseModel):
 
 
 @router.get("/vision/models", response_model=VisionCatalog)
-async def vision_models(service: VisionModels = Depends(vision)) -> dict[str, Any]:
+def vision_models(service: VisionModels = Depends(vision)) -> dict[str, Any]:
     from .vision_models import runtime_status
 
-    return {"runtime": await run_in_threadpool(runtime_status), "models": service.catalog()}
+    return {"runtime": runtime_status(), "models": service.catalog()}
 
 
 @router.post("/vision/models/{model_id}/download", response_model=VisionModel, status_code=202)

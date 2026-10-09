@@ -1,6 +1,6 @@
 import React from 'react';
 import { RefreshCw } from 'lucide-react';
-import { apiClient } from '../../api/client';
+import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { components } from '../../api/generated';
 import ConfigHelp from '../../components/ConfigHelp';
 import StudioSelect, { type StudioSelectOption } from '../../components/StudioSelect';
@@ -38,7 +38,7 @@ export function DownloadSourceFields({ value, onChange, disabled = false }: Down
 
   React.useEffect(() => {
     const controller = new AbortController();
-    void apiClient.get<{ platform?: string; hip?: string | null }>('/system/info', { signal: controller.signal, silent: true })
+    void apiClient.get<{ platform?: string; hip?: string | null }>('/system/info', { signal: controller.signal, silent: true, timeout: READ_TIMEOUT_MS })
       .then(info => { if (!controller.signal.aborted) { setPlatform(info.platform || ''); setHip(!!info.hip); } }).catch(() => {});
     return () => { controller.abort(); probeRequest.current?.abort(); };
   }, []);

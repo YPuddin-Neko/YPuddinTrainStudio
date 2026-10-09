@@ -543,10 +543,11 @@ class ModelDownloads:
                 raise ValueError("temporary download directory escapes model storage")
             partial.parent.mkdir(parents=True, exist_ok=True)
             self._update(id_, status="downloading")
+            policy = ProxyPolicy.from_context(self.context)
             headers = {"User-Agent": "YPuddinTrainStudio", "Accept-Encoding": "identity"}
             # Third-party mirrors are anonymous. Sensitive headers are also stripped on redirects.
             if row["mirror"] == "official":
-                token = self.credentials.token(row["provider"])
+                token = self.credentials.token(row["provider"], policy=policy)
                 if token:
                     headers["Cookie" if row["provider"] == "modelscope" else "Authorization"] = (
                         f"m_session_id={token}" if row["provider"] == "modelscope" else f"Bearer {token}"
@@ -562,10 +563,11 @@ class ModelDownloads:
             )
             if bundle:
                 self._update(id_, total_bytes=sum(meta["size"] for meta in files.values()))
-            for filename, meta in files.items():
+            for index, (filename, meta) in enumerate(files.items()):
                 source = row["source_url"].rsplit("/", 1)[0] + "/" + filename if bundle else row["source_url"]
                 request = urllib.request.Request(source, headers=headers)
-                policy = ProxyPolicy.from_context(self.context)
+                if index:
+                    policy = ProxyPolicy.from_context(self.context)
                 opener = self.opener or policy.opener(_Redirect())
                 received, digest = 0, hashlib.sha256()
                 probe = None if bundle else bytearray()

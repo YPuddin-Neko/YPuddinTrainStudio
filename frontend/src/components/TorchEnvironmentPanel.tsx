@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { apiClient } from '../api/client';
+import { useEnvironmentRead } from './useEnvironmentRead';
 import { useWorkspaceText } from '../utils/workspaceText';
 import { formatApiError } from '../utils/errors';
 import StudioSelect from './StudioSelect';
@@ -11,41 +12,39 @@ type Operation = { plan?: { name: string; from_version?: string | null; version?
 type Snapshot = { builds: { id: string; label: string; supported: boolean; reason: string | null; recommended: boolean; backend: string }[]; operations: Operation[]; current_python: string; selected_environment: string | null; disk_free_bytes: number; minimum_free_bytes?: number; optional_extensions?: string[] };
 const active = (op: Operation) => ['planning', 'installing', 'verifying'].includes(op.status);
 
-export default function TorchEnvironmentPanel({ disabled = false, operationsTarget, onOperationsVisible, showAttentionExtensions = true }: {
-  disabled?: boolean; operationsTarget?: HTMLElement | null; onOperationsVisible?: (visible: boolean) => void; showAttentionExtensions?: boolean;
+export default function TorchEnvironmentPanel({ disabled = false, statusUnavailable = false, operationsTarget, onOperationsVisible, showAttentionExtensions = true }: {
+  disabled?: boolean; statusUnavailable?: boolean; operationsTarget?: HTMLElement | null; onOperationsVisible?: (visible: boolean) => void; showAttentionExtensions?: boolean;
 }) {
   const text = useWorkspaceText();
-  const [state, setState] = React.useState<Snapshot | null>(null);
   const [choice, setChoice] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const writeInFlight = React.useRef(false);
   const [error, setError] = React.useState('');
   const sessionOperations = React.useRef(new Set<string>());
-  const refresh = React.useCallback(async () => {
-    const data = await apiClient.get<Snapshot>('/environment/torch', { silent: true });
+  const [polling, setPolling] = React.useState(false);
+  const snapshot = useEnvironmentRead<Snapshot>('/environment/torch', { interval: polling ? 1500 : false, onSuccess: data => {
     for (const op of data.operations) if (active(op) || op.status === 'ready') sessionOperations.current.add(op.id);
-    setState(data); setError('');
+    setPolling(data.operations.some(active));
     const installed = data.operations.filter(op => op.status === 'completed' && op.environment_id);
     const current = installed.find(op => op.environment_id === data.selected_environment);
     const availableBuild = (id?: string) => data.builds.some(build => build.id === id && build.supported) ? id : undefined;
     setChoice(old => old || availableBuild(current?.build_id) || availableBuild(installed[0]?.build_id)
       || data.builds.find(b => b.supported && b.recommended)?.id || data.builds.find(b => b.supported)?.id || '');
-  }, []);
-  React.useEffect(() => { void refresh().catch(e => setError(formatApiError(e))); }, [refresh]);
-  React.useEffect(() => {
-    if (!state?.operations.some(active)) return;
-    const timer = window.setInterval(() => void refresh().catch(e => setError(formatApiError(e))), 1500);
-    return () => window.clearInterval(timer);
-  }, [state, refresh]);
+  } });
+  const state = snapshot.data, refresh = snapshot.reload;
   const act = async (url: string, body = {}) => {
-    setBusy(true); setError('');
+    if (writeInFlight.current) return;
+    writeInFlight.current = true; setBusy(true); setError('');
     try {
       const op = await apiClient.post<Operation>(url, body, { silent: true });
-      if (op?.id) sessionOperations.current.add(op.id);
-      await refresh();
+      sessionOperations.current.add(op.id);
+      snapshot.updateData(previous => previous ? { ...previous, operations: previous.operations.some(item => item.id === op.id)
+        ? previous.operations.map(item => item.id === op.id ? op : item) : [op, ...previous.operations] } : previous);
+      void refresh();
     } catch (e) { setError(formatApiError(e)); }
-    finally { setBusy(false); }
+    finally { writeInFlight.current = false; setBusy(false); }
   };
-  const locked = disabled || busy || !!state?.operations.some(active);
+  const locked = disabled || statusUnavailable || busy || !state || !!snapshot.error || !!state.operations.some(active);
   const phases: Record<string, [string, string]> = {
     planning: ['检查安装条件', 'Checking installation requirements'],
     creating_environment: ['创建独立环境', 'Creating an isolated environment'],
@@ -98,7 +97,9 @@ export default function TorchEnvironmentPanel({ disabled = false, operationsTarg
       </div>}
       {state && <p className="settings-note">{text(`可用空间 ${(state.disk_free_bytes / 1024 ** 3).toFixed(1)} GiB；${selectedBackend ? `所选环境至少预留 ${minimumSpaceGiB} GiB。` : '选择版本后检查所需空间。'}`, `Available space: ${(state.disk_free_bytes / 1024 ** 3).toFixed(1)} GiB. ${selectedBackend ? `Reserve at least ${minimumSpaceGiB} GiB for the selected environment.` : 'Choose a build to check required space.'}`)}</p>}
       {disabled && <p className="settings-note">{text('当前任务完成后可安装运行环境。', 'Finish the current task before installing an environment.')}</p>}
-      <div className="flex flex-wrap gap-2"><button type="button" className="ui-btn ui-btn-primary" aria-label={text('检查 PyTorch 安装条件', 'Check PyTorch installation requirements')} disabled={locked || !choice} onClick={() => void act('/environment/torch/operations', { build_id: choice })}>{text('检查安装条件', 'Check installation requirements')}</button><button type="button" className="ui-btn" disabled={busy} onClick={() => void refresh().catch(e => setError(formatApiError(e)))}>{text('刷新状态', 'Refresh status')}</button></div>
+      <div className="flex flex-wrap gap-2"><button type="button" className="ui-btn ui-btn-primary" aria-label={text('检查 PyTorch 安装条件', 'Check PyTorch installation requirements')} disabled={locked || !choice} onClick={() => void act('/environment/torch/operations', { build_id: choice })}>{text('检查安装条件', 'Check installation requirements')}</button><button type="button" className="ui-btn" disabled={busy || snapshot.loading} onClick={() => void refresh()}>{text('刷新状态', 'Refresh status')}</button></div>
+      {snapshot.loading && !state && <p role="status" className="settings-note">{text('正在读取 PyTorch 环境…', 'Loading the PyTorch environment…')}</p>}
+      {snapshot.error && <p role="alert" className="settings-alert">{snapshot.error}{' '}<button type="button" className="ui-link" disabled={snapshot.loading} onClick={() => void refresh()}>{text('重新读取', 'Reload')}</button></p>}
       {error && <p role="alert" className="settings-alert">{error}</p>}
     </section>
     {operationsTarget ? createPortal(operationCards, operationsTarget) : operationsTarget === undefined && operations.length > 0 ? <section className="settings-section space-y-3"><h2>{text('安装日志', 'Installation log')}</h2>{operationCards}</section> : null}

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '../client';
+import { apiClient, READ_TIMEOUT_MS } from '../client';
 import { FamilyInfo } from '../types';
 import { availableTrainingFamilies } from '../../utils/trainingFamilies';
 
@@ -11,7 +11,9 @@ import { availableTrainingFamilies } from '../../utils/trainingFamilies';
 export function useFamilies() {
   return useQuery<FamilyInfo[]>({
     queryKey: ['families'],
-    queryFn: () => apiClient.get<FamilyInfo[]>('/families'),
+    queryFn: ({ signal }) => apiClient.get<FamilyInfo[]>('/families', { signal, timeout: READ_TIMEOUT_MS, silent: true }),
+    retry: false,
+    networkMode: 'always',
     select: availableTrainingFamilies,
     staleTime: 5 * 60 * 1000,
   });
