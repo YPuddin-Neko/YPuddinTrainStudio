@@ -458,18 +458,6 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
     <div className="settings-section-heading environment-runtime-heading">
       <div className="environment-runtime-title">
         <h2 className="text-base font-semibold">{copy('环境与计算后端', 'Runtime and compute backends')}</h2>
-        <div ref={viewTabs} className="environment-view-switch">
-          <div className="ui-segmented" role="tablist" aria-label={copy('训练环境视图', 'Training environment views')}>
-            {viewOptions.map((option, index) => <button key={option.id} id={`environment-tab-${option.id}`} type="button" role="tab" aria-selected={view === option.id} aria-controls={`environment-view-${option.id}`} tabIndex={view === option.id ? 0 : -1} onClick={() => selectView(option.id)} onKeyDown={event => {
-              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-              event.preventDefault();
-              const next = event.key === 'Home' ? 0 : event.key === 'End' ? viewOptions.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + viewOptions.length) % viewOptions.length;
-              selectView(viewOptions[next].id);
-              document.getElementById(`environment-tab-${viewOptions[next].id}`)?.focus();
-            }}>{option.label}</button>)}
-            <SlidingIndicator className="ui-segmented-thumb"/>
-          </div>
-        </div>
       </div>
       <button className={button} disabled={loading || busy} onClick={() => { void refreshRuntime(true); if (imageVisible) { void refreshOperations(); void refreshLatest(true); void refreshLora(true); } }}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />{copy('重新检测', 'Refresh probes')}</button>
     </div>
@@ -483,6 +471,19 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
       {status.running_jobs && <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{copy('任务运行中，完成或停止后可修改环境。', 'Finish or stop running tasks before changing the environment.')}</p>}
     </>}
     </section>
+    <div className="environment-views">
+    <div ref={viewTabs} className="environment-view-switch">
+      <div className="ui-segmented" role="tablist" aria-label={copy('训练环境视图', 'Training environment views')}>
+        {viewOptions.map((option, index) => <button key={option.id} id={`environment-tab-${option.id}`} type="button" role="tab" aria-selected={view === option.id} aria-controls={`environment-view-${option.id}`} tabIndex={view === option.id ? 0 : -1} onClick={() => selectView(option.id)} onKeyDown={event => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? viewOptions.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + viewOptions.length) % viewOptions.length;
+          selectView(viewOptions[next].id);
+          document.getElementById(`environment-tab-${viewOptions[next].id}`)?.focus();
+        }}>{option.label}</button>)}
+        <SlidingIndicator className="ui-segmented-thumb"/>
+      </div>
+    </div>
     <ResourceActivityContext.Provider value={parentActive && imageVisible}>
     <div id="environment-view-image" role="tabpanel" aria-labelledby="environment-tab-image" hidden={!imageVisible} className="environment-view-content">
     {status && <>
@@ -527,5 +528,6 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
     </section>
       </div>
     </ResourceActivityContext.Provider>
+    </div>
   </SettingsSections></div>;
 }
