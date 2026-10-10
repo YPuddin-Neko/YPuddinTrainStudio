@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 from ypuddin.tts.config import TtsConfig
 from ypuddin.tts.core import preflight, safe_checkpoint
 from ypuddin.tts.execution_config import parse_execution_config
+from ypuddin.tts.legacy_models import TtsLegacyValidationReport
 
 from . import models as m
 from .context import ServiceContext
@@ -150,7 +151,8 @@ def put_config(config: TtsConfig, c: ServiceContext = Depends(ctx)) -> dict:
     return values
 
 
-@router.post("/tts/validate")
+@router.post("/tts/validate", response_model=TtsLegacyValidationReport, response_model_exclude_unset=True,
+             responses={422: {"model": m.ApiErrorResponse}})
 def validate_config(body: ValidationBody, c: ServiceContext = Depends(ctx)) -> dict:
     return _inspect(body.config, c)[1]
 
@@ -200,7 +202,9 @@ def _enqueue(c: ServiceContext, jid: str, name: str, kind: str, run_dir: Path, p
     return _job_row(c.db.fetchone("SELECT * FROM jobs WHERE id=?", (jid,)), c)
 
 
-@router.post("/tts/jobs", responses={409: {"model": m.ApiErrorResponse}})
+@router.post("/tts/jobs", status_code=409, response_model=m.ApiErrorResponse,
+             responses={409: {"model": m.ApiErrorResponse, "description": "Use a speech project version to create training jobs."},
+                        422: {"model": m.ApiErrorResponse}})
 def create_training(body: TrainingBody, c: ServiceContext = Depends(ctx)) -> dict:
     raise ApiError("请在语音项目的版本中创建训练任务。", code="tts.scope_required", status=409)
 

@@ -5687,19 +5687,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Validate Config Api Tts Validate Post"
+                  "$ref": "#/components/schemas/TtsLegacyValidationReport"
                 }
               }
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Unprocessable Entity",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             }
@@ -5722,20 +5720,8 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Create Training Api Tts Jobs Post"
-                }
-              }
-            }
-          },
           "409": {
-            "description": "Conflict",
+            "description": "Use a speech project version to create training jobs.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5745,11 +5731,11 @@
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Unprocessable Entity",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             }
@@ -10026,8 +10012,38 @@
           "200": {
             "description": "Successful Response",
             "content": {
-              "application/json": {
-                "schema": {}
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer"
+                }
               }
             }
           },
@@ -10082,6 +10098,13 @@
             "description": "Gone"
           },
           "416": {
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -10110,6 +10133,49 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "206": {
+            "description": "Partial Content",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -10803,8 +10869,38 @@
           "200": {
             "description": "Successful Response",
             "content": {
-              "application/json": {
-                "schema": {}
+              "audio/wav": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer"
+                }
               }
             }
           },
@@ -10859,6 +10955,13 @@
             "description": "Gone"
           },
           "416": {
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -10887,6 +10990,49 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "206": {
+            "description": "Partial Content",
+            "content": {
+              "audio/wav": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -34295,6 +34441,331 @@
           "message"
         ],
         "title": "TtsIssue"
+      },
+      "TtsLegacyDataset": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "samples": {
+            "type": "integer",
+            "title": "Samples"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "title": "Duration Seconds"
+          },
+          "sample_rate": {
+            "type": "integer",
+            "title": "Sample Rate"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path",
+          "samples",
+          "duration_seconds",
+          "sample_rate",
+          "warnings"
+        ],
+        "title": "TtsLegacyDataset"
+      },
+      "TtsLegacyEnvironment": {
+        "properties": {
+          "engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate"
+          },
+          "upstream": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsLegacyUpstream"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsLegacyModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validation_dataset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsLegacyDataset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsLegacyRuntime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runtime_checked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Checked"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "TtsLegacyEnvironment"
+      },
+      "TtsLegacyModel": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "architecture": {
+            "type": "string",
+            "title": "Architecture"
+          },
+          "sample_rate": {
+            "type": "integer",
+            "title": "Sample Rate"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path",
+          "architecture",
+          "sample_rate"
+        ],
+        "title": "TtsLegacyModel"
+      },
+      "TtsLegacyRuntime": {
+        "properties": {
+          "python": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix"
+          },
+          "torch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Torch"
+          },
+          "cuda": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuda"
+          },
+          "hip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hip"
+          },
+          "devices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsDeviceSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "voxcpm_module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voxcpm Module"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "TtsLegacyRuntime"
+      },
+      "TtsLegacyUpstream": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "path",
+          "revision"
+        ],
+        "title": "TtsLegacyUpstream"
+      },
+      "TtsLegacyValidationIssue": {
+        "properties": {
+          "loc": {
+            "type": "string",
+            "title": "Loc"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "loc",
+          "msg"
+        ],
+        "title": "TtsLegacyValidationIssue"
+      },
+      "TtsLegacyValidationReport": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/TtsLegacyValidationIssue"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/TtsLegacyValidationIssue"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsLegacyDataset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsLegacyEnvironment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "valid",
+          "errors",
+          "warnings",
+          "dataset",
+          "environment"
+        ],
+        "title": "TtsLegacyValidationReport"
       },
       "TtsManagedEnvironment": {
         "properties": {

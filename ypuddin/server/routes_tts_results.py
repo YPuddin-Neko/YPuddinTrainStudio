@@ -1,6 +1,7 @@
 """Registered speech checkpoints, listening jobs and their audio."""
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from starlette.responses import StreamingResponse
 
 from ypuddin.tts.result_models import (
     TtsAudio,
@@ -20,6 +21,21 @@ from .tts_sample_jobs import TtsSampleBody, create_sample
 router = APIRouter(route_class=TtsProjectRoute)
 
 
+def _binary_responses(media_type: str) -> dict:
+    headers = {name: {"schema": {"type": "string"}} for name in (
+        "Accept-Ranges", "ETag", "Cache-Control", "Content-Disposition",
+    )}
+    headers["Content-Length"] = {"schema": {"type": "integer"}}
+    content = {media_type: {"schema": {"type": "string", "format": "binary"}}}
+    content_range = {"Content-Range": {"schema": {"type": "string"}}}
+    return {
+        **ERRORS,
+        200: {"content": content, "headers": headers},
+        206: {"description": "Partial Content", "content": content, "headers": {**headers, **content_range}},
+        416: {**ERRORS[416], "headers": content_range},
+    }
+
+
 @router.get("/tts/jobs/{jid}/checkpoints", response_model=list[TtsCheckpoint], responses=ERRORS)
 def checkpoints(jid: str, c: ServiceContext = Depends(ctx)):
     return tts_results.checkpoints(c, jid)
@@ -30,7 +46,8 @@ def version_checkpoints(pid: str, vid: str, cursor: str | None = None, limit: in
     return tts_results.version_checkpoints(c, pid, vid, cursor=cursor, limit=limit)
 
 
-@router.get("/tts/jobs/{jid}/checkpoints/{cid}/files/{file_id}", responses=ERRORS)
+@router.get("/tts/jobs/{jid}/checkpoints/{cid}/files/{file_id}", response_model=None,
+            response_class=StreamingResponse, responses=_binary_responses("application/octet-stream"))
 def checkpoint_file(jid: str, cid: str, file_id: str, request: Request, c: ServiceContext = Depends(ctx)):
     return audio_response(request, tts_results.checkpoint_asset(c, jid, cid, file_id), media_type="application/octet-stream", attachment=True)
 
@@ -61,6 +78,7 @@ def samples(jid: str, c: ServiceContext = Depends(ctx)):
     return tts_results.audio_results(c, jid)
 
 
-@router.get("/tts/jobs/{jid}/audio/{filename}", responses=ERRORS)
+@router.get("/tts/jobs/{jid}/audio/{filename}", response_model=None,
+            response_class=StreamingResponse, responses=_binary_responses("audio/wav"))
 def audio(jid: str, filename: str, request: Request, c: ServiceContext = Depends(ctx)):
     return audio_response(request, tts_results.sample_audio_asset(c, jid, filename))
