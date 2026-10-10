@@ -7,7 +7,18 @@
 | VoxCPM 1.5 | LM、DiT、投影层的 LoRA | BF16 | 单声道 44100 Hz PCM WAV |
 | GPT-SoVITS v5 | GPT 全参微调、SoVITS LoRA，可单独或顺序执行 | GPT：FP16 混合精度或 FP32；SoVITS：FP16 或 FP32 | 单声道 32000、44100 或 48000 Hz PCM WAV |
 
-两种引擎都使用单张 NVIDIA CUDA GPU、独立 Python 环境、本地官方源码与本地模型。模型可在训练器中下载，也可选择已有本地目录；语音依赖安装到独立环境中。当前不提供多卡、暂停恢复或手动保存；「重试」创建新任务，从该任务记录的初始权重重新执行。两种引擎的参数和检查点格式各自独立，切换版本引擎后须重新检查数据。
+两种引擎的训练与试听都使用单张 NVIDIA CUDA GPU、固定版本的官方源码与本地模型。运行环境由训练器发现、检查和准备；模型可在训练器中下载，也可选择已有本地目录。当前不提供多卡、暂停恢复或手动保存；「重试」创建新任务，从该任务记录的初始权重重新执行。两种引擎的参数和检查点格式各自独立，切换版本引擎后须重新检查数据。
+
+## 准备运行环境
+
+1. 打开「设置 → 运行环境 → 语音训练」，为所用引擎执行「检查环境」或「准备环境」。训练器自动发现当前部署的 Python、已安装的受管理 PyTorch 环境和已登记的语音环境。准备需要其中至少有一个可用的 Python 3.10–3.12。
+2. 「准备环境」获取固定提交的官方源码与所需运行资源，检查已安装依赖、实际模块加载和音频／语言资源。现有 Python 与该引擎兼容时直接复用；依赖缺失或不兼容时自动创建受管理环境并安装依赖，不在部署环境中替换依赖。GPT-SoVITS 的 FFmpeg、NLTK 和 OpenJTalk 资源由这一步一并准备。
+3. 准备完成后，该环境默认设为对应引擎的默认环境；已有多个可用环境时可以重新选择。语音版本中的 Python 和训练器源码路径留空即可使用默认环境，无需逐版本填写。填写了外部路径时优先使用所填路径，也可在版本中选择「使用自动环境」并保存配置。
+4. 页面显示当前阶段与操作日志，执行中可取消，失败或取消后可重试。环境、默认选择和操作状态持久保存，刷新或重新打开页面可以继续查看。服务中断的未完成操作会标记为中断，需要重试。
+
+环境准备检查在 CPU 上完成，不加载模型权重或占用训练 GPU。保存模型与数据配置后仍需执行版本检查，核对实际 CUDA 显卡、模型与数据；任务取得 GPU 后再检查实际分配的设备。任务保存检查时绑定的环境身份，修改默认环境不会改写已有任务；源码、依赖或运行资源变化后需要重新检查。
+
+已有外部 Python 和源码目录可以继续接入，在版本高级参数中填写服务器上的绝对路径。下文的手工安装命令仅用于这类外部环境，正常准备流程直接使用页面操作。
 
 ## 下载模型
 
@@ -15,7 +26,7 @@
 
 GPT-SoVITS 包包含所选变体的权重、GPT 权重、声码器、BERT 模型及词表、HuBERT、G2PW 和语言识别模型。不同变体共有的已下载文件可经校验后复制使用，减少再次联网下载。模型包使用固定官方版本及文件摘要；已有目标目录不会被覆盖。失败或取消后可重试，重试沿用原下载目录。修改模型目录设置不移动已下载的模型。
 
-模型包与运行环境分别准备。模型下载不会安装独立 Python、官方训练源码、CUDA 版 PyTorch 或 NLTK/OpenJTalk 环境资源；对应要求见下文。已有本地模型可以继续使用，无需再次下载。
+模型包与运行环境分别准备：模型管理负责模型权重与配套模型资源，「运行环境 → 语音训练」负责 Python 依赖、官方训练源码和语言运行资源。已有本地模型可以继续使用，无需再次下载。
 
 ## 模型类型与参数预设
 
@@ -25,9 +36,13 @@ TTS 参数预设按训练引擎管理，可以把当前参数另存为预设、�
 
 ## VoxCPM 1.5
 
-### 准备运行环境
+### 环境与模型要求
 
-1. 创建独立 Python 3.10 或 3.11 环境，安装与 NVIDIA 驱动匹配的 CUDA 版 PyTorch 2.5 或更高版本及对应 torchaudio。环境中还需要 VoxCPM 的依赖、可加载的 TorchCodec 音频解码后端和 `tensorboardX`。安装方法参见 [PyTorch 官方安装说明](https://pytorch.org/get-started/locally/) 与 [VoxCPM 官方项目](https://github.com/OpenBMB/VoxCPM)。
+在「运行环境 → 语音训练」为 VoxCPM 1.5 准备环境，在版本中选择已下载或已有的模型目录。配置检查会核对 CUDA 与 BF16 能力、分词器和实际 LoRA 目标；更换显卡后重新检查。
+
+#### 可选：接入外部环境
+
+1. 选用 Python 3.10–3.12 环境，安装与 NVIDIA 驱动匹配的 CUDA 版 PyTorch 2.5 或更高版本及对应 torchaudio。环境中还需要 VoxCPM 的依赖、可加载的 TorchCodec 音频解码后端和 `tensorboardX`。需要补装或调整依赖时使用专用环境，避免更改正在使用的服务环境。安装方法参见 [PyTorch 官方安装说明](https://pytorch.org/get-started/locally/) 与 [VoxCPM 官方项目](https://github.com/OpenBMB/VoxCPM)。
 2. 把 VoxCPM 放在独立源码目录，切换到本接入使用的提交：
 
    ```bash
@@ -37,9 +52,9 @@ TTS 参数预设按训练引擎管理，可以把当前参数另存为预设、�
    /path/to/tts-venv/bin/python -m pip install tensorboardX
    ```
 
-   Windows 中将 Python 路径替换为独立环境的 `Scripts/python.exe`。不要在该源码目录里修改训练文件；版本或源码不符时，配置检查会说明原因。
+   Windows 中将 Python 路径替换为所选环境的 `Scripts/python.exe`。不要在该源码目录里修改训练文件；版本或源码不符时，配置检查会说明原因。
 3. 在训练器中下载并选择 VoxCPM 1.5 模型包。若使用已有的 [openbmb/VoxCPM1.5 模型](https://huggingface.co/openbmb/VoxCPM1.5)，模型目录需包含 `config.json`、词表相关文件、主模型权重和 AudioVAE 权重，例如 `model.safetensors`、`audiovae.safetensors`、`tokenizer.json`、`tokenizer_config.json`。也可使用该模型原有的 `pytorch_model.bin`、`audiovae.pth` 权重。
-4. 在语音版本的训练参数中填写独立环境的 Python、VoxCPM 源码目录和模型目录，使用服务器上的绝对路径。配置检查会通过这个 Python 检查依赖、所选显卡的 CUDA 与 BF16 能力、分词器和实际 LoRA 目标；任务取得 GPU 后会再次检查实际分配的显卡。更换显卡后重新检查。
+4. 在语音版本的高级参数中填写这个环境的 Python、VoxCPM 源码目录和模型目录，使用服务器上的绝对路径。配置检查与任务执行均使用这些路径。
 
 VoxCPM 1.0、VoxCPM 2、ONNX、GGUF 或其他量化推理导出不能作为这里的底模。VoxCPM 1.5 的 AudioVAE 采样率为 44100 Hz，模型配置和训练入口必须匹配。
 
@@ -108,9 +123,13 @@ VoxCPM 1.0、VoxCPM 2、ONNX、GGUF 或其他量化推理导出不能作为这�
 
 ### 准备运行环境与模型
 
-使用独立的 Python 环境，安装与显卡驱动匹配的 CUDA 版 PyTorch、对应 torchaudio 及固定官方源码的依赖，并准备 FFmpeg。通用安装可使用 Python 3.10 或 3.11；Windows 的 Python 3.12 / CUDA 12.8 环境按 [固定上游的 Windows 安装清单](https://github.com/RVC-Boss/GPT-SoVITS/blob/f652b1da5af29a6955f9c3911aa71b7daa6618bc/requirements-py312-win-flash_attention/requirements_py312_win_cu128_overseas.txt) 使用 `torch==2.7.1+cu128` 与 `torchaudio==2.7.1+cu128`。环境安装参照 [固定版本的官方说明](https://github.com/RVC-Boss/GPT-SoVITS/blob/f652b1da5af29a6955f9c3911aa71b7daa6618bc/README.md) 和 [PyTorch 安装说明](https://pytorch.org/get-started/locally/)。此接入要求 CUDA；不会自动改用 CPU、MPS 或 DTK。
+在「运行环境 → 语音训练」为 GPT-SoVITS v5 准备环境。v5dev 与 v5turbo 使用同一引擎环境，模型权重按所选变体分别下载和选择。训练与试听要求 CUDA；不会自动改用 CPU、MPS 或 DTK。
 
-Windows 的 GPT 阶段即使单卡也需要可用的 Gloo。PyTorch 能识别 CUDA 显卡，并不表示该构建能初始化 Gloo；出现 `unsupported gloo device` 时，请核对所选独立环境中的 PyTorch 版本与上述安装清单。
+#### 可选：接入外部环境
+
+外部环境需要与显卡驱动匹配的 CUDA 版 PyTorch、对应 torchaudio、固定官方源码的依赖及 FFmpeg。通用安装可使用 Python 3.10 或 3.11；Windows 的 Python 3.12 / CUDA 12.8 环境按 [固定上游的 Windows 安装清单](https://github.com/RVC-Boss/GPT-SoVITS/blob/f652b1da5af29a6955f9c3911aa71b7daa6618bc/requirements-py312-win-flash_attention/requirements_py312_win_cu128_overseas.txt) 使用 `torch==2.7.1+cu128` 与 `torchaudio==2.7.1+cu128`。需要补装或调整依赖时使用专用环境。安装参照 [固定版本的官方说明](https://github.com/RVC-Boss/GPT-SoVITS/blob/f652b1da5af29a6955f9c3911aa71b7daa6618bc/README.md) 和 [PyTorch 安装说明](https://pytorch.org/get-started/locally/)。
+
+Windows 的 GPT 阶段即使单卡也需要可用的 Gloo。PyTorch 能识别 CUDA 显卡，并不表示该构建能初始化 Gloo；出现 `unsupported gloo device` 时，请核对所选环境中的 PyTorch 版本与上述安装清单。
 
 使用官方 `cuda_graph_accel_v5` 分支的固定提交：
 
@@ -123,7 +142,9 @@ git -C /path/to/GPT-SoVITS checkout f652b1da5af29a6955f9c3911aa71b7daa6618bc
 
 试听重采样需要 `resampy`；固定上游的 Windows 安装清单已包含它，使用通用 `requirements.txt` 时须按上述命令补装。Windows 使用对应的安装清单替代通用依赖安装命令，并保留清单中的 PyTorch 版本。
 
-保留这个提交的已跟踪源码，不修改训练脚本或配置模板。填写 `trainer_path` 时指向 Git 仓库根目录；`python_path` 指向独立环境的 Python，Windows 对应 `Scripts/python.exe`。任务会在自己的目录中使用源码副本与预处理产物。
+保留这个提交的已跟踪源码，不修改训练脚本或配置模板。填写 `trainer_path` 时指向 Git 仓库根目录；`python_path` 指向所选环境的 Python，Windows 对应 `Scripts/python.exe`。任务会在自己的目录中使用源码副本与预处理产物。
+
+#### 模型与语言资源
 
 在训练器中下载所选 v5 变体的模型包，并把包目录选为 `model_path`。若使用原有官方目录，`model_path` 指向 **`GPT_SoVITS/pretrained_models` 根目录**，不指向其中的 `gsv-v5-pretrained`。模型根目录需要以下文件；主权重来自 [官方模型仓库](https://huggingface.co/lj1995/GPT-SoVITS)，v5 权重见 [gsv-v5-pretrained 目录](https://huggingface.co/lj1995/GPT-SoVITS/tree/main/gsv-v5-pretrained)。
 
@@ -139,7 +160,7 @@ git -C /path/to/GPT-SoVITS checkout f652b1da5af29a6955f9c3911aa71b7daa6618bc
 
 非纯英文试听还需要 `fast_langdetect/lid.176.bin` 与 `lid.176.ftz`，训练器下载包已包含。旧本地布局可以放在源码目录的 `GPT_SoVITS/pretrained_models/fast_langdetect/`。任务在独立工作目录中读取这些资源，缺件时会说明缺少的文件，不在试听进程中临时联网下载。
 
-英文与日文还依赖语言资源：按固定官方安装脚本，把 `nltk_data` 放在所选 Python 环境的 `sys.prefix` 下，把 OpenJTalk 字典放到该环境的 `pyopenjtalk` 包目录。仅安装 `requirements.txt` 不会完成这些字典的部署；启动任务前应一并准备好。
+英文与日文还依赖 NLTK 和 OpenJTalk 语言资源。页面准备的环境会下载并校验这些资源，保存到受管理目录中，运行时自动指定路径。使用外部环境时，按固定官方安装脚本，把 `nltk_data` 放在所选 Python 环境的 `sys.prefix` 下，把 OpenJTalk 字典放到该环境的 `pyopenjtalk` 包目录；仅安装 `requirements.txt` 不会完成这些字典的部署。
 
 `pretrained_gpt` 和 `pretrained_sovits` 留空时使用表中权重；也可填入兼容的完整初始权重绝对路径。GPT 权重须兼容 `s1v3` 架构；SoVITS 权重须与所选 `v5dev` 或 `v5turbo` 一致。SoVITS 的 LoRA 导出与训练恢复文件不能填作完整底模。即使只训练一个阶段，也需要另一阶段的权重来提取特征并组成最终试听检查点；声码器、BERT、HuBERT 同样需要准备。
 
@@ -186,10 +207,11 @@ GPT 与 SoVITS 参数分别保存，未选择执行的阶段仍保留其设置�
 | `epochs`、`batch_size` | 训练轮数与批大小，默认 15 轮、8 条。实际批量还受上游数据和 DPO 规则影响。 |
 | `precision`、`seed` | `16-mixed` 为 FP16 混合精度，`32-true` 为 FP32；默认 `16-mixed`，seed 默认 1234。 |
 | `save_every_epoch`、`save_latest` | 导出间隔及是否仅保留最新完整训练状态；默认每 5 轮导出。 |
-| `learning_rate`、`initial_learning_rate`、`final_learning_rate` | 调度的目标、起始和结束学习率，默认分别为 `1e-2`、`1e-5`、`1e-4`。 |
-| `warmup_steps`、`decay_steps` | 预热与调度总步数，默认 2000、40000；预热须小于调度总步数。 |
+| 学习率（固定） | 优化器初始学习率为 `1e-2`；首次调用调度器后固定为 `2e-3`。 |
 | `dpo` | 使用上游 GPT DPO 训练选项，默认关闭。 |
 | `max_seconds`、`num_workers` | GPT 样本时长上限和数据加载进程数；默认 54 秒、4 个进程，进程数至少为 1。 |
+
+`learning_rate`、`initial_learning_rate`、`final_learning_rate`、`warmup_steps`、`decay_steps` 保留旧配置值，不控制实际学习率。保存和导入时仍按原有范围校验，其中 `warmup_steps` 须小于 `decay_steps`。
 
 | SoVITS 参数 | 含义与约束 |
 | --- | --- |
