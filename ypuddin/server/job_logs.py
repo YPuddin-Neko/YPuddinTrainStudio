@@ -101,6 +101,18 @@ _NATIVE_CRASH = re.compile(
     re.IGNORECASE,
 )
 _HYLOG_DIRECTORY_WARNING = re.compile(_RANK + r"\s*Could not open /var/log/hylog/\.\s*")
+_NATIVE_DEVICE_CONFIGURATION = re.compile(
+    r"Running on device: (?:cuda(?::\d+)?|cpu), dtype: (?:bfloat16|float16|float32)"
+)
+_UNLABELLED_TQDM_PREFIX = re.compile(
+    r" {0,2}(?:100|\d{1,2})%\|[ \u2588-\u258f#0-9]+\| "
+    r"(?P<done>\d+)/(?P<total>\d+) \["
+)
+_UNLABELLED_TQDM = re.compile(
+    _UNLABELLED_TQDM_PREFIX.pattern
+    + r"(?:\d+:)?\d{2}:\d{2}<(?:\?|(?:\d+:)?\d{2}:\d{2}), +"
+    r"(?:\?it/s|\d+(?:\.\d+)?(?:it/s|s/it))\]"
+)
 
 MAX_READ = 512 * 1024
 SUPERVISOR_SOURCE = "ypuddin.server.supervisor"
@@ -230,6 +242,21 @@ def _nccl_configuration(line: str) -> bool:
     )
 
 
+def _native_progress_or_configuration_level(line: str) -> str | None:
+    body = _PROCESS_RANK.sub("", line, count=1)
+    if _NATIVE_DEVICE_CONFIGURATION.fullmatch(body):
+        return "debug"
+    if meter := _UNLABELLED_TQDM.fullmatch(body):
+        try:
+            done, total = int(meter["done"]), int(meter["total"])
+        except ValueError:
+            return "info"
+        return "debug" if 0 <= done <= total and total > 0 else "info"
+    if _NATIVE_DEVICE_CONFIGURATION.match(body) or _UNLABELLED_TQDM_PREFIX.match(body):
+        return "info"
+    return None
+
+
 def parse_log_lines(lines: list[str], *, now: datetime | None = None) -> list[dict[str, Any]]:
     now = now or datetime.now()
     out = []
@@ -261,6 +288,11 @@ def parse_log_lines(lines: list[str], *, now: datetime | None = None) -> list[di
             line["kind"] = "record"
             line["level"] = "debug"
             line["standalone"] = True
+        elif line["kind"] == "text" and line["level"] == "info":
+            if native_level := _native_progress_or_configuration_level(line["msg"]):
+                # A meter's padding or unknown suffix must not inherit the previous record's level.
+                line["level"] = native_level
+                line["standalone"] = True
     return out
 
 
