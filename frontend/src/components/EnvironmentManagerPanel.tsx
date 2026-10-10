@@ -444,18 +444,6 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
 
   const viewOptions = [{ id: 'image' as const, label: copy('图像训练', 'Image training') }, { id: 'speech' as const, label: copy('语音训练', 'Speech training') }];
   return <div data-testid="environment-manager">
-    <div ref={viewTabs} className="environment-view-switch">
-      <div className="ui-segmented" role="tablist" aria-label={copy('训练环境视图', 'Training environment views')}>
-        {viewOptions.map((option, index) => <button key={option.id} id={`environment-tab-${option.id}`} type="button" role="tab" aria-selected={view === option.id} aria-controls={`environment-view-${option.id}`} tabIndex={view === option.id ? 0 : -1} onClick={() => selectView(option.id)} onKeyDown={event => {
-          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-          event.preventDefault();
-          const next = event.key === 'Home' ? 0 : event.key === 'End' ? viewOptions.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + viewOptions.length) % viewOptions.length;
-          selectView(viewOptions[next].id);
-          document.getElementById(`environment-tab-${viewOptions[next].id}`)?.focus();
-        }}>{option.label}</button>)}
-        <SlidingIndicator className="ui-segmented-thumb"/>
-      </div>
-    </div>
     <SettingsSections sections={[
       { id: 'environment-runtime', label: copy('当前环境', 'Current runtime') },
       ...(imageVisible ? [
@@ -467,8 +455,22 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
       ] : [{ id: 'environment-tts', label: copy('语音训练环境', 'Speech training environments') }]),
     ]}>
     <section id="environment-runtime" data-settings-section tabIndex={-1} className="settings-section">
-    <div className="settings-section-heading">
-      <div><h2 className="text-base font-semibold">{copy('环境与计算后端', 'Runtime and compute backends')}</h2></div>
+    <div className="settings-section-heading environment-runtime-heading">
+      <div className="environment-runtime-title">
+        <h2 className="text-base font-semibold">{copy('环境与计算后端', 'Runtime and compute backends')}</h2>
+        <div ref={viewTabs} className="environment-view-switch">
+          <div className="ui-segmented" role="tablist" aria-label={copy('训练环境视图', 'Training environment views')}>
+            {viewOptions.map((option, index) => <button key={option.id} id={`environment-tab-${option.id}`} type="button" role="tab" aria-selected={view === option.id} aria-controls={`environment-view-${option.id}`} tabIndex={view === option.id ? 0 : -1} onClick={() => selectView(option.id)} onKeyDown={event => {
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? viewOptions.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + viewOptions.length) % viewOptions.length;
+              selectView(viewOptions[next].id);
+              document.getElementById(`environment-tab-${viewOptions[next].id}`)?.focus();
+            }}>{option.label}</button>)}
+            <SlidingIndicator className="ui-segmented-thumb"/>
+          </div>
+        </div>
+      </div>
       <button className={button} disabled={loading || busy} onClick={() => { void refreshRuntime(true); if (imageVisible) { void refreshOperations(); void refreshLatest(true); void refreshLora(true); } }}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />{copy('重新检测', 'Refresh probes')}</button>
     </div>
     {imageVisible && error && <div ref={errorRef} role="alert" className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
