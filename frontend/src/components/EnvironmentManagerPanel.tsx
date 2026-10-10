@@ -1,6 +1,7 @@
 import { formatGpuMemory } from '../utils/gpuMemory';
 import TorchEnvironmentPanel from './TorchEnvironmentPanel';
 import TtsEnvironmentPanel from './TtsEnvironmentPanel';
+import { SlidingIndicator } from './motion';
 import InstallationOperation, { InstallationLog, InstallationProgress } from './InstallationOperation';
 import DtkWheelPicker, { type DtkWheel } from './DtkWheelPicker';
 import DtkRuntimePanel from './DtkRuntimePanel';
@@ -13,7 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, ChevronRight, Download, ExternalLink, Loader2, RefreshCw, Upload, X } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useEnvironmentRead } from './useEnvironmentRead';
-import { IDLE_POLL_MS, ONLINE_STALE_MS, invalidateResource, useLocalResourceSync } from '../api/resourcePolicy';
+import { IDLE_POLL_MS, ONLINE_STALE_MS, ResourceActivityContext, invalidateResource, useLocalResourceSync } from '../api/resourcePolicy';
 import { formatApiError } from '../utils/errors';
 import { formatBytes, formatEta } from '../utils/format';
 import { SettingsSections } from '../pages/Settings/SettingsSections';
@@ -93,9 +94,37 @@ function DownloadProgress({ operation, copy }: {operation: Operation; copy: (zh:
   </div>;
 }
 
-export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onStatusChange }: { focusPackage?: string; mode?: 'onboarding-attention'; initialStatus?: EnvironmentStatus; onStatusChange?: (status: EnvironmentStatus) => void } = {}) {
+type EnvironmentView = 'image' | 'speech';
+const viewStorageKey = 'studio.environment-view';
+
+export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onStatusChange, initialView, onViewChange }: { focusPackage?: string; mode?: 'onboarding-attention'; initialStatus?: EnvironmentStatus; onStatusChange?: (status: EnvironmentStatus) => void; initialView?: EnvironmentView; onViewChange?: (view: EnvironmentView) => void } = {}) {
   const queryClient = useQueryClient();
   const onboardingAttention = mode === 'onboarding-attention';
+  const [view, setView] = React.useState<EnvironmentView>(() => {
+    if (focusPackage) return 'image';
+    if (initialView) return initialView;
+    try { return localStorage.getItem(viewStorageKey) === 'speech' ? 'speech' : 'image'; } catch { return 'image'; }
+  });
+  const imageVisible = onboardingAttention || view === 'image';
+  const parentActive = React.useContext(ResourceActivityContext);
+  const viewTabs = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => { if (initialView) setView(initialView); }, [initialView]);
+  const pendingFocus = React.useRef<string | undefined>(focusPackage);
+  React.useEffect(() => {
+    pendingFocus.current = focusPackage;
+    if (focusPackage) setView('image');
+  }, [focusPackage]);
+  React.useEffect(() => {
+    if (!onboardingAttention) {
+      try { localStorage.setItem(viewStorageKey, view); } catch { /* The current view remains usable without browser storage. */ }
+    }
+  }, [view, onboardingAttention]);
+  const selectView = (next: EnvironmentView) => {
+    setView(next);
+    onViewChange?.(next);
+    const scroller = viewTabs.current?.closest('.settings-scroll');
+    if (scroller) scroller.scrollTop = 0;
+  };
   const { i18n } = useTranslation();
   const en = i18n.resolvedLanguage?.startsWith('en');
   const copy = (zh: string, english: string) => en ? english : zh;
@@ -113,26 +142,29 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
     }
   } });
   const status = runtimeRead.data, loading = runtimeRead.loading, probing = runtimeRead.probing;
-  const operationsRead = useEnvironmentRead<Operation[]>('/environment/operations', { interval: rows => rows?.some(busyStatus) ? 1500 : IDLE_POLL_MS, onSuccess: (next, previous) => {
+  const operationsRead = useEnvironmentRead<Operation[]>('/environment/operations', { enabled: imageVisible, interval: rows => rows?.some(busyStatus) ? 1500 : IDLE_POLL_MS, onSuccess: (next, previous) => {
     const finished = previous?.filter(op => busyStatus(op) && !next.some(current => current.id === op.id && busyStatus(current))) || [];
     const needsRuntime = finished.some(op => !terminalRuntimeRefreshes.current.has(op.id));
     for (const op of finished) terminalRuntimeRefreshes.current.delete(op.id);
     if (needsRuntime) void runtimeRead.read();
   } });
   const operations = React.useMemo(() => operationsRead.data || [], [operationsRead.data]);
+  React.useEffect(() => {
+    if (!imageVisible) void queryClient.invalidateQueries({ queryKey: ['environment', '/environment/operations'], exact: true, refetchType: 'none' });
+  }, [imageVisible, queryClient]);
   useLocalResourceSync([['environment', '/environment'], ['environment', '/environment/operations']], event => !!event.id?.startsWith('environment-') || !!event.id?.startsWith('torch-') && ['completed', 'failed', 'cancelled'].includes(event.state ?? ''), event => {
     const operationId = event.id?.startsWith('environment-') ? event.id.slice('environment-'.length) : undefined;
     if (operationId && ['completed', 'failed', 'cancelled'].includes(event.state ?? '') && operations.some(op => op.id === operationId && busyStatus(op)))
       terminalRuntimeRefreshes.current.add(operationId);
   });
-  const latestRead = useEnvironmentRead<LatestVersions>('/environment/latest', { enabled: !onboardingAttention, staleTime: ONLINE_STALE_MS, refetchOnVisible: false, refreshParam: true, reconcile: (next, previous) => (
+  const latestRead = useEnvironmentRead<LatestVersions>('/environment/latest', { enabled: !onboardingAttention && imageVisible, staleTime: ONLINE_STALE_MS, refetchOnVisible: false, refreshParam: true, reconcile: (next, previous) => (
     { ...next, packages: Object.fromEntries(Object.entries(next.packages).map(([name, release]) => [name,
       release.error && previous?.packages[name] ? { ...previous.packages[name], error: release.error } : release,
     ])) }
   ) });
   const latest = latestRead.data;
   const latestError = latestRead.error, refreshLatest = latestRead.reload;
-  const loraRead = useEnvironmentRead<LoraEnvironment>('/environment/lora', { enabled: !onboardingAttention, staleTime: ONLINE_STALE_MS, refetchOnVisible: false, refreshParam: true,
+  const loraRead = useEnvironmentRead<LoraEnvironment>('/environment/lora', { enabled: !onboardingAttention && imageVisible, staleTime: ONLINE_STALE_MS, refetchOnVisible: false, refreshParam: true,
     reconcile: (next, previous) => ({ ...next, upstream: next.upstream.error && previous ? { ...previous.upstream, error: next.upstream.error } : next.upstream }),
   });
   const lora = loraRead.data;
@@ -145,7 +177,7 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
   const [error, setError] = React.useState('');
   const errorRef = React.useRef<HTMLDivElement>(null);
   const wheelInputRef = React.useRef<HTMLInputElement>(null);
-  React.useEffect(() => { if (error) errorRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); }, [error]);
+  React.useEffect(() => { if (error && imageVisible) errorRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); }, [error, imageVisible]);
   const [selected, setSelected] = React.useState<string | null>(null);
   const [version, setVersion] = React.useState('');
   const [wheel, setWheel] = React.useState<Wheel | null>(null);
@@ -189,11 +221,12 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
   const focusTarget = focusPackage === 'onnxruntime' && !visionPackages.some(pkg => pkg.name === 'onnxruntime') && visionPackages.some(pkg => pkg.name === 'onnxruntime-gpu') ? 'onnxruntime-gpu' : focusPackage;
   const focusAvailable = !!focusTarget && [...visiblePackages, ...optimizerPackages, ...visionPackages].some(pkg => pkg.name === focusTarget);
   React.useEffect(() => {
-    if (!focusAvailable || !focusTarget) return;
+    if (!imageVisible || !focusAvailable || !focusTarget || pendingFocus.current !== focusPackage || !focusPackage) return;
+    pendingFocus.current = undefined;
     setSelected(focusTarget);
     setVersion(''); setWheel(null); setVendorWheel(null);
     document.getElementById(`environment-package-${focusTarget}`)?.scrollIntoView?.({ block: 'start' });
-  }, [focusAvailable, focusTarget]);
+  }, [focusAvailable, focusTarget, focusPackage, imageVisible]);
 
   const refreshRuntime = runtimeRead.reload, refreshOperations = operationsRead.reload;
   const refresh = React.useCallback(async (probe = false) => {
@@ -409,21 +442,36 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
     {installation}
   </div>;
 
-  return <div data-testid="environment-manager"><SettingsSections sections={[
-    { id: 'environment-runtime', label: copy('当前环境', 'Current runtime') },
-    { id: 'environment-torch', label: profile === 'linux-dtk' ? copy('DTK 安装指南', 'DTK installation guide') : copy('PyTorch 版本', 'PyTorch version') },
-    { id: 'environment-attention', label: copy('注意力加速', 'Attention acceleration') },
-    { id: 'environment-tts', label: copy('语音训练环境', 'Speech training environments') },
-    { id: 'environment-lora', label: copy('LoRA 环境', 'LoRA environment') },
-    { id: 'environment-vision', label: copy('打标与遮罩', 'Tagging and masks') },
-    ...(visibleOperations.length || torchOperationsVisible ? [{ id: 'environment-installation', label: copy('安装日志', 'Installation log') }] : []),
-  ]}>
+  const viewOptions = [{ id: 'image' as const, label: copy('图像训练', 'Image training') }, { id: 'speech' as const, label: copy('语音训练', 'Speech training') }];
+  return <div data-testid="environment-manager">
+    <div ref={viewTabs} className="environment-view-switch">
+      <div className="ui-segmented" role="tablist" aria-label={copy('训练环境视图', 'Training environment views')}>
+        {viewOptions.map((option, index) => <button key={option.id} id={`environment-tab-${option.id}`} type="button" role="tab" aria-selected={view === option.id} aria-controls={`environment-view-${option.id}`} tabIndex={view === option.id ? 0 : -1} onClick={() => selectView(option.id)} onKeyDown={event => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? viewOptions.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + viewOptions.length) % viewOptions.length;
+          selectView(viewOptions[next].id);
+          document.getElementById(`environment-tab-${viewOptions[next].id}`)?.focus();
+        }}>{option.label}</button>)}
+        <SlidingIndicator className="ui-segmented-thumb"/>
+      </div>
+    </div>
+    <SettingsSections sections={[
+      { id: 'environment-runtime', label: copy('当前环境', 'Current runtime') },
+      ...(imageVisible ? [
+        { id: 'environment-torch', label: profile === 'linux-dtk' ? copy('DTK 安装指南', 'DTK installation guide') : copy('PyTorch 版本', 'PyTorch version') },
+        { id: 'environment-attention', label: copy('注意力加速', 'Attention acceleration') },
+        { id: 'environment-lora', label: copy('LoRA 环境', 'LoRA environment') },
+        { id: 'environment-vision', label: copy('打标与遮罩', 'Tagging and masks') },
+        ...(visibleOperations.length || torchOperationsVisible ? [{ id: 'environment-installation', label: copy('安装日志', 'Installation log') }] : []),
+      ] : [{ id: 'environment-tts', label: copy('语音训练环境', 'Speech training environments') }]),
+    ]}>
     <section id="environment-runtime" data-settings-section tabIndex={-1} className="settings-section">
     <div className="settings-section-heading">
       <div><h2 className="text-base font-semibold">{copy('环境与计算后端', 'Runtime and compute backends')}</h2></div>
-      <button className={button} disabled={loading || busy} onClick={() => { void refresh(true); void refreshLatest(true); void refreshLora(true); }}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />{copy('重新检测', 'Refresh probes')}</button>
+      <button className={button} disabled={loading || busy} onClick={() => { void refreshRuntime(true); if (imageVisible) { void refreshOperations(); void refreshLatest(true); void refreshLora(true); } }}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} />{copy('重新检测', 'Refresh probes')}</button>
     </div>
-    {error && <div ref={errorRef} role="alert" className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
+    {imageVisible && error && <div ref={errorRef} role="alert" className="whitespace-pre-wrap rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
     {readFailure(copy('当前环境', 'Current runtime'), runtimeRead)}
     {loading && !status && <p role="status" className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 size={16} className="animate-spin" />{copy('检测当前环境与已安装扩展…', 'Checking runtime and installed extensions…')}</p>}
     {status && <>
@@ -433,6 +481,8 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
       {status.running_jobs && <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{copy('任务运行中，完成或停止后可修改环境。', 'Finish or stop running tasks before changing the environment.')}</p>}
     </>}
     </section>
+    <ResourceActivityContext.Provider value={parentActive && imageVisible}>
+    <div id="environment-view-image" role="tabpanel" aria-labelledby="environment-tab-image" hidden={!imageVisible} className="environment-view-content">
     {status && <>
       {profile === 'linux-dtk' ? <DtkRuntimePanel/> : <TorchEnvironmentPanel showAttentionExtensions={showAttentionExtensions} disabled={status.running_jobs || busy || operations.some(busyStatus)} statusUnavailable={!operationsRead.data || !!operationsRead.error || !!runtimeRead.error} operationsTarget={torchOperationsTarget} onOperationsVisible={setTorchOperationsVisible}/>}
       <section id="environment-attention" data-settings-section tabIndex={-1} className="settings-section">
@@ -445,10 +495,6 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
       </div>}
       <div className="settings-dependencies">{visiblePackages.map(packageItem)}{tritonPackages.map(packageItem)}</div></section>
     </>}
-    <section id="environment-tts" data-settings-section tabIndex={-1} className="settings-section">
-      <div className="settings-section-heading"><h2>{copy('语音训练环境', 'Speech training environments')}</h2></div>
-      <TtsEnvironmentPanel/>
-    </section>
     <section id="environment-lora" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><h2>{copy('LoRA 环境', 'LoRA environment')}</h2>{status && optimizerPackages.length > 0 && <button type="button" className={button} disabled={loading || locked || status.maintenance} title={status.running_jobs ? copy('任务结束或暂停后可运行检查', 'Run checks after the task finishes or pauses') : undefined} onClick={() => void refresh(true)}><RefreshCw size={14} className={probing ? 'animate-spin' : ''}/>{probing ? copy('检查中…', 'Checking…') : copy('运行检查', 'Run checks')}</button>}</div>
       <div className="settings-dependencies"><div className="settings-dependency">
@@ -469,5 +515,15 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
       {status ? <div className="settings-dependencies">{visionPackages.map(packageItem)}</div> : !runtimeRead.error && <LoadingNote label={copy('检测扩展包…', 'Checking packages…')}/>}
     </section>
     {installation}
+    </div>
+    </ResourceActivityContext.Provider>
+    <ResourceActivityContext.Provider value={parentActive && !imageVisible}>
+      <div id="environment-view-speech" role="tabpanel" aria-labelledby="environment-tab-speech" hidden={imageVisible} className="environment-view-content">
+    <section id="environment-tts" data-settings-section tabIndex={-1} className="settings-section">
+      <div className="settings-section-heading"><h2>{copy('语音训练环境', 'Speech training environments')}</h2></div>
+      <TtsEnvironmentPanel/>
+    </section>
+      </div>
+    </ResourceActivityContext.Provider>
   </SettingsSections></div>;
 }

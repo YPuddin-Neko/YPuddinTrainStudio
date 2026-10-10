@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiClient, READ_TIMEOUT_MS } from '../api/client';
-import { LOCAL_STALE_MS, useResourceQuery } from '../api/resourcePolicy';
+import { LOCAL_STALE_MS, usePageVisible, useResourceQuery } from '../api/resourcePolicy';
 import { formatApiError } from '../utils/errors';
 
 type Options<T> = {
@@ -18,6 +18,9 @@ type Options<T> = {
 
 export function useEnvironmentRead<T>(endpoint: string, { enabled = true, interval = false, refreshParam = false, probe = false, initialData, staleTime = LOCAL_STALE_MS, refetchOnVisible = true, reconcile, onSuccess }: Options<T> = {}) {
   const client = useQueryClient();
+  const visible = usePageVisible();
+  const activity = useRef(enabled && visible);
+  activity.current = enabled && visible;
   const [probing, setProbing] = useState(false);
   const mounted = useRef(true), accepted = useRef(onSuccess), previous = useRef<T | null>(null);
   const merge = useRef(reconcile); merge.current = reconcile;
@@ -39,7 +42,7 @@ export function useEnvironmentRead<T>(endpoint: string, { enabled = true, interv
   }, [query.data, query.dataUpdatedAt]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const read = useCallback(async (refresh = false, explicit = false) => {
-    if (!enabled || !mounted.current) return;
+    if (!activity.current || !mounted.current) return;
     const queryKey = ['environment', endpoint];
     if (!explicit && client.getQueryState(queryKey)?.error) return;
     if (probe && refresh) setProbing(true);
@@ -47,7 +50,7 @@ export function useEnvironmentRead<T>(endpoint: string, { enabled = true, interv
       await client.fetchQuery<T>({ queryKey, queryFn: ({ signal }) => fetch(signal, refresh), staleTime: 0, retry: false, networkMode: 'always' });
     } catch { /* The shared query retains the failure for the row's retry control. */ }
     finally { if (mounted.current) setProbing(false); }
-  }, [client, enabled, endpoint, fetch, probe]);
+  }, [client, endpoint, fetch, probe]);
   const reload = useCallback((refresh = false) => read(refresh, true), [read]);
   const updateData = useCallback((update: (current: T | null) => T | null) => {
     const key = ['environment', endpoint];

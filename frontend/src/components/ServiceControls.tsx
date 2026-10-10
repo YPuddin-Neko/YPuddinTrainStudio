@@ -6,6 +6,7 @@ import { ApiError } from '../api/types';
 import { useWorkspaceText } from '../utils/workspaceText';
 import { formatApiError } from '../utils/errors';
 import { RestartRequiredContext } from './restartRequiredContext';
+import { usePageVisible } from '../api/resourcePolicy';
 
 export interface ServiceRuntime {
   worker_id: number; instance_id?: string | null; managed: boolean; can_restart: boolean; reason: string | null;
@@ -38,6 +39,7 @@ async function requestWithTimeout<T>(request: (signal: AbortSignal) => Promise<T
 
 export default function ServiceControls({environmentId, onRestarted, refreshTarget, secondary = false, disabled = false, refreshKey = 0, applySavedAddress = false, pending = false}: {environmentId?: string; onRestarted?:()=>void; refreshTarget?: HTMLElement | null; secondary?: boolean; disabled?: boolean; refreshKey?: number; applySavedAddress?: boolean; pending?: boolean}) {
   const text = useWorkspaceText();
+  const visible = usePageVisible();
   const reportRestart = React.useContext(RestartRequiredContext);
   const [runtime, setRuntime] = React.useState<ServiceRuntime | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -45,6 +47,7 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
   const [notice,setNotice] = React.useState('');
   const [nextAddress,setNextAddress] = React.useState('');
   const cancelled=React.useRef(false);
+  const restarting=React.useRef(false);
   const controllers=React.useRef(new Set<AbortController>());
   const statusRead=React.useRef<{controller:AbortController;promise:Promise<ServiceRuntime>}|null>(null);
   const refresh=React.useCallback((timeoutMs=3000,replace=false):Promise<ServiceRuntime>=> {
@@ -66,9 +69,19 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
   const showReadError=React.useCallback((failure:unknown)=>{
     if(!cancelled.current&&!(failure instanceof Error&&failure.name==='AbortError'))setError(formatApiError(failure));
   },[]);
-  React.useEffect(()=>{const activeControllers=controllers.current;cancelled.current=false;void refresh().catch(showReadError);return()=>{cancelled.current=true;statusRead.current=null;for(const controller of activeControllers)controller.abort();};},[refresh,showReadError]);
-  React.useEffect(()=>{if(refreshKey)void refresh(3000,true).catch(showReadError);},[refreshKey,refresh,showReadError]);
+  React.useEffect(()=>{const activeControllers=controllers.current;cancelled.current=false;return()=>{cancelled.current=true;statusRead.current=null;for(const controller of activeControllers)controller.abort();};},[]);
+  React.useEffect(()=>{
+    if(!visible||restarting.current)return;
+    void refresh(3000,true).catch(showReadError);
+    const passiveRead=statusRead.current;
+    return()=>{
+      // A restart can take over this read for its worker-identity precheck.
+      if(!restarting.current&&statusRead.current===passiveRead){statusRead.current=null;passiveRead?.controller.abort();}
+    };
+  },[visible,refreshKey,refresh,showReadError]);
   const restart=async(options:Record<string,unknown>)=>{
+    if(restarting.current)return;
+    restarting.current=true;
     setBusy(true);setError('');setNotice('');setNextAddress('');
     const deadline=Date.now()+60000;
     try {
@@ -108,7 +121,7 @@ export default function ServiceControls({environmentId, onRestarted, refreshTarg
       }
       setNotice('');
       setError(text('暂未重新连接。请查看启动窗口；恢复后可点击刷新状态。','Reconnection timed out. Check the launcher window, then refresh status.'));
-    }catch(e){if(!cancelled.current){setNotice('');setError(formatApiError(e));}}finally{if(!cancelled.current)setBusy(false);}
+    }catch(e){if(!cancelled.current){setNotice('');setError(formatApiError(e));}}finally{restarting.current=false;if(!cancelled.current)setBusy(false);}
   };
   // A saved setting or an environment change the running service has not applied yet. The saved and
   // running addresses are not compared: a launcher --port override would look pending forever.

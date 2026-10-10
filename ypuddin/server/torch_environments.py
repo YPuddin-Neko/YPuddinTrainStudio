@@ -303,7 +303,7 @@ class TorchEnvironments:
                 "id": f"torch-{op['id']}", "kind": "environment",
                 "subject": f"PyTorch {version}" + (f" · {'Apple MPS' if backend == 'mps' else backend.upper()}" if backend else ""),
                 "state": "running" if running else op["status"], "detail": detail, "done": None, "total": None,
-                "unit": None, "link": "/settings/environment", "cancellable": False, "started_at": op["created_at"],
+                "unit": None, "link": "/settings/environment?tab=runtime&environment=image", "cancellable": False, "started_at": op["created_at"],
                 "finished_at": None if running else op["updated_at"],
                 "error": task_error(op["error"], "PyTorch 环境未能准备完成，原因见运行环境页的记录。")
                 if op["status"] == "failed" else None,

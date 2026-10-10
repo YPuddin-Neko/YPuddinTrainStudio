@@ -22,7 +22,11 @@ export default function SettingsDrawer({ children, onClose }: {children: React.R
         event.preventDefault(); closeRef.current();
       }
       if (event.key !== 'Tab') return;
-      const nodes = [...(panel?.querySelectorAll<HTMLElement>('a[href],button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]') || [])];
+      const nodes = [...(panel?.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]') || [])].filter(node => {
+        if (node.tabIndex < 0 || node.matches(':disabled') || node.closest('[hidden], [inert]') || !node.getClientRects().length) return false;
+        const style = window.getComputedStyle(node);
+        return style.visibility !== 'hidden' && style.visibility !== 'collapse';
+      });
       const first = nodes[0], last = nodes[nodes.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }

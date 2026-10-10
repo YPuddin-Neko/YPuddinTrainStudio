@@ -98,3 +98,7 @@
 .service-restart-hint { color:var(--studio-danger); font-size:12px; }
 
 .settings-sdpa-status { padding: 12px 0; }
+
+.environment-view-switch { margin-bottom:18px; }
+.environment-view-content:not([hidden]) { display:flex; flex-direction:column; gap:18px; min-width:0; }
+.environment-view-content > .settings-section:first-child { border-top:1px solid var(--settings-line); padding-top:18px; }

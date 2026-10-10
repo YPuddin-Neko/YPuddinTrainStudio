@@ -773,7 +773,7 @@ class EnvironmentManager:
                 "state": "running" if running else op["status"], "detail": detail,
                 "done": op["downloaded_bytes"] if sized else None, "total": op["total_bytes"] if sized else None,
                 "unit": "bytes" if sized else None,
-                "link": "/settings/environment", "cancellable": False, "started_at": op["created_at"],
+                "link": "/settings/environment?tab=runtime&environment=image", "cancellable": False, "started_at": op["created_at"],
                 "finished_at": None if running else op["updated_at"],
                 "error": task_error(op["error"], "安装未完成，原因见运行环境页的记录。") if op["status"] == "failed" else None,
             })

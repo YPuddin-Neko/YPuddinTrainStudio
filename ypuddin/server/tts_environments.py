@@ -499,7 +499,7 @@ class TtsEnvironments:
             "id": op["id"], "kind": "environment", "subject": "GPT-SoVITS" if op["engine"] == "gpt-sovits-v5" else "VoxCPM",
             "state": "running" if op["status"] in ACTIVE else op["status"],
             "detail": "环境检查" if op["action"] == "check" else "环境准备",
-            "done": None, "total": None, "unit": None, "link": "/settings/environment",
+            "done": None, "total": None, "unit": None, "link": "/settings/environment?tab=runtime&environment=speech",
             "cancellable": op["cancellable"], "started_at": op["created_at"],
             "finished_at": None if op["status"] in ACTIVE else op["updated_at"],
             "error": op["issues"][0]["message"] if op["status"] == "failed" and op["issues"] else None,
