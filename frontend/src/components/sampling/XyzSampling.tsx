@@ -19,7 +19,7 @@ import ProgressBar from '../ProgressBar';
 import { gpuDeviceLabel } from '../../utils/gpuDevices';
 import Dialog from '../Dialog';
 import { LazyImage } from '../Loading';
-import { axisCount, axisNames, checkpointLabel, choiceLabel, isActive, isWaiting, parseAxis, taskProgress, useStatusLabel, type AxisKey, type XyzAxis, type XyzCell, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
+import { axisCount, axisNames, checkpointLabel, choiceLabel, isActive, isWaiting, parseAxis, taskProgress, useStatusLabel, type AxisKey, type XyzAxis, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
 import XyzHistory from './XyzHistory';
 import SampleLightbox from './SampleLightbox';
 import { useGridImageFit } from './useGridImageFit';
@@ -102,7 +102,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const [gpuDevices, setGpuDevices] = React.useState<string[]>([]);
   const [gpuValid, setGpuValid] = React.useState(true);
   const [page, setPage] = React.useState(0);
-  const [preview, setPreview] = React.useState<XyzCell | null>(null);
+  const [previewSelection, setPreview] = React.useState<{ taskId: string; cellIndex: number } | null>(null);
   const [revision, setRevision] = React.useState(0);
   const [collapsed, setCollapsed] = React.useState(false);
   const task = history.find(item => item.id === selected);
@@ -264,11 +264,23 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const cells = new Map((task?.manifest?.cells || []).filter(cell => cell.z === page).map(cell => [`${cell.x}:${cell.y}`, cell]));
   const grid = task?.manifest?.grids.find(item => item.z === page);
   const gridViewport = useGridImageFit(`${task?.id}:${columnHeads}:${rowHeads}:${page}`);
-  const previewCells = [...(task?.manifest?.cells || [])].sort((a, b) => a.index - b.index);
-  const previewIndex = previewCells.findIndex(cell => cell.url === preview?.url);
+  const previewCells = history.flatMap(batch => [...batch.manifest.cells].sort((a, b) => a.index - b.index).map(cell => ({ task: batch, cell })));
+  const previewIndex = previewCells.findIndex(item => item.task.id === previewSelection?.taskId && item.cell.index === previewSelection.cellIndex);
+  const preview = previewCells[previewIndex]?.cell;
+  const previewRequest = previewCells[previewIndex]?.task.request;
+  const closePreview = React.useCallback(() => {
+    const target = gridViewport.current?.querySelector<HTMLButtonElement>(`button[data-cell-index="${previewSelection?.cellIndex}"]`) || gridViewport.current;
+    setPreview(null);
+    // Crossing batches can remove the button that originally opened the viewer.
+    window.requestAnimationFrame(() => { if (target?.isConnected && document.activeElement === document.body) target.focus(); });
+  }, [gridViewport, previewSelection]);
+  // Keep the current image as batches arrive; close it when that image is removed.
+  React.useEffect(() => {
+    if (previewSelection && previewIndex < 0) closePreview();
+  }, [previewSelection, previewIndex, closePreview]);
   const navigatePreview = (index: number) => {
-    const cell = previewCells[index];
-    if (cell) { setPreview(cell); setPage(cell.z); }
+    const item = previewCells[index];
+    if (item) { setPreview({ taskId: item.task.id, cellIndex: item.cell.index }); setSelected(item.task.id); setPage(item.cell.z); }
   };
   const reuse = () => {
     if (!request || !options || locked) return;
@@ -344,7 +356,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
             <table className="xyz-grid" style={{ minWidth: (rowHeads ? 88 : 0) + xValues.length * 150 }}>
               {request && columnHeads !== rowHeads && <caption>{columnHeads ? `${name(request.x.key)} →` : `${name(request.y!.key)} ↓`}</caption>}
               {request && columnHeads && <thead><tr>{rowHeads && <th className="xyz-corner">{`${name(request.y!.key)} ↓`}<br/>{`${name(request.x.key)} →`}</th>}{xValues.map((value, x) => <th key={x} title={displayValue(request.x, value)}>{displayValue(request.x, value)}</th>)}</tr></thead>}
-              <tbody>{yValues.map((value, y) => <tr key={y}>{rowHeads && <th className="xyz-row-head" title={displayValue(request?.y, value)}>{displayValue(request?.y, value)}</th>}{xValues.map((_, x) => { const cell = cells.get(`${x}:${y}`); return <td key={x}>{cell ? <button type="button" className="xyz-cell" onClick={() => setPreview(cell)} aria-label={text(`查看第 ${x + 1} 列第 ${y + 1} 行`, `View column ${x + 1}, row ${y + 1}`)}><LazyImage src={imageUrl(cell.url)} loading="lazy" alt={`${name(request!.x.key)} ${displayValue(request?.x, cell.x_value)}${request?.y ? `, ${name(request.y.key)} ${displayValue(request.y, cell.y_value)}` : ''}`} width={request?.width} height={request?.height}/></button> : <PendingCell task={task} drawing={isActive(task) && !isWaiting(task) && (page * yValues.length + y) * xValues.length + x === task.done}/>}</td>; })}</tr>)}</tbody>
+              <tbody>{yValues.map((value, y) => <tr key={y}>{rowHeads && <th className="xyz-row-head" title={displayValue(request?.y, value)}>{displayValue(request?.y, value)}</th>}{xValues.map((_, x) => { const cell = cells.get(`${x}:${y}`); return <td key={x}>{cell ? <button type="button" className="xyz-cell" data-cell-index={cell.index} onClick={() => setPreview({ taskId: task.id, cellIndex: cell.index })} aria-label={text(`查看第 ${x + 1} 列第 ${y + 1} 行`, `View column ${x + 1}, row ${y + 1}`)}><LazyImage src={imageUrl(cell.url)} loading="lazy" alt={`${name(request!.x.key)} ${displayValue(request?.x, cell.x_value)}${request?.y ? `, ${name(request.y.key)} ${displayValue(request.y, cell.y_value)}` : ''}`} width={request?.width} height={request?.height}/></button> : <PendingCell task={task} drawing={isActive(task) && !isWaiting(task) && (page * yValues.length + y) * xValues.length + x === task.done}/>}</td>; })}</tr>)}</tbody>
             </table>
           </div>
         </> : <div className="xyz-empty"><Grid2X2 size={26} aria-hidden="true"/><span>{text('还没有对比图', 'No comparisons yet')}</span></div>}
@@ -357,20 +369,20 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
       {deleteError && <p role="alert" className="xyz-task-error">{deleteError}</p>}
       <div className="task-actions"><button type="button" className="ui-btn" disabled={deleteBusy} onClick={() => setDeleting(null)}>{text('取消', 'Cancel')}</button><button type="button" className="ui-btn ui-btn-danger" disabled={deleteBusy} onClick={() => void remove()}>{deleteBusy ? text('正在删除…', 'Deleting…') : text('删除记录和图片', 'Delete record and images')}</button></div>
     </Dialog>}
-    {preview && request && <SampleLightbox title={text('模型测试图片', 'Model test image')}
-      sample={{ url: preview.url, prompt: request.prompt, seed: preview.seed, width: request.width, height: request.height }}
+    {preview && previewRequest && <SampleLightbox title={text('模型测试图片', 'Model test image')}
+      sample={{ url: preview.url, prompt: previewRequest.prompt, seed: preview.seed, width: previewRequest.width, height: previewRequest.height }}
       position={previewIndex + 1} total={previewCells.length}
       details={[
-        `${name(request.x.key)} · ${displayValue(request.x, preview.x_value)}`,
-        ...(request.y ? [`${name(request.y.key)} · ${displayValue(request.y, preview.y_value)}`] : []),
-        ...(request.z ? [`${name(request.z.key)} · ${displayValue(request.z, preview.z_value)}`] : []),
+        `${name(previewRequest.x.key)} · ${displayValue(previewRequest.x, preview.x_value)}`,
+        ...(previewRequest.y ? [`${name(previewRequest.y.key)} · ${displayValue(previewRequest.y, preview.y_value)}`] : []),
+        ...(previewRequest.z ? [`${name(previewRequest.z.key)} · ${displayValue(previewRequest.z, preview.z_value)}`] : []),
         `${preview.steps} ${text('步', 'steps')} · CFG ${preview.cfg}`,
         `${choiceLabel('sampler', preview.sampler)} / ${choiceLabel('scheduler', preview.scheduler)} · ${choiceLabel('noise', preview.noise || 'comfyui')}`,
         ...(!fullModel ? [`LoRA ${preview.adapter_scale}`] : []),
       ]}
       onPrevious={previewIndex > 0 ? () => navigatePreview(previewIndex - 1) : undefined}
       onNext={previewIndex + 1 < previewCells.length ? () => navigatePreview(previewIndex + 1) : undefined}
-      onClose={() => setPreview(null)}/>}
+      onClose={closePreview}/>}
   </section>;
 }
 

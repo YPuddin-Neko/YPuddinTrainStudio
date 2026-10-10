@@ -159,6 +159,11 @@ export default function SampleLightbox({ sample, title, position, total, details
     dialog.current?.focus();
     return () => opener?.focus?.();
   }, []);
+  React.useLayoutEffect(() => {
+    // Disabling a paging button can leave keyboard focus outside the viewer.
+    const focused = document.activeElement;
+    if (focused === document.body || (focused instanceof HTMLButtonElement && focused.disabled && dialog.current?.contains(focused))) dialog.current?.focus();
+  }, [src, position, total]);
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Tab') {
       // Keep focus inside the viewer while it covers the page.
