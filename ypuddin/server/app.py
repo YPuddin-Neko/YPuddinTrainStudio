@@ -289,5 +289,6 @@ def _mount_spa(app: FastAPI, dist: Path) -> None:
             raise HTTPException(status_code=404)
         candidate = (dist / path).resolve() if path else index
         if path and candidate.is_file() and dist.resolve() in candidate.parents:
-            return FileResponse(str(candidate))
-        return FileResponse(str(index))
+            headers = {"Cache-Control": "no-cache"} if candidate.suffix.lower() in {".html", ".htm"} else None
+            return FileResponse(str(candidate), headers=headers)
+        return FileResponse(str(index), headers={"Cache-Control": "no-cache"})
