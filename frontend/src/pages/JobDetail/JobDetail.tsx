@@ -395,7 +395,7 @@ export default function JobDetail() {
   const previousMean = typeof job?.latest?.loss_mean === 'number' && typeof currentLoss === 'number' && lossCount > 1 ? (job.latest.loss_mean * lossCount - currentLoss) / (lossCount - 1) : null;
   const lossChange = useStepChange(job?.progress?.step, currentLoss, previousLoss);
   const meanChange = useStepChange(job?.progress?.step, meanLoss, previousMean);
-  const meanScope = job?.latest?.loss_mean != null ? (job.latest.loss_mean_scope === 'since_resume' ? text('从此次恢复训练起，所有已完成训练步的损失平均值。','Mean loss over completed steps since this training was resumed.') : text('所有已完成训练步的损失平均值。','Mean loss over all completed optimizer steps.')) : text('旧任务没有完整累计值，显示已有日志中训练步的平均值。','This legacy run has no complete accumulator; this is the mean of recorded steps.');
+  const meanScope = job?.latest?.loss_mean != null && job.latest.loss_mean_scope === 'since_resume' ? text('从此次恢复训练起，所有已完成训练步的损失平均值。','Mean loss over completed steps since this training was resumed.') : text('所有已完成训练步的损失平均值。','Mean loss over all completed training steps.');
   const learningRates = Object.entries(job?.latest?.lr || {}).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]));
   // Two rows; groups are listed by name, so a DoRA rate sits alone above the w1 / w2 (or down / up) pair.
   const rateSplit = Math.floor(learningRates.length / 2);
@@ -491,7 +491,7 @@ export default function JobDetail() {
 
       {/* 3. 详细内容区域 */}
       <div ref={tabPanel} role="tabpanel" id={`job-panel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`}>
-      {activeTab === 'metrics' && <JobMetricsPanel metrics={metrics} stepsPerEpoch={stepsPerEpoch} vramMetric={job?.progress?.vram_metric} device={job?.progress?.device} status={job?.status}/>}
+      {activeTab === 'metrics' && <JobMetricsPanel metrics={metrics} stepsPerEpoch={stepsPerEpoch} vramMetric={job?.progress?.vram_metric} device={job?.progress?.device} status={job?.status} isSpeechTraining={job?.type === 'tts_train'}/>}
 
       {activeTab === 'audio' && job && <TtsJobOutputs key={job.id} jobId={job.id} engine={configSnapshot?.tts?.engine} training={job.type === 'tts_train'} live={['queued', 'scheduled', 'running', 'cancelling'].includes(job.status)}/>}
 

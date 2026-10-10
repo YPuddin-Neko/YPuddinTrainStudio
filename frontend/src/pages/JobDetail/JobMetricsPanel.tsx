@@ -76,8 +76,9 @@ function useChartLayout(): MetricChartSetting[] | null {
 }
 
 /** Training curves and GPU readings in the configured charts, two per row. */
-export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, device, status }: {
+export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, device, status, isSpeechTraining = false }: {
   metrics: JobMetrics | null; stepsPerEpoch?: number | null; vramMetric?: string | null; device?: string | null; status?: string | null;
+  isSpeechTraining?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const text = useWorkspaceText();
@@ -228,10 +229,14 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
           apple && keys.includes('gpu_memory') && text('Apple 芯片使用统一内存，不单独记录设备显存。', 'Apple chips use unified memory, so device memory is not recorded separately.'),
         ].filter(Boolean).join(' ');
         const chartNote = keys.every(key => key === 'loss' || key === 'loss_ema')
-          ? text('每步 Loss 是每个优化步的训练损失；平滑曲线按上方 EMA 系数计算，只影响显示，不改变训练。', 'Loss per step is the training loss of each optimizer step; the smoothed curve uses the EMA coefficient above and only changes the chart.')
-          : only === 'lr' ? (logRates
-            ? text('每条线代表一个参数组。各组学习率相差 100 倍以上，纵轴用对数刻度，DoRA 这类很小的值也能看清。', 'Each line is one parameter group. The groups differ by 100× or more, so the axis is logarithmic and small rates such as DoRA stay visible.')
-            : text('每条线代表一个参数组；LoKr 的 w1 / w2 可设置不同学习率。', 'Each line is one parameter group; LoKr w1 / w2 can use different learning rates.'))
+          ? text('每步 Loss 是每个训练步的训练损失；平滑曲线按上方 EMA 系数计算，只影响显示，不改变训练。', 'Loss per step is the training loss of each training step; the smoothed curve uses the EMA coefficient above and only changes the chart.')
+          : only === 'lr' ? (isSpeechTraining
+            ? (logRates
+              ? text('每条线表示一组学习率；纵轴使用对数刻度。', 'Each line shows one learning-rate group; the vertical axis uses a logarithmic scale.')
+              : text('每条线表示一组学习率。', 'Each line shows one learning-rate group.'))
+            : (logRates
+              ? text('每条线代表一个参数组。各组学习率相差 100 倍以上，纵轴用对数刻度，DoRA 这类很小的值也能看清。', 'Each line is one parameter group. The groups differ by 100× or more, so the axis is logarithmic and small rates such as DoRA stay visible.')
+              : text('每条线代表一个参数组；LoKr 的 w1 / w2 可设置不同学习率。', 'Each line is one parameter group; LoKr w1 / w2 can use different learning rates.')))
             : only === 'grad_norm' ? text('每步梯度的大小，用于观察更新是否稳定。', 'Gradient magnitude per step, to inspect update stability.')
               : only === 'it_s' ? text('每秒完成的优化步数。', 'Optimizer steps completed per second.')
                 : only === 'vram' ? (chartVramMetric === 'current_allocated' ? text('训练进程当前占用的显存。', 'Memory currently allocated by the training process.') : text('训练进程到这一步为止的显存峰值。', 'Peak memory allocated by the training process so far.'))
@@ -249,7 +254,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
       }
     }
     return list;
-  }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, apple, cpu, live, useEpoch, stepsPerEpoch, layout, chinese, t, text, gpuSources]);
+  }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, apple, cpu, live, useEpoch, stepsPerEpoch, layout, chinese, t, text, gpuSources, isSpeechTraining]);
 
   return <div className="job-metrics">
     <div className="job-metrics-toolbar">

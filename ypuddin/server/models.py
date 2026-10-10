@@ -1044,7 +1044,7 @@ class JobMetrics(_Out):
     steps: list[int]
     loss: list[float | None]
     loss_ema: list[float | None]
-    lr: dict[str, list[float]]
+    lr: dict[str, list[float | None]]
     grad_norm: list[float | None]
     vram_mb: list[float | None]
     vram_metric: str | None = None

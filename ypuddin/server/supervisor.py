@@ -1065,6 +1065,12 @@ class JobSupervisor:
         elif t == "phase.changed":
             self._merge_progress(job_id, {"phase": ev.get("phase")})
             self._publish("job.phase", data)
+        elif t == "tts.stage.completed":
+            job = self.db.fetchone("SELECT type FROM jobs WHERE id=?", (job_id,))
+            if job and job["type"] in TTS_JOBS:
+                progress = {"step": ev["step"], "epoch": ev["epoch"]}
+                self._merge_progress(job_id, progress)
+                self._publish("job.phase", {"job_id": job_id, "stage": ev.get("stage"), "progress": progress})
         elif t == "cache.progress":
             self._merge_progress(
                 job_id,

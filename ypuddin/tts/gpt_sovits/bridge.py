@@ -12,6 +12,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 from ..events import Events
@@ -28,16 +29,105 @@ from .core import (
 )
 
 log = logging.getLogger("ypuddin.tts")
+_progress_log = logging.getLogger("ypuddin.tts.gpt_sovits.progress")
+
+
+class _RichProgressLog:
+    encoding = "utf-8"
+
+    def __init__(self):
+        self.pending = ""
+
+    def isatty(self):
+        return False
+
+    def write(self, text):
+        self.pending += text
+        while "\n" in self.pending:
+            line, _, self.pending = self.pending.partition("\n")
+            _progress_log.debug("%s", line)
+        return len(text)
+
+    def flush(self):
+        if self.pending:
+            _progress_log.debug("%s", self.pending)
+            self.pending = ""
+
+
+@contextmanager
+def _rich_progress_logging(trainer):
+    rich = sys.modules.get("pytorch_lightning.callbacks.progress.rich_progress")
+    restored = []
+    missing = object()
+    try:
+        for callback in trainer.callbacks:
+            if rich is None or not isinstance(callback, rich.RichProgressBar):
+                continue
+            from rich.console import Console
+
+            stream = _RichProgressLog()
+            owned_progress = []
+            previous = {name: callback.__dict__.get(name, missing) for name in ("_init_progress", "get_metrics")}
+            original_metrics = callback.get_metrics
+
+            def initialize(current_trainer, *, owner=callback, output=stream, owned=owned_progress):
+                if owner.is_enabled and (owner.progress is None or owner._progress_stopped):
+                    owner._reset_progress_bar_ids()
+                    # Keep Rich's process-wide console and stdout/stderr outside this progress renderer.
+                    owner._console = Console(**{**owner._console_kwargs, "file": output})
+                    owner._metric_component = rich.MetricsTextColumn(
+                        current_trainer, owner.theme.metrics, owner.theme.metrics_text_delimiter,
+                        owner.theme.metrics_format,
+                    )
+                    owner.progress = rich.CustomProgress(
+                        *owner.configure_columns(current_trainer), owner._metric_component,
+                        auto_refresh=True, refresh_per_second=owner.refresh_rate if owner.is_enabled else 1,
+                        disable=owner.is_disabled, console=owner._console,
+                        redirect_stdout=False, redirect_stderr=False,
+                    )
+                    owned.append(owner.progress)
+                    owner.progress.start()
+                    owner._progress_stopped = False
+
+            def get_metrics(*args, original=original_metrics, **kwargs):
+                metrics = original(*args, **kwargs).copy()
+                for name in ("lr", "lr_step", "lr_epoch"):
+                    value = metrics.get(name)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+                        metrics[name] = f"{value:.6e}"
+                return metrics
+
+            restored.append((callback, previous, stream, owned_progress))
+            callback._init_progress = initialize
+            callback.get_metrics = get_metrics
+        yield
+    finally:
+        for callback, previous, stream, owned_progress in reversed(restored):
+            try:
+                if callback.progress in owned_progress and not callback._progress_stopped:
+                    callback._stop_progress()
+            finally:
+                stream.flush()
+                for name, value in previous.items():
+                    if value is missing:
+                        callback.__dict__.pop(name, None)
+                    else:
+                        setattr(callback, name, value)
 
 
 class _SovitsLogFilter(logging.Filter):
     def filter(self, record):
+        if record.levelno != logging.INFO or record.exc_info or record.stack_info:
+            return True
         if type(record.msg).__name__ == "HParams" and type(record.msg).__module__ == "utils":
             record.levelno, record.levelname = logging.DEBUG, "DEBUG"
-        elif (isinstance(record.msg, list) and len(record.msg) == 3
-              and all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in record.msg)):
+        elif (not record.args and isinstance(record.msg, list) and len(record.msg) == 3
+              and all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                      and math.isfinite(value) for value in record.msg)
+              and type(record.msg[1]) is int and record.msg[1] >= 0 and record.msg[2] >= 0):
             loss, step, rate = record.msg
-            record.msg = "SoVITS step %d: loss=%.6f, lr=%.6e"
+            record.levelno, record.levelname = logging.DEBUG, "DEBUG"
+            record.msg = "SoVITS batch_index=%d: loss=%.6f, lr=%.6e"
             record.args = (step, loss, rate)
         return True
 
@@ -50,8 +140,12 @@ def training_event(events, stage, step, metrics, epoch=None, *, offset=0):
     fields = {"stage": stage, "step": offset + int(step), "epoch": epoch, "loss": loss,
               "lr": {stage: rate} if rate is not None else None, "metrics": {**metrics, "stage_step": int(step)}}
     events.emit("step", **fields)
+    detail = []
     if rate is not None:
-        log.info("%s step %d: lr=%.6e%s", stage, step, rate, f", loss={loss:.6f}" if loss is not None else "")
+        detail.append(f"lr={rate:.6e}")
+    if loss is not None:
+        detail.append(f"loss={loss:.6f}")
+    log.info("%s step %d%s", stage, step, ": " + ", ".join(detail) if detail else "")
 
 
 def write_json(path, value):
@@ -206,7 +300,6 @@ def train_stage(request, stage):
     output = Path(request["output"])
     work = Path(request["workspace"])
     outcome = {}
-    latest_metrics = {}
     offset = request.get("step_offset", 0)
     if stage == "gpt":
         import pytorch_lightning as pl
@@ -223,6 +316,7 @@ def train_stage(request, stage):
                 self.learning_rate.attach(trainer.optimizers)
 
             def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+                self.batch_step = int(trainer.global_step)
                 self.learning_rate.begin_batch(trainer.global_step)
 
             def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
@@ -234,15 +328,22 @@ def train_stage(request, stage):
                 rate = self.learning_rate.end_batch(trainer.global_step)
                 if rate is not None:
                     metrics["lr"] = rate
-                latest_metrics.pop("lr", None)
-                latest_metrics.update(metrics)
-                training_event(events, "gpt", int(trainer.global_step), metrics, trainer.current_epoch + 1, offset=offset)
+                step = int(trainer.global_step)
+                if step > self.batch_step:
+                    training_event(events, "gpt", step, metrics, trainer.current_epoch + 1, offset=offset)
+                else:
+                    if not all(math.isfinite(value) for value in metrics.values()):
+                        raise ValueError("GPT-SoVITS 训练指标出现非有限数值。")
+                    fields = ", ".join(f"{key}={value:.6e}" if key == "lr" else f"{key}={value!r}"
+                                       for key, value in metrics.items())
+                    log.debug("gpt batch_index=%d, step=%d: %s", batch_idx, step, fields)
 
         def fit(trainer, *args, **kwargs):
             progress = Progress()
             trainer.callbacks.append(progress)
             try:
-                result = original_fit(trainer, *args, **kwargs)
+                with _rich_progress_logging(trainer):
+                    result = original_fit(trainer, *args, **kwargs)
             finally:
                 progress.learning_rate.close()
                 trainer.callbacks.remove(progress)
@@ -282,7 +383,6 @@ def train_stage(request, stage):
         def summarize(writer, global_step, scalars=None, *args, **kwargs):
             metrics = {key: float(value.detach().cpu()) if hasattr(value, "detach") else float(value)
                        for key, value in (scalars or {}).items()}
-            latest_metrics.update(metrics)
             # Upstream logs after the update, before incrementing its zero-based counter.
             training_event(events, "sovits", global_step + 1, metrics, offset=offset)
             return original_summarize(writer, global_step, scalars or {}, *args, **kwargs)
@@ -313,8 +413,10 @@ def train_stage(request, stage):
         raise RuntimeError(f"{stage} 训练没有产出最后一轮的有效权重。")
     if outcome.get("global_step", 0) <= 0:
         raise RuntimeError(f"{stage} 没有执行训练步骤，请检查预处理后的样本长度和批次设置。")
-    training_event(events, stage, outcome["global_step"], latest_metrics, target_epochs, offset=offset)
     write_json(output / f"{stage}-completed.json", outcome)
+    events.emit("tts.stage.completed", stage=stage, step=offset + outcome["global_step"],
+                stage_step=outcome["global_step"], epoch=target_epochs)
+    log.info("%s training completed: epoch=%d, step=%d", stage, target_epochs, outcome["global_step"])
 
 
 def publish_bundle(config, output, outcomes):
@@ -381,6 +483,24 @@ def offline_language_detection(work):
         infer._LOCAL_SMALL_MODEL_PATH = small
 
 
+def correct_fragment_interval(tts):
+    original = tts.audio_postprocess
+
+    def audio_postprocess(audio, sr, batch_index_list=None, speed_factor=1.0, split_bucket=True,
+                          fragment_interval=0.3, super_sampling=False):
+        source_sr = tts.configs.sampling_rate
+        if fragment_interval > 0 and source_sr != sr:
+            frames = int(sr * fragment_interval)
+            fragment_interval = frames / source_sr
+            # The pinned upstream truncates after multiplying by the checkpoint rate.
+            if int(source_sr * fragment_interval) < frames:
+                fragment_interval = math.nextafter(fragment_interval, math.inf)
+        return original(audio, sr, batch_index_list, speed_factor, split_bucket,
+                        fragment_interval, super_sampling)
+
+    tts.audio_postprocess = audio_postprocess
+
+
 def sample(request):
     import numpy as np
     import soundfile as sf
@@ -423,6 +543,7 @@ def sample(request):
     if not torch.cuda.is_available():
         raise ValueError("GPT-SoVITS 试听需要已分配的 NVIDIA CUDA 显卡。")
     tts = TTS(tts_config)
+    correct_fragment_interval(tts)
     specific = options["gpt_sovits"]
     requested_seed = options.get("seed", -1)
     seed = secrets.randbelow(2**32) if requested_seed == -1 else requested_seed

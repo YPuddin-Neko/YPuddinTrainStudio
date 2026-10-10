@@ -6175,7 +6175,7 @@ export interface components {
             loss_ema: (number | null)[];
             /** Lr */
             lr: {
-                [key: string]: number[];
+                [key: string]: (number | null)[];
             };
             /** Grad Norm */
             grad_norm: (number | null)[];

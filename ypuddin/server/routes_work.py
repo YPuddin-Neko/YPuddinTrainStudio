@@ -2721,7 +2721,7 @@ def _events_file(c: ServiceContext, jid: str) -> list[dict[str, Any]]:
 def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     steps, loss, loss_ema, grad, vram, its = [], [], [], [], [], []
     power, temperature, load = [], [], []
-    lr: dict[str, list[float]] = {}
+    lr: dict[str, list[float | None]] = {}
     validation = []
     vram_metric = None
     events = _events_file(c, jid)
@@ -2737,8 +2737,12 @@ def job_metrics(jid: str, since_step: int = 0, c: ServiceContext = Depends(ctx))
             power.append(ev.get("gpu_power_w"))
             temperature.append(ev.get("gpu_temp_c"))
             load.append(ev.get("gpu_util_pct"))
-            for g, v in (ev.get("lr") or {}).items():
-                lr.setdefault(g, []).append(v)
+            rates = ev.get("lr") or {}
+            for group in rates:
+                if group not in lr:
+                    lr[group] = [None] * (len(steps) - 1)
+            for group, values in lr.items():
+                values.append(rates.get(group))
         elif ev.get("type") == "validation":
             validation.append({"step": ev["step"], "per_t": ev["per_t"], "mean": ev["mean"]})
     return {

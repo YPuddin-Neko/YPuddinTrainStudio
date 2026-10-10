@@ -113,6 +113,11 @@ _UNLABELLED_TQDM = re.compile(
     + r"(?:\d+:)?\d{2}:\d{2}<(?:\?|(?:\d+:)?\d{2}:\d{2}), +"
     r"(?:\?it/s|\d+(?:\.\d+)?(?:it/s|s/it))\]"
 )
+_SOVITS_TQDM_EPOCH = re.compile(
+    r"(?P<meter>" + _UNLABELLED_TQDM.pattern + r")"
+    + r" *(?P<record_time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})"
+    r" INFO prepared: Train Epoch: (?P<epoch>[1-9]\d*) \[(?P<percent>100|\d{1,2})%\]"
+)
 
 MAX_READ = 512 * 1024
 SUPERVISOR_SOURCE = "ypuddin.server.supervisor"
@@ -246,6 +251,17 @@ def _native_progress_or_configuration_level(line: str) -> str | None:
     body = _PROCESS_RANK.sub("", line, count=1)
     if _NATIVE_DEVICE_CONFIGURATION.fullmatch(body):
         return "debug"
+    if meter := _SOVITS_TQDM_EPOCH.fullmatch(body):
+        try:
+            datetime.fromisoformat(meter["record_time"].replace(",", "."))
+            done, total = int(meter["done"]), int(meter["total"])
+            valid = 0 <= done <= total and total > 0
+            percent = int(format(100 * done / total, ".0f")) if valid else -1
+            if valid and int(meter["percent"]) == percent == int(meter["meter"].partition("%")[0]):
+                return "debug"
+        except (ValueError, OverflowError):
+            pass
+        return "info"
     if meter := _UNLABELLED_TQDM.fullmatch(body):
         try:
             done, total = int(meter["done"]), int(meter["total"])
@@ -281,6 +297,8 @@ def parse_log_lines(lines: list[str], *, now: datetime | None = None) -> list[di
                 continue
         out.extend(_parse_plain_lines([raw], now=now))
     for line in out:
+        if line["source"] == "ypuddin.tts.gpt_sovits.progress" and line["level"] == "debug":
+            line["standalone"] = True
         # Native initialization notices bypass Python logging; retain their raw file and source.
         if line["level"] == "info" and (
             _nccl_configuration(line["msg"]) or _NCCL_INITIALIZATION.fullmatch(line["msg"])
