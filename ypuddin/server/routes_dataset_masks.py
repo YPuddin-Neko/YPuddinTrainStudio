@@ -50,7 +50,10 @@ def _resolve(c: ServiceContext, did: str, h: str, rel_path: str | None = None):
     ):
         raise ApiError("image is outside the allowed dataset storage", code="mask.path", status=403)
     if rel_path is not None:
-        candidates = [r for r in candidates if str(Path(r["path"]).relative_to(root)) == rel_path]
+        # Windows lists native separators; painting returns POSIX paths. On POSIX,
+        # backslashes remain literal filename characters.
+        rel_path = rel_path.replace(os.sep, "/")
+        candidates = [r for r in candidates if Path(r["path"]).relative_to(root).as_posix() == rel_path]
     if not candidates:
         raise NotFound("image not found in this dataset", code="image.not_found")
     if len({r["path"] for r in candidates}) != 1:
