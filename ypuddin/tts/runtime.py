@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .core import (
+    MODEL_REQUIRED_MESSAGE,
     SAMPLE_RATE,
     UPSTREAM_REVISION,
     _path,
@@ -260,8 +261,7 @@ def _child_probe(request: dict) -> dict:
     checks = {key: _check(key) for key in CHECKS}
     details = {"python": sys.executable, "python_version": sys.version, "prefix": sys.prefix,
                "upstream_revision": UPSTREAM_REVISION, "packages": {}}
-    python_ok = Path(sys.prefix).resolve() != Path(request["service_prefix"]).resolve()
-    checks["python"] = _check("python", "available" if python_ok else "unavailable", None if python_ok else "请为 TTS 选择独立的 Python 环境。")
+    checks["python"] = _check("python", "available")
     errors = []
     torch = None
     try:
@@ -344,16 +344,17 @@ def _child_probe(request: dict) -> dict:
 
 def _run_probe(config: TtsExecutionConfig, request: dict, cache: Path, timeout: float) -> dict:
     env = worker_environment(config)
+    env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     for key in ("RANK", "LOCAL_RANK", "WORLD_SIZE", "LOCAL_WORLD_SIZE", "MASTER_ADDR", "MASTER_PORT"):
         env.pop(key, None)
     env["HF_DATASETS_CACHE"] = str(cache)
     proc = subprocess.Popen(
         [config.python_path, "-m", "ypuddin.tts.runtime", "--probe"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env=env, cwd=config.trainer_path, start_new_session=os.name != "nt",
     )
     try:
-        stdout, stderr = proc.communicate(json.dumps(request, ensure_ascii=False), timeout=timeout)
+        stdout, stderr = proc.communicate(json.dumps(request, ensure_ascii=False).encode("utf-8"), timeout=timeout)
     except subprocess.TimeoutExpired:
         if os.name == "nt":
             subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=10)
@@ -364,10 +365,12 @@ def _run_probe(config: TtsExecutionConfig, request: dict, cache: Path, timeout: 
                 pass
         proc.communicate(timeout=10)
         raise
-    marker = next((line[len(MARKER):] for line in reversed(stdout.splitlines()) if line.startswith(MARKER)), None)
+    prefix = MARKER.encode("ascii")
+    marker = next((line[len(prefix):] for line in reversed(stdout.splitlines()) if line.startswith(prefix)), None)
     if marker is None or proc.returncode:
-        raise ValueError(f"TTS 环境检查未完成：{(stderr or stdout)[-1500:]}")
-    report = json.loads(marker)
+        diagnostic = (stderr or stdout).decode("utf-8", errors="replace")[-1500:]
+        raise ValueError(f"TTS 环境检查未完成：{diagnostic}")
+    report = json.loads(marker.decode("utf-8"))
     if not isinstance(report, dict) or not isinstance(report.get("checks"), dict):
         raise ValueError("TTS 环境检查返回了无效结果。")
     return report
@@ -395,6 +398,8 @@ def inspect_runtime(
         ("model", config.model_path, validate_model),
     ):
         try:
+            if key == "model" and not value.strip():
+                raise ValueError(MODEL_REQUIRED_MESSAGE)
             if allowed is not None and not allowed(Path(value).expanduser().resolve()):
                 raise ValueError("路径不在允许访问的目录中。")
             validator(value)

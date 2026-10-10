@@ -829,6 +829,7 @@ class EnvironmentManager:
         return False
 
     def _idle(self):
+        self._tts_idle()
         maintenance = self.context.db.get_kv("environment.maintenance", {})
         if maintenance.get("torch_operation") or maintenance.get("restarting"):
             raise EnvironmentError(409, "训练器正在切换或准备运行环境，请稍后再试。")
@@ -841,6 +842,10 @@ class EnvironmentManager:
             )
         if self._closed:
             raise EnvironmentError(503, "训练器正在关闭，暂时无法修改运行环境。")
+
+    def _tts_idle(self):
+        if getattr(self.context, "_active_tts_environments", 0):
+            raise EnvironmentError(409, "语音环境正在检查或准备，请稍后再修改运行依赖。")
 
     def status(self, refresh=False):
         with self.lock:
@@ -1263,6 +1268,8 @@ class EnvironmentManager:
         return {k: v for k, v in result.items() if k != "path"}
 
     def start(self, request: EnvironmentRequest):
+        with self.context.db.lock:
+            self._tts_idle()
         # Waits outside the locks for a released model-test worker to exit.
         self.context.supervisor.release_models(wait=10)
         with self.lock, self.context.db.lock:
@@ -1647,6 +1654,8 @@ class EnvironmentManager:
             log(str(exc))
 
     def apply(self, id_):
+        with self.context.db.lock:
+            self._tts_idle()
         self.context.supervisor.release_models(wait=10)
         with self.lock, self.context.db.lock:
             self._idle()

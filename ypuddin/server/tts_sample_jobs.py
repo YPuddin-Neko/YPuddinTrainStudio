@@ -95,13 +95,27 @@ def _reserve(c: Any, jid: str, action: str, key: str | None, payload: dict):
     return tts_requests.reserve(c, pid, vid, action, key, {"target_job_id": jid, **payload}, target_job_id=jid)
 
 
-def _check_environment(c: Any, recipe: dict, *, sample: bool, gpu_devices: list[str] | None = None):
+def _check_environment(c: Any, recipe: dict, *, sample: bool, gpu_devices: list[str] | None = None,
+                       environment: dict | None = None):
     from . import routes_tts
     from .tts_gpu import invalidate
 
     invalidate()
     config = parse_execution_config(recipe)
-    report = routes_tts.preflight(config, allowed=c.is_allowed, mode="sample" if sample else "train", gpu_devices=gpu_devices)
+    if not config.model_path.strip():
+        if config.engine == "gpt-sovits-v5":
+            from ypuddin.tts.gpt_sovits.core import MODEL_REQUIRED_MESSAGE
+        else:
+            from ypuddin.tts.core import MODEL_REQUIRED_MESSAGE
+
+        _fail("tts.model_required", MODEL_REQUIRED_MESSAGE, status=422, loc=["model_path"])
+    allowed = c.is_allowed
+    if environment is not None:
+        routes_tts._verify_environment(c, {"tts": recipe, "tts_environment": environment})
+        manager = getattr(c, "tts_environments", None)
+        if manager is not None:
+            allowed = manager.runtime_allowed(environment)
+    report = routes_tts.preflight(config, allowed=allowed, mode="sample" if sample else "train", gpu_devices=gpu_devices)
     if not report["ok"]:
         from ypuddin.tts.devices import selection_issues
 
@@ -114,8 +128,9 @@ def _check_environment(c: Any, recipe: dict, *, sample: bool, gpu_devices: list[
     return config
 
 
-def _preflight_inputs(c: Any, recipe: dict, *, sample: dict | None, previous: dict | None = None, gpu_devices: list[str] | None = None) -> dict:
-    config = _check_environment(c, recipe, sample=sample is not None, gpu_devices=gpu_devices)
+def _preflight_inputs(c: Any, recipe: dict, *, sample: dict | None, previous: dict | None = None,
+                      gpu_devices: list[str] | None = None, environment: dict | None = None) -> dict:
+    config = _check_environment(c, recipe, sample=sample is not None, gpu_devices=gpu_devices, environment=environment)
     if previous is not None:
         model = previous.get("model_identity")
         if model:
@@ -233,6 +248,9 @@ def _new_snapshot(c: Any, job: dict, jid: str, payload: dict, *, sample: bool):
 
 
 def _verify(c: Any, payload: dict, *, sample: bool) -> None:
+    from .routes_tts import _verify_environment
+
+    _verify_environment(c, payload)
     inputs = payload["tts_inputs"]
     for item in inputs["fingerprints"]:
         if file_identity(Path(item["path"]), c.is_allowed) != {key: item[key] for key in ("path", "size", "sha256")}:
@@ -306,8 +324,11 @@ def create_sample(c: Any, jid: str, body: TtsSampleBody, key: str) -> tuple[dict
             _fail("tts.sample_options", "此训练任务不使用 GPT-SoVITS 试听参数。", status=422, loc=["gpt_sovits"])
         payload = {"tts": copy.deepcopy(original["tts"]), "tts_sample": sample, "source_job_id": jid,
                    "source_summary": {"job_id": jid, "name": source["name"]}}
+        if "tts_environment" in original:
+            payload["tts_environment"] = copy.deepcopy(original["tts_environment"])
         devices = _devices(body.gpu_devices)
-        payload["tts_inputs"] = _preflight_inputs(c, payload["tts"], sample=sample, previous=original.get("tts_inputs"), gpu_devices=devices)
+        payload["tts_inputs"] = _preflight_inputs(c, payload["tts"], sample=sample, previous=original.get("tts_inputs"),
+                                                  gpu_devices=devices, environment=payload.get("tts_environment"))
         new = new_id("j")
         run, payload, own, guard = _new_snapshot(c, source, new, payload, sample=True)
         _verify(c, payload, sample=True)
@@ -349,7 +370,7 @@ def retry_job(c: Any, jid: str, key: str | None) -> tuple[dict, int]:
         devices = _devices(json.loads(job.get("gpu_devices_json") or "[]"))
         if "tts_inputs" in payload:
             _verify(c, payload, sample=sample)
-            _check_environment(c, payload["tts"], sample=sample, gpu_devices=devices)
+            _check_environment(c, payload["tts"], sample=sample, gpu_devices=devices, environment=payload.get("tts_environment"))
         else:
             if sample:
                 options = payload["tts_sample"]
@@ -359,7 +380,8 @@ def retry_job(c: Any, jid: str, key: str | None) -> tuple[dict, int]:
                 checkpoint = Path(options["checkpoint"])
                 checkpoint = checkpoint if checkpoint.is_absolute() else root / checkpoint
                 options["checkpoint_fingerprints"] = [file_identity(checkpoint / name, c.is_allowed) for name in tts_results.CHECKPOINT_FILES if (checkpoint / name).is_file()]
-            payload["tts_inputs"] = _preflight_inputs(c, payload["tts"], sample=payload.get("tts_sample") if sample else None, gpu_devices=devices)
+            payload["tts_inputs"] = _preflight_inputs(c, payload["tts"], sample=payload.get("tts_sample") if sample else None,
+                                                      gpu_devices=devices, environment=payload.get("tts_environment"))
         new = new_id("j")
         run, payload, own, guard = _new_snapshot(c, job, new, payload, sample=sample)
         _verify(c, payload, sample=sample)

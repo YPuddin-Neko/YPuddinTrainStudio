@@ -2,6 +2,7 @@ import type React from 'react';
 import ConfigHelp from '../../components/ConfigHelp';
 import Switch from '../../components/Switch';
 import StudioSelect from '../../components/StudioSelect';
+import TtsEnvironmentPanel from '../../components/TtsEnvironmentPanel';
 import { PathInput } from '../../components/PathBrowser';
 import { gptSovitsFieldCopy as fieldCopy, isScientificField, type GptSovitsDraft as TtsDraft, type GptSovitsField as TtsField, type GptSovitsFieldProblem as FieldProblem, type GptSovitsFieldSchema } from './gptSovitsVersionFields';
 import type { TtsParameterGroup } from './TtsParameterForm';
@@ -70,11 +71,15 @@ export function gptSovitsParameterGroups({ draft, properties, problems, orderedG
     ];
     return { id: group.id, label: preset && group.id === 'environment' ? text('训练阶段', 'Training stages') : english ? group.en : group.zh, inactive,
       notice: <>{inactive && <p className="config-field-hint" role="status">{text('此阶段的参数会保留，本次任务不执行该阶段。', 'These settings are retained; this stage will not run in the current job.')}</p>}{problems.filter(issue => issue.field === group.id).map(issue => <p key={issue.message} role="alert" className="config-field-error">{issue.message}</p>)}</>,
-      sections: buckets.map(bucket => ({ label: bucket.label, fields: group.fields.filter(field => bucket.fields.includes(field) && (!fixedLearningRate || field === 'gpt.learning_rate' || !ignoredGptLearningRateFields.includes(field as typeof ignoredGptLearningRateFields[number]))).map(field => {
+      sections: buckets.map(bucket => ({ label: bucket.label, fields: [...(!preset && group.id === 'environment' && bucket.fields.includes('python_path') ? [{
+        id: 'runtime_environment',
+        search: '运行环境 自动 默认 准备 检查 外部 Python 源码 runtime environment automatic default prepare check external python_path trainer_path',
+        node: <div className="config-field config-field-wide"><TtsEnvironmentPanel engine="gpt-sovits-v5" compact disabled={readOnly || saving || schemaUnavailable} pythonPath={String(draft.python_path)} trainerPath={String(draft.trainer_path)} onUseAutomatic={() => { change('python_path', ''); change('trainer_path', ''); }}/></div>,
+      }] : []), ...group.fields.filter(field => bucket.fields.includes(field) && (!fixedLearningRate || field === 'gpt.learning_rate' || !ignoredGptLearningRateFields.includes(field as typeof ignoredGptLearningRateFields[number]))).map(field => {
         const copy = fieldCopy(field, english);
         const legacySearch = field === 'gpt.learning_rate' && fixedLearningRate ? ignoredGptLearningRateFields.map(key => { const oldCopy = fieldCopy(key, english); return `${key} ${oldCopy.label}`; }).join(' ') : '';
         return { id: field, advanced: gptSovitsAdvancedParameters.has(field), search: `${field} ${copy.label} ${copy.hint} ${copy.help} ${legacySearch}`, node: renderField(field), toggle: properties[field].type === 'boolean' };
-      }) })).filter(section => section.fields.length),
+      })] })).filter(section => section.fields.length),
     };
   });
 }

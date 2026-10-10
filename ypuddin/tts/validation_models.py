@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_serializer, model_validator
 
+from .environment_models import TtsEnvironmentIdentity
 from .issues import TtsIssue
 from .source_models import TtsSourceSummary
 from .version_config import TtsConfigScope
@@ -241,6 +242,8 @@ class TtsGptSovitsEnvironmentReport(_Model):
 class TtsValidationReport(_Model):
     _runtime_fingerprints: list[dict] = PrivateAttr(default_factory=list)
     _runtime_model_identity: dict | None = PrivateAttr(default=None)
+    _runtime_config: object | None = PrivateAttr(default=None)
+    _runtime_environment: dict | None = PrivateAttr(default=None)
     scope: TtsConfigScope
     revision: Annotated[int, Field(ge=1)]
     data_revision: Annotated[int, Field(ge=1)]
@@ -252,6 +255,14 @@ class TtsValidationReport(_Model):
     warnings: list[TtsIssue]
     dataset: TtsDatasetReport | TtsGptSovitsDatasetReport
     environment: TtsEnvironmentReport | TtsGptSovitsEnvironmentReport
+    environment_binding: TtsEnvironmentIdentity | None = None
+
+    @model_serializer(mode="wrap")
+    def environment_identity(self, handler):
+        value = handler(self)
+        if value.get("environment_binding") is None:
+            value.pop("environment_binding", None)
+        return value
 
     @model_validator(mode="after")
     def result_consistency(self) -> TtsValidationReport:

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .config import parse_config
 from .core import (
+    MODEL_REQUIRED_MESSAGE,
     UPSTREAM_REVISION,
     _path,
     asset_paths,
@@ -67,12 +68,7 @@ def child_probe(request):
     config = parse_config(request["config"])
     checks = {key: check(key) for key in CHECKS}
     details = {"prefix": sys.prefix, "executable": sys.executable, "upstream_revision": UPSTREAM_REVISION}
-    try:
-        if Path(sys.prefix).resolve() == Path(request["service_prefix"]).resolve():
-            raise ValueError("请选择独立的 GPT-SoVITS Python 环境。")
-        checks["python"] = check("python", "available")
-    except Exception as exc:
-        checks["python"] = check("python", "unavailable", exc)
+    checks["python"] = check("python", "available")
     try:
         import torch
 
@@ -114,19 +110,24 @@ def run_probe(config, *, gpu_devices=None, mode="train", timeout=90, model_valid
 
     request = {"config": config.model_dump(), "gpu_devices": gpu_devices or [], "service_prefix": sys.prefix,
                "mode": mode, "model_valid": model_valid}
+    env = worker_environment(config, check_model_assets=model_valid)
+    env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     proc = subprocess.Popen([config.python_path, "-m", "ypuddin.tts.gpt_sovits.runtime", "--probe"],
-                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                            env=worker_environment(config), cwd=config.trainer_path, start_new_session=os.name != "nt")
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            env=env, cwd=config.trainer_path,
+                            start_new_session=os.name != "nt")
     try:
-        stdout, stderr = proc.communicate(json.dumps(request), timeout=timeout)
+        stdout, stderr = proc.communicate(json.dumps(request, ensure_ascii=False).encode("utf-8"), timeout=timeout)
     except subprocess.TimeoutExpired:
         _stop_process(proc)
         proc.communicate(timeout=10)
         raise
-    marker = next((line[len(MARKER):] for line in reversed(stdout.splitlines()) if line.startswith(MARKER)), None)
+    prefix = MARKER.encode("ascii")
+    marker = next((line[len(prefix):] for line in reversed(stdout.splitlines()) if line.startswith(prefix)), None)
     if proc.returncode or marker is None:
-        raise ValueError(f"GPT-SoVITS 环境检查失败：{(stderr or stdout)[-1500:]}")
-    return json.loads(marker)
+        diagnostic = (stderr or stdout).decode("utf-8", errors="replace")[-1500:]
+        raise ValueError(f"GPT-SoVITS 环境检查失败：{diagnostic}")
+    return json.loads(marker.decode("utf-8"))
 
 
 def inspect_runtime(config, manifests, *, allowed=None, timeout=90, gpu_devices=None):
@@ -141,6 +142,8 @@ def inspect_runtime(config, manifests, *, allowed=None, timeout=90, gpu_devices=
                                 ("upstream", config.trainer_path, validate_upstream),
                                 ("model", config.model_path, lambda p: model_identity(config))):
         try:
+            if key == "model" and not path.strip():
+                raise ValueError(MODEL_REQUIRED_MESSAGE)
             if allowed and not allowed(Path(path).expanduser().resolve()):
                 raise ValueError("路径不在允许访问的目录中。")
             result = validate(path)
@@ -171,7 +174,8 @@ def inspect_runtime(config, manifests, *, allowed=None, timeout=90, gpu_devices=
             for row in rows:
                 record = fingerprint_file(row["audio"], allowed=allowed)
                 identities[record["path"]] = record
-            require_text_assets(config, {row.get("language") for row in rows})
+            if identity is not None:
+                require_text_assets(config, {row.get("language") for row in rows})
         except (OSError, ValueError, TypeError, KeyError) as exc:
             input_errors.append(str(exc))
     if checks["python"]["state"] == checks["upstream"]["state"] == "available":
@@ -193,7 +197,11 @@ def inspect_runtime(config, manifests, *, allowed=None, timeout=90, gpu_devices=
             changed = True
             input_errors.append(str(exc))
     if input_errors:
-        checks["model"] = check("model", "unavailable", "\n".join(input_errors))
+        input_check = check("model", "unavailable", "\n".join(input_errors))
+        if checks["model"]["issues"]:
+            checks["model"]["issues"].extend(input_check["issues"])
+        else:
+            checks["model"] = input_check
     state = "available" if all(value["state"] == "available" for value in checks.values()) else "unavailable"
     files = sorted(identities.values(), key=lambda value: value["path"])
     fingerprint = None

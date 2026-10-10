@@ -99,6 +99,9 @@ def run(snapshot_path: Path, *, mode: str = "train") -> int:
         device = snapshot.get("device", "cuda:0")
         if device != "cuda:0":
             raise ValueError("TTS worker 需要由任务队列映射到单张 CUDA GPU（cuda:0）。")
+        from .environment_binding import assert_snapshot_environment
+
+        assert_snapshot_environment(snapshot)
         if "tts_inputs" in snapshot:
             from .runtime import verify_input_snapshot
 

@@ -78,6 +78,9 @@ def run(snapshot_path, *, mode="train"):
             return 0
         if snapshot.get("device", "cuda:0") != "cuda:0":
             raise ValueError("GPT-SoVITS 需要由队列映射到单张 CUDA 显卡。")
+        from ..environment_binding import assert_snapshot_environment
+
+        assert_snapshot_environment(snapshot)
         if "tts_inputs" not in snapshot:
             raise ValueError("GPT-SoVITS 任务缺少已校验的输入内容指纹。")
         if model_identity(config) != snapshot["tts_inputs"].get("model_identity"):
@@ -128,7 +131,7 @@ def run(snapshot_path, *, mode="train"):
         receipt = Path(request["receipt_path"])
         if not receipt.is_file():
             raise RuntimeError("GPT-SoVITS 没有返回完成记录。")
-        result = json.loads(receipt.read_text())
+        result = json.loads(receipt.read_text(encoding="utf-8"))
         if result.get("mode") != mode:
             raise RuntimeError("GPT-SoVITS 完成记录与任务类型不一致。")
         if mode == "train":

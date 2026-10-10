@@ -32,6 +32,7 @@ from . import (
     routes_regularization,
     routes_site_downloads,
     routes_tts,
+    routes_tts_environments,
     routes_tts_models,
     routes_tts_presets,
     routes_tts_projects,
@@ -70,6 +71,7 @@ from .supervisor import JobSupervisor
 from .torch_environments import TorchEnvironments
 from .trainer_install import TrainerInstaller
 from .trainer_updates import TrainerUpdates
+from .tts_environments import TtsEnvironments
 from .vision_downloads import VisionModels
 
 log = logging.getLogger(__name__)
@@ -95,6 +97,7 @@ def create_app(
     model_downloads = ModelDownloads(context)
     environment = EnvironmentManager(context)
     torch_environments = TorchEnvironments(context, environment)
+    context.tts_environments = tts_environments = TtsEnvironments(context, torch_environments)
     lifecycle = ServiceLifecycle(context, environment, torch_environments)
     lifecycle.model_downloads = model_downloads
     trainer_installer = TrainerInstaller(context, trainer_updates, lifecycle)
@@ -160,6 +163,7 @@ def create_app(
             await asyncio.to_thread(model_downloads.close)
             await asyncio.to_thread(vision_models.close)
             await asyncio.to_thread(torch_environments.close)
+            await asyncio.to_thread(tts_environments.close)
             await asyncio.to_thread(environment.close)
             await asyncio.to_thread(context.project_deletions.close)
             await asyncio.to_thread(context.dataset_refresh.close)
@@ -181,6 +185,7 @@ def create_app(
     app.state.model_downloads = model_downloads
     app.state.environment = environment
     app.state.torch_environments = torch_environments
+    app.state.tts_environments = tts_environments
     app.state.lifecycle = lifecycle
     app.state.dataset_pipeline = dataset_pipeline
     app.state.vision_models = vision_models
@@ -236,6 +241,7 @@ def create_app(
     app.include_router(routes_xyz.router, prefix="/api")
     app.include_router(routes_work.router, prefix="/api")
     app.include_router(routes_tts.router, prefix="/api")
+    app.include_router(routes_tts_environments.router, prefix="/api")
     app.include_router(routes_tts_models.router, prefix="/api")
     app.include_router(routes_tts_presets.router, prefix="/api")
     app.include_router(routes_tts_projects.router, prefix="/api")

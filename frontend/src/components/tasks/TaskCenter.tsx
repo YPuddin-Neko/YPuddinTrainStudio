@@ -55,13 +55,13 @@ const importPhases: Record<string, [string, string]> = {
   registering: ['正在登记图片目录', 'Registering image folders'],
 };
 
-function kindTitle(kind: string, text: Text) {
+function kindTitle(kind: string, text: Text, id = '') {
   switch (kind) {
     case 'dataset_upload': return text('上传数据集', 'Dataset upload');
     case 'model_download': return text('下载模型', 'Model download');
     case 'project_delete': return text('删除项目', 'Project deletion');
     case 'dataset_refresh': return text('刷新数据集索引', 'Dataset index refresh');
-    case 'environment': return text('安装运行环境', 'Environment install');
+    case 'environment': return id.startsWith('te_') ? text('语音运行环境', 'Speech environment') : text('安装运行环境', 'Environment install');
     case 'trainer_update': return text('更新训练器', 'Trainer update');
     default: return kind;
   }
@@ -93,6 +93,8 @@ function uploadItem(entry: UploadEntry, text: Text): TaskItem {
 function serverItem(task: ServerTask, skew: number, text: Text): TaskItem {
   const detail = task.detail || '';
   const phase = task.state !== 'running' ? ''
+    : task.kind === 'environment' && task.id.startsWith('te_') && detail === '环境检查' ? text('环境检查', 'Environment check')
+      : task.kind === 'environment' && task.id.startsWith('te_') && detail === '环境准备' ? text('环境准备', 'Environment preparation')
     : task.kind === 'dataset_upload' && importPhases[detail] ? text(...importPhases[detail])
       : detail === 'queued' ? text('排队中', 'Queued')
         : detail === 'verifying' ? text('正在校验', 'Verifying')
@@ -258,9 +260,9 @@ export default function TaskCenter() {
     return <li key={item.id} className="task-center-item" data-state={item.state}>
       <Icon size={16} aria-hidden="true"/>
       <div className="task-center-item-main">
-        <div className="task-center-item-title"><strong>{kindTitle(item.kind, text)}</strong>{status && <span>{status}</span>}</div>
+        <div className="task-center-item-title"><strong>{kindTitle(item.kind, text, item.id)}</strong>{status && <span>{status}</span>}</div>
         {item.subject && <p className="task-center-subject" title={item.subject}>{item.subject}</p>}
-        {item.state === 'running' && <ProgressBar className="task-center-progress" label={`${kindTitle(item.kind, text)} · ${item.subject}`} value={fraction ?? undefined} max={1}/>}
+        {item.state === 'running' && <ProgressBar className="task-center-progress" label={`${kindTitle(item.kind, text, item.id)} · ${item.subject}`} value={fraction ?? undefined} max={1}/>}
         {item.phase && <p className="task-center-meta">{item.phase}</p>}
         {meta && item.state !== 'completed' && <p className="task-center-meta">{meta}</p>}
         {item.error && <p className="task-center-error" role="alert">{item.error}</p>}

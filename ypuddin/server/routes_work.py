@@ -2449,8 +2449,9 @@ def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dic
             from .tts_sample_jobs import _check_environment
 
             devices = _devices(body.gpu_devices)
-            _check_environment(c, json.loads(inspected["config_json"])["tts"],
-                               sample=inspected["type"] == "tts_sample", gpu_devices=devices)
+            payload = json.loads(inspected["config_json"])
+            _check_environment(c, payload["tts"], sample=inspected["type"] == "tts_sample",
+                               gpu_devices=devices, environment=payload.get("tts_environment"))
     with c.db.lock:
         job = _get_job(c, jid)
         if inspected is not None and any(job.get(key) != inspected.get(key) for key in ("config_json", "gpu_devices_json", "status", "archived_at")):

@@ -1,5 +1,6 @@
 import { formatGpuMemory } from '../utils/gpuMemory';
 import TorchEnvironmentPanel from './TorchEnvironmentPanel';
+import TtsEnvironmentPanel from './TtsEnvironmentPanel';
 import InstallationOperation, { InstallationLog, InstallationProgress } from './InstallationOperation';
 import DtkWheelPicker, { type DtkWheel } from './DtkWheelPicker';
 import DtkRuntimePanel from './DtkRuntimePanel';
@@ -412,6 +413,7 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
     { id: 'environment-runtime', label: copy('当前环境', 'Current runtime') },
     { id: 'environment-torch', label: profile === 'linux-dtk' ? copy('DTK 安装指南', 'DTK installation guide') : copy('PyTorch 版本', 'PyTorch version') },
     { id: 'environment-attention', label: copy('注意力加速', 'Attention acceleration') },
+    { id: 'environment-tts', label: copy('语音训练环境', 'Speech training environments') },
     { id: 'environment-lora', label: copy('LoRA 环境', 'LoRA environment') },
     { id: 'environment-vision', label: copy('打标与遮罩', 'Tagging and masks') },
     ...(visibleOperations.length || torchOperationsVisible ? [{ id: 'environment-installation', label: copy('安装日志', 'Installation log') }] : []),
@@ -443,6 +445,10 @@ export function EnvironmentManagerPanel({ focusPackage, mode, initialStatus, onS
       </div>}
       <div className="settings-dependencies">{visiblePackages.map(packageItem)}{tritonPackages.map(packageItem)}</div></section>
     </>}
+    <section id="environment-tts" data-settings-section tabIndex={-1} className="settings-section">
+      <div className="settings-section-heading"><h2>{copy('语音训练环境', 'Speech training environments')}</h2></div>
+      <TtsEnvironmentPanel/>
+    </section>
     <section id="environment-lora" data-settings-section tabIndex={-1} className="settings-section">
       <div className="settings-section-heading"><h2>{copy('LoRA 环境', 'LoRA environment')}</h2>{status && optimizerPackages.length > 0 && <button type="button" className={button} disabled={loading || locked || status.maintenance} title={status.running_jobs ? copy('任务结束或暂停后可运行检查', 'Run checks after the task finishes or pauses') : undefined} onClick={() => void refresh(true)}><RefreshCw size={14} className={probing ? 'animate-spin' : ''}/>{probing ? copy('检查中…', 'Checking…') : copy('运行检查', 'Run checks')}</button>}</div>
       <div className="settings-dependencies"><div className="settings-dependency">

@@ -4,8 +4,9 @@ import { Loader2, Play } from 'lucide-react';
 import Dialog from '../../components/Dialog';
 import { ApiError, type Job } from '../../api/types';
 import { ttsApi, type TtsConfigResponse, type TtsEngine, type TtsIssue, type TtsSourceChanged, type TtsSourcesResponse, type TtsTrainingBody, type TtsValidationReport } from '../../api/tts';
-import { useEventStream } from '../../events/useEventStream';
+import { useEventStream, useEventStreamStatus } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
+import type { TtsEnvironmentChanged } from '../../api/ttsEnvironments';
 import { formatApiError } from '../../utils/errors';
 import { gpuDeviceLabel } from '../../utils/gpuDevices';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -54,6 +55,9 @@ function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty,
   const [gpu, setGpu] = React.useState<string[]>(attempt?.body.gpu_devices || []);
   const [gpuValid, setGpuValid] = React.useState(false);
   const controller = React.useRef<AbortController | null>(null), generation = React.useRef(0), locked = React.useRef(false);
+  const environmentGeneration = React.useRef(0);
+  const connection = useEventStreamStatus(), previousConnection = React.useRef(connection);
+  const connectionRef = React.useRef(connection); connectionRef.current = connection;
   const latest = React.useRef({ readOnly, draftDirty, gpu }); latest.current = { readOnly, draftDirty, gpu };
   const alive = React.useRef(true);
   React.useEffect(() => { const cycle = generation; alive.current = true; return () => { alive.current = false; cycle.current++; controller.current?.abort(); }; }, []);
@@ -61,16 +65,33 @@ function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty,
   useEventStream<TtsSourceChanged>(EVENT_TYPES.TTS_SOURCE_CHANGED, event => {
     if (event.scope.project_id === pid && event.scope.version_id === vid && report && event.data_revision !== report.data_revision) setStale(true);
   });
+  useEventStream<TtsEnvironmentChanged>(EVENT_TYPES.TTS_ENVIRONMENT_CHANGED, event => {
+    if (event.engine && event.engine !== engine) return;
+    environmentGeneration.current++;
+    if (report || phase === 'checking') setStale(true);
+    if (phase === 'checking') {
+      generation.current++; controller.current?.abort(); locked.current = false; setPhase('idle');
+    }
+  });
+  React.useEffect(() => {
+    if (previousConnection.current === connection) return;
+    previousConnection.current = connection;
+    environmentGeneration.current++;
+    if (report || phase === 'checking') setStale(true);
+    if (phase === 'checking') {
+      generation.current++; controller.current?.abort(); locked.current = false; setPhase('idle');
+    }
+  }, [connection, phase, report]);
   const owns = (scope: { project_id: string; version_id: string }) => scope.project_id === pid && scope.version_id === vid;
   const publishLatest = (config: TtsConfigResponse, sources: TtsSourcesResponse) => {
     if (owns(config.scope)) queryClient.setQueryData(['tts-version-config', pid, vid], config);
     if (owns(sources.scope)) queryClient.setQueryData(['tts-sources', pid, vid], sources);
   };
-  const changedMessage = () => text('参数、数据或运行显卡已变化，请重新检查后启动。', 'Parameters, data, or GPU selection changed. Check again before starting.');
+  const changedMessage = () => text('参数、数据、运行环境或显卡已变化，请重新检查后启动。', 'Parameters, data, runtime environment, or GPU selection changed. Check again before starting.');
   const showFailure = (failure: unknown) => {
     const message = formatApiError(failure);
     setError(message);
-    setIssues(failure instanceof ApiError && Array.isArray(failure.details?.issues) ? (failure.details.issues as TtsIssue[]).filter(issue => issue.message !== message || issue.loc.length > 0) : []);
+    setIssues(failure instanceof ApiError && Array.isArray(failure.details?.issues) ? (failure.details.issues as TtsIssue[]).filter(issue => issue.message !== message || (issue.loc.length > 0 && !(issue.loc.length === 1 && issue.loc[0] === 'environment'))) : []);
   };
   const close = () => {
     if (phase === 'starting') return;
@@ -90,8 +111,9 @@ function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty,
     locked.current = true; const token = ++generation.current;
     controller.current?.abort(); const abort = new AbortController(); controller.current = abort;
     const checkedDevices = [...latest.current.gpu];
+    const checkedEnvironment = environmentGeneration.current;
     setOpen(true); setPhase('checking'); setReport(null); setReportGpu(null); setStale(false); setError(''); setIssues([]);
-    const active = () => alive.current && token === generation.current && !abort.signal.aborted && sameDevices(checkedDevices, latest.current.gpu);
+    const active = () => alive.current && token === generation.current && checkedEnvironment === environmentGeneration.current && !abort.signal.aborted && sameDevices(checkedDevices, latest.current.gpu);
     try {
       const saved = await ensureSaved();
       if (!active()) return;
@@ -106,7 +128,7 @@ function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty,
       if (('engine' in result.dataset ? result.dataset.engine : 'voxcpm1.5') !== engine || ('engine' in result.environment ? result.environment.engine : 'voxcpm1.5') !== engine || !owns(result.scope) || result.revision !== config.revision || result.data_revision !== sources.data_revision) throw new Error(changedMessage());
       const devices = result.environment.devices;
       if (devices ? !sameDevices(devices.requested_devices, checkedDevices) : result.valid) throw new Error(changedMessage());
-      setReport(result); setReportGpu(checkedDevices);
+      setReport(result); setReportGpu(checkedDevices); setStale(connectionRef.current !== 'connected');
     } catch (failure) { if (active()) showFailure(failure); }
     finally { if (active()) { locked.current = false; setPhase('idle'); } }
   };
@@ -117,13 +139,14 @@ function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty,
     locked.current = true; const token = ++generation.current;
     setPhase('starting'); setError(''); setIssues([]);
     let request = attempt;
+    const checkedEnvironment = environmentGeneration.current;
     const active = () => alive.current && token === generation.current;
     try {
       if (!request && report) {
         const [config, sources] = await Promise.all([ttsApi.versionConfig(pid, vid), ttsApi.sources(pid, vid)]);
         if (!active()) return;
         publishLatest(config, sources);
-        if (config.config.engine !== engine || latest.current.readOnly || latest.current.draftDirty || !sameDevices(reportGpu, latest.current.gpu) || !owns(config.scope) || !owns(sources.scope)
+        if (checkedEnvironment !== environmentGeneration.current || config.config.engine !== engine || latest.current.readOnly || latest.current.draftDirty || !sameDevices(reportGpu, latest.current.gpu) || !owns(config.scope) || !owns(sources.scope)
           || config.revision !== report.revision || config.data_revision !== report.data_revision || sources.data_revision !== report.data_revision) {
           setStale(true); throw new Error(changedMessage());
         }
@@ -165,7 +188,7 @@ function TrainingActions({ projectId: pid, versionId: vid, readOnly, draftDirty,
         {issues.length > 0 && <IssueList issues={issues} engine={engine}/>}
         {attempt && <p role="status" className="tts-training-note">{attempt.blocked ? text('此启动请求不能继续。重新检查前，请先确认原任务状态。', 'This request cannot continue. Check the original task before starting another check.') : text('启动结果尚待确认。继续确认会使用原请求，不会重复创建任务。', 'The start result needs confirmation. Confirming reuses the original request without creating a duplicate job.')}</p>}
         {report && <ValidationResult report={report} stale={stale}/>}
-        {stale && !attempt && <p role="status" className="workspace-message error">{changedMessage()}</p>}
+        {stale && !attempt && <p role="status" className="workspace-message error">{connection !== 'connected' ? text('实时状态连接尚未就绪，请连接恢复后重新检查。', 'Live status is disconnected. Check again after the connection is restored.') : changedMessage()}</p>}
         {phase !== 'checking' && <div className="tts-training-inputs"><label className="tts-training-name">{text('任务名称', 'Job name')}<input maxLength={200} value={name} disabled={!!attempt || phase === 'starting'} onChange={event => setName(event.target.value)} /></label><div><span className="tts-training-label">{text('运行显卡', 'Run on GPU')}</span><TtsGpuPicker value={gpu} onChange={changeGpu} onValidityChange={setGpuValid} disabled={!!attempt || phase === 'starting'} training/></div></div>}
         <div className="tts-training-actions"><button type="button" className="ui-btn" disabled={phase === 'starting'} onClick={close}>{text('关闭', 'Close')}</button>
           {attempt ? <><button type="button" className="ui-btn" disabled={phase !== 'idle'} onClick={() => setResetting(true)}>{text('重新开始检查', 'Start a new check')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={phase !== 'idle' || attempt.blocked} onClick={() => void start()}>{phase === 'starting' ? text('正在确认…', 'Confirming…') : text('继续确认原请求', 'Confirm original request')}</button></>
@@ -201,6 +224,11 @@ function gpuIssueMessage(issue: TtsIssue, english: boolean) {
 function IssueList({ issues, engine = 'voxcpm1.5' }: { issues: TtsIssue[]; engine?: TtsEngine }) {
   const text = useWorkspaceText(), english = text('zh', 'en') === 'en';
   const location = (loc: TtsIssue['loc']) => {
+    if (loc.length === 1 && loc[0] === 'environment') return text('语音运行环境', 'Speech environment');
+    if (loc[0] === 'sources') {
+      if (loc[1] === 'train' || loc[1] === 'validation') return [loc[1] === 'train' ? text('训练数据', 'Training data') : text('验证数据', 'Validation data'), ...loc.slice(2)].join(' / ');
+      return [text('数据来源', 'Data sources'), ...loc.slice(1)].join(' / ');
+    }
     if (loc[0] === 'gpu_devices') return [text('运行显卡', 'Run on GPU'), ...loc.slice(1).map(value => typeof value === 'string' && /^cuda:\d+$/.test(value) ? gpuDeviceLabel(value) : value)].join(' / ');
     if (engine === 'gpt-sovits-v5' && loc[0] === 'config') return gptSovitsFieldCopy(loc.slice(1).join('.'), english).label;
     if (loc[0] === 'environment' && loc[1] === 'precision') return [text('训练精度', 'Training precision'), ...loc.slice(2)].join(' / ');

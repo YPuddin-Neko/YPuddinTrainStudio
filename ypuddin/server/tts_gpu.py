@@ -22,7 +22,7 @@ def invalidate() -> None:
         _cache.clear()
 
 
-def _key(recipe: dict, requested: list[str], mode: str, inventory: list[dict]) -> str:
+def _key(recipe: dict, requested: list[str], mode: str, inventory: list[dict], environment=None) -> str:
     paths = {}
     for field in ("python_path", "trainer_path", "model_path"):
         path = Path(recipe.get(field) or "").expanduser()
@@ -32,7 +32,7 @@ def _key(recipe: dict, requested: list[str], mode: str, inventory: list[dict]) -
         except OSError:
             paths[field] = [str(path), None]
     return json.dumps({
-        "requested": requested, "mode": mode, "paths": paths, "recipe": recipe,
+        "requested": requested, "mode": mode, "paths": paths, "recipe": recipe, "environment": environment,
         "visibility": {key: os.environ.get(key) for key in ("CUDA_VISIBLE_DEVICES", "CUDA_DEVICE_ORDER", "NVIDIA_VISIBLE_DEVICES")},
         "inventory": [{key: gpu.get(key) for key in ("device", "uuid", "name", "compute_capability", "mem_total_mb")}
                       for gpu in inventory],
@@ -40,14 +40,16 @@ def _key(recipe: dict, requested: list[str], mode: str, inventory: list[dict]) -
 
 
 def eligible_inventory(job: dict, inventory: list[dict]) -> list[dict]:
-    recipe = json.loads(job["config_json"])["tts"]
+    payload = json.loads(job["config_json"])
+    recipe = payload["tts"]
+    environment = payload.get("tts_environment")
     if recipe.get("engine", "voxcpm1.5") == "gpt-sovits-v5":
         from ypuddin.tts.gpt_sovits.core import runtime_probe
     else:
         from ypuddin.tts.core import runtime_probe
     requested = json.loads(job.get("gpu_devices_json") or "[]")
     mode = "train" if job["type"] == "tts_train" else "sample"
-    key = _key(recipe, requested, mode, inventory)
+    key = _key(recipe, requested, mode, inventory, environment)
     with _lock:
         cached = _cache.get(key)
         selection = copy.deepcopy(cached[1]) if cached and time.monotonic() - cached[0] < _CACHE_SECONDS else None
@@ -56,7 +58,7 @@ def eligible_inventory(job: dict, inventory: list[dict]) -> list[dict]:
         if not report["ok"]:
             raise ValueError("\n".join(str(error) for error in report["errors"]))
         selection = TtsDeviceSelection.model_validate(report.get("details", {}).get("devices")).model_dump()
-        if selection["requested_devices"] != requested or key != _key(recipe, requested, mode, inventory):
+        if selection["requested_devices"] != requested or key != _key(recipe, requested, mode, inventory, environment):
             raise ValueError("显卡选择或运行环境在检查期间发生变化，请重新检查。")
         service_devices = {gpu["device"]: gpu for gpu in inventory}
         for device in selection["checked_devices"]:

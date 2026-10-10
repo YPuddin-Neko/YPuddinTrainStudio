@@ -2,6 +2,7 @@ import type React from 'react';
 import ConfigHelp from '../../components/ConfigHelp';
 import CheckboxSelect from '../../components/CheckboxSelect';
 import Switch from '../../components/Switch';
+import TtsEnvironmentPanel from '../../components/TtsEnvironmentPanel';
 import { PathInput } from '../../components/PathBrowser';
 import { fieldCopy, targetOwners, type TtsDraft, type TtsField, type FieldProblem, type FieldSchema } from './ttsVersionFields';
 import type { TtsParameterGroup } from './TtsParameterForm';
@@ -47,12 +48,16 @@ export function ttsParameterGroups({ draft, properties, problems, orderedGroups,
       { label: text('运行环境', 'Runtime environment'), fields: ['python_path', 'trainer_path'] },
     ] : [{ label: undefined, fields: group.fields }];
     return { id: group.id, label: english ? group.en : group.zh, sections: buckets.map(bucket => ({ label: bucket.label,
-      fields: group.fields.filter(field => bucket.fields.includes(field) && !targetOwners[field]).map(field => {
+      fields: [...(!preset && group.id === 'environment' && bucket.fields.includes('python_path') ? [{
+        id: 'runtime_environment',
+        search: '运行环境 自动 默认 准备 检查 外部 Python 源码 runtime environment automatic default prepare check external python_path trainer_path',
+        node: <div className="config-field config-field-wide"><TtsEnvironmentPanel engine="voxcpm1.5" compact disabled={readOnly || saving} pythonPath={String(draft.python_path)} trainerPath={String(draft.trainer_path)} onUseAutomatic={() => { change('python_path', ''); change('trainer_path', ''); }}/></div>,
+      }] : []), ...group.fields.filter(field => bucket.fields.includes(field) && !targetOwners[field]).map(field => {
         const copy = fieldCopy(field, english);
         const targets = Object.keys(targetOwners).filter(name => targetOwners[name as TtsField] === field);
         const targetSearch = targets.map(name => { const target = fieldCopy(name as TtsField, english); return `${name} ${target.label} ${target.hint}`; }).join(' ');
         return { id: field, advanced: voxAdvancedParameters.has(field), search: `${field} ${copy.label} ${copy.hint} ${copy.help} ${targetSearch}`, node: renderField(field) };
-      }),
+      })],
     })).filter(section => section.fields.length) };
   });
 }

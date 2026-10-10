@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 import subprocess
-import sys
 import wave
 from collections.abc import Callable
 from pathlib import Path
@@ -24,6 +23,7 @@ UPSTREAM_FILES = {
     "src/voxcpm/model/voxcpm.py": "4d13384ede9e8466a26e7a7808393023088985b11dc78dac5b5476e4a32ed8b2",
 }
 PATH_FIELDS = ("python_path", "trainer_path", "model_path", "train_manifest", "val_manifest")
+MODEL_REQUIRED_MESSAGE = "请选择 VoxCPM 1.5 模型。"
 
 
 def _path(value: str | Path, label: str, *, directory: bool = False) -> Path:
@@ -163,6 +163,8 @@ def validate_upstream(path: str | Path) -> dict[str, Any]:
 
 
 def validate_model(path: str | Path) -> dict[str, Any]:
+    if not str(path).strip():
+        raise ValueError(MODEL_REQUIRED_MESSAGE)
     root = _path(path, "VoxCPM 1.5 模型目录", directory=True)
     try:
         config = json.loads((root / "config.json").read_text(encoding="utf-8"))
@@ -189,10 +191,15 @@ def validate_model(path: str | Path) -> dict[str, Any]:
 
 
 def worker_environment(config: TtsConfig | TtsExecutionConfig) -> dict[str, str]:
+    from .environment_resources import resource_environment
+
     env = dict(os.environ)
+    env.update(resource_environment(config.trainer_path))
     root = Path(__file__).resolve().parents[2]
     env["PYTHONPATH"] = os.pathsep.join([str(root), str(Path(config.trainer_path) / "src")])
     env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
     env["PYTHONNOUSERSITE"] = "1"
     env["HF_HUB_OFFLINE"] = "1"
     env["TRANSFORMERS_OFFLINE"] = "1"
@@ -211,21 +218,23 @@ def runtime_probe(
     try:
         if mode not in {"train", "sample"}:
             raise ValueError("未知的 TTS 任务类型。")
+        env = worker_environment(config)
+        env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
         result = subprocess.run(
             [config.python_path, "-m", "ypuddin.tts.bridge", "--probe"],
-            input=json.dumps({"trainer_path": config.trainer_path, "mode": mode, "gpu_devices": gpu_devices or []}),
-            capture_output=True, text=True, timeout=90, env=worker_environment(config),
+            input=json.dumps({"trainer_path": config.trainer_path, "mode": mode,
+                              "gpu_devices": gpu_devices or []}, ensure_ascii=False).encode("utf-8"),
+            capture_output=True, timeout=90, env=env,
         )
-        marker = next((line[14:] for line in reversed(result.stdout.splitlines()) if line.startswith("TTS_PREFLIGHT ")), None)
+        marker = next((line[14:] for line in reversed(result.stdout.splitlines()) if line.startswith(b"TTS_PREFLIGHT ")), None)
         if marker is None:
-            raise ValueError(f"TTS Python 环境检查失败：{(result.stderr or result.stdout).strip()[-1500:]}")
-        report = json.loads(marker)
+            diagnostic = (result.stderr or result.stdout).decode("utf-8", errors="replace").strip()[-1500:]
+            raise ValueError(f"TTS Python 环境检查失败：{diagnostic}")
+        report = json.loads(marker.decode("utf-8"))
         details = report["details"]
         errors.extend(report["errors"])
         if not details.get("prefix"):
             errors.append("TTS Python 环境检查未返回环境路径。")
-        elif Path(details["prefix"]).resolve() == Path(sys.prefix).resolve():
-            errors.append("请为 TTS 选择独立的 Python 环境，避免与图像训练依赖互相覆盖。")
         if result.returncode and not report["errors"]:
             errors.append(f"TTS Python 环境检查异常退出（{result.returncode}）。")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
@@ -253,6 +262,9 @@ def preflight(
         ("model", lambda: validate_model(config.model_path)),
     ):
         try:
+            if (key == "model" and config.model_path.strip() and allowed is not None
+                    and not allowed(Path(config.model_path).expanduser().resolve())):
+                raise ValueError("路径不在允许访问的目录中。")
             details[key] = call()
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             errors.append(str(exc))

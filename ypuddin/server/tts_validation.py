@@ -387,7 +387,13 @@ def validate_version(c: Any, pid: str, vid: str, revision: int, data_revision: i
         else None
         for split in ("train", "validation")
     }
-    runtime = inspect_runtime(captured.config.model_copy(deep=True), manifests, allowed=c.is_allowed, gpu_devices=gpu_devices)
+    execution = captured.config.model_copy(deep=True)
+    binding = None
+    environments = getattr(c, "tts_environments", None)
+    if environments is not None:
+        execution, binding = environments.resolve(execution)
+    allowed = environments.runtime_allowed(binding) if environments is not None and binding is not None else c.is_allowed
+    runtime = inspect_runtime(execution, manifests, allowed=allowed, gpu_devices=gpu_devices)
     is_gpt_sovits = captured.config.engine == "gpt-sovits-v5"
     if is_gpt_sovits:
         dataset = TtsGptSovitsDatasetReport(**{
@@ -402,6 +408,8 @@ def validate_version(c: Any, pid: str, vid: str, revision: int, data_revision: i
     environment_model = TtsGptSovitsEnvironmentReport if is_gpt_sovits else TtsEnvironmentReport
     environment = environment_model.model_validate(runtime["environment"])
     refreshed = c.tts_sources.validation_inputs(pid, vid, recheck=True)
+    if binding is not None:
+        environments.verify(binding)
     with c.db.lock:
         _assert_sources(c, pid, vid, captured, expected_sources)
         if _input_identity(refreshed) != initial_inputs:
@@ -438,6 +446,7 @@ def validate_version(c: Any, pid: str, vid: str, revision: int, data_revision: i
                 "config": captured.config.model_dump(mode="json"),
                 "sources": initial_inputs,
                 "runtime": runtime["input_fingerprint"],
+                **({"environment_binding": binding} if binding is not None else {}),
             }
         )
     if complete_data and environment.state == "available" and fingerprint is None:
@@ -460,7 +469,10 @@ def validate_version(c: Any, pid: str, vid: str, revision: int, data_revision: i
         warnings=warnings,
         dataset=dataset,
         environment=environment,
+        environment_binding=binding,
     )
     report._runtime_fingerprints = copy.deepcopy(runtime.get("fingerprints", []))
     report._runtime_model_identity = copy.deepcopy(runtime.get("model_identity"))
+    report._runtime_config = execution.model_copy(deep=True)
+    report._runtime_environment = copy.deepcopy(binding)
     return report

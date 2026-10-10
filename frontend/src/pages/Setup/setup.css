@@ -97,6 +97,7 @@
 @media(prefers-reduced-motion:reduce) { .setup-page * { transition:none!important; } }
 
 .setup-page .environment-onboarding { margin-top:26px; }
+.setup-page .setup-tts-environments { margin-top:26px; }
 .setup-page .environment-onboarding .settings-dependency-row { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"info actions" "version actions" "state state"; gap:6px 12px; }
 .setup-page .environment-onboarding .settings-dependency-version,.setup-page .environment-onboarding .settings-dependency-state { padding-left:19px; }
 .setup-page .environment-onboarding .settings-dependency-detail { padding:14px 0; }

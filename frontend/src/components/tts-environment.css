@@ -1,0 +1,22 @@
+.tts-environments { display: grid; gap: 0; min-width: 0; }
+.tts-environment-refresh { justify-self: start; margin-top: 4px; font-size: 12px; }
+.tts-environment { min-width: 0; padding: 12px 0; }
+.tts-environment + .tts-environment { border-top: 1px solid var(--studio-line); }
+.tts-environment-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tts-environment-info { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; min-width: 0; font-size: 12px; }
+.tts-environment-info strong { font-size: 13px; color: var(--studio-text); }
+.tts-environment-info > span, .tts-environment-info small { color: var(--studio-dim); }
+.tts-environment-info small { flex-basis: 100%; font-size: 12px; line-height: 1.6; }
+.tts-environment-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tts-environment-default { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; }
+.tts-environment-default .studio-select { min-width: 180px; }
+.tts-environment-note, .tts-environment-error { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; line-height: 1.6; }
+.tts-environment-note { color: var(--studio-dim); }
+.tts-environment-error { color: var(--studio-danger, #dc2626); margin-top: 8px; }
+.tts-environment-issues { margin-top: 8px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.tts-environment-details { margin-top: 8px; font-size: 12px; color: var(--studio-dim); }
+.tts-environment-details summary { cursor: pointer; width: fit-content; padding: 4px 0; }
+.tts-environment-details dl { display: grid; gap: 6px; margin-top: 6px; }
+.tts-environment-details dd { overflow-wrap: anywhere; color: var(--studio-text); }
+.tts-environment .installation-operation { margin-top: 10px; }
+.tts-environments-compact .tts-environment { padding: 0; }

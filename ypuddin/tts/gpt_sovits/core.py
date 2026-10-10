@@ -15,6 +15,7 @@ from .upstream import FILES as UPSTREAM_FILES
 
 UPSTREAM_REVISION = "f652b1da5af29a6955f9c3911aa71b7daa6618bc"
 SAMPLE_RATE = 48000
+MODEL_REQUIRED_MESSAGE = "请选择 GPT-SoVITS 预训练模型包。"
 
 
 def _path(value, label, *, directory=False):
@@ -43,6 +44,8 @@ def validate_upstream(path):
 
 def asset_paths(config):
     config = parse_config(config)
+    if not config.model_path.strip():
+        raise ValueError(MODEL_REQUIRED_MESSAGE)
     root = _path(config.model_path, "GPT-SoVITS 预训练模型目录", directory=True)
     assets = {
         "gpt": config.pretrained_gpt or str(root / "s1v3.ckpt"),
@@ -206,13 +209,21 @@ def manifest_rows(source, *, allowed=None):
     return rows
 
 
-def worker_environment(config):
+def worker_environment(config, *, check_model_assets=True):
+    from ..environment_resources import resource_environment
+
     env = dict(os.environ)
+    env.update(resource_environment(config.trainer_path))
     trainer = Path(config.trainer_path)
     env["PYTHONPATH"] = os.pathsep.join([str(Path(__file__).resolve().parents[3]), str(trainer),
                                         str(trainer / "GPT_SoVITS"), str(trainer / "GPT_SoVITS/BigVGAN")])
-    env.update(PYTHONUNBUFFERED="1", PYTHONNOUSERSITE="1", HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
-               TOKENIZERS_PARALLELISM="false", PYTHONDONTWRITEBYTECODE="1", bert_path=asset_paths(config)["bert"])
+    env.update(PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8", PYTHONUTF8="1",
+               PYTHONNOUSERSITE="1", HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
+               TOKENIZERS_PARALLELISM="false", PYTHONDONTWRITEBYTECODE="1")
+    if check_model_assets:
+        env["bert_path"] = asset_paths(config)["bert"]
+    else:
+        env.pop("bert_path", None)
     for key in ("RANK", "LOCAL_RANK", "WORLD_SIZE", "LOCAL_WORLD_SIZE", "MASTER_ADDR", "MASTER_PORT"):
         env.pop(key, None)
     return env
@@ -236,6 +247,8 @@ def preflight(config, *, check_runtime=True, mode="train", gpu_devices=None, all
                        ("python", lambda: str(_path(config.python_path, "Python")))):
         try:
             selected = {"upstream": config.trainer_path, "model": config.model_path, "python": config.python_path}[key]
+            if key == "model" and not selected.strip():
+                raise ValueError(MODEL_REQUIRED_MESSAGE)
             if allowed and not allowed(Path(selected).expanduser().resolve()):
                 raise ValueError("路径不在允许访问的目录中。")
             details[key] = check()
@@ -252,7 +265,8 @@ def preflight(config, *, check_runtime=True, mode="train", gpu_devices=None, all
     if mode == "train":
         try:
             rows = manifest_rows(config.train_manifest, allowed=allowed)
-            require_text_assets(config, {row["language"] for row in rows})
+            if "model" in details:
+                require_text_assets(config, {row["language"] for row in rows})
             details["dataset"] = {"samples": len(rows), "duration_seconds": sum(r["duration"] for r in rows), "warnings": []}
         except (OSError, ValueError, wave.Error) as exc:
             errors.append(str(exc))

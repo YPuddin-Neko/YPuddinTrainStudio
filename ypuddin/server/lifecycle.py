@@ -166,6 +166,8 @@ class ServiceLifecycle:
             return "update_in_progress"
         if self.context._active_tts_downloads:
             return "model_download_running"
+        if getattr(self.context, "_active_tts_environments", 0):
+            return "extension_operation_running"
         if self.context._active_imports or self.context.db.fetchone(
             "SELECT id FROM datasets WHERE index_status='indexing' LIMIT 1"
         ):

@@ -5757,6 +5757,560 @@
         }
       }
     },
+    "/api/tts/environments": {
+      "get": {
+        "summary": "List Environments",
+        "operationId": "list_environments_api_tts_environments_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsEnvironmentSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts/environments/checks": {
+      "post": {
+        "summary": "Check Environment",
+        "operationId": "check_environment_api_tts_environments_checks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsEnvironmentCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsEnvironmentOperation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts/environments/preparations": {
+      "post": {
+        "summary": "Prepare Environment",
+        "operationId": "prepare_environment_api_tts_environments_preparations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsEnvironmentPrepareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsEnvironmentOperation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts/environments/operations/{operation_id}": {
+      "get": {
+        "summary": "Get Operation",
+        "operationId": "get_operation_api_tts_environments_operations__operation_id__get",
+        "parameters": [
+          {
+            "name": "operation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Operation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsEnvironmentOperation"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/tts/environments/operations/{operation_id}/cancel": {
+      "post": {
+        "summary": "Cancel Operation",
+        "operationId": "cancel_operation_api_tts_environments_operations__operation_id__cancel_post",
+        "parameters": [
+          {
+            "name": "operation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Operation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsEnvironmentOperation"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/tts/environments/operations/{operation_id}/retry": {
+      "post": {
+        "summary": "Retry Operation",
+        "operationId": "retry_operation_api_tts_environments_operations__operation_id__retry_post",
+        "parameters": [
+          {
+            "name": "operation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Operation Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsEnvironmentOperation"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/tts/environments/defaults/{engine}": {
+      "put": {
+        "summary": "Select Default",
+        "operationId": "select_default_api_tts_environments_defaults__engine__put",
+        "parameters": [
+          {
+            "name": "engine",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "voxcpm1.5",
+                "gpt-sovits-v5"
+              ],
+              "type": "string",
+              "title": "Engine"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsEnvironmentDefaultRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TtsEnvironmentSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
     "/api/tts/models/catalog": {
       "get": {
         "summary": "Model Catalog",
@@ -32683,6 +33237,388 @@
         ],
         "title": "TtsEnvironmentCheck"
       },
+      "TtsEnvironmentCheckRequest": {
+        "properties": {
+          "engine": {
+            "type": "string",
+            "enum": [
+              "voxcpm1.5",
+              "gpt-sovits-v5"
+            ],
+            "title": "Engine"
+          },
+          "candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "engine"
+        ],
+        "title": "TtsEnvironmentCheckRequest"
+      },
+      "TtsEnvironmentCheckResult": {
+        "properties": {
+          "engine": {
+            "type": "string",
+            "enum": [
+              "voxcpm1.5",
+              "gpt-sovits-v5"
+            ],
+            "title": "Engine"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unchecked",
+              "ready",
+              "missing",
+              "incompatible",
+              "error"
+            ],
+            "title": "State",
+            "default": "unchecked"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "python_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python Version"
+          },
+          "dependency_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dependency Fingerprint"
+          },
+          "packages": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Packages"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing"
+          },
+          "conflicts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Conflicts"
+          },
+          "imports_checked": {
+            "type": "boolean",
+            "title": "Imports Checked",
+            "default": false
+          },
+          "source_checked": {
+            "type": "boolean",
+            "title": "Source Checked",
+            "default": false
+          },
+          "gpu_state": {
+            "type": "string",
+            "const": "unchecked",
+            "title": "Gpu State",
+            "default": "unchecked"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "engine"
+        ],
+        "title": "TtsEnvironmentCheckResult"
+      },
+      "TtsEnvironmentDefaultRequest": {
+        "properties": {
+          "environment_id": {
+            "type": "string",
+            "title": "Environment Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "environment_id"
+        ],
+        "title": "TtsEnvironmentDefaultRequest"
+      },
+      "TtsEnvironmentIdentity": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "voxcpm1.5",
+              "gpt-sovits-v5"
+            ],
+            "title": "Engine"
+          },
+          "python_path": {
+            "type": "string",
+            "title": "Python Path"
+          },
+          "trainer_path": {
+            "type": "string",
+            "title": "Trainer Path"
+          },
+          "upstream_revision": {
+            "type": "string",
+            "title": "Upstream Revision"
+          },
+          "dependency_fingerprint": {
+            "type": "string",
+            "title": "Dependency Fingerprint"
+          },
+          "resources_marker_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resources Marker Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "engine",
+          "python_path",
+          "trainer_path",
+          "upstream_revision",
+          "dependency_fingerprint"
+        ],
+        "title": "TtsEnvironmentIdentity"
+      },
+      "TtsEnvironmentOperation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "check",
+              "prepare"
+            ],
+            "title": "Action"
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "voxcpm1.5",
+              "gpt-sovits-v5"
+            ],
+            "title": "Engine"
+          },
+          "candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Id"
+          },
+          "make_default": {
+            "type": "boolean",
+            "title": "Make Default",
+            "default": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          },
+          "environment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Id"
+          },
+          "retry_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Of"
+          },
+          "cancellable": {
+            "type": "boolean",
+            "title": "Cancellable"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          },
+          "logs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Logs"
+          },
+          "log_count": {
+            "type": "integer",
+            "title": "Log Count",
+            "default": 0
+          },
+          "logs_truncated": {
+            "type": "boolean",
+            "title": "Logs Truncated",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "action",
+          "engine",
+          "status",
+          "phase",
+          "created_at",
+          "updated_at",
+          "cancellable"
+        ],
+        "title": "TtsEnvironmentOperation"
+      },
+      "TtsEnvironmentPrepareRequest": {
+        "properties": {
+          "engine": {
+            "type": "string",
+            "enum": [
+              "voxcpm1.5",
+              "gpt-sovits-v5"
+            ],
+            "title": "Engine"
+          },
+          "candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Id"
+          },
+          "make_default": {
+            "type": "boolean",
+            "title": "Make Default",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "engine"
+        ],
+        "title": "TtsEnvironmentPrepareRequest"
+      },
       "TtsEnvironmentReport": {
         "properties": {
           "state": {
@@ -32731,6 +33667,60 @@
           "checks"
         ],
         "title": "TtsEnvironmentReport"
+      },
+      "TtsEnvironmentSnapshot": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TtsPythonCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "environments": {
+            "items": {
+              "$ref": "#/components/schemas/TtsManagedEnvironment"
+            },
+            "type": "array",
+            "title": "Environments"
+          },
+          "defaults": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "voxcpm1.5",
+                "gpt-sovits-v5"
+              ]
+            },
+            "type": "object",
+            "title": "Defaults"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/TtsEnvironmentOperation"
+            },
+            "type": "array",
+            "title": "Operations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "candidates",
+          "environments",
+          "defaults",
+          "operations"
+        ],
+        "title": "TtsEnvironmentSnapshot"
       },
       "TtsError": {
         "properties": {
@@ -33305,6 +34295,106 @@
           "message"
         ],
         "title": "TtsIssue"
+      },
+      "TtsManagedEnvironment": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "voxcpm1.5",
+              "gpt-sovits-v5"
+            ],
+            "title": "Engine"
+          },
+          "python_path": {
+            "type": "string",
+            "title": "Python Path"
+          },
+          "trainer_path": {
+            "type": "string",
+            "title": "Trainer Path"
+          },
+          "upstream_revision": {
+            "type": "string",
+            "title": "Upstream Revision"
+          },
+          "dependency_fingerprint": {
+            "type": "string",
+            "title": "Dependency Fingerprint"
+          },
+          "resources_marker_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resources Marker Sha256"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "deployment",
+              "managed"
+            ],
+            "title": "Kind"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "missing",
+              "changed",
+              "unavailable"
+            ],
+            "title": "State"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "checked_at": {
+            "type": "number",
+            "title": "Checked At"
+          },
+          "check": {
+            "$ref": "#/components/schemas/TtsEnvironmentCheckResult"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TtsIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "engine",
+          "python_path",
+          "trainer_path",
+          "upstream_revision",
+          "dependency_fingerprint",
+          "kind",
+          "state",
+          "created_at",
+          "checked_at",
+          "check"
+        ],
+        "title": "TtsManagedEnvironment"
       },
       "TtsModelBindings": {
         "properties": {
@@ -34087,6 +35177,46 @@
           "project_type"
         ],
         "title": "TtsProjectBody"
+      },
+      "TtsPythonCandidate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "deployment",
+              "managed"
+            ],
+            "title": "Kind"
+          },
+          "python_path": {
+            "type": "string",
+            "title": "Python Path"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/TtsEnvironmentCheckResult"
+            },
+            "type": "array",
+            "title": "Checks"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "python_path",
+          "available"
+        ],
+        "title": "TtsPythonCandidate"
       },
       "TtsRowsResponse": {
         "properties": {
@@ -35405,6 +36535,16 @@
               }
             ],
             "title": "Environment"
+          },
+          "environment_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TtsEnvironmentIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,

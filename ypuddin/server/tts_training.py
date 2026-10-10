@@ -15,7 +15,7 @@ from . import tts_requests, tts_validation
 from .db import new_id, now
 from .errors import ApiError
 from .gpu_selection import GpuSelection
-from .routes_tts import _devices
+from .routes_tts import _devices, _verify_environment
 from .routes_work import _job_row
 from .tts_references import reject_deleting_references
 from .tts_source_copy import DirectoryGuard
@@ -71,7 +71,8 @@ def _snapshot(
     guard = guard.child(run.name, c.is_allowed)
     identity = guard.chain[-1][1]
     try:
-        recipe = captured.config.model_dump(mode="json")
+        execution = report._runtime_config or captured.config
+        recipe = execution.model_dump(mode="json")
         source_paths = {
             str(source["source"].path if hasattr(source["source"], "path") else source["source"]["path"])
             for source in (inputs["train"], inputs["validation"])
@@ -119,6 +120,8 @@ def _snapshot(
             "input_fingerprint": report.input_fingerprint,
             "validation_id": report.validation_id,
             "tts": recipe,
+            **({"tts_environment": dict(report._runtime_environment)}
+               if report._runtime_environment is not None else {}),
             "tts_inputs": {
                 "fingerprints": sorted(files.values(), key=lambda item: item["path"]),
                 **(
@@ -210,9 +213,10 @@ def create_training(c: Any, pid: str, vid: str, body: TtsTrainingBody, key: str)
         from ypuddin.tts.runtime import verify_input_snapshot
 
         try:
-            verify_input_snapshot(payload["tts_inputs"], model_path=captured.config.model_path or None)
+            verify_input_snapshot(payload["tts_inputs"], model_path=payload["tts"].get("model_path") or None)
         except (OSError, ValueError) as exc:
             raise ApiError("训练输入已变化，请重新检查。", code="tts.source_stale", status=409) from exc
+        _verify_environment(c, payload)
         with c.db.transaction():
             guard.check(c.is_allowed)
             tts_validation.assert_validation_current(c, pid, vid, captured)

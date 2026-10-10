@@ -85,14 +85,25 @@ def _inspect(config: dict[str, Any], c: ServiceContext, *, mode: str = "train") 
     except (OSError, ValueError) as error:
         result["errors"] = [{"loc": "", "msg": str(error)}]
         return None, result
+    environments = getattr(c, "tts_environments", None)
+    binding = None
+    if environments is not None:
+        try:
+            typed, binding = environments.resolve(typed)
+            if binding is not None:
+                environments.verify(binding)
+        except ApiError as error:
+            result["errors"] = [{"loc": "environment", "msg": error.message}]
+            return typed, result
+    allowed = environments.runtime_allowed(binding) if environments is not None and binding is not None else c.is_allowed
     fields = PATH_FIELDS if mode == "train" else PATH_FIELDS[:3]
     for key in fields:
         value = getattr(typed, key, None)
-        if value and not c.is_allowed(Path(value)):
+        if value and not allowed(Path(value)):
             result["errors"].append({"loc": key, "msg": "路径不在允许访问的目录中。"})
     if result["errors"]:
         return typed, result
-    checked = preflight(typed, mode=mode, allowed=c.is_allowed)
+    checked = preflight(typed, mode=mode, allowed=allowed)
     result["errors"] = _messages(checked.get("errors", []))
     result["warnings"] = _messages(checked.get("warnings", []))
     details = checked.get("details", {})
@@ -102,6 +113,21 @@ def _inspect(config: dict[str, Any], c: ServiceContext, *, mode: str = "train") 
         result["errors"].append({"loc": "device", "msg": error})
     result["valid"] = bool(checked.get("ok")) and not result["errors"]
     return typed, result
+
+
+def _verify_environment(c: ServiceContext, payload: dict) -> None:
+    from ypuddin.tts.environment_binding import assert_snapshot_environment, snapshot_environment
+
+    try:
+        identity = snapshot_environment(payload)
+        if identity is not None:
+            environments = getattr(c, "tts_environments", None)
+            if environments is not None:
+                environments.verify(identity)
+            else:
+                assert_snapshot_environment(payload)
+    except (OSError, ValueError) as exc:
+        raise ApiError(str(exc), code="tts.environment.changed", status=409) from exc
 
 
 def _require_valid(config: dict[str, Any], c: ServiceContext, *, mode: str = "train") -> TtsConfig:

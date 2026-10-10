@@ -16,6 +16,7 @@ export const EVENT_TYPES = {
   QUEUE_CHANGED: 'queue.changed',
   DATASET_CHANGED: 'dataset.changed',
   TTS_SOURCE_CHANGED: 'tts.source.changed',
+  TTS_ENVIRONMENT_CHANGED: 'tts.environment.changed',
   ARTIFACT_CREATED: 'artifact.created',
   BACKGROUND_CHANGED: 'background.changed',
   MODEL_DOWNLOAD: 'model.download',

@@ -2,8 +2,12 @@
 
 import argparse
 import json
+import sys
 import tempfile
 from pathlib import Path
+
+# A shared editable installation may point at another checkout.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ypuddin.config import TrainConfig
 from ypuddin.server import create_app

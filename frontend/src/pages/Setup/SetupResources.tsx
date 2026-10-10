@@ -12,6 +12,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
 import { modelAssetUnsupportedReason, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import SetupTtsModels from './SetupTtsModels';
+import TtsEnvironmentPanel from '../../components/TtsEnvironmentPanel';
 
 const AttentionSetup = React.lazy(() => import('../../components/EnvironmentManagerPanel').then(module => ({ default: module.EnvironmentManagerPanel })));
 
@@ -228,7 +229,8 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
 export function RuntimeStep() {
   const text = useWorkspaceText();
   const { data, error, reload } = useResource<EnvironmentStatus>('/environment');
-  if (!data) return <ResourceState error={error} retry={reload}/>;
+  const speech = <section className="setup-tts-environments"><div className="setup-runtime-heading"><span>{text('语音训练环境', 'Speech training environments')}</span></div><TtsEnvironmentPanel/></section>;
+  if (!data) return <><ResourceState error={error} retry={reload}/>{speech}</>;
   const runtime = data.runtime;
   const backend = runtime.compute_backend || 'cpu';
   const profileName = ({ 'linux-dtk': 'Linux DTK', 'linux-cuda': 'Linux CUDA', 'windows-cuda': 'Windows CUDA', 'macos-mps': 'macOS MPS', 'linux-cpu': 'Linux CPU', 'windows-cpu': 'Windows CPU', 'macos-cpu': 'macOS CPU' } as Record<string, string>)[runtime.environment_profile ?? ''] || runtime.environment_profile || runtime.platform;
@@ -240,6 +242,7 @@ export function RuntimeStep() {
     <dl className="setup-runtime-grid">{[[text('部署环境', 'Deployment'), profileName], ['Python', runtime.python], ['PyTorch', runtime.torch || text('未安装', 'Not installed')], [text('计算后端', 'Compute backend'), backendName]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
     <div className="setup-gpus">{runtime.gpus?.length ? runtime.gpus.map((gpu, index) => <div key={gpu.device ?? index}><span className="setup-gpu-index">{index + 1}</span><span><strong>{gpu.name}</strong><small>{gpu.device || `GPU ${index}`}{gpu.mem_total_mb ? ` · ${(gpu.mem_total_mb / 1024).toFixed(0)} GiB` : ''}</small></span>{gpuAvailable(gpu) ? <Check size={17} aria-label={text('设备可用', 'Device available')}/> : <small>{text('当前环境不可用', 'Unavailable in this environment')}</small>}</div>) : <p className="setup-note">{text('未检测到可用 GPU。', 'No available GPU detected.')}</p>}</div>
     <React.Suspense fallback={<div className="setup-resource-loading"><Loader2 size={16} className="animate-spin"/></div>}><AttentionSetup mode="onboarding-attention" initialStatus={data}/></React.Suspense>
+    {speech}
     <p className="setup-note">{text('完成后即可创建项目，添加训练数据。', 'Create a project and add your training data to get started.')}</p>
     {error && <ResourceState error={error} retry={reload}/>}</>;
 }

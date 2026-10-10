@@ -225,8 +225,6 @@ def main() -> int:
     configure()
     request = json.loads(args.request.read_text(encoding="utf-8"))
     report = probe(request["trainer_path"], request["mode"], ["cuda:0"])
-    if Path(sys.prefix).resolve() == Path(request["service_prefix"]).resolve():
-        report["errors"].append("请为 TTS 选择独立的 Python 环境，避免与图像训练依赖互相覆盖。")
     if report["errors"]:
         raise RuntimeError("\n".join(report["errors"]))
     events = Events(request["events_path"])

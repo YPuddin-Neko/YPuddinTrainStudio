@@ -720,6 +720,7 @@ class JobSupervisor:
         elif job["type"] in TTS_JOBS:
             from .routes_tts import launch_payload
 
+            env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
             payload = launch_payload(job, worker_device)
             cfg_path = run_dir / "tts-request.json"
             cfg_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
