@@ -45,7 +45,7 @@ function memoryFixes(memory: Plan['memory'], native: boolean, text: (zh: string,
     [/Adafactor/, 'optimizer.type', text('改用 Adafactor 并不设置 beta1', 'Use Adafactor without beta1')],
   ];
   const fixes = known.filter(([pattern]) => suggestions.some(item => pattern.test(item))).map(([, path, label]) => ({ path, label }));
-  fixes.push({ path: 'dataset.batch_size', label: text('减小批大小', 'Reduce the batch size') });
+  fixes.push({ path: 'dataset.batch_size', label: text('减小批量大小', 'Reduce the batch size') });
   fixes.push(native ? { path: 'dataset.native_max_pixels', label: text('降低图像面积上限', 'Lower the image area limit') } : { path: 'dataset.resolutions', label: text('降低训练分辨率', 'Lower the training resolution') });
   return fixes.filter((fix, index) => fixes.findIndex(item => item.path === fix.path) === index);
 }
@@ -208,7 +208,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
       </div>}
       <div className="estimate-block"><h4>{text('执行估算', 'Execution estimate')}</h4>
         <dl className="estimate-stats">
-          <div><dt>{text('等效批次', 'Effective batch')}<ConfigHelp label={text('等效批次说明', 'Effective batch help')}>{text('每次更新参数所用的图片数 = 批大小 × 梯度累积 × 显卡数。原生分辨率下，同一批里尺寸不同的图片会分开计算，整批算完后才合并梯度更新参数，所以等效批次不会因此变小。', 'Images behind each parameter update = batch size × gradient accumulation × GPUs. In native resolution, differently sized images in a batch are computed separately, and their gradients are combined before the update, so the effective batch stays the same.')}</ConfigHelp></dt><dd>{effectiveBatch ? text(`${effectiveBatch} 张`, `${effectiveBatch}`) : '—'}</dd>{batchFormula && <small>{batchFormula}</small>}</div>
+          <div><dt>{text('等效批次', 'Effective batch')}<ConfigHelp label={text('等效批次说明', 'Effective batch help')}>{text('每次更新参数所用的图片数 = 批量大小 × 梯度累积 × 显卡数。原生分辨率下，同一批里尺寸不同的图片会分开计算，整批算完后才合并梯度更新参数，所以等效批次不会因此变小。', 'Images behind each parameter update = batch size × gradient accumulation × GPUs. In native resolution, differently sized images in a batch are computed separately, and their gradients are combined before the update, so the effective batch stays the same.')}</ConfigHelp></dt><dd>{effectiveBatch ? text(`${effectiveBatch} 张`, `${effectiveBatch}`) : '—'}</dd>{batchFormula && <small>{batchFormula}</small>}</div>
           <div><dt>{text('每轮步数', 'Steps / epoch')}</dt><dd>{plan?.steps_per_epoch ?? '—'}</dd>{stepSource && <small>{stepSource}</small>}</div>
           <div><dt>{text('总训练步数', 'Total steps')}</dt><dd>{plan?.total_steps ?? '—'}</dd>{totalSource && <small>{totalSource}</small>}</div>
         </dl>

@@ -30,7 +30,7 @@ const labels: Record<string, string> = {
   'dataset.resolution_mode': '分辨率模式', 'dataset.image_fit': '图片适配方式', 'dataset.crop_anchor': '裁切保留位置', 'dataset.native_max_pixels': '图像面积上限（等效边长 px）', 'dataset.native_max_pixels_mode': '图像面积上限模式',
   'dataset.native_max_side': '最长边上限（px）', 'dataset.native_overflow': '超出尺寸上限时',
   'dataset.area_tolerance': '面积容差', 'dataset.bucket_step': '分桶步长', 'dataset.bucket_no_upscale': '不放大小图',
-  'dataset.batch_size': '批大小', 'dataset.flip': '随机水平翻转', 'dataset.masked_loss': '遮罩加权训练',
+  'dataset.batch_size': '批量大小', 'dataset.flip': '随机水平翻转', 'dataset.masked_loss': '遮罩加权训练',
   'dataset.num_workers': '数据加载线程', 'dataset.cache_dir': '缓存目录', 'dataset.cache_latents': '训练图像缓存',
   'dataset.text_encoding': '标签处理方式', 'dataset.caption.prefix': '标签前缀', 'dataset.caption.suffix': '标签后缀',
   'dataset.caption.trigger_word': '触发词', 'dataset.caption.keep_tokens': '保留前几个标签', 'dataset.caption.shuffle': '打乱标签顺序',
@@ -252,8 +252,8 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     'loop.mixed_precision': ['控制训练运算的自动混合精度。关闭只停用自动混合精度，不改变权重本身的精度。底模存储和导出文件的精度分别设置；可复现训练可能调整实际计算精度。', 'Controls automatic mixed precision during training. Disabling it does not change weight precision. Base-weight storage and export precision are configured separately; reproducible training may adjust compute precision.'],
     'memory.base_precision': ['适配器训练时转换其覆盖的未量化冻结线性层，降低存储精度可节省显存，但可能影响训练质量；原模型文件和适配器精度不变。FP8 需要受支持的 CUDA 或海光环境。全量微调使用沿用精度或 FP32。', 'Converts unquantized frozen linear layers covered by adapters. Lower storage precision saves memory but may affect training quality; source files and adapter precision are unchanged. FP8 requires supported CUDA or DTK hardware. Full fine-tuning uses the loaded precision or FP32.'],
     'memory.activation_checkpointing': ['开启后每个模块只保留输入，反向传播时逐块重新计算，显存大幅减少，训练会慢一些（多一次前向计算）。\n开启并卸载到内存：再把这些输入暂存到内存，显存再少一些，但占用内存并增加传输；开启后显存仍不够时再用。\n可与梯度累积同时使用。', 'On keeps only each block\'s input and recomputes blocks during backward: much less memory, somewhat slower (one extra forward pass).\nOn + offload also parks those inputs in system memory for a little more saving, at the cost of RAM and transfers; use it when On is not enough.\nWorks with gradient accumulation.'],
-    'loop.grad_accum': ['累计指定数量的批次后再更新一次参数。等效批次 = 批大小 × 梯度累积 × 显卡数。', 'Updates parameters after the specified number of minibatches. Effective batch size = per-GPU batch size × accumulation steps × GPU count.'],
-    'loop.gpu_count': ['1 为单卡；多卡任务会等待所需显卡全部空闲后启动。批大小按每张卡计算；可用训练方式取决于当前平台。', '1 uses one GPU. Multi-GPU jobs wait for all required devices to be free. Batch size is per GPU; available strategies depend on the platform.'],
+    'loop.grad_accum': ['累计指定数量的批次后再更新一次参数。等效批次 = 批量大小 × 梯度累积 × 显卡数。', 'Updates parameters after the specified number of minibatches. Effective batch size = per-GPU batch size × accumulation steps × GPU count.'],
+    'loop.gpu_count': ['1 为单卡；多卡任务会等待所需显卡全部空闲后启动。批量大小按每张卡计算；可用训练方式取决于当前平台。', '1 uses one GPU. Multi-GPU jobs wait for all required devices to be free. Batch size is per GPU; available strategies depend on the platform.'],
     'loop.distributed_strategy': ['数据并行（DDP）：每张卡保留完整模型，并行处理不同数据，通常比单卡每秒处理更多图片；每卡仍需容纳完整模型，加速幅度取决于卡间通信和负载。\n显存分片（FSDP）：同样并行处理数据，将参数、梯度和优化器状态分摊到多卡以节省显存。相比 DDP 增加参数通信，同等卡数和批量下通常更慢，具体取决于模型和卡间带宽；显存够用时优先选 DDP。需要至少两张 Linux CUDA/DTK 显卡，并冻结文本编码器。', 'Data parallel (DDP): each GPU holds the whole model and processes different data in parallel, usually handling more images per second than one GPU. Each GPU must still fit the whole model; speedup depends on communication and workload.\nSharded (FSDP): also processes data in parallel, while distributing parameters, gradients and optimizer states across GPUs to save memory. Extra parameter communication usually makes it slower than DDP with the same GPU count and batch size, depending on the model and interconnect bandwidth. Prefer DDP when memory is sufficient. Requires at least two Linux CUDA/DTK GPUs and frozen text encoders.'],
     'optimizer.lr': ['控制参数更新的基础步长。过大容易不稳定，过小学习较慢；全量微调需单独设置，自适应优化器会调整实际步长。', 'Sets the base parameter-update step size. Too large can be unstable; too small slows learning. Set it separately for full fine-tuning; adaptive optimizers adjust the effective step size.'],
     'optimizer.weight_decay': ['给权重施加衰减约束，避免权重持续变大。通常保留默认值；过大可能让模型学不到细节，0 表示关闭。', 'Applies a decay constraint to weights. Usually keep the default; too much can prevent learning details. Set to 0 to disable.'],
@@ -410,7 +410,7 @@ export function presentConfigIssues(errors: ValidationIssue[], english = false):
     let message = describeValidation(error, { label, percent: PERCENTAGE_FIELDS.includes(path), english }) ?? detail;
     if (memory) message = english
       ? `Estimated peak memory ${memory[1]} exceeds ${memory[2]} (${memory[3]}), so training cannot start. Turn on gradient checkpointing, reduce the batch size or lower the training size.`
-      : `预计显存峰值 ${memory[1]}，超过 ${memory[2]} 的 ${memory[3]} 容量，无法开始训练。开启梯度检查点、减小批大小或降低训练尺寸都能减少显存占用。`;
+      : `预计显存峰值 ${memory[1]}，超过 ${memory[2]} 的 ${memory[3]} 容量，无法开始训练。开启梯度检查点、减小批量大小或降低训练尺寸都能减少显存占用。`;
     else if (message === detail && !english) {
       if (/is required for/i.test(detail)) message = `请填写或选择${label}`;
       else if (/not found|does not exist|file is missing/i.test(detail)) message = '找不到指定文件，请检查训练机上的路径';

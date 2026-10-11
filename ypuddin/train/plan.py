@@ -1125,7 +1125,7 @@ def plan(
                     act_peak = auxiliary_act_peak = 0.0
                     act_by_mode = dict.fromkeys(supported_modes, 0.0)
                     cache_batches, online_batches = _vae_batches(image_shapes, ds, cfg.memory.vae_encode_batch_size)
-                    for (w, h), _n in sorted(counts.items()) or [((r, r), 0) for r in ds.resolutions]:
+                    for (w, h), available_items in sorted(counts.items()) or [((r, r), 0) for r in ds.resolutions]:
                         tokens = (w // family.spec.latent.align) * (h // family.spec.latent.align)
                         tokens = family.training_tokens_for_plan(tokens)
                         hidden = (
@@ -1140,6 +1140,8 @@ def plan(
                             if native
                             else ds.batch_size
                         )
+                        if available_items:
+                            forward_batch = min(forward_batch, available_items)
                         unit_mb = tokens * (1 if whole else hidden) * activation_bytes * forward_batch / 2**20
                         if forward_batch not in auxiliary_by_batch:
                             auxiliary_by_batch[forward_batch] = family.auxiliary_activation_bytes_for_plan(
