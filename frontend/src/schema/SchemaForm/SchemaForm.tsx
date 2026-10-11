@@ -970,15 +970,20 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (versionSources && fullPathKey === 'checkpoint.name' && !revealOutputName) return null;
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
     const optionalAdvanced = ui.advanced;
-    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !revealOutputName) return null;
+    const infonoiseField = fullPathKey.startsWith('objective.infonoise_');
+    const adaptiveIssue = !!errorItem && (infonoiseField || fullPathKey === 'objective.resolution_reference_tokens');
+    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !revealOutputName && !adaptiveIssue) return null;
     const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
-    if (ui.show_when && !incompatiblePredictionLoss && !incompatibleFamilyLoss) {
+    const incompatibleInfoNoise = infonoiseField && conditionValue.model.family !== 'anima' && !!value.objective?.infonoise_enabled;
+    if (ui.show_when && !incompatiblePredictionLoss && !incompatibleFamilyLoss && !incompatibleInfoNoise && !adaptiveIssue) {
       try {
         const previewConditions = fullPathKey === 'loop.ema_decay'
           ? {...conditionValue,loop:{...value.loop,ema:true}}
           : fullPathKey === 'dataset.caption.keep_tokens'
             ? {...conditionValue,dataset:{...conditionValue.dataset,caption:{...value.dataset?.caption,shuffle:true}}}
-            : conditionValue;
+            : infonoiseField
+              ? {...conditionValue,objective:{...value.objective,infonoise_enabled:true}}
+              : conditionValue;
         if (!evaluateShowWhen(ui.show_when, previewConditions)) return null;
       } catch (err) {
         console.error(`[SchemaForm] Failed to evaluate show_when for ${fullPathKey}: "${ui.show_when}"`, err);
@@ -1376,6 +1381,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         : nativePixelsHint(fieldValue, english) || configFieldHint(fullPathKey, english)
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')
       : parentPath[0] === 'model' && key in MODEL_PATH_FIELDS ? modelPathHint(family?.name, key, english, preset)
+      : fullPathKey === 'objective.shift' && family?.name === 'anima' && value.objective?.timestep_sampling === 'resolution_sqrt'
+        ? (english ? 'Base shift; resolution correction adjusts it further for image size.' : '基础偏移大小；分辨率修正模式会再按图像大小调整。')
       : configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree, value.dataset);
     const hint = statusHint || describedHint;
     const duplicateHelp = !!help && !!hint && help.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
@@ -1482,9 +1489,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     return groupA.order - groupB.order;
   });
   const renderToggleSection = (path: string, children: React.ReactNode) => {
-    const features: Record<string, {title:string;description:string;switchLabel:string}> = {
+    const features: Record<string, {title:string;description?:string;switchLabel:string}> = {
       'loop.ema': {title:english?'Weight averaging (EMA)':'权重平均 (EMA)',description:english?'Keep a separate copy of averaged adapter weights for comparison.':'平滑适配器权重变化，额外保存平均权重用于对比。',switchLabel:english?'Enable EMA':'启用 EMA'},
       'dataset.caption.shuffle': {title:english?'Shuffle caption tags':'打乱标签顺序',description:english?'Randomize variable tags while keeping fixed tags in place.':'随机调整可变标签的顺序，固定标签保持不变。',switchLabel:english?'Shuffle caption tags':'打乱标签顺序'},
+      'objective.infonoise_enabled': {title:english?'InfoNoise adaptive timesteps':'InfoNoise 自适应时间步',switchLabel:english?'Enable InfoNoise':'启用 InfoNoise'},
     };
     const fieldPath=path.split('.');
     let fieldSchema=schema;

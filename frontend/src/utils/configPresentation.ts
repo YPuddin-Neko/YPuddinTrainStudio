@@ -49,6 +49,12 @@ const labels: Record<string, string> = {
   'adapter.resume_weights': '继续训练的权重', 'objective.timestep_sampling': '时间步采样',
   'objective.logit_mean': 'Logit 均值', 'objective.logit_std': 'Logit 标准差', 'objective.res_shift_tokens': '分辨率偏移基准',
   'objective.res_shift_mu': '分辨率偏移系数', 'objective.shift': '时间步偏移', 'objective.mode_scale': 'Mode 系数',
+  'objective.resolution_reference_tokens': 'Shift 参考 token 数',
+  'objective.infonoise_enabled': '启用 InfoNoise', 'objective.infonoise_bins': '统计区间数',
+  'objective.infonoise_warmup_steps': '热身更新数', 'objective.infonoise_refresh_every': '分布更新间隔',
+  'objective.infonoise_ema_decay': '统计平滑系数', 'objective.infonoise_exploration': '均匀探索比例',
+  'objective.infonoise_adaptive_mix': '自适应占比上限', 'objective.infonoise_min_samples': '最少有效样本',
+  'objective.infonoise_min_coverage': '最低区间覆盖率', 'objective.infonoise_gate_sigma': '低噪声门控 σ',
   'objective.stratified': '分层时间步采样', 'objective.t_min': '时间步下限', 'objective.t_max': '时间步上限',
   'objective.loss': '损失函数', 'objective.huber_c': 'Huber 系数', 'objective.weighting': '损失加权',
   'objective.scale_v_pred_loss_like_noise_pred': '按 ε 预测尺度缩放 v 损失', 'objective.v_pred_like_loss': '附加 v 预测损失系数', 'objective.debiased_estimation_loss': '去偏损失加权',
@@ -101,6 +107,12 @@ const labels: Record<string, string> = {
 };
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
+  if (english && path === 'objective.resolution_reference_tokens') return 'Shift reference tokens';
+  if (english && path.startsWith('objective.infonoise_')) return ({
+    enabled: 'Enable InfoNoise', bins: 'Statistics bins', warmup_steps: 'Warmup updates', refresh_every: 'Distribution update interval',
+    ema_decay: 'Statistics smoothing', exploration: 'Uniform exploration', adaptive_mix: 'Adaptive share limit',
+    min_samples: 'Minimum valid samples', min_coverage: 'Minimum bin coverage', gate_sigma: 'Low-noise gate σ',
+  } as Record<string, string>)[path.slice('objective.infonoise_'.length)] || fallback;
   if (english && path === 'logging.output_dir') return 'Log directory';
   if (english && path === 'checkpoint.state_dir') return 'Recovery point directory';
   if (english && path === 'sampling.output_dir') return 'Sample image directory';
@@ -310,7 +322,7 @@ export function configPresetLabel(name: string, description: string, defaultPres
 export function configOptionLabel(path: string, option: string, english = false) {
   const options: Record<string, Record<string, [string, string]>> = {
     'objective.weighting': { none: ['不加权', 'None'], sigma_sqrt: ['噪声尺度平方根', 'Sigma square root'], cosmap: ['余弦映射', 'CosMap'], snr_like: ['类信噪比加权', 'SNR-like'], cosmos: ['Cosmos', 'Cosmos'], min_snr: ['最小信噪比加权', 'Min-SNR'] },
-    'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['逻辑正态分布', 'Logit-Normal'], shift: ['偏移采样', 'Shift'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], mode: ['模式分布', 'Mode'], cosmap: ['余弦映射', 'CosMap'] },
+    'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['逻辑正态分布', 'Logit-Normal'], shift: ['偏移采样', 'Shift'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], resolution_sqrt: ['按分辨率修正 Shift', 'Resolution-corrected Shift'], mode: ['模式分布', 'Mode'], cosmap: ['余弦映射', 'CosMap'] },
     'objective.loss': { mse: ['均方误差', 'MSE'], huber: ['平滑绝对误差', 'Huber'], pseudo_huber: ['伪 Huber 损失', 'Pseudo-Huber'] },
     'adapter.algo': { lora: ['LoRA', 'LoRA'], lokr: ['LoKr', 'LoKr'], loha: ['LoHa', 'LoHa'], ortho: ['OrthoLoRA', 'OrthoLoRA'], tlora: ['T-LoRA', 'T-LoRA'], full: ['LyCORIS Full', 'LyCORIS Full'] },
     'adapter.param_dtype': { fp32: ['FP32', 'FP32'], bf16: ['BF16', 'BF16'] },

@@ -324,6 +324,16 @@ class DistributedTrainer(Trainer):
         return payload[0]
 
     def save_state(self, tag=None):
+        if getattr(self, "_timestep_recipe", None) is not None:
+            error = None
+            try:
+                self._save_timestep_state()
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+            errors = [None] * self.distributed.world_size
+            dist.all_gather_object(errors, error)
+            if any(errors):
+                raise ValueError(f"无法保存时间步状态：{next(item for item in errors if item)}")
         self.progress.extra["loss_ema"] = self._loss_ema
         local = self._capture_local_checkpoint_rng()
         states = [None] * self.distributed.world_size
@@ -386,6 +396,7 @@ class DistributedTrainer(Trainer):
                         finite = torch.tensor(int(torch.isfinite(loss).item()), device=self.device)
                         dist.all_reduce(finite, op=dist.ReduceOp.MIN)
                         invalid |= not bool(finite.item())
+                        self._resolve_timestep_observation(bool(finite.item()))
                         # Complete every reducer cycle even for rejected batches so
                         # the following forward cannot hang on unfinished reduction.
                         backward_loss = loss if finite.item() else torch.nan_to_num(loss) * 0
@@ -397,6 +408,7 @@ class DistributedTrainer(Trainer):
             total_count, total_loss = totals.tolist()
             self.progress.samples_seen += int(total_count)
             if invalid:
+                self._discard_timestep_observations()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.progress.nan_skips += 1
                 self.emit(
@@ -437,8 +449,12 @@ class DistributedTrainer(Trainer):
         dist.all_reduce(slots, op=dist.ReduceOp.MAX)
         result = [(part, len(part["caption"])) for part in parts]
         filler = min(parts, key=lambda part: len(part["caption"]) * part["bucket"][0] * part["bucket"][1])
-        result.extend((filler, 0) for _ in range(slots.item() - len(parts)))
+        result.extend(({**filler, "_adaptive_observe": False}, 0) for _ in range(slots.item() - len(parts)))
         return result
+
+    def _reduce_timestep_statistics(self, stats):
+        dist.all_reduce(stats, op=dist.ReduceOp.SUM)
+        return stats
 
     def _accumulation_context(self, accumulating):
         return self.ddp.no_sync() if accumulating else nullcontext()

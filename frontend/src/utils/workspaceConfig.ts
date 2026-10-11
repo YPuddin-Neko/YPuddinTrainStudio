@@ -75,6 +75,8 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
   }
   if (family.name !== 'anima') {
     for (const key of ['llm_adapter_lr','self_attn_lr','cross_attn_lr','mlp_lr','modulation_lr']) next.training[key] = null;
+    next.objective.infonoise_enabled = false;
+    if (next.objective.timestep_sampling === 'resolution_sqrt') next.objective.timestep_sampling = family.objective === 'ddpm' ? 'uniform' : family.sampling.shift == null ? 'resolution_shift' : 'shift';
   }
   if (family.name === 'flux2') {
     next.sampling.steps = null; next.sampling.cfg = null; next.sampling.guidance = null;

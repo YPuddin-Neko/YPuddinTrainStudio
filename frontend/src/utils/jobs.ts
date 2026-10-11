@@ -1,10 +1,26 @@
-import type { Job } from '../api/types';
+import type { Job, TimestepSamplingStatus } from '../api/types';
 
 export const ACTIVE_JOB_STATUSES = 'running,pausing,cancelling';
 
+/** A complete sampling snapshot belongs to the optimizer step that produced it. */
+export function timestepSamplingEvent(event: Record<string, any>): { step: number; value: TimestepSamplingStatus | null } | null {
+  const value = event.timestep_sampling !== undefined ? event.timestep_sampling : event.latest?.timestep_sampling;
+  if (value === undefined || typeof event.step !== 'number' || !Number.isFinite(event.step)) return null;
+  if (value !== null && (typeof value !== 'object' || value.step !== event.step)) return null;
+  return { step: event.step, value };
+}
+
+export function timestepSamplingStep(job: Job): number {
+  return Math.max(job.progress?.step ?? -1, job.latest?.timestep_sampling?.step ?? -1);
+}
+
 /** Merge partial events, preserving totals and ignoring replayed training steps. */
-export function mergeJobEvent(job: Job, event: Record<string, any>): Job {
+export function mergeJobEvent(job: Job, event: Record<string, any>, kind: 'step' | 'phase' = 'step'): Job {
   if (job.id !== event.job_id) return job;
+  const sampling = timestepSamplingEvent(event);
+  // Prepared/resumed projections carry a nested latest object; regular steps do not.
+  const samplingPhase = sampling?.value != null && (kind === 'phase' || event.latest?.timestep_sampling !== undefined);
+  if (samplingPhase && sampling.step < timestepSamplingStep(job)) return job;
   const progress = { ...(job.progress || {}), ...(event.progress || {}) };
   if (event.phase !== undefined) progress.phase = event.phase;
   for (const key of ['total_steps', 'steps_per_epoch', 'message', 'wait_reason']) {
@@ -17,7 +33,7 @@ export function mergeJobEvent(job: Job, event: Record<string, any>): Job {
     }
   }
   if (typeof event.step === 'number' && event.step >= currentStep) {
-    progress.phase = event.phase ?? 'training';
+    progress.phase = event.phase ?? (samplingPhase ? progress.phase : 'training');
     for (const key of ['step', 'epoch', 'eta_s', 'it_s', 'vram_metric']) {
       if (event[key] !== undefined) (progress as any)[key] = event[key];
     }
@@ -32,6 +48,7 @@ export function mergeJobEvent(job: Job, event: Record<string, any>): Job {
       if (event[key] !== undefined) (latest as any)[key] = event[key];
     }
   }
+  if (sampling && sampling.step >= timestepSamplingStep(job)) latest.timestep_sampling = sampling.value;
   return { ...job, progress, latest, ...(event.status ? { status: event.status } : {}),
     ...(event.error !== undefined ? { error: event.error } : {}),
     ...(event.exit_code !== undefined ? { exit_code: event.exit_code } : {}) };

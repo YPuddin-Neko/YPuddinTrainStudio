@@ -1020,6 +1020,7 @@ class JobSupervisor:
         data = {k: v for k, v in ev.items() if k not in ("seq", "ts", "type")}
         data["job_id"] = job_id
         if t == "step":
+            data["timestep_sampling"] = ev.get("timestep_sampling")
             progress = json.loads(
                 self.db.fetchone("SELECT progress_json FROM jobs WHERE id=?", (job_id,))["progress_json"]
                 or "{}"
@@ -1038,13 +1039,16 @@ class JobSupervisor:
             )
             latest = {
                 key: ev.get(key)
-                for key in ("loss", "loss_ema", "lr", "loss_mean", "loss_count", "loss_mean_scope")
+                for key in (
+                    "loss", "loss_ema", "lr", "loss_mean", "loss_count", "loss_mean_scope", "timestep_sampling",
+                )
             }
             self.db.update(
                 "jobs", job_id, {"progress_json": json.dumps(progress), "latest_json": json.dumps(latest)}
             )
             self._publish("job.step", data)
         elif t == "run.prepared":
+            self._merge_timestep_status(job_id, ev, data)
             self.db.update("jobs", job_id, {"resume_from": None})
             self._merge_progress(
                 job_id,
@@ -1059,9 +1063,10 @@ class JobSupervisor:
                 {"job_id": job_id, "phase": "prepared", **{k: v for k, v in data.items() if k != "job_id"}},
             )
         elif t == "run.resumed":
+            self._merge_timestep_status(job_id, ev, data)
             resumed = {"resumed_at": now(), "resumed_step": ev.get("step")}
             self._merge_progress(job_id, resumed)
-            self._publish("job.phase", {"job_id": job_id, "progress": resumed})
+            self._publish("job.phase", {**data, "progress": resumed})
         elif t == "phase.changed":
             self._merge_progress(job_id, {"phase": ev.get("phase")})
             self._publish("job.phase", data)
@@ -1111,6 +1116,17 @@ class JobSupervisor:
             self._set_terminal(job_id, t, ev)
         else:
             self._publish("job.event", data)
+
+    def _merge_timestep_status(self, job_id: str, ev: dict[str, Any], data: dict[str, Any]) -> None:
+        if "timestep_sampling" not in ev:
+            return
+        row = self.db.fetchone("SELECT latest_json FROM jobs WHERE id=?", (job_id,))
+        latest = json.loads(row["latest_json"] or "{}")
+        latest["timestep_sampling"] = ev["timestep_sampling"]
+        self.db.update("jobs", job_id, {"latest_json": json.dumps(latest)})
+        data["latest"] = {"timestep_sampling": ev["timestep_sampling"]}
+        if isinstance(ev["timestep_sampling"], dict):
+            data["step"] = ev["timestep_sampling"]["step"]
 
     def _merge_progress(self, job_id: str, patch: dict[str, Any]) -> None:
         row = self.db.fetchone("SELECT progress_json FROM jobs WHERE id=?", (job_id,))

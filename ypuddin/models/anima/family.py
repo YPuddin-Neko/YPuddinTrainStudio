@@ -293,6 +293,9 @@ class AnimaFamily(ModelFamily):
     spec = ModelSpec(
         name="anima",
         attention_backends=("auto", "sdpa", "xformers", "flash_attn", "metal_flash"),
+        objective_timestep_sampling=(
+            "uniform", "logit_normal", "shift", "resolution_shift", "resolution_sqrt", "mode", "cosmap",
+        ),
         latent=LatentSpec(channels=16, stride=8, patch=2, fingerprint=AnimaLatent.fingerprint),
         text=TextSpec(
             max_len=512, fingerprint=AnimaText.fingerprint, pad_floor=True, encoder_params=596_049_920

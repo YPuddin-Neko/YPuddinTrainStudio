@@ -1,4 +1,4 @@
-import { jobTypeLabel, mergeJobEvent } from '../../utils/jobs';
+import { jobTypeLabel, mergeJobEvent, timestepSamplingEvent, timestepSamplingStep } from '../../utils/jobs';
 import React from 'react';
 import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -26,6 +26,7 @@ import ResumePointList from './ResumePointList';
 import Dialog from '../../components/Dialog';
 import JobStepper from './JobStepper';
 import MetricValue from './MetricValue';
+import TimestepSamplingStatus from './TimestepSamplingStatus';
 import { SlidingIndicator } from '../../components/motion';
 import { prefersReducedMotion, useEnterAnimation } from '../../utils/motion';
 import TopbarBreadcrumb from '../../components/TopbarBreadcrumb';
@@ -36,6 +37,13 @@ import { TtsJobLineage } from '../Tts/TtsTaskActions';
 
 type VersionedJob = Job & { version_id?: string | null; latest: Job['latest'] & {loss_mean?:number|null; loss_count?:number|null; loss_mean_scope?:string|null} };
 type PendingMetrics = { id: string; pending: boolean; steps: Record<string, any>[]; validation: ValidationPoint[] };
+type PendingJob = { id: string; pending: boolean; samplingStep: number; sampling: { event: Record<string, any>; kind: 'step' | 'phase' } | null };
+
+function mergeJobProjection(previous: VersionedJob, updated: VersionedJob, metricsChanged: boolean, samplingChanged: boolean): VersionedJob {
+  const projectionChanged = metricsChanged || samplingChanged && previous.latest.timestep_sampling != null;
+  const next = projectionChanged ? { ...updated, progress: previous.progress, latest: previous.latest } : updated;
+  return samplingChanged ? { ...next, latest: { ...next.latest, timestep_sampling: previous.latest.timestep_sampling } } : next;
+}
 
 function mergeSamples(previous: JobSample[], incoming: JobSample[]): JobSample[] {
   // Step and epoch triggers may share step/seed while saving different image files.
@@ -168,6 +176,17 @@ export default function JobDetail() {
   const [job, setJob] = React.useState<VersionedJob | null>(null);
   const [metricUpdate, setMetricUpdate] = React.useState(0);
   const metricUpdateRef = React.useRef(0);
+  const samplingUpdateRef = React.useRef(0);
+  const jobRequestRef = React.useRef<PendingJob | null>(null);
+  const rememberSampling = (event: Record<string, any>, kind: 'step' | 'phase') => {
+    const pending = jobRequestRef.current;
+    const snapshot = timestepSamplingEvent(event);
+    if (!pending || pending.id !== id || event.job_id !== id || !snapshot
+      || snapshot.step < Math.max(pending.samplingStep, job?.id === id ? timestepSamplingStep(job) : -1)) return;
+    pending.samplingStep = snapshot.step;
+    samplingUpdateRef.current += 1;
+    if (pending.pending) pending.sampling = { event, kind };
+  };
   const jobKind = React.useRef<{ id: string; type: string } | null>(null);
   const ttsProjectionRequest = React.useRef<AbortController | null>(null);
   React.useEffect(() => () => ttsProjectionRequest.current?.abort(), [id]);
@@ -176,10 +195,12 @@ export default function JobDetail() {
     ttsProjectionRequest.current?.abort();
     const controller = new AbortController(); ttsProjectionRequest.current = controller;
     const requestedAtUpdate = metricUpdateRef.current;
+    const requestedAtSampling = samplingUpdateRef.current;
+    const requestedJob = jobRequestRef.current;
     setJob(previous => previous?.id === id ? { ...previous, allowed_actions: undefined, action_reasons: undefined } : previous);
     void apiClient.get<VersionedJob>(`/jobs/${encodeURIComponent(id)}`, { silent: true, signal: controller.signal }).then(updated => {
-      if (!controller.signal.aborted && updated.id === id) setJob(previous => previous?.id === id
-        ? metricUpdateRef.current !== requestedAtUpdate ? { ...updated, progress: previous.progress, latest: previous.latest } : updated
+      if (!controller.signal.aborted && updated.id === id) setJob(previous => previous?.id === id && jobRequestRef.current === requestedJob
+        ? mergeJobProjection(previous, updated, metricUpdateRef.current !== requestedAtUpdate, samplingUpdateRef.current !== requestedAtSampling)
         : previous);
     }).catch(() => {});
   };
@@ -242,6 +263,8 @@ export default function JobDetail() {
     const ignoreAbort = (error: Error) => { if (!controller.signal.aborted) setDataError(formatApiError(error)); };
     const pending: PendingMetrics = { id, pending: true, steps: [], validation: [] };
     metricsRequestRef.current = pending;
+    const pendingJob: PendingJob = { id, pending: true, samplingStep: -1, sampling: null };
+    jobRequestRef.current = pendingJob;
     const finishMetrics = (snapshot: JobMetrics) => {
       if (controller.signal.aborted || metricsRequestRef.current !== pending) return;
       // Events arriving during the history request must survive its older snapshot.
@@ -253,8 +276,11 @@ export default function JobDetail() {
     setDataError(''); setJob(null); setMetrics(null); setSamples([]); setSamplesLoaded(false); setSelectedSample(null); setCheckpoints([]); setCheckpointsLoaded(false); setConfigSnapshot(null); setSampleProgress(null);
     jobKind.current = null;
     apiClient.get<VersionedJob>(`/jobs/${id}`, options).then(loaded => {
-      if (controller.signal.aborted) return;
-      jobKind.current = { id: loaded.id, type: loaded.type }; setJob(loaded);
+      if (controller.signal.aborted || jobRequestRef.current !== pendingJob) return;
+      const buffered = pendingJob.sampling;
+      const current = buffered ? mergeJobEvent(loaded, buffered.event, buffered.kind) : loaded;
+      pendingJob.pending = false; pendingJob.sampling = null; pendingJob.samplingStep = timestepSamplingStep(current);
+      jobKind.current = { id: loaded.id, type: loaded.type }; setJob(current);
       if (!isTtsJob(loaded)) {
         void refreshSamples();
         void apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`, options).then(setCheckpoints).catch(ignoreAbort).finally(() => { if (!controller.signal.aborted) setCheckpointsLoaded(true); });
@@ -302,8 +328,11 @@ export default function JobDetail() {
       else if (['completed', 'failed', 'cancelled', 'paused', 'running'].includes(data.status)) {
         void refreshSamples();
         const requestedAtUpdate = metricUpdateRef.current;
+        const requestedAtSampling = samplingUpdateRef.current;
+        const requestedJob = jobRequestRef.current;
         void apiClient.get<VersionedJob>(`/jobs/${id}`, {silent:true}).then(updated => setJob(previous => previous?.id === updated.id
-          ? metricUpdateRef.current !== requestedAtUpdate ? { ...updated, progress: previous.progress, latest: previous.latest } : updated
+          && jobRequestRef.current === requestedJob
+          ? mergeJobProjection(previous, updated, metricUpdateRef.current !== requestedAtUpdate, samplingUpdateRef.current !== requestedAtSampling)
           : previous)).catch(() => {});
       }
     }
@@ -316,6 +345,7 @@ export default function JobDetail() {
 
   useEventStream(EVENT_TYPES.JOB_STEP, (data: any) => {
     if (data.job_id === id) {
+      rememberSampling(data, 'step');
       if (job?.id === id && typeof data.step === 'number' && Number.isFinite(data.step) && data.step >= (job?.progress?.step ?? -1)) {
         metricUpdateRef.current += 1;
         setMetricUpdate(metricUpdateRef.current);
@@ -329,7 +359,10 @@ export default function JobDetail() {
   });
 
   useEventStream(EVENT_TYPES.JOB_PHASE, (data: any) => {
-    if (data.job_id === id) setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
+    if (data.job_id === id) {
+      rememberSampling(data, 'phase');
+      setJob((prev) => prev ? mergeJobEvent(prev, data, 'phase') : null);
+    }
   });
   useEventStream(EVENT_TYPES.JOB_CHECKPOINT, (data: any) => {
     if (data.job_id === id && !isTtsJob(jobKind.current)) apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`).then(setCheckpoints).catch(console.error);
@@ -497,6 +530,8 @@ export default function JobDetail() {
 
         {job && isTtsJob(job) && job.progress?.phase && <p className="queue-status-note" role="status">{text('训练阶段', 'Training phase')} · {['completed', 'failed', 'cancelled'].includes(job.status) ? t(`queue.status.${job.status}`) : t(`phase.${job.progress.phase}`, t('job.phaseInProgress'))}</p>}
         {job && !isTtsJob(job) && <JobStepper status={job.status} phase={job.progress?.phase || ''} progress={job.progress}/>}
+        {job?.id === id && job?.type === 'train' && <TimestepSamplingStatus status={job.latest.timestep_sampling} jobStatus={job.status}
+          configured={configSnapshot?.model?.family === 'anima' && (configSnapshot?.objective?.infonoise_enabled === true || configSnapshot?.objective?.timestep_sampling === 'resolution_sqrt')}/>}
 
         {/* 采样预览进度（job.sample_progress SSE） */}
         {sampleProgress && (

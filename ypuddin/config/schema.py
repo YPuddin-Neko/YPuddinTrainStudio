@@ -512,9 +512,11 @@ class AdapterConfig(_Strict):
 
 # --------------------------------------------------------------------------- objective
 class ObjectiveConfig(_Strict):
-    timestep_sampling: Literal["uniform", "logit_normal", "shift", "resolution_shift", "mode", "cosmap"] = F(
+    timestep_sampling: Literal[
+        "uniform", "logit_normal", "shift", "resolution_shift", "resolution_sqrt", "mode", "cosmap"
+    ] = F(
         "shift",
-        help="训练噪声强度分布，t 越大噪声越多。默认 shift 在 logit-normal 抽样后应用 shift=3；uniform 均匀抽样，resolution_shift 按图像 token 数调整。预览图使用独立的噪声调度设置。",
+        help="训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；Anima 的 resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。",
         ui_=ui("objective", advanced=True, order=0, control="select"),
     )
     logit_mean: float = F(
@@ -524,7 +526,7 @@ class ObjectiveConfig(_Strict):
             "objective",
             advanced=True,
             order=10,
-            show_when="objective.timestep_sampling in ['logit_normal','shift','resolution_shift']",
+            show_when="objective.timestep_sampling in ['logit_normal','shift','resolution_shift','resolution_sqrt']",
         ),
     )
     logit_std: float = F(
@@ -535,7 +537,7 @@ class ObjectiveConfig(_Strict):
             "objective",
             advanced=True,
             order=20,
-            show_when="objective.timestep_sampling in ['logit_normal','shift','resolution_shift']",
+            show_when="objective.timestep_sampling in ['logit_normal','shift','resolution_shift','resolution_sqrt']",
         ),
     )
     res_shift_tokens: tuple[int, int] = F(
@@ -561,8 +563,16 @@ class ObjectiveConfig(_Strict):
     shift: float = F(
         3.0,
         gt=0,
-        help="训练时间步偏移，默认 3；大于 1 将样本推向高噪声，1 不偏移。公式为 t'=s·t/(1+(s-1)·t)。该字段只影响训练 shift 分布，预览另有采样 shift。",
-        ui_=ui("objective", advanced=True, order=30, show_when="objective.timestep_sampling == 'shift'"),
+        help="训练时间步的基础偏移。固定 shift 模式直接使用此值；resolution_sqrt 再乘以 token 数与参考值之比的平方根。最终偏移 s 大于 1 时推向高噪声，公式为 t'=s·t/(1+(s-1)·t)。预览另有采样 shift。",
+        ui_=ui("objective", advanced=True, order=30, show_when="objective.timestep_sampling in ['shift','resolution_sqrt']"),
+    )
+    resolution_reference_tokens: int = F(
+        4096, gt=0,
+        help="基础 shift 对应的图像 token 数。Anima 的 1024×1024 图像对应 4096；训练时按实际潜空间和 patch 尺寸计算 token 数。例如 token 数为参考值的 4 倍时，基础 shift 乘以 2。",
+        ui_=ui(
+            "objective", advanced=True, order=32,
+            show_when="model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'",
+        ),
     )
     mode_scale: float = F(
         1.29,
@@ -649,6 +659,59 @@ class ObjectiveConfig(_Strict):
         False,
         help="仅适用于 SDXL，默认关闭。ε 预测使用 1/√SNR，v 预测使用 1/(SNR+1) 对损失加权。可与 Min-SNR 叠加，会改变损失尺度，建议分别建立对照。",
         ui_=ui("objective", order=150, advanced=True),
+    )
+    infonoise_enabled: bool = F(
+        False,
+        help="根据主训练数据在不同噪声强度下的原始 MSE 调整时间步抽样，正则数据不更新统计。热身使用基础分布与均匀探索；自适应部分直接抽取实际时间步，不再次应用 shift。仅用于 Anima 的 MSE、无额外损失加权和噪声修饰的训练。",
+        ui_=ui(
+            "objective", advanced=True, order=160, control="switch",
+            show_when="model.family == 'anima'",
+        ),
+    )
+    infonoise_bins: int = F(
+        16, ge=8, le=128,
+        help="将有效时间步范围划分为多少个统计区间。区间更多能区分更细的噪声变化，也需要更多样本形成可靠统计。",
+        ui_=ui("objective", advanced=True, order=161, show_when="model.family == 'anima' && objective.infonoise_enabled == true"),
+    )
+    infonoise_warmup_steps: int = F(
+        8, ge=0,
+        help="自适应抽样前完成的优化器更新数，梯度累积中的前向批次不单独计步。填 0 跳过步数等待，仍需满足样本数和覆盖率。",
+        ui_=ui("objective", advanced=True, order=162, show_when="model.family == 'anima' && objective.infonoise_enabled == true"),
+    )
+    infonoise_refresh_every: int = F(
+        4, ge=1,
+        help="每完成多少次优化器更新重新计算抽样分布。间隔内继续使用当前分布；失败并跳过的更新不计入。",
+        ui_=ui("objective", advanced=True, order=163, show_when="model.family == 'anima' && objective.infonoise_enabled == true"),
+    )
+    infonoise_ema_decay: float = F(
+        0.9, ge=0, lt=1, allow_inf_nan=False,
+        help="区间误差统计保留旧值的比例。较大时变化更平缓，较小时更快跟随近期误差；填 0 只使用本次收到的区间统计。",
+        ui_=ui("objective", advanced=True, order=164, show_when="model.family == 'anima' && objective.infonoise_enabled == true"),
+    )
+    infonoise_exploration: float = F(
+        0.1, gt=0, lt=1, allow_inf_nan=False,
+        help="最终抽样中用于均匀探索有效时间步范围的比例。例如 0.1 表示始终留出 10% 的抽样覆盖低概率区间，其余分配给基础和自适应分布。",
+        ui_=ui("objective", advanced=True, order=165, show_when="model.family == 'anima' && objective.infonoise_enabled == true"),
+    )
+    infonoise_adaptive_mix: float = F(
+        0.8, gt=0, le=1, allow_inf_nan=False,
+        help="非探索部分中分配给自适应分布的最大比例，其余沿用基础分布。例如探索 0.1、此值 0.8 时，最终最多 72% 自适应、18% 基础、10% 均匀探索。填 1 仍保留均匀探索。",
+        ui_=ui("objective", advanced=True, order=166, show_when="model.family == 'anima' && objective.infonoise_enabled == true"),
+    )
+    infonoise_min_samples: int = F(
+        32, ge=1,
+        help="启用自适应抽样所需的有效主集样本数。正则图片、无有效遮罩区域、非有限误差和已丢弃更新中的样本不计入。",
+        ui_=ui("objective", advanced=True, order=167, show_when="model.family == 'anima' && objective.infonoise_enabled == true"),
+    )
+    infonoise_min_coverage: float = F(
+        0.25, gt=0, le=1, allow_inf_nan=False,
+        help="已有有效样本的统计区间占比达到此值后，才启用自适应抽样。例如 16 个区间、0.25 覆盖率需要至少 4 个区间收到样本。",
+        ui_=ui("objective", advanced=True, order=168, show_when="model.family == 'anima' && objective.infonoise_enabled == true"),
+    )
+    infonoise_gate_sigma: float = F(
+        0.15, gt=0, allow_inf_nan=False,
+        help="抑制接近无噪声端的自适应密度。使用固定三次门函数；较大时抑制范围更宽，不改变基础分布和均匀探索。",
+        ui_=ui("objective", advanced=True, order=169, show_when="model.family == 'anima' && objective.infonoise_enabled == true"),
     )
 
     @model_validator(mode="after")
@@ -1717,6 +1780,34 @@ class TrainConfig(_Strict):
     def _cross(self) -> TrainConfig:
         from ypuddin.config.training_rules import training_errors
 
+        objective = self.objective
+        adaptive_resolution = objective.timestep_sampling == "resolution_sqrt"
+        if (adaptive_resolution or objective.infonoise_enabled) and self.model.family != "anima":
+            raise ValueError("按分辨率平方根修正 Shift 和 InfoNoise 仅适用于 Anima")
+        if adaptive_resolution or objective.infonoise_enabled:
+            finite_fields = []
+            if objective.timestep_sampling in {"logit_normal", "shift", "resolution_sqrt"}:
+                finite_fields.extend(("logit_mean", "logit_std"))
+            if objective.timestep_sampling in {"shift", "resolution_sqrt"}:
+                finite_fields.append("shift")
+            if any(not math.isfinite(getattr(objective, name)) for name in finite_fields):
+                raise ValueError("自适应时间步使用的基础分布参数必须是有限数值")
+        if objective.infonoise_enabled:
+            if objective.timestep_sampling not in {"uniform", "logit_normal", "shift", "resolution_sqrt"}:
+                raise ValueError("InfoNoise 的基础分布请选择 uniform、logit_normal、shift 或 resolution_sqrt")
+            if objective.loss != "mse" or objective.weighting != "none":
+                raise ValueError("InfoNoise 需要 MSE 损失且关闭时间步损失加权")
+            if (
+                objective.noise_offset != 0
+                or objective.multires_noise_iterations != 0
+                or objective.ip_noise_gamma != 0
+                or objective.scale_v_pred_loss_like_noise_pred
+                or objective.v_pred_like_loss != 0
+                or objective.debiased_estimation_loss
+            ):
+                raise ValueError("InfoNoise 需要关闭额外噪声和 SNR 损失修饰")
+            if max(objective.t_min, 0.001) >= min(objective.t_max, 0.999):
+                raise ValueError("InfoNoise 的时间步范围须与 0.001–0.999 之间的区间相交")
         for source in [*self.dataset.sources, *self.validation.sources]:
             if source.caption is not None:
                 object.__setattr__(source.caption, "weighted", self.dataset.caption.weighted)

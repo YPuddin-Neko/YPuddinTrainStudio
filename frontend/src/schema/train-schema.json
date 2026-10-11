@@ -2066,12 +2066,13 @@
       "properties": {
         "timestep_sampling": {
           "default": "shift",
-          "description": "训练噪声强度分布，t 越大噪声越多。默认 shift 在 logit-normal 抽样后应用 shift=3；uniform 均匀抽样，resolution_shift 按图像 token 数调整。预览图使用独立的噪声调度设置。",
+          "description": "训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；Anima 的 resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。",
           "enum": [
             "uniform",
             "logit_normal",
             "shift",
             "resolution_shift",
+            "resolution_sqrt",
             "mode",
             "cosmap"
           ],
@@ -2093,7 +2094,7 @@
             "advanced": true,
             "group": "objective",
             "order": 10,
-            "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+            "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift','resolution_sqrt']"
           }
         },
         "logit_std": {
@@ -2106,7 +2107,7 @@
             "advanced": true,
             "group": "objective",
             "order": 20,
-            "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+            "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift','resolution_sqrt']"
           }
         },
         "res_shift_tokens": {
@@ -2161,7 +2162,7 @@
         },
         "shift": {
           "default": 3.0,
-          "description": "训练时间步偏移，默认 3；大于 1 将样本推向高噪声，1 不偏移。公式为 t'=s·t/(1+(s-1)·t)。该字段只影响训练 shift 分布，预览另有采样 shift。",
+          "description": "训练时间步的基础偏移。固定 shift 模式直接使用此值；resolution_sqrt 再乘以 token 数与参考值之比的平方根。最终偏移 s 大于 1 时推向高噪声，公式为 t'=s·t/(1+(s-1)·t)。预览另有采样 shift。",
           "exclusiveMinimum": 0,
           "title": "Shift",
           "type": "number",
@@ -2169,7 +2170,20 @@
             "advanced": true,
             "group": "objective",
             "order": 30,
-            "show_when": "objective.timestep_sampling == 'shift'"
+            "show_when": "objective.timestep_sampling in ['shift','resolution_sqrt']"
+          }
+        },
+        "resolution_reference_tokens": {
+          "default": 4096,
+          "description": "基础 shift 对应的图像 token 数。Anima 的 1024×1024 图像对应 4096；训练时按实际潜空间和 patch 尺寸计算 token 数。例如 token 数为参考值的 4 倍时，基础 shift 乘以 2。",
+          "exclusiveMinimum": 0,
+          "title": "Resolution Reference Tokens",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 32,
+            "show_when": "model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'"
           }
         },
         "mode_scale": {
@@ -2372,6 +2386,141 @@
             "advanced": true,
             "group": "objective",
             "order": 150
+          }
+        },
+        "infonoise_enabled": {
+          "default": false,
+          "description": "根据主训练数据在不同噪声强度下的原始 MSE 调整时间步抽样，正则数据不更新统计。热身使用基础分布与均匀探索；自适应部分直接抽取实际时间步，不再次应用 shift。仅用于 Anima 的 MSE、无额外损失加权和噪声修饰的训练。",
+          "title": "Infonoise Enabled",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "objective",
+            "order": 160,
+            "show_when": "model.family == 'anima'"
+          }
+        },
+        "infonoise_bins": {
+          "default": 16,
+          "description": "将有效时间步范围划分为多少个统计区间。区间更多能区分更细的噪声变化，也需要更多样本形成可靠统计。",
+          "maximum": 128,
+          "minimum": 8,
+          "title": "Infonoise Bins",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 161,
+            "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+          }
+        },
+        "infonoise_warmup_steps": {
+          "default": 8,
+          "description": "自适应抽样前完成的优化器更新数，梯度累积中的前向批次不单独计步。填 0 跳过步数等待，仍需满足样本数和覆盖率。",
+          "minimum": 0,
+          "title": "Infonoise Warmup Steps",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 162,
+            "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+          }
+        },
+        "infonoise_refresh_every": {
+          "default": 4,
+          "description": "每完成多少次优化器更新重新计算抽样分布。间隔内继续使用当前分布；失败并跳过的更新不计入。",
+          "minimum": 1,
+          "title": "Infonoise Refresh Every",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 163,
+            "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+          }
+        },
+        "infonoise_ema_decay": {
+          "default": 0.9,
+          "description": "区间误差统计保留旧值的比例。较大时变化更平缓，较小时更快跟随近期误差；填 0 只使用本次收到的区间统计。",
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "title": "Infonoise Ema Decay",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 164,
+            "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+          }
+        },
+        "infonoise_exploration": {
+          "default": 0.1,
+          "description": "最终抽样中用于均匀探索有效时间步范围的比例。例如 0.1 表示始终留出 10% 的抽样覆盖低概率区间，其余分配给基础和自适应分布。",
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "title": "Infonoise Exploration",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 165,
+            "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+          }
+        },
+        "infonoise_adaptive_mix": {
+          "default": 0.8,
+          "description": "非探索部分中分配给自适应分布的最大比例，其余沿用基础分布。例如探索 0.1、此值 0.8 时，最终最多 72% 自适应、18% 基础、10% 均匀探索。填 1 仍保留均匀探索。",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Infonoise Adaptive Mix",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 166,
+            "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+          }
+        },
+        "infonoise_min_samples": {
+          "default": 32,
+          "description": "启用自适应抽样所需的有效主集样本数。正则图片、无有效遮罩区域、非有限误差和已丢弃更新中的样本不计入。",
+          "minimum": 1,
+          "title": "Infonoise Min Samples",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 167,
+            "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+          }
+        },
+        "infonoise_min_coverage": {
+          "default": 0.25,
+          "description": "已有有效样本的统计区间占比达到此值后，才启用自适应抽样。例如 16 个区间、0.25 覆盖率需要至少 4 个区间收到样本。",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Infonoise Min Coverage",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 168,
+            "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+          }
+        },
+        "infonoise_gate_sigma": {
+          "default": 0.15,
+          "description": "抑制接近无噪声端的自适应密度。使用固定三次门函数；较大时抑制范围更宽，不改变基础分布和均匀探索。",
+          "exclusiveMinimum": 0,
+          "title": "Infonoise Gate Sigma",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "objective",
+            "order": 169,
+            "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
           }
         }
       },

@@ -390,7 +390,14 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           if (isConfigObject(model) && typeof model.family === 'string') {
             if (!saved || JSON.stringify(saved.base.model) === JSON.stringify(saved.draft.model)) {
               restored = { ...restored, model: { ...next.model, ...model } };
-              if (model.family !== next.model?.family) restored = { ...restored, adapter: { ...restored.adapter, preset: familyByName(familiesRef.current, model.family)?.default_preset ?? restored.adapter?.preset }, dataset: { ...restored.dataset, text_encoding: 'auto' } };
+              if (model.family !== next.model?.family) {
+                restored = { ...restored, adapter: { ...restored.adapter, preset: familyByName(familiesRef.current, model.family)?.default_preset ?? restored.adapter?.preset }, dataset: { ...restored.dataset, text_encoding: 'auto' } };
+                if (model.family !== 'anima') {
+                  const objective = { ...restored.objective, infonoise_enabled: false };
+                  if (objective.timestep_sampling === 'resolution_sqrt') objective.timestep_sampling = model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(model.family) ? 'resolution_shift' : 'shift';
+                  restored = { ...restored, objective };
+                }
+              }
             }
             const key = trainingDraftKey(projectId, versionId);
             rememberTrainingDraft(key, restored, JSON.stringify(next));

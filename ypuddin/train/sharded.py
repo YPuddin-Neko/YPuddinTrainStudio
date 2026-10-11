@@ -317,11 +317,13 @@ class ShardedTrainer(DistributedTrainer):
             legacy_scheduler_contract=getattr(self, "_resume_scheduler_contract", None),
             expected_dora_contract=compute_contract(self.adapters),
             expected_training_features=training_feature_contract(self.cfg),
+            validate_timestep_state=self._validate_timestep_checkpoint,
         )
         validate_optimizer_runtime(self.cfg.optimizer, self.optimizer, expected_groups=expected)
         if self.scheduler is not None and saved["scheduler"]:
             self.scheduler.load_state_dict(saved["scheduler"])
         self.progress = saved["progress"]
+        self._adaptive_sampler = saved["timestep_state"]
         self.sampler.load_state_dict(saved["sampler"])
         self._restore_checkpoint_rng(saved["rng"])
         self._loss_ema = self.progress.extra.get("loss_ema")
@@ -336,6 +338,7 @@ class ShardedTrainer(DistributedTrainer):
         from ypuddin.adapters.dora_contract import STATE_KEY, compute_contract
 
         def validate_save_contract():
+            self._save_timestep_state()
             self._validate_dora_contract()
             self._validate_training_compute_policy()
             validate_training_feature_resume(self.cfg, self._training_feature_contract)

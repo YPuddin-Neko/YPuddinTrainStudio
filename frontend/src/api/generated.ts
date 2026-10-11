@@ -6136,6 +6136,7 @@ export interface components {
             lr?: {
                 [key: string]: number;
             } | null;
+            timestep_sampling?: components["schemas"]["TimestepSamplingStatus"] | null;
         } & {
             [key: string]: unknown;
         };
@@ -7071,11 +7072,11 @@ export interface components {
         ObjectiveConfig: {
             /**
              * Timestep Sampling
-             * @description 训练噪声强度分布，t 越大噪声越多。默认 shift 在 logit-normal 抽样后应用 shift=3；uniform 均匀抽样，resolution_shift 按图像 token 数调整。预览图使用独立的噪声调度设置。
+             * @description 训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；Anima 的 resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。
              * @default shift
              * @enum {string}
              */
-            timestep_sampling: "uniform" | "logit_normal" | "shift" | "resolution_shift" | "mode" | "cosmap";
+            timestep_sampling: "uniform" | "logit_normal" | "shift" | "resolution_shift" | "resolution_sqrt" | "mode" | "cosmap";
             /**
              * Logit Mean
              * @description logit-normal 在 sigmoid 变换前的均值，默认 0；提高会偏向较高噪声，降低会偏向较低噪声。仅对应训练时间步分布，通常先保持默认。
@@ -7114,10 +7115,16 @@ export interface components {
             ];
             /**
              * Shift
-             * @description 训练时间步偏移，默认 3；大于 1 将样本推向高噪声，1 不偏移。公式为 t'=s·t/(1+(s-1)·t)。该字段只影响训练 shift 分布，预览另有采样 shift。
+             * @description 训练时间步的基础偏移。固定 shift 模式直接使用此值；resolution_sqrt 再乘以 token 数与参考值之比的平方根。最终偏移 s 大于 1 时推向高噪声，公式为 t'=s·t/(1+(s-1)·t)。预览另有采样 shift。
              * @default 3
              */
             shift: number;
+            /**
+             * Resolution Reference Tokens
+             * @description 基础 shift 对应的图像 token 数。Anima 的 1024×1024 图像对应 4096；训练时按实际潜空间和 patch 尺寸计算 token 数。例如 token 数为参考值的 4 倍时，基础 shift 乘以 2。
+             * @default 4096
+             */
+            resolution_reference_tokens: number;
             /**
              * Mode Scale
              * @description mode 训练时间步分布的形状系数，默认 1.29；仅在选择 mode 时生效。通常保持默认，并通过时间步诊断观察实际抽样分布。
@@ -7210,6 +7217,66 @@ export interface components {
              * @default false
              */
             debiased_estimation_loss: boolean;
+            /**
+             * Infonoise Enabled
+             * @description 根据主训练数据在不同噪声强度下的原始 MSE 调整时间步抽样，正则数据不更新统计。热身使用基础分布与均匀探索；自适应部分直接抽取实际时间步，不再次应用 shift。仅用于 Anima 的 MSE、无额外损失加权和噪声修饰的训练。
+             * @default false
+             */
+            infonoise_enabled: boolean;
+            /**
+             * Infonoise Bins
+             * @description 将有效时间步范围划分为多少个统计区间。区间更多能区分更细的噪声变化，也需要更多样本形成可靠统计。
+             * @default 16
+             */
+            infonoise_bins: number;
+            /**
+             * Infonoise Warmup Steps
+             * @description 自适应抽样前完成的优化器更新数，梯度累积中的前向批次不单独计步。填 0 跳过步数等待，仍需满足样本数和覆盖率。
+             * @default 8
+             */
+            infonoise_warmup_steps: number;
+            /**
+             * Infonoise Refresh Every
+             * @description 每完成多少次优化器更新重新计算抽样分布。间隔内继续使用当前分布；失败并跳过的更新不计入。
+             * @default 4
+             */
+            infonoise_refresh_every: number;
+            /**
+             * Infonoise Ema Decay
+             * @description 区间误差统计保留旧值的比例。较大时变化更平缓，较小时更快跟随近期误差；填 0 只使用本次收到的区间统计。
+             * @default 0.9
+             */
+            infonoise_ema_decay: number;
+            /**
+             * Infonoise Exploration
+             * @description 最终抽样中用于均匀探索有效时间步范围的比例。例如 0.1 表示始终留出 10% 的抽样覆盖低概率区间，其余分配给基础和自适应分布。
+             * @default 0.1
+             */
+            infonoise_exploration: number;
+            /**
+             * Infonoise Adaptive Mix
+             * @description 非探索部分中分配给自适应分布的最大比例，其余沿用基础分布。例如探索 0.1、此值 0.8 时，最终最多 72% 自适应、18% 基础、10% 均匀探索。填 1 仍保留均匀探索。
+             * @default 0.8
+             */
+            infonoise_adaptive_mix: number;
+            /**
+             * Infonoise Min Samples
+             * @description 启用自适应抽样所需的有效主集样本数。正则图片、无有效遮罩区域、非有限误差和已丢弃更新中的样本不计入。
+             * @default 32
+             */
+            infonoise_min_samples: number;
+            /**
+             * Infonoise Min Coverage
+             * @description 已有有效样本的统计区间占比达到此值后，才启用自适应抽样。例如 16 个区间、0.25 覆盖率需要至少 4 个区间收到样本。
+             * @default 0.25
+             */
+            infonoise_min_coverage: number;
+            /**
+             * Infonoise Gate Sigma
+             * @description 抑制接近无噪声端的自适应密度。使用固定三次门函数；较大时抑制范围更宽，不改变基础分布和均匀探索。
+             * @default 0.15
+             */
+            infonoise_gate_sigma: number;
         };
         /** Ok */
         Ok: {
@@ -9768,6 +9835,82 @@ export interface components {
              * @default 0
              */
             failed_files: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** TimestepSamplingStatus */
+        TimestepSamplingStatus: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "resolution_sqrt" | "infonoise" | "combined";
+            /**
+             * Baseline
+             * @enum {string}
+             */
+            baseline: "uniform" | "logit_normal" | "shift" | "resolution_sqrt";
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "baseline" | "warmup" | "collecting" | "active" | "fallback";
+            /** Reason */
+            reason?: string | null;
+            /** Step */
+            step: number;
+            /** Recent Num Tokens */
+            recent_num_tokens?: number | null;
+            /**
+             * Token Scope
+             * @default last_primary_microbatch
+             * @constant
+             */
+            token_scope: "last_primary_microbatch";
+            /** Effective Baseline Shift */
+            effective_baseline_shift?: number | null;
+            /** Optimizer Updates */
+            optimizer_updates?: number | null;
+            /** Statistics Step */
+            statistics_step?: number | null;
+            /** Refreshes */
+            refreshes?: number | null;
+            /** Warmup Steps */
+            warmup_steps?: number | null;
+            /** Warmup Completed Steps */
+            warmup_completed_steps?: number | null;
+            /** Main Samples */
+            main_samples?: number | null;
+            /** Min Samples */
+            min_samples?: number | null;
+            /** Bins */
+            bins?: number | null;
+            /** Observed Bins */
+            observed_bins?: number | null;
+            /** Coverage */
+            coverage?: number | null;
+            /** Min Coverage */
+            min_coverage?: number | null;
+            /** Invalid Samples */
+            invalid_samples?: number | null;
+            /** Empty Mask Samples */
+            empty_mask_samples?: number | null;
+            /** Regularization Samples */
+            regularization_samples?: number | null;
+            /** Adaptive Fraction */
+            adaptive_fraction?: number | null;
+            /** Baseline Fraction */
+            baseline_fraction?: number | null;
+            /** Exploration Fraction */
+            exploration_fraction?: number | null;
+            /** Bin Edges */
+            bin_edges?: number[] | null;
+            /** Learned Mass */
+            learned_mass?: number[] | null;
+            /** Effective Mass */
+            effective_mass?: number[] | null;
+            /** Gate Sigma */
+            gate_sigma?: number | null;
         } & {
             [key: string]: unknown;
         };

@@ -946,6 +946,38 @@ class JobProgress(_Out):
     preempted_by: str | None = None
 
 
+class TimestepSamplingStatus(_Out):
+    mode: Literal["resolution_sqrt", "infonoise", "combined"]
+    baseline: Literal["uniform", "logit_normal", "shift", "resolution_sqrt"]
+    stage: Literal["baseline", "warmup", "collecting", "active", "fallback"]
+    reason: str | None = None
+    step: int
+    recent_num_tokens: int | None = None
+    token_scope: Literal["last_primary_microbatch"] = "last_primary_microbatch"
+    effective_baseline_shift: float | None = None
+    optimizer_updates: int | None = None
+    statistics_step: int | None = None
+    refreshes: int | None = None
+    warmup_steps: int | None = None
+    warmup_completed_steps: int | None = None
+    main_samples: int | None = None
+    min_samples: int | None = None
+    bins: int | None = None
+    observed_bins: int | None = None
+    coverage: float | None = None
+    min_coverage: float | None = None
+    invalid_samples: int | None = None
+    empty_mask_samples: int | None = None
+    regularization_samples: int | None = None
+    adaptive_fraction: float | None = None
+    baseline_fraction: float | None = None
+    exploration_fraction: float | None = None
+    bin_edges: list[float] | None = None
+    learned_mass: list[float] | None = None
+    effective_mass: list[float] | None = None
+    gate_sigma: float | None = None
+
+
 class JobLatest(_Out):
     loss_mean: float | None = None
     loss_count: int | None = None
@@ -953,6 +985,7 @@ class JobLatest(_Out):
     loss: float | None = None
     loss_ema: float | None = None
     lr: dict[str, float] | None = None
+    timestep_sampling: TimestepSamplingStatus | None = None
 
 
 JobAction = Literal[

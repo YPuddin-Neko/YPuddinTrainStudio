@@ -39,6 +39,13 @@ def resolution_shift_value(
     return math.exp(mu)
 
 
+def resolution_sqrt_shift(num_tokens: int | None, shift: float, reference_tokens: int) -> float:
+    """Scale the baseline shift by the square root of the actual image token count."""
+    if num_tokens is None or isinstance(num_tokens, bool) or num_tokens <= 0:
+        raise ValueError("resolution_sqrt requires the actual positive image token count")
+    return shift * math.sqrt(num_tokens / reference_tokens)
+
+
 class TimestepSampler:
     """Draws ``t`` for a batch. Stateless; ``icdf`` lets validation pin quantiles deterministically."""
 
@@ -51,7 +58,7 @@ class TimestepSampler:
         mode = cfg.timestep_sampling
         if mode == "uniform":
             return u
-        if mode in ("logit_normal", "shift", "resolution_shift"):
+        if mode in ("logit_normal", "shift", "resolution_shift", "resolution_sqrt"):
             z = torch.erfinv(2 * u - 1) * math.sqrt(2) * cfg.logit_std + cfg.logit_mean  # normal icdf
             return torch.sigmoid(z)
         if mode == "mode":
@@ -70,6 +77,10 @@ class TimestepSampler:
         elif mode == "resolution_shift":
             (lo_tok, hi_tok), (lo_mu, hi_mu) = self.cfg.res_shift_tokens, self.cfg.res_shift_mu
             t = mobius_shift(t, resolution_shift_value(num_tokens or 1024, lo_tok, hi_tok, lo_mu, hi_mu))
+        elif mode == "resolution_sqrt":
+            t = mobius_shift(
+                t, resolution_sqrt_shift(num_tokens, self.cfg.shift, self.cfg.resolution_reference_tokens)
+            )
         lo, hi = self.cfg.t_min, self.cfg.t_max
         return t.clamp(max(lo, 1e-5), min(hi, 1 - 1e-5))
 

@@ -98,6 +98,9 @@ from .scheduler_contract import (
     validate_scheduler_recipe,
 )
 from .state import Progress, capture_rng, load_checkpoint, restore_rng, save_checkpoint
+from .timestep_contract import STATE_KEY as TIMESTEP_STATE_KEY
+from .timestep_contract import recipe as timestep_recipe
+from .timestep_contract import validate_resume as validate_timestep_resume
 from .training_feature_contract import (
     STATE_KEY as TRAINING_FEATURE_STATE_KEY,
 )
@@ -256,6 +259,10 @@ class Trainer:
         self._logs: TrainingLogs | None = None
         self._debug_phase: tuple[str | None, float] = (None, 0.0)
         self._run_started = time.monotonic()
+        self._adaptive_sampler = None
+        self._adaptive_observation = False
+        self._timestep_tokens: int | None = None
+        self._timestep_recipe = timestep_recipe(cfg)
 
     # ----------------------------------------------------------------- setup
     @staticmethod
@@ -286,6 +293,10 @@ class Trainer:
     def emit(self, type_: str, **data: Any) -> None:
         if not self.is_primary:
             return
+        if type_ in {"step", "run.prepared", "run.resumed"}:
+            status = self._timestep_status()
+            if status is not None:
+                data["timestep_sampling"] = status
         if type_ == "warning" and data.get("message"):
             # Warnings belong in the job log as well as in the event stream.
             log.warning("%s", data["message"])
@@ -466,6 +477,10 @@ class Trainer:
             self.model_identity = self._model_identity()
         log.info("model components loaded in %.1fs", time.perf_counter() - load_started)
         self.objective = self.family.build_objective(self.loaded, cfg.objective)
+        if cfg.objective.infonoise_enabled:
+            from ypuddin.objectives.adaptive import AdaptiveTimestepSampler
+
+            self._adaptive_sampler = AdaptiveTimestepSampler(cfg.objective, self.device)
         self.loaded.text.to(self.device)
         self.loaded.latent.to(self.device)
 
@@ -1175,6 +1190,7 @@ class Trainer:
         validate_scheduler_recipe(captured_scheduler.contract, self.cfg, self.progress.total_steps)
         validate_scheduler_instance(captured_scheduler.contract, self.scheduler)
         ck = load_checkpoint(path)
+        adaptive = self._validate_timestep_checkpoint(ck["progress"].extra, ck["rng"], ck["progress"].step)
         validate_training_feature_resume(self.cfg, ck["progress"].extra.get(TRAINING_FEATURE_STATE_KEY))
         validate_resume_contract(compute_contract(self.adapters), ck["progress"].extra.get(DORA_STATE_KEY))
         from .metal_compute import validate_metal_attention_resume
@@ -1240,6 +1256,7 @@ class Trainer:
         if self.scheduler is not None and ck["scheduler"]:
             self.scheduler.load_state_dict(ck["scheduler"])
         self.progress = ck["progress"]
+        self._adaptive_sampler = adaptive
         self.sampler.load_state_dict(ck["sampler"])
         self._restore_checkpoint_rng(ck["rng"])
         if "ema" in ck and self.ema is not None:
@@ -1259,6 +1276,99 @@ class Trainer:
         neutral = self.cfg.model_copy(deep=True)
         neutral.checkpoint.resume = None
         return {self.config_hash, *config_hash_variants(self.cfg), *config_hash_variants(neutral)}
+
+    def _validate_timestep_checkpoint(self, extra, rng, step):
+        payload = validate_timestep_resume(self.cfg, extra)
+        if payload is None:
+            return None
+        from ypuddin.objectives.adaptive import AdaptiveTimestepSampler
+
+        candidate = None
+        if payload["sampler"] is not None:
+            candidate = AdaptiveTimestepSampler(self.cfg.objective, self.device)
+            candidate.load_state_dict(payload["sampler"])
+            if candidate.status()["optimizer_updates"] != step:
+                raise ValueError("InfoNoise 更新次数与恢复点步数不一致，不能精确恢复")
+        distributed = getattr(self, "distributed", None)
+        if distributed is not None:
+            saved = rng.get("distributed", {})
+            if (
+                saved.get("world_size") != distributed.world_size
+                or saved.get("batch_size") != self.cfg.dataset.batch_size
+                or saved.get("grad_accum") != self.cfg.loop.grad_accum
+                or len(saved.get("ranks", [])) != distributed.world_size
+            ):
+                raise ValueError("InfoNoise 恢复点的分布式随机状态与当前训练不一致")
+            states = saved["ranks"]
+        else:
+            if "distributed" in rng:
+                raise ValueError("InfoNoise 分布式恢复点需要原显卡数量和分布式模式")
+            states = [rng]
+        for state in states:
+            for key in ("main", "loader"):
+                value = state.get("generators", {}).get(key)
+                if not isinstance(value, Tensor):
+                    raise ValueError(f"InfoNoise 恢复点缺少 {key} 随机状态，不能精确恢复")
+                try:
+                    torch.Generator().set_state(value)
+                except (RuntimeError, TypeError) as exc:
+                    raise ValueError(f"InfoNoise 恢复点的 {key} 随机状态无效") from exc
+        return candidate
+
+    def _save_timestep_state(self) -> None:
+        current = timestep_recipe(self.cfg)
+        if current != getattr(self, "_timestep_recipe", None):
+            raise ValueError("训练中的时间步抽样设置已改变，不能保存精确恢复点")
+        if current is not None:
+            sampler = getattr(self, "_adaptive_sampler", None)
+            self.progress.extra[TIMESTEP_STATE_KEY] = {
+                "version": 1, "recipe": current,
+                "sampler": sampler.state_dict() if sampler is not None else None,
+            }
+
+    def _timestep_status(self) -> dict[str, Any] | None:
+        if getattr(self, "_timestep_recipe", None) is None:
+            return None
+        cfg = self.cfg.objective
+        sampler = getattr(self, "_adaptive_sampler", None)
+        tokens = getattr(self, "_timestep_tokens", None)
+        status = sampler.status(num_tokens=tokens) if sampler is not None else {"stage": "baseline", "reason": None}
+        status.update(
+            mode="combined" if sampler is not None and cfg.timestep_sampling == "resolution_sqrt"
+            else "infonoise" if sampler is not None else "resolution_sqrt",
+            baseline=cfg.timestep_sampling,
+            step=self.progress.step,
+            recent_num_tokens=tokens,
+            token_scope="last_primary_microbatch",
+            effective_baseline_shift=None,
+        )
+        if cfg.timestep_sampling == "resolution_sqrt" and tokens is not None:
+            from ypuddin.objectives.flow import resolution_sqrt_shift
+
+            status["effective_baseline_shift"] = resolution_sqrt_shift(
+                tokens, cfg.shift, cfg.resolution_reference_tokens
+            )
+        elif cfg.timestep_sampling in {"uniform", "logit_normal", "shift"}:
+            status["effective_baseline_shift"] = cfg.shift if cfg.timestep_sampling == "shift" else 1.0
+        return status
+
+    def _resolve_timestep_observation(self, accepted: bool) -> None:
+        sampler = getattr(self, "_adaptive_sampler", None)
+        if sampler is not None and getattr(self, "_adaptive_observation", False):
+            if accepted:
+                sampler.accept_observation()
+            else:
+                sampler.reject_observation()
+        self._adaptive_observation = False
+
+    def _discard_timestep_observations(self) -> None:
+        sampler = getattr(self, "_adaptive_sampler", None)
+        if sampler is not None:
+            sampler.discard_pending()
+        self._adaptive_observation = False
+
+    def _reduce_timestep_statistics(self, stats: Tensor) -> Tensor:
+        return stats
 
     def _validate_dora_contract(self) -> None:
         validate_active_config(self.adapters, self.cfg, compute_dtype=getattr(getattr(self, "loaded", None), "dtype", None))
@@ -1406,6 +1516,7 @@ class Trainer:
         return path
 
     def _save_state(self, tag: str | None = None) -> Path:
+        self._save_timestep_state()
         self._validate_dora_contract()
         self._validate_training_compute_policy()
         validate_training_feature_resume(self.cfg, self._training_feature_contract)
@@ -1749,16 +1860,25 @@ class Trainer:
         *,
         generator: torch.Generator | None = None,
         t_override: Tensor | None = None,
+        quantile_override: float | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Returns ``(loss, per_sample_unweighted, t)``."""
         gen = generator or self.gen
         x0 = self._latents(batch)
         cond = self._text_cond(batch["caption"], batch.get("cache_names"))
+        adaptive = getattr(self, "_adaptive_sampler", None)
+        training_draw = t_override is None and quantile_override is None and gen is self.gen
+        tokens = self._num_tokens(x0)
+        if training_draw and batch.get("_adaptive_observe", True):
+            self._timestep_tokens = tokens
+        if quantile_override is not None:
+            t_override = self.objective.sampler.icdf([quantile_override], num_tokens=tokens).expand(x0.shape[0])
+        sample_t = adaptive.sample if adaptive is not None and training_draw else self.objective.sample_t
         t = (
             t_override
             if t_override is not None
-            else self.objective.sample_t(
-                x0.shape[0], generator=gen, num_tokens=self._num_tokens(x0), device=self.device
+            else sample_t(
+                x0.shape[0], generator=gen, num_tokens=tokens, device=self.device
             )
         )
         x_t, target, _ = self.objective.prepare(x0, t.to(self.device), generator=gen)
@@ -1788,6 +1908,13 @@ class Trainer:
         loss, per_sample = self.objective.loss(
             pred.float(), target, t, mask=mask, sample_weight=batch["weight"]
         )
+        if adaptive is not None and training_draw:
+            if batch.get("_adaptive_observe", True):
+                valid = mask.flatten(1).sum(1) > 0 if mask is not None else None
+                adaptive.record(t, per_sample, batch["is_reg"], valid_mask=valid)
+                self._adaptive_observation = True
+            else:
+                adaptive.reject_observation()
         return loss, per_sample, t
 
     # ----------------------------------------------------------------- loop
@@ -2056,6 +2183,7 @@ class Trainer:
             self.progress.samples_seen += len(batch["caption"])
             loss, _, _ = self.compute_loss(batch)
             if not torch.isfinite(loss):
+                self._resolve_timestep_observation(False)
                 self.progress.nan_skips += 1
                 self.emit(
                     "warning", code="loss.nonfinite", step=self.progress.step, skips=self.progress.nan_skips
@@ -2063,6 +2191,7 @@ class Trainer:
                 if self.progress.nan_skips >= cfg.loop.nan_skip_limit:
                     raise RuntimeError(f"{self.progress.nan_skips} consecutive non-finite losses")
                 continue
+            self._resolve_timestep_observation(True)
             self._backward(loss / accum)
             if self.swapper is not None:
                 self.swapper.release_all()
@@ -2127,6 +2256,7 @@ class Trainer:
                 count = len(part["caption"])
                 loss, _, _ = self.compute_loss(part)
                 if not torch.isfinite(loss):
+                    self._discard_timestep_observations()
                     self.progress.nan_skips += 1
                     self.emit(
                         "warning",
@@ -2142,6 +2272,7 @@ class Trainer:
                         raise RuntimeError(f"{self.progress.nan_skips} consecutive non-finite losses")
                     invalid = True
                     break
+                self._resolve_timestep_observation(True)
                 self._backward(loss * (count / target))
                 if self.swapper is not None:
                     self.swapper.release_all()
@@ -2177,6 +2308,7 @@ class Trainer:
             scaler.unscale_(self.optimizer)
         grad_norm = self._gradient_norm_and_clip()
         if not math.isfinite(grad_norm):
+            self._discard_timestep_observations()
             if scaler is not None:
                 old_scale = scaler.get_scale()
                 # Explicitly back off even if the norm overflowed while each
@@ -2218,6 +2350,9 @@ class Trainer:
             self.scheduler.step()
         self.optimizer.zero_grad(set_to_none=True)
         self.progress.step += 1
+        adaptive = getattr(self, "_adaptive_sampler", None)
+        if adaptive is not None:
+            adaptive.commit_step(self._reduce_timestep_statistics)
         self._hooks_pending, self._step_seconds = True, elapsed
         self._update_ema()
         self._loss_ema = group_loss if self._loss_ema is None else 0.98 * self._loss_ema + 0.02 * group_loss
@@ -2373,7 +2508,8 @@ class Trainer:
             return {}
         started = time.perf_counter()
         ds.set_epoch(0)
-        ts = self.objective.sampler.icdf(vcfg.timesteps)
+        resolution_aware = self.cfg.objective.timestep_sampling == "resolution_sqrt"
+        ts = torch.tensor(vcfg.timesteps) if resolution_aware else self.objective.sampler.icdf(vcfg.timesteps)
         per_t: dict[float, list[float]] = {q: [] for q in vcfg.timesteps}
         by_bucket: dict[tuple[int, int], list[int]] = {}
         for i, it in enumerate(ds.items):
@@ -2392,7 +2528,10 @@ class Trainer:
                         vcfg.seed * 100003 + int(q * 1000) + int(batch["index"][0])
                     )
                     t = torch.full((len(batch["caption"]),), float(t_val))
-                    _, per_sample, _ = self.compute_loss(batch, generator=gen, t_override=t)
+                    if resolution_aware:
+                        _, per_sample, _ = self.compute_loss(batch, generator=gen, quantile_override=q)
+                    else:
+                        _, per_sample, _ = self.compute_loss(batch, generator=gen, t_override=t)
                     per_t[q].extend(per_sample.tolist())
         result = {str(q): float(np.mean(v)) for q, v in per_t.items() if v}
         mean = float(np.mean(list(result.values()))) if result else float("nan")

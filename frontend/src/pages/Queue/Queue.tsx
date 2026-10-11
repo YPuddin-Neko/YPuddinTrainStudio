@@ -107,7 +107,7 @@ export default function Queue() {
     queueRefresh();
   });
   useEventStream(EVENT_TYPES.JOB_STEP, event => setJobs(rows => rows.map(job => mergeJobEvent(job, event))));
-  useEventStream(EVENT_TYPES.JOB_PHASE, event => setJobs(rows => rows.map(job => mergeJobEvent(job, event))));
+  useEventStream(EVENT_TYPES.JOB_PHASE, event => setJobs(rows => rows.map(job => mergeJobEvent(job, event, 'phase'))));
   useEventStream(EVENT_TYPES.JOB_XYZ_PROGRESS, event => setJobs(rows => rows.map(job => mergeJobEvent(job, event))));
   const updateSettings = async (patch: Partial<QueueSettings>) => {
     setSettingBusy(true); setError('');

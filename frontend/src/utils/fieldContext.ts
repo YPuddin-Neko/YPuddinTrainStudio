@@ -107,6 +107,7 @@ const multiGpu = (config: Record<string, any>) => Number(config.loop?.gpu_count 
 /** Options this model and machine can run, keeping the current value visible; undefined keeps the list as it is. */
 export function contextOptions(path: string, { family, config }: FieldContext, options: string[] | undefined, current: unknown): string[] | undefined {
   if (!options) return undefined;
+  if (path === 'objective.timestep_sampling' && (family?.name ?? config.model?.family) !== 'anima') return options.filter(option => option !== 'resolution_sqrt');
   const runtime = runtimeOf(family);
   let usable: string[] | undefined;
   if (family && path === 'memory.base_precision' && !(has(family, 'fp8_base') && onGpu(runtime))) usable = options.filter(option => !option.startsWith('fp8'));
@@ -269,6 +270,10 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       ]);
     case 'dataset.caption.cache_variants':
       return text('标签在训练前缓存时，每张图预先生成几个随机版本（打乱顺序、丢弃标签、通配符），训练时轮流使用。只有开启这些随机变化时才有意义。', 'When captions are cached before training, each image gets this many pre-generated random versions (shuffled order, dropped tags, wildcards) that training rotates through. Useful only when those variations are on.');
+    case 'objective.shift':
+      return family.name === 'anima'
+        ? text('固定 Shift 直接使用此值；按分辨率修正 Shift 时，再乘以 √(实际 token 数 / 参考 token 数)。最终偏移大于 1 时偏向高噪声，1 不偏移。\n只影响训练的基础分布；InfoNoise 学到的分布和均匀探索不再应用此偏移，预览图另设采样 Shift。', 'Fixed Shift uses this value directly. Resolution-corrected Shift multiplies it by √(actual tokens / reference tokens). A resulting shift above 1 favors high noise; 1 applies no shift.\nAffects the training baseline only. The learned InfoNoise distribution and uniform exploration receive no further shift; previews have a separate sampling shift.')
+        : configFieldHelp(path, undefined, english);
     case 'objective.timestep_sampling': {
       const describe: Record<string, [string, string]> = ddpm ? {
         uniform: ['0–999 的每个时间步出现机会相同。', 'every timestep from 0 to 999 is equally likely.'],
@@ -278,9 +283,11 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         logit_normal: ['多抽中等噪声，很低和很高的噪声较少。', 'favours medium noise, fewer very low or very high levels.'],
         shift: ['在逻辑正态的基础上偏向高噪声，偏移量见下方「时间步偏移」。', 'logit-normal pushed towards high noise by the shift set below.'],
         resolution_shift: ['偏移量随图像大小自动调整，图越大越偏向高噪声。', 'the shift follows the image size: larger images lean towards higher noise.'],
+        resolution_sqrt: ['基础 Shift 乘以 √(实际 token 数 / 参考 token 数)，按训练图像大小修正；InfoNoise 仅对基础分布应用此修正。', 'multiplies the base shift by √(actual tokens / reference tokens) for the training image size; with InfoNoise, only the baseline receives this correction.'],
         mode: ['同样偏向中等噪声，但两端比逻辑正态保留更多，形状由下方系数控制。', 'also favours medium noise but keeps more at both ends than logit-normal; the coefficient below sets the shape.'],
         cosmap: ['中间多、两端少，比逻辑正态平缓。', 'more in the middle, fewer at the ends, flatter than logit-normal.'],
       };
+      if (family.name !== 'anima') delete describe.resolution_sqrt;
       return join([
         text('训练时每一步随机抽一个噪声强度（t 越大噪声越多），这里决定怎么抽：', 'Each training step draws a noise level (higher t means more noise). This sets how it is drawn:'),
         ...optionLines(describe),

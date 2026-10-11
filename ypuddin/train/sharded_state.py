@@ -12,6 +12,7 @@ import copy
 import json
 import shutil
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -396,6 +397,7 @@ def load_sharded_checkpoint(
     legacy_scheduler_contract: dict[str, Any] | None = None,
     expected_dora_contract: dict[str, Any] | None = None,
     expected_training_features: dict[str, Any] | None = None,
+    validate_timestep_state: Callable[[dict[str, Any], dict[str, Any], int], Any] | None = None,
 ) -> dict[str, Any]:
     """Validate before mutation, then restore native tensors and optimizer shards.
 
@@ -490,10 +492,14 @@ def load_sharded_checkpoint(
             raise ValueError("分片训练状态缺少各显卡的随机状态")
         if len(meta.get("sampler_ranks", [])) != world:
             raise ValueError("分片训练状态缺少各显卡的数据采样位置")
+        timestep_state = (
+            validate_timestep_state(meta["progress"].get("extra", {}), rng, meta["progress"]["step"])
+            if validate_timestep_state is not None else None
+        )
         scheduler = torch.load(path / "scheduler.pt", map_location="cpu", weights_only=False)
-        return meta, states, packed, rng, scheduler
+        return meta, states, packed, rng, scheduler, timestep_state
 
-    meta, states, packed_optimizer, rng, scheduler = _collective_check(validate)
+    meta, states, packed_optimizer, rng, scheduler, timestep_state = _collective_check(validate)
     with torch.no_grad(), safe_open(path / "model.safetensors", framework="pt", device="cpu") as archive:
         for name, target in states.items():
             full = archive.get_tensor(name)
@@ -530,6 +536,7 @@ def load_sharded_checkpoint(
         "sampler": meta["sampler_ranks"][rank],
         "rng": rng,
         "scheduler": scheduler,
+        "timestep_state": timestep_state,
     }
 
 

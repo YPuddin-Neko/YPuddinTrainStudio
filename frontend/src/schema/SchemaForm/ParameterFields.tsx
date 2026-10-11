@@ -51,7 +51,8 @@ const layouts: Record<string, Section[]> = {
   scheduler: [section('curve', ['type', 'warmup_steps', 'min_lr_ratio', 'num_cycles', 'power', 'decay_steps'])],
   memory: [section('resources', ['model.attention', 'base_precision', 'blocks_to_swap', 'activation_checkpointing', 'vae_encode_batch_size', 'vae_attention_chunking', 'no_half_vae', 'vae_tiling', 'cache_encode_tiled', 'offload_text_encoder', 'compile', 'allow_tf32'])],
   objective: [
-    section('noise', ['timestep_sampling', 'logit_mean', 'logit_std', 'shift', 'mode_scale', 'res_shift_tokens', 'res_shift_mu', 't_min', 't_max', 'stratified'], ['噪声与时间步', 'Noise and timesteps']),
+    section('noise', ['timestep_sampling', 'logit_mean', 'logit_std', 'shift', 'resolution_reference_tokens', 'mode_scale', 'res_shift_tokens', 'res_shift_mu', 't_min', 't_max', 'stratified'], ['噪声与时间步', 'Noise and timesteps']),
+    section('infonoise', ['infonoise_enabled', 'infonoise_bins', 'infonoise_warmup_steps', 'infonoise_refresh_every', 'infonoise_ema_decay', 'infonoise_exploration', 'infonoise_adaptive_mix', 'infonoise_min_samples', 'infonoise_min_coverage', 'infonoise_gate_sigma']),
     section('noise-shape', ['noise_offset', 'multires_noise_iterations', 'multires_noise_discount'], ['噪声分布', 'Noise distribution']),
     section('loss', ['loss', 'huber_c', 'weighting', 'snr_gamma', 'ip_noise_gamma', 'v_pred_like_loss', 'scale_v_pred_loss_like_noise_pred', 'debiased_estimation_loss'], ['损失与加权', 'Loss and weighting']),
   ],
@@ -124,7 +125,7 @@ export default function ParameterFields({ group, fields, english, renderToggleSe
   const titled = visible.length + (remaining.length > 0 ? 1 : 0) > 1;
   const render = ({ item, content }: typeof visible[number]) => {
     const revealed = new Set((item.afterToggles ?? []).map(fullPath));
-    const togglePath=group==='loop' && item.key==='ema' ? 'loop.ema' : group==='caption' && item.key==='ordering' ? 'dataset.caption.shuffle' : undefined;
+    const togglePath=group==='loop' && item.key==='ema' ? 'loop.ema' : group==='caption' && item.key==='ordering' ? 'dataset.caption.shuffle' : group==='objective' && item.key==='infonoise' ? 'objective.infonoise_enabled' : undefined;
     return togglePath && renderToggleSection
       ? <div key={item.key} className={`config-field-section config-${group}-${item.key}`}>{renderToggleSection(togglePath,<FieldSection fields={content.filter(field=>path(field)!==togglePath)}/>)}</div>
       : <FieldSection key={item.key} fields={content.filter(field => !revealed.has(path(field)))} after={content.filter(field => revealed.has(path(field)))}

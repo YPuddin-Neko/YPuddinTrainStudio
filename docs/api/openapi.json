@@ -21747,6 +21747,16 @@
               }
             ],
             "title": "Lr"
+          },
+          "timestep_sampling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimestepSamplingStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -24510,11 +24520,12 @@
               "logit_normal",
               "shift",
               "resolution_shift",
+              "resolution_sqrt",
               "mode",
               "cosmap"
             ],
             "title": "Timestep Sampling",
-            "description": "训练噪声强度分布，t 越大噪声越多。默认 shift 在 logit-normal 抽样后应用 shift=3；uniform 均匀抽样，resolution_shift 按图像 token 数调整。预览图使用独立的噪声调度设置。",
+            "description": "训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；Anima 的 resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。",
             "default": "shift",
             "x-ui": {
               "advanced": true,
@@ -24532,7 +24543,7 @@
               "advanced": true,
               "group": "objective",
               "order": 10,
-              "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+              "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift','resolution_sqrt']"
             }
           },
           "logit_std": {
@@ -24545,7 +24556,7 @@
               "advanced": true,
               "group": "objective",
               "order": 20,
-              "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift']"
+              "show_when": "objective.timestep_sampling in ['logit_normal','shift','resolution_shift','resolution_sqrt']"
             }
           },
           "res_shift_tokens": {
@@ -24602,13 +24613,26 @@
             "type": "number",
             "exclusiveMinimum": 0.0,
             "title": "Shift",
-            "description": "训练时间步偏移，默认 3；大于 1 将样本推向高噪声，1 不偏移。公式为 t'=s·t/(1+(s-1)·t)。该字段只影响训练 shift 分布，预览另有采样 shift。",
+            "description": "训练时间步的基础偏移。固定 shift 模式直接使用此值；resolution_sqrt 再乘以 token 数与参考值之比的平方根。最终偏移 s 大于 1 时推向高噪声，公式为 t'=s·t/(1+(s-1)·t)。预览另有采样 shift。",
             "default": 3.0,
             "x-ui": {
               "advanced": true,
               "group": "objective",
               "order": 30,
-              "show_when": "objective.timestep_sampling == 'shift'"
+              "show_when": "objective.timestep_sampling in ['shift','resolution_sqrt']"
+            }
+          },
+          "resolution_reference_tokens": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Resolution Reference Tokens",
+            "description": "基础 shift 对应的图像 token 数。Anima 的 1024×1024 图像对应 4096；训练时按实际潜空间和 patch 尺寸计算 token 数。例如 token 数为参考值的 4 倍时，基础 shift 乘以 2。",
+            "default": 4096,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 32,
+              "show_when": "model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'"
             }
           },
           "mode_scale": {
@@ -24811,6 +24835,141 @@
               "advanced": true,
               "group": "objective",
               "order": 150
+            }
+          },
+          "infonoise_enabled": {
+            "type": "boolean",
+            "title": "Infonoise Enabled",
+            "description": "根据主训练数据在不同噪声强度下的原始 MSE 调整时间步抽样，正则数据不更新统计。热身使用基础分布与均匀探索；自适应部分直接抽取实际时间步，不再次应用 shift。仅用于 Anima 的 MSE、无额外损失加权和噪声修饰的训练。",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "objective",
+              "order": 160,
+              "show_when": "model.family == 'anima'"
+            }
+          },
+          "infonoise_bins": {
+            "type": "integer",
+            "maximum": 128.0,
+            "minimum": 8.0,
+            "title": "Infonoise Bins",
+            "description": "将有效时间步范围划分为多少个统计区间。区间更多能区分更细的噪声变化，也需要更多样本形成可靠统计。",
+            "default": 16,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 161,
+              "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+            }
+          },
+          "infonoise_warmup_steps": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Infonoise Warmup Steps",
+            "description": "自适应抽样前完成的优化器更新数，梯度累积中的前向批次不单独计步。填 0 跳过步数等待，仍需满足样本数和覆盖率。",
+            "default": 8,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 162,
+              "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+            }
+          },
+          "infonoise_refresh_every": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Infonoise Refresh Every",
+            "description": "每完成多少次优化器更新重新计算抽样分布。间隔内继续使用当前分布；失败并跳过的更新不计入。",
+            "default": 4,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 163,
+              "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+            }
+          },
+          "infonoise_ema_decay": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "title": "Infonoise Ema Decay",
+            "description": "区间误差统计保留旧值的比例。较大时变化更平缓，较小时更快跟随近期误差；填 0 只使用本次收到的区间统计。",
+            "default": 0.9,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 164,
+              "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+            }
+          },
+          "infonoise_exploration": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Infonoise Exploration",
+            "description": "最终抽样中用于均匀探索有效时间步范围的比例。例如 0.1 表示始终留出 10% 的抽样覆盖低概率区间，其余分配给基础和自适应分布。",
+            "default": 0.1,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 165,
+              "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+            }
+          },
+          "infonoise_adaptive_mix": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Infonoise Adaptive Mix",
+            "description": "非探索部分中分配给自适应分布的最大比例，其余沿用基础分布。例如探索 0.1、此值 0.8 时，最终最多 72% 自适应、18% 基础、10% 均匀探索。填 1 仍保留均匀探索。",
+            "default": 0.8,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 166,
+              "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+            }
+          },
+          "infonoise_min_samples": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Infonoise Min Samples",
+            "description": "启用自适应抽样所需的有效主集样本数。正则图片、无有效遮罩区域、非有限误差和已丢弃更新中的样本不计入。",
+            "default": 32,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 167,
+              "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+            }
+          },
+          "infonoise_min_coverage": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Infonoise Min Coverage",
+            "description": "已有有效样本的统计区间占比达到此值后，才启用自适应抽样。例如 16 个区间、0.25 覆盖率需要至少 4 个区间收到样本。",
+            "default": 0.25,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 168,
+              "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
+            }
+          },
+          "infonoise_gate_sigma": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Infonoise Gate Sigma",
+            "description": "抑制接近无噪声端的自适应密度。使用固定三次门函数；较大时抑制范围更宽，不改变基础分布和均匀探索。",
+            "default": 0.15,
+            "x-ui": {
+              "advanced": true,
+              "group": "objective",
+              "order": 169,
+              "show_when": "model.family == 'anima' && objective.infonoise_enabled == true"
             }
           }
         },
@@ -31211,6 +31370,332 @@
           "max_bytes"
         ],
         "title": "ThumbnailCacheStatus"
+      },
+      "TimestepSamplingStatus": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "resolution_sqrt",
+              "infonoise",
+              "combined"
+            ],
+            "title": "Mode"
+          },
+          "baseline": {
+            "type": "string",
+            "enum": [
+              "uniform",
+              "logit_normal",
+              "shift",
+              "resolution_sqrt"
+            ],
+            "title": "Baseline"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "baseline",
+              "warmup",
+              "collecting",
+              "active",
+              "fallback"
+            ],
+            "title": "Stage"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "step": {
+            "type": "integer",
+            "title": "Step"
+          },
+          "recent_num_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recent Num Tokens"
+          },
+          "token_scope": {
+            "type": "string",
+            "const": "last_primary_microbatch",
+            "title": "Token Scope",
+            "default": "last_primary_microbatch"
+          },
+          "effective_baseline_shift": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Baseline Shift"
+          },
+          "optimizer_updates": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optimizer Updates"
+          },
+          "statistics_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statistics Step"
+          },
+          "refreshes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refreshes"
+          },
+          "warmup_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warmup Steps"
+          },
+          "warmup_completed_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warmup Completed Steps"
+          },
+          "main_samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Main Samples"
+          },
+          "min_samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Samples"
+          },
+          "bins": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bins"
+          },
+          "observed_bins": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Bins"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage"
+          },
+          "min_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Coverage"
+          },
+          "invalid_samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invalid Samples"
+          },
+          "empty_mask_samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Empty Mask Samples"
+          },
+          "regularization_samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regularization Samples"
+          },
+          "adaptive_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adaptive Fraction"
+          },
+          "baseline_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Fraction"
+          },
+          "exploration_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exploration Fraction"
+          },
+          "bin_edges": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bin Edges"
+          },
+          "learned_mass": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learned Mass"
+          },
+          "effective_mass": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Mass"
+          },
+          "gate_sigma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Sigma"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "mode",
+          "baseline",
+          "stage",
+          "step"
+        ],
+        "title": "TimestepSamplingStatus"
       },
       "TorchBuild": {
         "properties": {

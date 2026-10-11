@@ -10,6 +10,7 @@ export type ProjectPage = S['ProjectPage'];
 export type ProjectCategories = S['ProjectCategories'];
 export type Job = S['Job'];
 export type JobProgress = S['JobProgress'];
+export type TimestepSamplingStatus = S['TimestepSamplingStatus'];
 export type JobMetrics = Pick<S['JobMetrics'], 'steps' | 'loss' | 'loss_ema' | 'grad_norm' | 'vram_mb' | 'vram_metric' | 'it_s' | 'validation' | 'gpu_power_w' | 'gpu_temp_c' | 'gpu_util_pct' | 'gpu_devices'> & {
   lr: Record<string, Array<number | null>>;
 };
@@ -149,6 +150,16 @@ export interface JobStepEvent {
   vram_mb: number | null;
   vram_metric?: string | null;
   eta_s: number | null;
+  timestep_sampling?: TimestepSamplingStatus | null;
+}
+
+export interface JobPhaseEvent {
+  job_id: string;
+  phase?: string | null;
+  step?: number;
+  progress?: Partial<JobProgress>;
+  timestep_sampling?: TimestepSamplingStatus | null;
+  latest?: { timestep_sampling?: TimestepSamplingStatus | null };
 }
 
 export interface JobStateEvent {

@@ -44,6 +44,22 @@ export function reusableTrainingPreset(config: Record<string, any>): Record<stri
 
 export function applyTrainingPreset(current: Record<string, any>, preset: Record<string, any>) {
   const reusable = reusableTrainingPreset(preset);
+  // Missing opt-ins in older recipes must not inherit an enabled adaptive run.
+  reusable.objective = { ...reusable.objective };
+  if (!Object.prototype.hasOwnProperty.call(reusable.objective, 'infonoise_enabled')) reusable.objective.infonoise_enabled = false;
+  if (!Object.prototype.hasOwnProperty.call(reusable.objective, 'timestep_sampling') && current.objective?.timestep_sampling === 'resolution_sqrt') {
+    reusable.objective.timestep_sampling = 'shift';
+  }
+  if (current.model?.family && current.model.family !== 'anima') {
+    reusable.objective.infonoise_enabled = false;
+    if (reusable.objective.timestep_sampling === 'resolution_sqrt') {
+      // Applying another family's recipe cannot opt the current model into Anima-only sampling.
+      delete reusable.objective.timestep_sampling;
+    }
+    if (current.objective?.timestep_sampling === 'resolution_sqrt' && (!Object.prototype.hasOwnProperty.call(preset.objective || {}, 'timestep_sampling') || preset.objective?.timestep_sampling === 'resolution_sqrt')) {
+      reusable.objective.timestep_sampling = current.model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(current.model.family) ? 'resolution_shift' : 'shift';
+    }
+  }
   // Model files only fit the family they were chosen for.
   if (reusable.model && (!current.model?.family || reusable.model.family !== current.model.family)) {
     for (const field of PRESET_MODEL_FIELDS) delete reusable.model[field];
