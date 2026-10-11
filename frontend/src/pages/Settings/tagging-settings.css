@@ -19,7 +19,4 @@
 .tagging-settings-model-state .vision-model-error{flex-basis:100%;text-align:right}
 @media(max-width:560px){.tagging-settings-model{grid-template-columns:minmax(0,1fr)}.tagging-settings-model-state{justify-content:flex-start}.tagging-settings-model-state .vision-model-error{text-align:left}}
 .tagging-settings .settings-input:disabled{background:var(--settings-subtle);color:var(--settings-muted);cursor:default}
-.tagging-settings-tabs{display:flex;gap:4px;margin:10px 0 2px;padding:3px;border:1px solid var(--settings-line);border-radius:8px;background:var(--settings-subtle);width:max-content;max-width:100%;overflow:auto}
-.tagging-settings-tabs>button{min-width:88px;padding:6px 12px;border:0;border-radius:6px;background:transparent;color:var(--settings-muted);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
-.tagging-settings-tabs>button[aria-selected=true]{background:var(--settings-panel);color:var(--studio-accent);box-shadow:0 1px 3px rgb(15 23 42 / .12);font-weight:600}
-.tagging-settings-tabs>button:focus-visible{outline:2px solid var(--studio-accent);outline-offset:1px}
+.tagging-settings-tabs{display:flex;margin:10px 0 2px;width:max-content;max-width:100%;overflow:auto}

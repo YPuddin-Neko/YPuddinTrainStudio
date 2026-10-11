@@ -9,6 +9,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import StudioSelect from '../../components/StudioSelect';
 import { useConfirmation } from '../../components/useConfirmation';
 import { LoadingNote } from '../../components/Loading';
+import { SlidingIndicator } from '../../components/motion';
 import { VisionModelState } from '../../components/datasets/VisionModelField';
 import { SERVICE_NAMES, TAGGER_SERIES, modelName, resolveService, useTaggingSettings, useVisionModels, useVlmError, useVlmModels, useVlmServices, type TaggingSettings as Tagging, type VlmSettings } from '../../components/datasets/visionHooks';
 import { SettingsSections } from './SettingsSections';
@@ -149,6 +150,8 @@ export default function TaggingSettings() {
   if (!current) return <div role="alert" className="settings-alert">{formatApiError(query.error)}<button type="button" className="ui-link ml-2" disabled={query.isFetching} onClick={() => void query.refetch()}>{text('重新读取', 'Reload')}</button></div>;
   const models = catalog.data?.models || [];
   const taggers = models.filter(model => model.role === 'tagger');
+  const taggerFamilies = ['wd', 'cl', 'pixai'].filter(family => taggers.some(model => model.family === family));
+  const selectedFamilyVisible = taggerFamilies.includes(taggerFamily);
   const detectors = models.filter(model => model.role !== 'tagger');
   const modelRow = (model: typeof models[number], series: string) => <div key={model.id} className="tagging-settings-model" data-testid={`tagging-model-${model.id}`}>
     <div className="tagging-settings-model-name"><strong>{series ? `${series} · ${modelName(model)}` : model.label}</strong>
@@ -196,10 +199,18 @@ export default function TaggingSettings() {
       {catalog.error && <div role="alert" className="settings-alert">{formatApiError(catalog.error)}<button type="button" className="ui-link ml-2" disabled={catalog.isFetching} onClick={() => void catalog.refetch()}>{text('重新读取模型', 'Reload models')}</button></div>}
       {catalog.data && <>
         <h3 className="tagging-settings-group">{text('Tagger 模型', 'Tagger models')}</h3>
-        <div className="tagging-settings-tabs" role="tablist" aria-label={text('Tagger 模型系列', 'Tagger model series')}>
-          {['wd', 'cl', 'pixai'].filter(family => taggers.some(model => model.family === family)).map(family => <button key={family} type="button" role="tab" aria-selected={taggerFamily === family} onClick={() => setTaggerFamily(family)}>{TAGGER_SERIES[family] || family}</button>)}
+        <div className="tagging-settings-tabs ui-segmented" role="tablist" aria-label={text('Tagger 模型系列', 'Tagger model series')}>
+          {taggerFamilies.map((family, index) => <button key={family} id={`tagging-family-${family}`} type="button" role="tab" aria-selected={taggerFamily === family} aria-controls="tagging-family-models"
+            tabIndex={taggerFamily === family || (!selectedFamilyVisible && index === 0) ? 0 : -1} onClick={() => setTaggerFamily(family)} onKeyDown={event => {
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? taggerFamilies.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + taggerFamilies.length) % taggerFamilies.length;
+              setTaggerFamily(taggerFamilies[next]);
+              document.getElementById(`tagging-family-${taggerFamilies[next]}`)?.focus();
+            }}>{TAGGER_SERIES[family] || family}</button>)}
+          <SlidingIndicator className="ui-segmented-thumb"/>
         </div>
-        <div className="tagging-settings-models">{taggers.filter(model => model.family === taggerFamily).map(model => modelRow(model, TAGGER_SERIES[model.family] || model.family))}</div>
+        <div id="tagging-family-models" className="tagging-settings-models" role="tabpanel" aria-labelledby={selectedFamilyVisible ? `tagging-family-${taggerFamily}` : undefined} aria-label={selectedFamilyVisible ? undefined : text('Tagger 模型', 'Tagger models')}>{taggers.filter(model => model.family === taggerFamily).map(model => modelRow(model, TAGGER_SERIES[model.family] || model.family))}</div>
         <h3 className="tagging-settings-group">{text('遮罩检测模型', 'Mask detectors')}</h3>
         <div className="tagging-settings-models">{detectors.map(model => modelRow(model, ''))}</div>
       </>}
