@@ -304,6 +304,12 @@ class ModelFamily(ABC):
             raise NotImplementedError(f"{self.spec.name}: implement its {self.spec.objective} sampler")
         return sample(predict, shape, **options)
 
+    def sampling_prediction_pair(
+        self, loaded, forward, cond, uncond, *, cfg, noise, reserve_memory=0, check=None
+    ):
+        """Optional paired inference callback returning (positive, negative) predictions."""
+        return None
+
     @abstractmethod
     def presets(self) -> dict[str, TargetPreset]: ...
 

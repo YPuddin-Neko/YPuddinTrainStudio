@@ -81,6 +81,7 @@ def sample(
     er_sde_order: int = 3,
     er_sde_s_noise: float = 1.0,
     predict_uncond: Callable[[Tensor, Tensor], Tensor] | None = None,
+    predict_pair: Callable[[Tensor, Tensor], tuple[Tensor, Tensor]] | None = None,
     generator: torch.Generator | None = None,
     device: torch.device | str = "cpu",
     dtype: torch.dtype = torch.float32,
@@ -121,6 +122,7 @@ def sample(
             sigmas=times,
             cfg=cfg,
             predict_uncond=predict_uncond,
+            predict_pair=predict_pair,
             generator=generator,
             device=device,
             dtype=dtype,
@@ -137,6 +139,7 @@ def sample(
             shift=shift,
             cfg=cfg,
             predict_uncond=predict_uncond,
+            predict_pair=predict_pair,
             generator=generator,
             device=device,
             dtype=dtype,
@@ -156,7 +159,7 @@ def sample(
 
     for index, (current, following) in enumerate(zip(times[:-1], times[1:], strict=True)):
         if noise == "comfyui":
-            denoised = comfyui_denoised(predict, predict_uncond, x, current, cfg)
+            denoised = comfyui_denoised(predict, predict_uncond, x, current, cfg, predict_pair)
             if sampler == "euler_ancestral":
                 x = _ancestral_denoised_step(x, current, following, denoised, seeded)
             else:
@@ -164,7 +167,7 @@ def sample(
                 delta = following - current
                 proposed = x + first * delta
                 if sampler == "heun" and index < steps - 1:
-                    next_denoised = comfyui_denoised(predict, predict_uncond, proposed, following, cfg)
+                    next_denoised = comfyui_denoised(predict, predict_uncond, proposed, following, cfg, predict_pair)
                     second = (proposed - next_denoised) / following
                     x = x + ((first + second) / 2) * delta
                 else:

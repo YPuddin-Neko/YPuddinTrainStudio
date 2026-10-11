@@ -2487,6 +2487,16 @@ class Trainer:
             def predict_uncond(x: Tensor, t: Tensor, c: TextCond = uncond) -> Tensor:
                 return predict(x, t, c)
 
+            with self._autocast():
+                pair = self.family.sampling_prediction_pair(
+                    self.loaded, predict, cond, uncond, cfg=cfg_scale, noise=scfg.noise,
+                    reserve_memory=(
+                        self.swapper.bytes_per_block
+                        * min(len(self.swapper.swapped_idx), 2 if self.swapper.prefetch else 1)
+                        if self.swapper else 0
+                    ),
+                )
+
             def on_step(done: int, n: int, idx: int = i, prompts_total: int = len(prompts)) -> None:
                 self.emit(
                     "sample.progress",
@@ -2514,7 +2524,9 @@ class Trainer:
                 device=self.device,
                 dtype=torch.float32,
                 on_step=on_step,
+                **({"predict_pair": pair} if pair is not None else {}),
             )
+            del pair
             self.loaded.latent.to(self.device)
             pixels = decode_preview(self.loaded.latent, latents, noise=scfg.noise).clamp(-1, 1)
             arr = ((pixels[0].permute(1, 2, 0).cpu().float().numpy() + 1) * 127.5).round().astype("uint8")

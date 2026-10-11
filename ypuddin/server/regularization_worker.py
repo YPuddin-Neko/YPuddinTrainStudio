@@ -85,14 +85,16 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
             uncond = conditions[request["negative"]].to(device)
             seed = request["seed"] + index
 
-            def predict(x, t, condition=cond):
-                check()
-                precision = (
+            def precision():
+                return (
                     torch.autocast("cuda", dtype=dtype)
                     if device.type == "cuda" and dtype != torch.float32
                     else nullcontext()
                 )
-                with precision:
+
+            def predict(x, t, condition=cond):
+                check()
+                with precision():
                     return family.forward(
                         loaded,
                         x.to(dtype),
@@ -101,6 +103,11 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
                         inference=True,
                         guidance=guidance,
                     ).float()
+
+            with precision():
+                pair = family.sampling_prediction_pair(
+                    loaded, predict, cond, uncond, cfg=request["cfg"], noise="comfyui", check=check,
+                )
 
             def step(done, total, image_index=index):
                 check()
@@ -121,7 +128,9 @@ def generate(request: dict, output: Path, emit, cancelled) -> None:
                 generator=torch.Generator().manual_seed(seed),
                 device=device,
                 on_step=step,
+                **({"predict_pair": pair} if pair is not None else {}),
             )
+            del pair
             # Decode with the DiT parked on CPU to avoid a transient DiT/VAE memory peak.
             loaded.backbone.to("cpu")
             loaded.latent.to(device)

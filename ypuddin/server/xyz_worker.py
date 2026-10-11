@@ -543,14 +543,16 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                         sample_steps=cell["steps"],
                     )
 
-                    def predict(x, t, condition=cond, guidance_value=guidance, current_loaded=loaded):
-                        check()
-                        precision = (
+                    def precision():
+                        return (
                             torch.autocast("cuda", dtype=dtype)
                             if device.type == "cuda" and dtype != torch.float32
                             else nullcontext()
                         )
-                        with precision:
+
+                    def predict(x, t, condition=cond, guidance_value=guidance, current_loaded=loaded):
+                        check()
+                        with precision():
                             return family.forward(
                                 current_loaded,
                                 x.to(dtype),
@@ -559,6 +561,16 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                                 inference=True,
                                 guidance=guidance_value,
                             ).float()
+
+                    with precision():
+                        pair = family.sampling_prediction_pair(
+                            loaded, predict, cond, uncond, cfg=cell["cfg"], noise=prompt_mode,
+                            reserve_memory=(
+                                swapper.bytes_per_block * min(len(swapper.swapped_idx), 2 if swapper.prefetch else 1)
+                                if swapper else 0
+                            ),
+                            check=check,
+                        )
 
                     def step(done, total, cell_index=cell["index"]):
                         check()
@@ -588,7 +600,9 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                         noise=cell.get("noise", "comfyui"),
                         device=device,
                         on_step=step,
+                        **({"predict_pair": pair} if pair is not None else {}),
                     )
+                    del pair
                 if not torch.isfinite(latents).all():
                     raise ValueError("Sampling produced non-finite latents; reduce the comparison settings")
                 if swapper:

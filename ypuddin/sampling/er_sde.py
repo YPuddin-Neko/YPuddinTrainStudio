@@ -124,6 +124,7 @@ def er_sde_sample(
     sigmas: Tensor,
     cfg: float = 1.0,
     predict_uncond: Callable[[Tensor, Tensor], Tensor] | None = None,
+    predict_pair: Callable[[Tensor, Tensor], tuple[Tensor, Tensor]] | None = None,
     generator: torch.Generator | None = None,
     device: torch.device | str = "cpu",
     dtype: torch.dtype = torch.float32,
@@ -179,8 +180,7 @@ def er_sde_sample(
     device = torch.device(device)
     work_dtype = torch.float64 if dtype == torch.float64 else torch.float32
 
-    def velocity(function, model_x, batch_t):
-        value = function(model_x, batch_t)
+    def checked_velocity(value):
         if (
             not isinstance(value, Tensor)
             or tuple(value.shape) != tuple(shape)
@@ -190,6 +190,9 @@ def er_sde_sample(
         if value.device != device:
             raise ValueError("ER-SDE velocity prediction must remain on the sampling device")
         return _finite(value.to(dtype=work_dtype), "velocity prediction")
+
+    def velocity(function, model_x, batch_t):
+        return checked_velocity(function(model_x, batch_t))
 
     x = noise.first(shape).to(dtype=work_dtype)
     device = x.device  # Canonicalize unspecified CUDA indices to the actual device.
@@ -204,7 +207,12 @@ def er_sde_sample(
             device=device,
             dtype=torch.float64 if dtype == torch.float64 else torch.float32,
         )
-        if cfg == 0 and predict_uncond is not None:
+        if noise.source == "comfyui" and cfg != 1.0 and predict_pair is not None:
+            positive, negative = predict_pair(model_x, batch_t)
+            denoised = x - checked_velocity(positive) * current
+            uncond = x - checked_velocity(negative) * current
+            denoised = _finite(uncond + (denoised - uncond) * cfg, "denoised prediction")
+        elif cfg == 0 and predict_uncond is not None:
             v = velocity(predict_uncond, model_x, batch_t)
             denoised = _finite(x - current * v, "denoised prediction")
         elif noise.source == "comfyui":

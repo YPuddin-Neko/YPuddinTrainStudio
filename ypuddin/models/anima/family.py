@@ -431,22 +431,40 @@ class AnimaFamily(ModelFamily):
         )
 
     # ----------------------------------------------------------------- forward
+    def sampling_prediction_pair(
+        self, loaded, forward, cond, uncond, *, cfg, noise, reserve_memory=0, check=None
+    ):
+        from .sampling import AnimaPredictionPair
+
+        if noise != "comfyui" or uncond is None or math.isclose(cfg, 1.0):
+            return None
+        return AnimaPredictionPair(
+            loaded, forward, cond, uncond, reserve_memory=reserve_memory, check=check
+        )
+
+    def sample_latents(self, loaded, predict, shape, **options):
+        if options.get("noise", "comfyui") == "comfyui" and math.isclose(options.get("cfg", 1.0), 1.0):
+            options["cfg"] = 1.0
+        return super().sample_latents(loaded, predict, shape, **options)
+
     def forward(self, loaded: LoadedModel, x_t: Tensor, t: Tensor, cond: TextCond, **extra: Any) -> Tensor:
+        from .sampling import SamplingContext
         from .vendor.attention import sampling_attention
 
         dit = loaded.backbone
         b, _, h, w = x_t.shape
         x5 = x_t.unsqueeze(2)
         padding_mask = torch.zeros(b, 1, h, w, dtype=x5.dtype, device=x5.device)
+        prepared = extra.get("inference", False) and isinstance(cond, SamplingContext)
         with sampling_attention(not dit.training):
             out = dit(
                 x5,
                 t.to(device=x5.device, dtype=torch.float32),
                 cond["embeds"].to(device=x5.device, dtype=x5.dtype),
                 padding_mask=padding_mask,
-                target_input_ids=cond["t5_ids"].to(x5.device),
-                target_attention_mask=cond["t5_mask"].to(x5.device),
-                source_attention_mask=cond["attn_mask"].to(x5.device),
+                target_input_ids=None if prepared else cond["t5_ids"].to(x5.device),
+                target_attention_mask=None if prepared else cond["t5_mask"].to(x5.device),
+                source_attention_mask=None if prepared else cond["attn_mask"].to(x5.device),
             )
         return out.squeeze(2)
 
