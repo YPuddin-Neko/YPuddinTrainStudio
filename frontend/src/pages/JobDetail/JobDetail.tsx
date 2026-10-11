@@ -25,8 +25,9 @@ import ArtifactGrid from './ArtifactGrid';
 import ResumePointList from './ResumePointList';
 import Dialog from '../../components/Dialog';
 import JobStepper from './JobStepper';
+import MetricValue from './MetricValue';
 import { SlidingIndicator } from '../../components/motion';
-import { useEnterAnimation } from '../../utils/motion';
+import { prefersReducedMotion, useEnterAnimation } from '../../utils/motion';
 import TopbarBreadcrumb from '../../components/TopbarBreadcrumb';
 import { isTtsJob } from '../../api/tts';
 import TtsJobOutputs from '../Tts/TtsJobOutputs';
@@ -48,7 +49,7 @@ function StatCard({ label, value, hint, detail }: { label: string; value: React.
   return <div className={`job-stat${hint ? ' has-help' : ''}`}>
     <div className="job-stat-label">{label}</div>
     {hint && <span className="job-stat-help"><ConfigHelp label={text(`${label} · 说明`, `About ${label}`)}>{hint}</ConfigHelp></span>}
-    <div className="job-stat-value">{value}</div>{detail}
+    <div className="job-stat-value" tabIndex={0} role="group" aria-label={label}>{value}</div>{detail}
   </div>;
 }
 
@@ -78,20 +79,17 @@ function learningRateHelp(groups: string[], algo: unknown, optimizer: unknown, t
   return [lines.length ? text('每个参数组当前的学习率：', 'The current learning rate of each parameter group:') : '', ...lines, adaptive].filter(Boolean).join('\n');
 }
 
-const tinyChange = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 2, maximumFractionDigits: 20, useGrouping: false });
-
 /** How a live value moved since the previous reading: down in green, up in red. */
-function StepChange({ delta, text }: { delta: number | null; text: (zh: string, en: string) => string }) {
+function StepChange({ delta, text, iconRef, updateKey, active }: { delta: number | null; text: (zh: string, en: string) => string; iconRef?: React.Ref<SVGSVGElement>; updateKey: number; active: boolean }) {
   if (delta == null || !Number.isFinite(delta)) return null;
   const direction = delta < 0 ? 'down' : delta > 0 ? 'up' : 'flat';
   const size = Math.abs(delta);
-  // Plain decimals throughout; a change below 0.0001 keeps two significant digits (0.0000025).
-  const amount = size !== 0 && size < 1e-4 ? tinyChange.format(size) : size.toFixed(4);
+  const amount = size.toFixed(4);
   const Icon = direction === 'down' ? ArrowDown : direction === 'up' ? ArrowUp : Minus;
   const said = direction === 'down' ? text(`比上一次下降 ${amount}`, `Down ${amount} from the previous reading`)
     : direction === 'up' ? text(`比上一次上升 ${amount}`, `Up ${amount} from the previous reading`) : text('与上一次持平', 'Same as the previous reading');
   return <div className="job-stat-change" data-direction={direction} title={said}>
-    <Icon size={12} aria-hidden="true"/><span aria-hidden="true">{direction === 'flat' ? '0' : amount}</span><span className="sr-only">{said}</span>
+    <Icon ref={iconRef} size={12} aria-hidden="true"/><span className="job-stat-change-value" tabIndex={0}><span aria-hidden="true"><MetricValue text={amount} value={size} contextKey="comparison" updateKey={updateKey} active={active}/></span><span className="sr-only">{said}</span></span>
   </div>;
 }
 
@@ -106,8 +104,43 @@ function useStepChange(step: number | null | undefined, value: number | null | u
     last.current = { step, value };
   }, [step, value]);
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  const base = previous && previous.step !== step ? previous.value : fallback;
+  const base = last.current && last.current.step !== step ? last.current.value : previous && previous.step !== step ? previous.value : fallback;
   return base == null || !Number.isFinite(base) ? null : value - base;
+}
+
+function StepComparison({ step, value, fallback, text, updateKey, active }: { step: number | null | undefined; value: number | null | undefined; fallback: number | null; text: (zh: string, en: string) => string; updateKey: number; active: boolean }) {
+  const delta = useStepChange(step, value, fallback);
+  const icon = React.useRef<SVGSVGElement>(null);
+  const animation = React.useRef<Animation | null>(null);
+  const previous = React.useRef({ value, updateKey, active });
+  React.useLayoutEffect(() => {
+    const seen = previous.current;
+    previous.current = { value, updateKey, active };
+    const valid = typeof value === 'number' && Number.isFinite(value);
+    if (!active || !valid || document.hidden || prefersReducedMotion()) {
+      animation.current?.cancel(); animation.current = null;
+      return;
+    }
+    if (Object.is(value, seen.value)) return;
+    animation.current?.cancel(); animation.current = null;
+    if (!seen.active || updateKey === seen.updateKey || typeof seen.value !== 'number' || !Number.isFinite(seen.value) || !delta || !Number.isFinite(delta) || !icon.current?.animate) return;
+    const sign = delta > 0 ? -1 : 1;
+    const rise = 'cubic-bezier(.2,.7,.3,1)';
+    const settle = 'cubic-bezier(.4,0,.3,1)';
+    animation.current = icon.current.animate([
+      { transform: 'translateY(0)', offset: 0, easing: rise },
+      { transform: `translateY(${sign * 3}px)`, offset: 0.1, easing: settle },
+      { transform: 'translateY(0)', offset: 0.28 },
+      { transform: 'translateY(0)', offset: 0.36, easing: rise },
+      { transform: `translateY(${sign * 2.4}px)`, offset: 0.46, easing: settle },
+      { transform: 'translateY(0)', offset: 0.64 },
+      { transform: 'translateY(0)', offset: 0.72, easing: rise },
+      { transform: `translateY(${sign * 1.8}px)`, offset: 0.82, easing: settle },
+      { transform: 'translateY(0)', offset: 1 },
+    ], { duration: 2000, easing: 'linear' });
+  }, [value, updateKey, active, delta]);
+  React.useEffect(() => () => animation.current?.cancel(), []);
+  return <StepChange delta={delta} text={text} iconRef={icon} updateKey={updateKey} active={active}/>;
 }
 
 /** 空态：lucide 图标 + 标题 + 一行提示 */
@@ -133,6 +166,8 @@ export default function JobDetail() {
   const [resuming, setResuming] = React.useState(false);
 
   const [job, setJob] = React.useState<VersionedJob | null>(null);
+  const [metricUpdate, setMetricUpdate] = React.useState(0);
+  const metricUpdateRef = React.useRef(0);
   const jobKind = React.useRef<{ id: string; type: string } | null>(null);
   const ttsProjectionRequest = React.useRef<AbortController | null>(null);
   React.useEffect(() => () => ttsProjectionRequest.current?.abort(), [id]);
@@ -140,9 +175,12 @@ export default function JobDetail() {
     if (!id) return;
     ttsProjectionRequest.current?.abort();
     const controller = new AbortController(); ttsProjectionRequest.current = controller;
+    const requestedAtUpdate = metricUpdateRef.current;
     setJob(previous => previous?.id === id ? { ...previous, allowed_actions: undefined, action_reasons: undefined } : previous);
     void apiClient.get<VersionedJob>(`/jobs/${encodeURIComponent(id)}`, { silent: true, signal: controller.signal }).then(updated => {
-      if (!controller.signal.aborted && updated.id === id) setJob(previous => previous?.id === id ? updated : previous);
+      if (!controller.signal.aborted && updated.id === id) setJob(previous => previous?.id === id
+        ? metricUpdateRef.current !== requestedAtUpdate ? { ...updated, progress: previous.progress, latest: previous.latest } : updated
+        : previous);
     }).catch(() => {});
   };
   const [restoring, setRestoring] = React.useState(false);
@@ -263,7 +301,10 @@ export default function JobDetail() {
       if (isTtsJob(jobKind.current)) refreshTtsProjection();
       else if (['completed', 'failed', 'cancelled', 'paused', 'running'].includes(data.status)) {
         void refreshSamples();
-        void apiClient.get<VersionedJob>(`/jobs/${id}`, {silent:true}).then(updated => setJob(previous => previous?.id === updated.id ? updated : previous)).catch(() => {});
+        const requestedAtUpdate = metricUpdateRef.current;
+        void apiClient.get<VersionedJob>(`/jobs/${id}`, {silent:true}).then(updated => setJob(previous => previous?.id === updated.id
+          ? metricUpdateRef.current !== requestedAtUpdate ? { ...updated, progress: previous.progress, latest: previous.latest } : updated
+          : previous)).catch(() => {});
       }
     }
   });
@@ -275,6 +316,10 @@ export default function JobDetail() {
 
   useEventStream(EVENT_TYPES.JOB_STEP, (data: any) => {
     if (data.job_id === id) {
+      if (job?.id === id && typeof data.step === 'number' && Number.isFinite(data.step) && data.step >= (job?.progress?.step ?? -1)) {
+        metricUpdateRef.current += 1;
+        setMetricUpdate(metricUpdateRef.current);
+      }
       setJob((prev) => prev ? mergeJobEvent(prev, data) : null);
       const pending = metricsRequestRef.current;
       if (!pending || pending.id !== id) return;
@@ -393,8 +438,6 @@ export default function JobDetail() {
   const previousLoss = typeof currentLoss === 'number' && recordedLosses.length ? (lastRecorded === currentLoss ? recordedLosses.at(-2) ?? null : lastRecorded ?? null) : null;
   const lossCount = Number(job?.latest?.loss_count);
   const previousMean = typeof job?.latest?.loss_mean === 'number' && typeof currentLoss === 'number' && lossCount > 1 ? (job.latest.loss_mean * lossCount - currentLoss) / (lossCount - 1) : null;
-  const lossChange = useStepChange(job?.progress?.step, currentLoss, previousLoss);
-  const meanChange = useStepChange(job?.progress?.step, meanLoss, previousMean);
   const meanScope = job?.latest?.loss_mean != null && job.latest.loss_mean_scope === 'since_resume' ? text('从此次恢复训练起，所有已完成训练步的损失平均值。','Mean loss over completed steps since this training was resumed.') : text('所有已完成训练步的损失平均值。','Mean loss over all completed training steps.');
   const learningRates = Object.entries(job?.latest?.lr || {}).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]));
   // Two rows; groups are listed by name, so a DoRA rate sits alone above the w1 / w2 (or down / up) pair.
@@ -405,6 +448,9 @@ export default function JobDetail() {
     : stepsPerEpoch && job?.progress?.step != null ? (job.progress.step / stepsPerEpoch).toFixed(2).replace(/\.00$/, '') : job?.progress?.epoch != null ? String(job.progress.epoch + 1) : '—';
   const totalEpochs = stepsPerEpoch && job?.progress?.total_steps != null ? Math.ceil(job.progress.total_steps / stepsPerEpoch) : configSnapshot?.loop?.epochs;
   const elapsed = job?.started_at != null ? Math.max(0, (job.finished_at ?? (['running','pausing','cancelling'].includes(job.status) ? clock : job.started_at)) - job.started_at) : null;
+  const metricActive = job != null && job.id === id && ['running', 'pausing', 'cancelling'].includes(job.status) && metrics != null && !metricsRequestRef.current?.pending;
+  const metricContext = `${id}:${job?.started_at}:${job?.progress?.phase}`;
+  const metricValue = (display: string, value: number | null | undefined, options: { delta?: boolean; duration?: number; scope?: string } = {}) => <MetricValue text={display} value={value} contextKey={`${metricContext}:${options.scope || ''}`} updateKey={metricUpdate} active={metricActive} delta={options.delta} duration={options.duration}/>;
   const configurationName = job?.version_name || versionName || job?.name;
 
   return (
@@ -439,14 +485,14 @@ export default function JobDetail() {
       {job?.type !== 'xyz' && job?.type !== 'tts_sample' && <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
         <OverflowStrip snap role="group" label={text('训练核心指标','Training metrics')} containerClassName="job-stat-strip" className="job-stat-grid"
           pageLabels={{ previous: text('上一组指标', 'Previous metrics'), next: text('下一组指标', 'Next metrics') }}>
-          <StatCard label={text('步数','Steps')} value={`${job?.progress?.step ?? '—'} / ${job?.progress?.total_steps ?? '—'}`}/>
-          <StatCard label={text('轮次','Epochs')} value={isTtsJob(job) && totalEpochs == null ? epochProgress : `${epochProgress} / ${totalEpochs ?? '—'}`}/>
-          <StatCard label="Loss" value={lossNumber(job?.latest?.loss)} detail={<StepChange delta={lossChange} text={text}/>}/>
-          <StatCard label={text('平均 Loss','Mean loss')} value={lossNumber(meanLoss)} hint={meanScope} detail={<StepChange delta={meanChange} text={text}/>}/>
+          <StatCard label={text('步数','Steps')} value={metricValue(`${job?.progress?.step ?? '—'} / ${job?.progress?.total_steps ?? '—'}`, job?.progress?.step, { duration: 550 })}/>
+          <StatCard label={text('轮次','Epochs')} value={metricValue(isTtsJob(job) && totalEpochs == null ? epochProgress : `${epochProgress} / ${totalEpochs ?? '—'}`, Number(epochProgress), { duration: 550 })}/>
+          <StatCard label="Loss" value={metricValue(lossNumber(job?.latest?.loss), job?.latest?.loss, { delta: true })} detail={job?.id === id && <StepComparison key={metricContext} step={job?.progress?.step} value={currentLoss} fallback={previousLoss} text={text} updateKey={metricUpdate} active={metricActive}/>}/>
+          <StatCard label={text('平均 Loss','Mean loss')} value={metricValue(lossNumber(meanLoss), meanLoss, { delta: true, scope: job?.latest?.loss_mean_scope || 'run' })} hint={meanScope} detail={job?.id === id && <StepComparison key={`${metricContext}:${job?.latest?.loss_mean_scope}`} step={job?.progress?.step} value={meanLoss} fallback={previousMean} text={text} updateKey={metricUpdate} active={metricActive}/>}/>
           <StatCard label={text('学习率','Learning rate')} hint={learningRates.length ? learningRateHelp(learningRates.map(([name]) => name), configSnapshot?.adapter?.algo, configSnapshot?.optimizer?.type, text) : undefined}
             value={learningRates.length > 1 ? <span className="job-learning-rates">{learningRateRows.map((row, index) => <span key={index}>{row.map(([name, rate]) => <span key={name}><small>{learningRateGroupName(name)}</small>{rate.toExponential(2)}</span>)}</span>)}</span> : learningRates.length ? learningRates[0][1].toExponential(2) : '—'}/>
-          <StatCard label={t('job.speed')} value={job?.progress?.it_s != null ? `${Number(job.progress.it_s).toFixed(2)} it/s` : '—'}/>
-          <StatCard label={t('job.eta')} value={job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s)}/>
+          <StatCard label={t('job.speed')} value={metricValue(job?.progress?.it_s != null ? `${Number(job.progress.it_s).toFixed(2)} it/s` : '—', job?.progress?.it_s)}/>
+          <StatCard label={t('job.eta')} value={metricValue(job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s), job?.status === 'completed' ? 0 : job?.progress?.eta_s)}/>
         </OverflowStrip>
 
         {job && isTtsJob(job) && job.progress?.phase && <p className="queue-status-note" role="status">{text('训练阶段', 'Training phase')} · {['completed', 'failed', 'cancelled'].includes(job.status) ? t(`queue.status.${job.status}`) : t(`phase.${job.progress.phase}`, t('job.phaseInProgress'))}</p>}
