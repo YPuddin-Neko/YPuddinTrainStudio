@@ -64,7 +64,7 @@ def loader_weight_norm(weight: Tensor, axis: str) -> Tensor:
     return norm if axis == "output" else norm.transpose(0, 1)
 
 
-def loader_decompose(base: Tensor, delta: Tensor, magnitude: Tensor, *, alpha: float, strength: float) -> Tensor:
+def loader_decompose(base: Tensor, delta: Tensor, magnitude: Tensor, *, alpha: float | Tensor, strength: float) -> Tensor:
     """``base`` with the unscaled ``delta`` and a ``magnitude`` in ``base.dtype``, in ComfyUI's
     ``weight_decompose`` order (see ypuddin/sampling/ADAPTER_FUSION_NOTICE.md): alpha scales the delta
     before normalisation and strength interpolates afterwards; the magnitude's first dimension names the
@@ -105,7 +105,7 @@ class DoRA(nn.Module):
         self.dora_scale = nn.Parameter(magnitude.to(dtype).clone(memory_format=torch.contiguous_format))
 
     def forward(
-        self, weight: Tensor, *, base_weight: Tensor | None = None, alpha: float = 1.0,
+        self, weight: Tensor, *, base_weight: Tensor | None = None, alpha: float | Tensor = 1.0,
         strength: float = 1.0,
     ) -> Tensor:
         if self.compute_mode == "comfyui":
@@ -115,7 +115,7 @@ class DoRA(nn.Module):
         return self.rescale(weight)
 
     def rescale_exported(
-        self, base_weight: Tensor, delta: Tensor, *, alpha: float = 1.0, strength: float = 1.0,
+        self, base_weight: Tensor, delta: Tensor, *, alpha: float | Tensor = 1.0, strength: float = 1.0,
     ) -> Tensor:
         """Differentiable saved-precision fusion in ComfyUI's order (see
         ypuddin/sampling/ADAPTER_FUSION_NOTICE.md); FP32 optimizer leaves stay attached."""

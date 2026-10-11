@@ -11,7 +11,7 @@ import random
 import signal
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import replace
@@ -2416,6 +2416,9 @@ class Trainer:
             self._preview_adapter_export(),
             merge_dtype=self.cfg.sampling.adapter_merge_dtype,
             save_dtype=self.cfg.checkpoint.save_dtype,
+            compiled_blocks=tuple(
+                block for block in self.family.memory_layout(self.loaded).blocks if hasattr(block, "_orig_mod")
+            ),
         ) as used:
             yield used
 
@@ -2435,7 +2438,7 @@ class Trainer:
         with Trainer._sampling_adapter_preview(self) as fusion_dtypes:
             return Trainer._sample_images_from_prompts(self, tag, prompts, fusion_dtypes)
 
-    def _sample_images_from_prompts(self, tag: str, prompts: list, fusion_dtypes: dict[str, str]) -> list[Path]:
+    def _sample_images_from_prompts(self, tag: str, prompts: list, fusion_dtypes: Mapping[str, str]) -> list[Path]:
         from PIL import Image
 
         from ypuddin.sampling.decoding import decode_preview

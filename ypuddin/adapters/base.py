@@ -37,8 +37,8 @@ def compute_scale(alpha: float, rank: int | None, rs_lora: bool) -> float:
 
 
 def exported_factor_delta(
-    keys: Container[str], factor: Callable[[str], Tensor], alpha: float | None, shape: Sequence[int],
-) -> tuple[Tensor, float]:
+    keys: Container[str], factor: Callable[[str], Tensor], alpha: float | Tensor | None, shape: Sequence[int],
+) -> tuple[Tensor, float | Tensor]:
     """The unscaled ``ΔW`` of exported LoRA, LoHa or LoKr factors and its ``alpha / rank`` scale.
 
     ``factor`` returns a saved tensor in the computation dtype. Follows ComfyUI's reconstruction order;
@@ -157,7 +157,7 @@ class AdapterModule(nn.Module, ABC):
     def forward(
         self, x: Tensor | None = None, *, export_dtype: torch.dtype | None = None,
         compute_dtype: torch.dtype | None = None,
-    ) -> Tensor | tuple[Tensor, float]:
+    ) -> Tensor | tuple[Tensor, float | Tensor]:
         """Keep computations inside Module hooks for distributed parameter residency."""
         if export_dtype is not None:
             if x is not None or compute_dtype is None:
@@ -261,7 +261,7 @@ class AdapterModule(nn.Module, ABC):
         """The saved factor layout while retaining gradients through every learned value."""
         raise NotImplementedError(f"{self.kind} does not support differentiable exported factors")
 
-    def exported_delta(self, save_dtype: torch.dtype, compute_dtype: torch.dtype) -> tuple[Tensor, float]:
+    def exported_delta(self, save_dtype: torch.dtype, compute_dtype: torch.dtype) -> tuple[Tensor, float | Tensor]:
         """Reconstruct saved factors in ComfyUI's order (see ypuddin/sampling/ADAPTER_FUSION_NOTICE.md),
         without detaching trainable tensors."""
         with torch.autocast(device_type=next(self.parameters()).device.type, enabled=False):
@@ -269,7 +269,8 @@ class AdapterModule(nn.Module, ABC):
             return exported_factor_delta(
                 values,
                 lambda name: values[name].to(save_dtype).to(compute_dtype),
-                float(values["alpha"].item()),
+                # Preserve FP32 export rounding and Python's division precision without device FP64.
+                values["alpha"].cpu().to(torch.float64),
                 self.weight_shape,
             )
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from types import MappingProxyType, MethodType
 
@@ -18,6 +18,25 @@ from ypuddin.adapters.linear import AdaptedLayer
 from .adapter_fusion import ComfyAdapterFusion
 
 _ABSENT = object()
+
+
+class _FusionDtypes(Mapping[str, str]):
+    """Resolve layer names only when reading the observed inference dtypes."""
+
+    def __init__(self):
+        self.slots: dict[str, list[torch.dtype | None]] = {}
+
+    def __getitem__(self, key: str) -> str:
+        dtype = self.slots[key][0]
+        if dtype is None:
+            raise KeyError(key)
+        return str(dtype).removeprefix("torch.")
+
+    def __iter__(self):
+        return (key for key, slot in self.slots.items() if slot[0] is not None)
+
+    def __len__(self):
+        return sum(slot[0] is not None for slot in self.slots.values())
 
 
 def exported_adapter_bindings(adapters: AdapterSet | ComponentAdapterSet) -> dict[str, AdaptedLayer]:
@@ -73,27 +92,42 @@ def _free_memory(device: torch.device) -> int:
     return 0
 
 
+class _CopySlot:
+    def __init__(self) -> None:
+        self.kept: tuple[torch.device, ComfyAdapterFusion] | None = None
+        self.denied: set[torch.device] = set()
+
+
 class _DeviceCopies:
-    """Each layer's exported tensors on the device it runs on, copied there once per preview while they fit
-    in half of that device's free memory as the first layer runs; beyond that a forward copies them again."""
+    """Retain factors within half of each device's free memory when first needed.
+
+    Compiled blocks prepare their factors before entering the block; other layers prepare on first use.
+    Factors beyond the budget stay on CPU and are read again by each forward.
+    """
 
     def __init__(self) -> None:
-        self._copies: dict[str, tuple[torch.device, ComfyAdapterFusion]] = {}
         self._room: dict[torch.device, int] = {}
 
-    def on(self, key: str, fusion: ComfyAdapterFusion, device: torch.device) -> ComfyAdapterFusion:
+    def on(self, slot: _CopySlot, fusion: ComfyAdapterFusion, device: torch.device) -> ComfyAdapterFusion:
         if device.type == "cpu":
             return fusion
-        kept = self._copies.get(key)
+        kept = slot.kept
         if kept is not None and kept[0] == device:
             return kept[1]
+        if device in slot.denied:
+            return fusion
+        return self._fill(slot, fusion, device)
+
+    def _fill(self, slot: _CopySlot, fusion: ComfyAdapterFusion, device: torch.device) -> ComfyAdapterFusion:
         if device not in self._room:
             self._room[device] = _free_memory(device) // 2
         if fusion.nbytes > self._room[device]:
+            # The budget only decreases, so subsequent calls use the same uncached CPU tensors.
+            slot.denied.add(device)
             return fusion
         self._room[device] -= fusion.nbytes
         copy = fusion.to(device)
-        self._copies[key] = (device, copy)
+        slot.kept = (device, copy)
         return copy
 
 
@@ -110,24 +144,26 @@ def _merge_dtype(layer: AdaptedLayer, x: Tensor, selected: str) -> torch.dtype:
     return dtype
 
 
-def _forwards(fusion: ComfyAdapterFusion, key: str, selected: str, used: dict[str, str], copies: _DeviceCopies):
+def _forwards(
+    fusion: ComfyAdapterFusion, selected: str, used: list[torch.dtype | None], copies: _DeviceCopies, cached: _CopySlot,
+):
     @torch.no_grad()
     def adapter_forward(_adapter, base: Tensor, dtype: torch.dtype):
-        return copies.on(key, fusion, base.device).reconstruct_delta(base.shape, device=base.device, dtype=dtype)
+        return copies.on(cached, fusion, base.device).reconstruct_delta(base.shape, device=base.device, dtype=dtype)
 
     @torch.no_grad()
     def dora_forward(_dora, base: Tensor, delta: Tensor, alpha: float, dtype: torch.dtype, strength: float):
-        return copies.on(key, fusion, base.device).fuse(base, delta, alpha, dtype=dtype, strength=strength)
+        return copies.on(cached, fusion, base.device).fuse(base, delta, alpha, dtype=dtype, strength=strength)
 
     @torch.no_grad()
     def layer_forward(layer: AdaptedLayer, x: Tensor) -> Tensor:
         dtype = _merge_dtype(layer, x, selected)
-        used[key] = str(dtype).removeprefix("torch.")
+        used[0] = dtype
         with torch.autocast(device_type=x.device.type, enabled=False):
             base = layer.frozen_weight(dtype)
             # Module calls retain FSDP's unshard and reshard hooks.
             delta, alpha = layer.adapter(base, dtype)
-            local = copies.on(key, fusion, base.device)
+            local = copies.on(cached, fusion, base.device)
             if layer.dora is None:
                 weight = local.fuse(base, delta, alpha, dtype=dtype, strength=layer.multiplier)
             else:
@@ -145,7 +181,8 @@ def exported_adapter_preview(
     *,
     merge_dtype: str = "auto",
     save_dtype: str | None = None,
-) -> Iterator[dict[str, str]]:
+    compiled_blocks: Sequence[nn.Module] = (),
+) -> Iterator[Mapping[str, str]]:
     """Use an immutable CPU export snapshot for inference, restoring every forward afterwards.
 
     ``tensors`` is an export, copied here (``save_dtype`` as for :class:`AdapterSnapshot`), or a snapshot
@@ -177,20 +214,36 @@ def exported_adapter_preview(
             modules.add(id(module))
         prepared.append((key, layer, fusion))
 
-    used: dict[str, str] = {}
+    used = _FusionDtypes()
     copies = _DeviceCopies()
     previous: list[tuple[nn.Module, object]] = []
+    hooks = []
+    caches = {id(layer): _CopySlot() for _, layer, _ in prepared}
+
+    def prepare_block(layers):
+        def pre_forward(_block, _args):
+            for layer, fusion in layers:
+                copies.on(caches[id(layer)], fusion, layer.base.weight.device)
+        return pre_forward
     with torch.no_grad():
         try:
             for key, layer, fusion in prepared:
-                forwards = _forwards(fusion, key, merge_dtype, used, copies)
+                slot = used.slots[key] = [None]
+                forwards = _forwards(fusion, merge_dtype, slot, copies, caches[id(layer)])
                 for module, forward in zip((layer, layer.adapter, layer.dora), forwards, strict=True):
                     if module is None:
                         continue
                     previous.append((module, module.__dict__.get("forward", _ABSENT)))
                     module.forward = MethodType(forward, module)
+            for block in compiled_blocks:
+                members = {id(module) for module in block.modules()}
+                layers = [(layer, fusion) for _, layer, fusion in prepared if id(layer) in members]
+                if layers:
+                    hooks.append(block.register_forward_pre_hook(prepare_block(layers)))
             yield used
         finally:
+            for hook in hooks:
+                hook.remove()
             for module, forward in reversed(previous):
                 if forward is _ABSENT:
                     delattr(module, "forward")
