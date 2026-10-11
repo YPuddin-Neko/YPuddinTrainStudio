@@ -1388,14 +1388,15 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const duplicateHelp = !!help && !!hint && help.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
     const helpButton = help && !duplicateHelp ? <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp> : null;
     if (recoveryField && React.isValidElement(control)) control = React.cloneElement(control as React.ReactElement<any>, {help:helpButton,error:errorItem?.msg});
-    const body = readOnly ? <fieldset disabled className="config-readonly-control">{control}</fieldset> : control;
+    const infoNoiseParameterDisabled = infonoiseField && fullPathKey !== 'objective.infonoise_enabled' && !value.objective?.infonoise_enabled;
+    const body = readOnly || infoNoiseParameterDisabled ? <fieldset disabled className="config-readonly-control">{control}</fieldset> : control;
     const footer = <div className="config-field-footer">
       {hint && hint !== errorItem?.msg && <p id={managedReason ? `${fieldId}-managed-reason` : `${fieldId}-hint`} className="config-field-hint">{hint}</p>}
       {/* A reason Studio cannot phrase for this field stays in the preflight panel; the border still marks it. */}
       {errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
       {!errorItem && notices.filter(notice => notice.loc === fullPathKey).map(notice => <p key={notice.msg} className="config-field-notice">
         <span>{notice.msg}</span>
-        {notice.fix && !readOnly && <button type="button" className="ui-link" onClick={() => onChange(setNestedValue(value, path, notice.fix!.value))}>{notice.fix.label}</button>}
+        {notice.fix && !readOnly && <button type="button" className="ui-link" disabled={infoNoiseParameterDisabled} onClick={() => onChange(setNestedValue(value, path, notice.fix!.value))}>{notice.fix.label}</button>}
       </p>)}
     </div>;
     const fieldProps = {id: `field-${fullPathKey}`, 'data-testid': `field-${fullPathKey}`, 'data-field-path': fullPathKey};
@@ -1500,6 +1501,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const help=configFieldHelp(path,fieldSchema?.description,english);
     const feature=features[path];
     return <ParameterToggleSection key={`${path}:${search.trim()}`} id={`feature-${path}`} {...feature} fieldPath={path}
+      switchPosition={path === 'objective.infonoise_enabled' ? 'start' : 'end'} keepHelpEnabled={path === 'objective.infonoise_enabled'}
       parametersEnabled={path==='dataset.caption.shuffle' && value.dataset?.caption?.tag_dropout>0 ? true : undefined}
       checked={!!(getNestedValue(value,fieldPath) ?? fieldSchema?.default)} disabled={readOnly} onCheckedChange={checked=>onChange(setNestedValue(value,fieldPath,checked))}
       help={help ? <ConfigHelp label={`${feature.title} ${english?'help':'说明'}`}>{help}</ConfigHelp> : undefined}
