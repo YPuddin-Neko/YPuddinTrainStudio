@@ -34,17 +34,32 @@
 .job-stat-strip[data-after]{--job-stat-fade-after:16px}
 .job-stat-strip:is([data-before],[data-after]) .job-stat-grid{mask-image:linear-gradient(to right,transparent,#000 var(--job-stat-fade-before,0px),#000 calc(100% - var(--job-stat-fade-after,0px)),transparent)}
 .job-stat-strip > .overflow-strip-page{border-radius:999px}
-.job-stat{position:relative;flex:1 0 132px;scroll-snap-align:start;background:var(--studio-canvas);border-radius:7px;padding:10px 12px}
+.job-stat{position:relative;flex:1 0 132px;min-width:0;scroll-snap-align:start;background:var(--studio-canvas);border-radius:7px;padding:10px 12px}
 .job-stat-label{font-size:12px;line-height:18px;color:var(--studio-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .job-stat.has-help .job-stat-label{padding-right:22px}
 /* In the corner and out of the flow, so a card with help starts its value on the same line as the others. */
 .job-stat-help{position:absolute;top:6px;right:6px;display:flex}
 .job-stat-help .config-help-trigger{margin-left:0}
 .job-stat-value{font-size:19px;line-height:1.5;font-weight:600;font-variant-numeric:tabular-nums;margin-top:4px;white-space:nowrap}
+.job-stat-value,.job-stat-change-value{min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}
+.job-stat-value:focus-visible,.job-stat-change-value:focus-visible{outline:2px solid var(--studio-accent);outline-offset:-2px;border-radius:2px}
+:is(.job-stat-value,.job-stat-change-value)::-webkit-scrollbar{display:none}
+.metric-value{position:relative;display:inline-flex;align-items:baseline;vertical-align:bottom}
+.metric-value-digits{display:inline-flex;align-items:baseline;white-space:pre}
+.metric-digit{position:relative;display:inline-block;overflow:hidden;vertical-align:bottom}
+.metric-digit>span:first-child{display:inline-block}
+.metric-digit-previous{position:absolute;inset:0;opacity:0;pointer-events:none}
+.metric-change-slot{position:relative;flex:none;height:1em;margin-left:1px;font-size:9.5px;line-height:1.4}
+.metric-change-slot::before{content:'+0.0000';visibility:hidden}
+@container(min-width:1200px){.metric-change-slot{font-size:10.5px}}
+.job-stat-delta{position:absolute;left:0;bottom:0;font-size:inherit;font-weight:600;line-height:inherit;font-variant-numeric:tabular-nums;animation:job-stat-delta 1400ms both;pointer-events:none}
 .job-stat-change{display:flex;align-items:center;gap:3px;margin-top:2px;font-size:11.5px;font-weight:600;line-height:1.4;font-variant-numeric:tabular-nums}
-.job-stat-change[data-direction=down]{color:var(--studio-success)}
-.job-stat-change[data-direction=up]{color:var(--studio-danger)}
+.job-stat-change>svg{flex:none}
+:is(.job-stat-change,.job-stat-delta)[data-direction=down]{color:var(--studio-success)}
+:is(.job-stat-change,.job-stat-delta)[data-direction=up]{color:var(--studio-danger)}
 .job-stat-change[data-direction=flat]{color:var(--studio-dim)}
+@keyframes job-stat-delta{0%{opacity:0}12%,72%{opacity:1}100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.metric-digit>span:first-child{transform:none!important;opacity:1!important}.metric-digit-previous{opacity:0!important}.job-stat-delta{animation:none}.job-stat-change svg{transform:none!important}}
 /* An inline box sits on the value line's baseline, so its first row lines up with the other cards' values. */
 .job-learning-rates{display:inline-flex;flex-direction:column;gap:3px;font-size:15px}
 .job-learning-rates>span{display:flex;align-items:baseline;gap:12px}
