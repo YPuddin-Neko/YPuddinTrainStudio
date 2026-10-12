@@ -5,10 +5,18 @@ import {applyTrainingPreset} from '../utils/trainingPresets';
 import {configFieldLabel} from '../utils/configPresentation';
 import {useWorkspaceText} from '../utils/workspaceText';
 
+function comparisonJson(value: unknown) {
+  return JSON.stringify(value, (_key, entry: unknown) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+    const object = entry as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(object).sort().map(key => [key, object[key]]));
+  });
+}
+
 function changedFields(current: Record<string, any>, next: Record<string, any>, prefix=''): Array<{path:string;before:unknown;after:unknown}> {
   return Object.entries(next).flatMap(([key,after])=>{
     const before=current?.[key],path=prefix?`${prefix}.${key}`:key;
-    if(JSON.stringify(before)===JSON.stringify(after))return [];
+    if(comparisonJson(before)===comparisonJson(after))return [];
     if(after && typeof after==='object' && !Array.isArray(after))return changedFields(before || {},after,path);
     return [{path,before,after}];
   });

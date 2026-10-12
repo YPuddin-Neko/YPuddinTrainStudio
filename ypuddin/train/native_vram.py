@@ -50,7 +50,7 @@ class NativeVramGeometry:
         return dict(counts), images
 
     def interval_start(self, pixels: int) -> int:
-        """Lowest budget with the same canvases and simultaneous image counts."""
+        """Lowest budget with the same canvases and shape-group membership."""
         minimum = lower = self.align * self.align
         for original in self.originals:
             size = self.size(original, pixels)
@@ -74,9 +74,10 @@ class NativeVramGeometry:
                 start = low
                 self._plateaus[original] = (shape, start)
             lower = max(lower, start)
-            area = shape[0] * shape[1]
-            simultaneous = min(self.dataset.batch_size, max(1, pixels // area))
-            lower = max(lower, simultaneous * area)
+            if self.dataset.native_batching_version == 1:
+                area = shape[0] * shape[1]
+                simultaneous = min(self.dataset.batch_size, max(1, pixels // area))
+                lower = max(lower, simultaneous * area)
         return lower
 
     def resolved_layout(self, pixels: int) -> DataLayout:
@@ -100,9 +101,9 @@ def maximum_fitting_pixels(
     *,
     training_lower_bound: Callable[[int, dict, dict], float] | None = None,
 ) -> int | None:
-    """Visit constant-geometry/microbatch intervals from largest to smallest.
+    """Visit constant-geometry intervals from largest to smallest.
 
-    Geometry jumps can reduce microbatch counts or split VAE encoding groups. A failed
+    Geometry jumps can merge or split training and VAE encoding groups. A failed
     candidate therefore skips only its unchanged interval, never every larger resolution.
     """
     pixels = upper

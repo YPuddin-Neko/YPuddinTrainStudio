@@ -240,6 +240,14 @@ def _fingerprint(
 ) -> dict[str, Any]:
     """The hashed form: legacy settings at their legacy value are left out, except ``kept`` ones."""
     data = project_legacy_intervals(config.to_dict() if isinstance(config, TrainConfig) else config)
+    dataset = data.get("dataset")
+    if isinstance(dataset, Mapping) and (
+        dataset.get("resolution_mode", "bucket") != "native"
+        or dataset.get("native_batching_version", 1) == 1
+    ):
+        # Bucket execution is unchanged; version 1 identifies the original native
+        # strategy. Version 2 must never authenticate an old native config hash.
+        data["dataset"] = {key: value for key, value in dataset.items() if key != "native_batching_version"}
     for section, legacy in _LEGACY_VALUES.items():
         values = data.get(section)
         if isinstance(values, Mapping):
@@ -345,7 +353,7 @@ def parse_toml(text: str) -> dict[str, Any]:
     return data
 
 
-def dump_toml(config: TrainConfig) -> str:
+def dump_toml(config: TrainConfig | Mapping[str, Any], *, for_export: bool = False) -> str:
     paths: list[list[str | int]] = []
 
     def pack(obj: Any, path: list[str | int]) -> Any:
@@ -368,16 +376,25 @@ def dump_toml(config: TrainConfig) -> str:
             return result
         return obj
 
-    values = pack(config.to_dict(), [])
+    if for_export:
+        from .export import project_config_for_export
+
+        data = project_config_for_export(config)
+    else:
+        data = config.to_dict() if isinstance(config, TrainConfig) else dict(config)
+    values = pack(data, [])
     if paths:
         values = {_NULL_PATHS_KEY: paths, **values}
     return "# Explicit nulls are preserved below because TOML has no null value.\n" + tomli_w.dumps(values)
 
 
-def write_config(config: TrainConfig, path: str | Path) -> None:
+def write_config(config: TrainConfig, path: str | Path, *, for_export: bool = False) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     if p.suffix.lower() == ".json":
-        p.write_text(json.dumps(config.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+        from .export import project_config_for_export
+
+        data = project_config_for_export(config) if for_export else config.to_dict()
+        p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     else:
-        p.write_text(dump_toml(config), encoding="utf-8")
+        p.write_text(dump_toml(config, for_export=for_export), encoding="utf-8")

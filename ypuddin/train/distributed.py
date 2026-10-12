@@ -127,15 +127,29 @@ class _TrainingGraph(nn.Module):
         self.backbone = trainer.loaded.backbone
         if isinstance(trainer.adapters, (FullTrainingSet, ComponentAdapterSet)):
             self.components = nn.ModuleDict(trainer.adapters.modules)
+        self._native_empty_slot = (
+            nn.Parameter(torch.zeros((), device=trainer.device))
+            if trainer.cfg.dataset.resolution_mode == "native"
+            and trainer.cfg.dataset.native_batching_version == 2
+            and trainer.cfg.loop.distributed_strategy == "ddp" else None
+        )
         # Trainer is deliberately not a child Module: it owns caches, optimizer and I/O.
         object.__setattr__(self, "trainer", trainer)
 
     def forward(self, batch):
+        if batch.get("_native_empty", False):
+            # An independent scalar completes DDP's reducer cycle without turning
+            # globally unused model gradients into zeros that an optimizer updates.
+            if self._native_empty_slot is None:
+                raise ValueError("empty native slots require the DDP batch strategy")
+            return self._native_empty_slot * 0
         return self.trainer.compute_loss(batch)[0]
 
 
 def _needs_unused_parameter_detection(trainer, graph: _TrainingGraph) -> bool:
     cfg = trainer.cfg
+    if graph._native_empty_slot is not None:
+        return True
     if (
         cfg.model.family != "krea2"
         or cfg.training.mode != "adapter"
@@ -178,8 +192,10 @@ def _needs_unused_parameter_detection(trainer, graph: _TrainingGraph) -> bool:
 
 class DistributedTrainer(Trainer):
     def __init__(self, cfg, *, context: DistributedContext, emitter=None):
+        from .native_batch_contract import resolve_native_batching_config
         from .native_resolution import resolve_distributed_native_vram_config
 
+        cfg = resolve_native_batching_config(cfg, world_size=context.world_size)
         cfg = resolve_distributed_native_vram_config(
             cfg, device=context.device, rank=context.rank, world_size=context.world_size,
         )
@@ -273,9 +289,22 @@ class DistributedTrainer(Trainer):
             NativeBatchSampler if self.cfg.dataset.resolution_mode == "native" else BucketBatchSampler
         )
         unsharded = sampler_type(
-            self.bundle.train.bucket_keys(), self.cfg.dataset.batch_size, seed=self.cfg.loop.seed
+            self.bundle.train.bucket_keys(), self.cfg.dataset.batch_size, seed=self.cfg.loop.seed,
+            **({"batching_version": self.cfg.dataset.native_batching_version}
+               if self.cfg.dataset.resolution_mode == "native" else {}),
         ).plan()
+        if (
+            self.cfg.dataset.resolution_mode == "native"
+            and self.cfg.dataset.native_batching_version == 2
+            and self.cfg.loop.distributed_strategy == "fsdp"
+            and len(unsharded) % self.distributed.world_size
+        ):
+            raise ValueError(
+                "原生显存分片要求同尺寸批次总数能被显卡数量整除；"
+                "请调整批量大小、数据或显卡数量，也可改用数据并行。"
+            )
         usable = len(unsharded) - len(unsharded) % self.distributed.world_size
+        native = self.cfg.dataset.resolution_mode == "native" and self.cfg.dataset.native_batching_version == 2
         self.emit(
             "distributed.plan",
             strategy=self.cfg.loop.distributed_strategy,
@@ -286,8 +315,8 @@ class DistributedTrainer(Trainer):
             * self.cfg.loop.grad_accum
             * self.distributed.world_size,
             batches_per_rank=len(self.sampler.plan()),
-            dropped_samples=sum(map(len, unsharded[usable:])),
-            tail_policy="drop_incomplete_rank_group",
+            dropped_samples=0 if native else sum(map(len, unsharded[usable:])),
+            tail_policy="empty_rank_slot" if native else "drop_incomplete_rank_group",
         )
 
     def _restore_checkpoint_rng(self, state):
@@ -435,22 +464,24 @@ class DistributedTrainer(Trainer):
         self._epoch_hooks(epoch + 1)
 
     def _distributed_microbatches(self, batch):
-        """Keep collective order equal when ranks have different native shapes.
-
-        FSDP gathers/reduces on every forward/backward, so a rank cannot simply
-        stop after its last shape group. Missing groups run a zero-weight copy
-        of the smallest local group. They contribute neither samples nor loss;
-        the final normalization uses only real images across all ranks.
-        """
+        """One same-size forward per slot; empty DDP slots use only the reducer."""
         if self.cfg.dataset.resolution_mode != "native":
             return [(batch, len(batch["caption"]))]
         parts = batch["microbatches"]
-        slots = torch.tensor(len(parts), device=self.device, dtype=torch.int64)
-        dist.all_reduce(slots, op=dist.ReduceOp.MAX)
-        result = [(part, len(part["caption"])) for part in parts]
-        filler = min(parts, key=lambda part: len(part["caption"]) * part["bucket"][0] * part["bucket"][1])
-        result.extend(({**filler, "_adaptive_observe": False}, 0) for _ in range(slots.item() - len(parts)))
-        return result
+        if self.cfg.dataset.native_batching_version == 1:
+            slots = torch.tensor(len(parts), device=self.device, dtype=torch.int64)
+            dist.all_reduce(slots, op=dist.ReduceOp.MAX)
+            result = [(part, len(part["caption"])) for part in parts]
+            filler = min(parts, key=lambda part: len(part["caption"]) * part["bucket"][0] * part["bucket"][1])
+            result.extend(({**filler, "_adaptive_observe": False}, 0) for _ in range(slots.item() - len(parts)))
+            return result
+        if not parts:
+            if self.cfg.loop.distributed_strategy == "fsdp":
+                raise ValueError("原生显存分片需要各卡都有真实批次；请调整批量大小、数据或显卡数量。")
+            return [({"_native_empty": True}, 0)]
+        if len(parts) != 1:
+            raise ValueError("native sampler must provide exactly one canvas size per batch")
+        return [(parts[0], len(parts[0]["caption"]))]
 
     def _reduce_timestep_statistics(self, stats):
         dist.all_reduce(stats, op=dist.ReduceOp.SUM)

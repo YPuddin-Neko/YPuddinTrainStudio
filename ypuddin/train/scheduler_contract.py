@@ -99,7 +99,15 @@ def read_resume_scheduler_contract(
                 ),
                 path.parent / "config.toml",
             )
-            original = load_config(source)
+            from .native_batch_contract import authenticated_native_recipe
+
+            original = authenticated_native_recipe(path, metadata=metadata) or load_config(source)
+            if (
+                original.dataset.resolution_mode == "native"
+                and "native_batch_contract" not in extra
+                and "native_batching_version" not in original.dataset.model_fields_set
+            ):
+                original.dataset.native_batching_version = 1
             if not metadata.get("config_hash") or metadata["config_hash"] not in config_hash_variants(original):
                 raise ValueError("原训练配置已修改或无法确认来源")
             contract = scheduler_recipe(original, progress["total_steps"])

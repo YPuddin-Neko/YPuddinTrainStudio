@@ -28,6 +28,13 @@ from ypuddin.optim import optimizer_hyperparameter_snapshot, validate_optimizer_
 from ypuddin.optim.sharded import prepare_sharded_optimizer, sharded_optimizer_state_bytes
 
 from .distributed import DistributedTrainer
+from .native_batch_contract import (
+    STATE_KEY as NATIVE_BATCH_STATE_KEY,
+)
+from .native_batch_contract import (
+    native_batch_contract,
+    validate_native_batch_resume,
+)
 from .reproducibility import capture_compute_runtime
 from .scheduler_contract import validate_scheduler_instance, validate_scheduler_recipe
 from .sharded_state import (
@@ -317,6 +324,10 @@ class ShardedTrainer(DistributedTrainer):
             legacy_scheduler_contract=getattr(self, "_resume_scheduler_contract", None),
             expected_dora_contract=compute_contract(self.adapters),
             expected_training_features=training_feature_contract(self.cfg),
+            expected_native_batch_contract=native_batch_contract(
+                self.cfg, world_size=self.distributed.world_size,
+            ),
+            expected_native_batch_config=self.cfg,
             validate_timestep_state=self._validate_timestep_checkpoint,
         )
         validate_optimizer_runtime(self.cfg.optimizer, self.optimizer, expected_groups=expected)
@@ -338,6 +349,9 @@ class ShardedTrainer(DistributedTrainer):
         from ypuddin.adapters.dora_contract import STATE_KEY, compute_contract
 
         def validate_save_contract():
+            validate_native_batch_resume(
+                self.cfg, self._native_batch_contract, world_size=self.distributed.world_size,
+            )
             self._save_timestep_state()
             self._validate_dora_contract()
             self._validate_training_compute_policy()
@@ -352,6 +366,8 @@ class ShardedTrainer(DistributedTrainer):
         self.progress.extra["loss_ema"] = self._loss_ema
         self.progress.extra[STATE_KEY] = compute_contract(self.adapters)
         self.progress.extra[TRAINING_FEATURE_STATE_KEY] = training_feature_contract(self.cfg)
+        if self._native_batch_contract is not None:
+            self.progress.extra[NATIVE_BATCH_STATE_KEY] = dict(self._native_batch_contract)
         path = save_sharded_checkpoint(
             (Path(self.cfg.checkpoint.state_dir) if self.cfg.checkpoint.state_dir else self.run_dir)
             # Every rank writes to the name rank zero picks.

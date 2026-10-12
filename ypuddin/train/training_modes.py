@@ -280,7 +280,7 @@ def save_model_artifact(
             # tokenizer sits next to decoder weights and is copied as small text assets.
             tokenizer = loaded.text.tokenizer
             tokenizer.save_pretrained(temporary / "text_encoder")
-        write_config(config, temporary / "config.toml")
+        write_config(config, temporary / "config.toml", for_export=True)
         (temporary / "manifest.json").write_text(
             json.dumps(
                 {

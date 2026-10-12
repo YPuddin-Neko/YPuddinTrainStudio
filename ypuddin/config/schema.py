@@ -230,8 +230,13 @@ class DatasetConfig(_Strict):
     )
     resolution_mode: Literal["bucket", "native"] = F(
         "bucket",
-        help="分桶在面积和比例限制内选择裁切或补边最少的尺寸；效果相同时优先减少缩放。原生按每图尺寸和预算分组，不放大小图。是否保留完整画面由下方图像适配方式控制，超预算按策略缩小或报错。",
+        help="分桶在面积和比例限制内选择裁切或补边最少的尺寸；效果相同时优先减少缩放。原生保留每图尺寸，不放大小图，并按最终相同宽高合批。是否保留完整画面由下方图像适配方式控制，超出单图上限按策略缩小或报错。",
         ui_=ui("dataset", order=5, control="select"),
+    )
+    native_batching_version: Literal[1, 2] = F(
+        2,
+        help="原生训练批量策略版本，用于区分任务快照与恢复点。",
+        ui_={"x-ui": {"hidden": True}},
     )
     image_fit: Literal["crop", "pad"] = F(
         "crop",
@@ -259,7 +264,7 @@ class DatasetConfig(_Strict):
         1_048_576,
         ge=1024,
         le=67_108_864,
-        help="原生模式单图及一次计算的像素上限。最长边限制和模型对齐同时生效，调大通常需要更多显存。",
+        help="原生模式单张训练画布的像素上限，包含补边，不限制整批总面积。最长边限制和模型对齐同时生效，调大通常需要更多显存。",
         ui_=ui("dataset", order=11, show_when="dataset.resolution_mode == 'native'"),
     )
     native_max_side: int = F(
@@ -307,7 +312,7 @@ class DatasetConfig(_Strict):
     batch_size: int = F(
         1,
         ge=1,
-        help="每个逻辑批次的目标图片数。分桶按相同尺寸组批，不足一批的尾部不会复制图片补齐；原生模式会按尺寸和像素预算拆成多次前向。实际更新还受梯度累积影响。",
+        help="每张显卡一次前向与反向同时处理的图片数上限。分桶和原生模式均按最终相同宽高合批；同尺寸图片充足时达到此数量，尾批按实际图数执行，不复制补齐。梯度累积决定多少批次后更新参数；原生模式按参与更新的实际图片数归一化。",
         ui_=ui("dataset", order=50),
     )
     caption: CaptionConfig = F(

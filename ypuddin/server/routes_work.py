@@ -1254,6 +1254,12 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         ]
         raw.setdefault("dataset", {})["sources"] = matching or [{"path": r["path"], "repeats": r["repeats"]}]
         cfg = TrainConfig.model_validate(raw)
+        if (
+            cfg.dataset.resolution_mode == "native"
+            and cfg.dataset.native_max_pixels_mode == "auto_vram"
+            and cfg.dataset.native_max_pixels_resolved is None
+        ):
+            return {"status": "not_ready", "reason": "native_area_unresolved"}
         family = get_family(cfg.model.family)
         recs = [
             ImageRecord(**{k: v for k, v in rec.items() if k in ImageRecord.__dataclass_fields__})
@@ -1315,9 +1321,9 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
             for flip in ((False, True) if ds.flip else (False,))
         }
         cached = sum(1 for k in keys if lc.has(k))
-        return {"latents": {"cached": cached, "total": len(keys)}, "cache_dir": str(cache_root)}
+        return {"status": "ready", "latents": {"cached": cached, "total": len(keys)}, "cache_dir": str(cache_root)}
     except Exception as e:  # noqa: BLE001 - statistics must never break the dataset endpoint
-        return {"error": str(e)}
+        return {"status": "error", "error": str(e)}
 
 
 @router.get("/projects/{pid}/datasets", response_model=list[m.DatasetInfo], response_model_exclude_unset=True)
@@ -2194,6 +2200,8 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     checkpoint = config.get("checkpoint")
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         config = clear_native_vram_resolution(config)
+        if isinstance(config.get("dataset"), dict) and config["dataset"].get("resolution_mode") == "native":
+            config = {**config, "dataset": {**config["dataset"], "native_batching_version": 2}}
     if body.project_id:
         from .output_binding import bind_output_name
         from .source_roles import normalize_source_roles
@@ -2280,6 +2288,15 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
             "invalid config",
             code="config.invalid",
             details={"errors": validation_issues(e)},
+        ) from e
+    from ypuddin.train.native_batch_contract import resolve_native_batching_config
+
+    try:
+        cfg = resolve_native_batching_config(cfg)
+    except (OSError, ValueError) as e:
+        raise ApiError(
+            str(e), code="config.invalid", status=422,
+            details={"errors": [{"loc": "checkpoint.resume", "msg": str(e)}]},
         ) from e
     from ypuddin.train.plan import plan
 

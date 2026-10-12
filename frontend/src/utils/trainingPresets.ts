@@ -44,6 +44,8 @@ export function reusableTrainingPreset(config: Record<string, any>): Record<stri
 
 export function applyTrainingPreset(current: Record<string, any>, preset: Record<string, any>) {
   const reusable = reusableTrainingPreset(preset);
+  // A preset cannot change the policy belonging to the retained recovery point.
+  if (current.checkpoint?.resume && reusable.dataset) delete reusable.dataset.native_batching_version;
   // Missing opt-ins in older recipes must not inherit an enabled adaptive run.
   reusable.objective = { ...reusable.objective };
   if (!Object.prototype.hasOwnProperty.call(reusable.objective, 'infonoise_enabled')) reusable.objective.infonoise_enabled = false;

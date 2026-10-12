@@ -25,6 +25,7 @@ from torch.distributed.tensor import DTensor, Replicate, Shard
 
 from ypuddin.config.compute_policy import validate_resume_compute_policy
 from ypuddin.config.io import config_hash_variants, load_config
+from ypuddin.config.schema import TrainConfig
 
 from .state import Progress
 from .training_modes import FullTrainingSet, save_model_artifact
@@ -356,7 +357,15 @@ def _scheduler_contract(path: Path, meta: dict[str, Any]) -> dict[str, Any]:
     # closure. Only trust the original run config if its fingerprint matches this
     # checkpoint, never a newly edited config or the current resume job's output/resume paths.
     try:
-        original = load_config(path.parent / "config.toml")
+        from .native_batch_contract import authenticated_native_recipe
+
+        original = authenticated_native_recipe(path, metadata=meta) or load_config(path.parent / "config.toml")
+        if (
+            original.dataset.resolution_mode == "native"
+            and "native_batch_contract" not in meta.get("progress", {}).get("extra", {})
+            and "native_batching_version" not in original.dataset.model_fields_set
+        ):
+            original.dataset.native_batching_version = 1
         if not meta.get("config_hash") or meta["config_hash"] not in config_hash_variants(original):
             raise ValueError("原训练配置已修改或无法确认来源")
         return {
@@ -397,6 +406,8 @@ def load_sharded_checkpoint(
     legacy_scheduler_contract: dict[str, Any] | None = None,
     expected_dora_contract: dict[str, Any] | None = None,
     expected_training_features: dict[str, Any] | None = None,
+    expected_native_batch_contract: dict[str, Any] | None = None,
+    expected_native_batch_config: TrainConfig | None = None,
     validate_timestep_state: Callable[[dict[str, Any], dict[str, Any], int], Any] | None = None,
 ) -> dict[str, Any]:
     """Validate before mutation, then restore native tensors and optimizer shards.
@@ -411,6 +422,15 @@ def load_sharded_checkpoint(
         from ypuddin.adapters.dora_contract import STATE_KEY, validate_resume_contract
 
         meta = read_sharded_checkpoint_metadata(path)
+        from .native_batch_contract import read_native_batch_contract, validate_native_batch_contract
+
+        validate_native_batch_contract(
+            expected_native_batch_contract,
+            read_native_batch_contract(
+                path, metadata=meta, require_native=expected_native_batch_contract is not None,
+                config=expected_native_batch_config,
+            ),
+        )
         if expected_training_features is not None:
             from .training_feature_contract import STATE_KEY as FEATURE_STATE_KEY
             from .training_feature_contract import validate_training_feature_contract

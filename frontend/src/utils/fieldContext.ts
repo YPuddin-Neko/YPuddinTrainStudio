@@ -9,6 +9,8 @@ export interface FieldContext {
   family?: FamilyInfo;
   config: Record<string, any>;
   english: boolean;
+  /** Confirmed native execution policy; null or omitted means it is not known. */
+  nativeBatchingVersion?: 1 | 2 | null;
 }
 
 type Runtime = 'cuda' | 'hip' | 'mps' | 'cpu';
@@ -123,9 +125,27 @@ export function contextOptions(path: string, { family, config }: FieldContext, o
 type Lines = Array<string | false | undefined>;
 const join = (lines: Lines) => lines.filter(Boolean).join('\n');
 
+function nativeBatchingHelp(path: string, { config, english, nativeBatchingVersion }: FieldContext): string | undefined {
+  if (config.dataset?.resolution_mode !== 'native' || !['dataset.batch_size', 'loop.grad_accum', 'dataset.native_max_pixels'].includes(path)) return undefined;
+  const text = (zh: string, en: string) => english ? en : zh;
+  if (nativeBatchingVersion === 2) return configFieldHelp(path, undefined, english);
+  if (path === 'dataset.native_max_pixels') return join([
+    text('自动分辨率优先：按训练图片计算，尽量保留原图尺寸。\n自动显存优先：在自动分辨率优先的上限内，按可用显存和训练参数缩小。\n自定义：填写等效边长，面积上限为其平方。\n所有模式同时受最长边上限和模型尺寸对齐限制。', 'Resolution first calculates the limit from training images to preserve their original size.\nVRAM first reduces the resolution-first limit to fit available GPU memory and training settings.\nCustom uses the square of the entered equivalent side length.\nAll modes also apply longest-side limits and model alignment.'),
+    nativeBatchingVersion === 1 && text('本次恢复的面积上限还限制一次模型计算的总面积；相同尺寸的图片也可能分开计算。', 'For this resumed run, the area limit also caps the total image area in one model run; same-size images may be computed separately.'),
+  ]);
+  if (path === 'dataset.batch_size') return nativeBatchingVersion === 1
+    ? text('每张显卡每批参与训练的图片数。等效批次 = 批量大小 × 梯度累积 × 显卡数。\n原生分辨率模式下，一批内不同尺寸的图片分开计算；相同尺寸的图片也会按图像面积上限拆分。整批计算后汇总梯度，不足一批的尾部不复制补齐。\n增大批量大小会增加每批汇总的图片数；如果同时计算的图片数不变，训练峰值显存不一定增加。', 'Images contributing to the gradient in each batch on each GPU. Effective batch = batch size × gradient accumulation × GPUs.\nIn Native resolution mode, different sizes in a batch are computed separately; same-size images are also split to fit the image area limit. Gradients are combined after the whole batch. A short final batch is not padded with repeated images.\nIncreasing batch size adds images to each batch; peak training memory may stay unchanged when the number processed together stays the same.')
+    : text('每张显卡每批参与训练的图片数。\n批量大小与梯度累积共同决定每次更新所用的图片数。', 'Images contributing to each batch on each GPU.\nBatch size and gradient accumulation together determine the images used for each update.');
+  return nativeBatchingVersion === 1
+    ? text('累计指定数量的逻辑批次后再更新一次参数。等效批次 = 批量大小 × 梯度累积 × 显卡数。', 'Updates parameters after the specified number of logical batches. Effective batch size = per-GPU batch size × accumulation steps × GPU count.')
+    : text('累计指定数量的批次后再更新一次参数。\n增大梯度累积可以让一次更新汇总更多图片，无需同时把所有图片放入显存。', 'Updates parameters after accumulating the specified number of batches.\nMore accumulation combines more images in an update without keeping all of them in GPU memory at once.');
+}
+
 /** Help written for the selected model and this machine; undefined leaves the general text. */
 export function contextHelp(path: string, context: FieldContext, options?: string[]): string | undefined {
   if (path === 'scheduler.type') return schedulerTypeHelp(context.english, options);
+  const nativeHelp = nativeBatchingHelp(path, context);
+  if (nativeHelp) return nativeHelp;
   const { family, english } = context;
   if (!family) return undefined;
   const runtime = runtimeOf(family);

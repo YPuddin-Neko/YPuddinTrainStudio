@@ -429,6 +429,7 @@ class PlanMemory(_Out):
 
 
 class NativePlan(_Out):
+    batching_version: Literal[1, 2]
     images: int
     downscaled: int
     sizes: int

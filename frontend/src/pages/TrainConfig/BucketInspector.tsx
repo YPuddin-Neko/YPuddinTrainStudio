@@ -50,12 +50,15 @@ function memoryFixes(memory: Plan['memory'], native: boolean, text: (zh: string,
   return fixes.filter((fix, index) => fixes.findIndex(item => item.path === fix.path) === index);
 }
 
-export default function BucketInspector({ plan, loading, onData, hasSources = false, indexed, onIssues, onField, error, onRetry, dataset, familyName }: { plan: Plan | null; loading: boolean; onData: () => void; hasSources?: boolean; indexed?: { images: number; captioned: number }; onIssues?: () => void; onField?: (path: string) => void; error?:string; onRetry?:()=>void; dataset?: DatasetSizing; familyName?: string }) {
+export default function BucketInspector({ plan, planCurrent = true, loading, onData, hasSources = false, indexed, onIssues, onField, error, onRetry, dataset, familyName }: { plan: Plan | null; planCurrent?: boolean; loading: boolean; onData: () => void; hasSources?: boolean; indexed?: { images: number; captioned: number }; onIssues?: () => void; onField?: (path: string) => void; error?:string; onRetry?:()=>void; dataset?: DatasetSizing; familyName?: string }) {
   const text = useWorkspaceText();
   const routeId = useId();
   const [view, setView] = useState<'shape' | 'table'>('shape');
   const buckets = plan?.buckets || [];
   const native = plan?.native;
+  const nativeVersion = planCurrent && !loading && !error ? native?.batching_version : undefined;
+  const nativeBatches = nativeVersion === 2;
+  const legacyNative = nativeVersion === 1;
   const nativeMode = dataset ? dataset.resolution_mode === 'native' : !!native;
   const awaitingPlan = hasSources && !buckets.length && !plan?.ok;
   const maxCount = Math.max(1, ...buckets.map(bucket => bucket.items));
@@ -125,7 +128,19 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
   const accumulation = effectiveBatch && perBatch ? Math.max(1, Math.round(effectiveBatch / (perBatch * gpus))) : null;
   const batchFormula = perBatch == null || accumulation == null ? ''
     : gpus > 1 ? text(`${perBatch}\u00a0张 × ${gpus}\u00a0卡 × 累积\u00a0${accumulation}`, `${perBatch} × ${gpus}\u00a0GPUs × ${accumulation}\u00a0accumulation`)
-      : accumulation > 1 ? text(`${perBatch}\u00a0张 × 累积\u00a0${accumulation}`, `${perBatch} × ${accumulation}\u00a0accumulation`) : text(`每批 ${perBatch}\u00a0张`, `${perBatch} per batch`);
+      : accumulation > 1 ? text(`${perBatch}\u00a0张 × 累积\u00a0${accumulation}`, `${perBatch} × ${accumulation}\u00a0accumulation`) : nativeBatches ? text(`每批最多 ${perBatch}\u00a0张`, `Up to ${perBatch} per batch`) : nativeMode && !legacyNative ? text(`每卡批量 ${perBatch}`, `Batch size per GPU: ${perBatch}`) : text(`每批 ${perBatch}\u00a0张`, `${perBatch} per batch`);
+  const sizeBatchHelp = nativeBatches
+    ? text('每轮此尺寸的实际批次数，多卡时合计所有显卡。最终宽高相同的图片按每卡批量大小组批，尾批按实际图片数训练；图像面积上限分别约束每张画布。', 'Actual batches of this size per epoch, summed across GPUs. Images with the same final width and height are grouped by the per-GPU batch size; a short final batch uses its actual image count. The image area limit applies to each canvas.')
+    : legacyNative ? text('每轮对这个尺寸运行模型的次数。同尺寸图片在不超过图像面积上限时合并为一次计算；单张已接近上限时逐张计算，因此常与样本数相同。', 'How many times the model runs on this size per epoch. Same-size images are combined while they fit the image area limit; images near the limit run one at a time, so this often equals the sample count.')
+      : text('每轮对这个尺寸运行模型的次数。', 'How many times the model runs on this size per epoch.');
+  const effectiveBatchHelp = nativeBatches
+    ? text('每次参数更新最多使用的图片数 = 批量大小 × 梯度累积 × 显卡数。\n各尺寸尾批或轮末累积不足时，按实际参与的图片数更新，不复制图片补齐。', 'Maximum images per parameter update = batch size × gradient accumulation × GPUs.\nShort batches or incomplete accumulation at the end of an epoch use the actual image count, without repeated padding.')
+    : legacyNative || !nativeMode ? text('每次更新参数所用的图片数 = 批量大小 × 梯度累积 × 显卡数。原生分辨率下，同一批里尺寸不同的图片会分开计算，整批算完后才合并梯度更新参数，所以等效批次不会因此变小。', 'Images behind each parameter update = batch size × gradient accumulation × GPUs. In native resolution, differently sized images in a batch are computed separately, and their gradients are combined before the update, so the effective batch stays the same.')
+      : text('由批量大小 × 梯度累积 × 显卡数计算。', 'Calculated as batch size × gradient accumulation × GPUs.');
+  const forwardHelp = nativeBatches
+    ? text('每轮所有尺寸的实际批次数，多卡时合计所有显卡，不包含空同步批次。梯度累积会将多个批次合为一次参数更新，因此计算次数与训练步数可能不同。', 'Actual batches across all sizes and GPUs in one epoch, excluding empty synchronization batches. Gradient accumulation combines batches into a parameter update, so model runs and training steps can differ.')
+    : legacyNative ? text('原生分辨率下，同一批里尺寸不同的图片要分开计算，所以计算次数可能多于批次数。这只影响速度；整批算完后才更新参数，等效批次不变。', 'In native resolution, differently sized images in a batch are computed separately, so there can be more runs than batches. This only affects speed; parameters update after the whole batch, so the effective batch is unchanged.')
+      : text('每轮对所有训练尺寸运行模型的总次数。计算次数与参数更新步数可能不同。', 'Total model runs across training sizes in one epoch. Model runs and parameter updates can differ.');
   const batchesPerEpoch = native ? native.logical_batches : buckets.reduce((sum, bucket) => sum + (bucket.batches ?? 0), 0);
   const stepSource = !plan?.steps_per_epoch ? '' : gpus > 1 && distributed ? text(`每卡 ${distributed.batches_per_rank} 批`, `${distributed.batches_per_rank} batches per GPU`) : batchesPerEpoch ? text(`${batchesPerEpoch} 批`, `${batchesPerEpoch} batches`) : '';
   const totalSource = !plan?.total_steps || !plan.steps_per_epoch ? '' : plan.epochs && plan.total_steps === plan.epochs * plan.steps_per_epoch ? text(`${plan.epochs} 轮`, `${plan.epochs} epochs`) : text('按最大步数', 'max steps');
@@ -187,7 +202,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
       </dl>
       {maskLine && <p className="dataset-masks"><strong>{text('遮罩', 'Masks')}</strong><span>{maskLine}</span>{masks && !masks.enabled && onField && <button type="button" className="ui-link" onClick={() => onField('dataset.masked_loss')}>{text('开启遮罩加权训练', 'Turn on masked loss')}</button>}</p>}
       <SourceBalance sources={plan?.source_balance} loading={loading} hasSources={hasSources}/>
-      {!!native?.synchronization_groups && <p className="inspector-note">{text(`多卡每轮额外 ${native.synchronization_groups} 次补齐计算，不计入损失，也不增加训练样本。`, `Multi-GPU training adds ${native.synchronization_groups} padding runs per epoch; they carry no loss and add no samples.`)}</p>}
+      {!!native?.synchronization_groups && <p className="inspector-note">{nativeBatches ? text(`多卡每轮有 ${native.synchronization_groups} 个空同步批次，不执行图片计算，也不增加训练样本。`, `Multi-GPU training has ${native.synchronization_groups} empty synchronization batches per epoch; they run no images and add no training samples.`) : legacyNative ? text(`多卡每轮额外 ${native.synchronization_groups} 次补齐计算，不计入损失，也不增加训练样本。`, `Multi-GPU training adds ${native.synchronization_groups} padding runs per epoch; they carry no loss and add no samples.`) : text(`多卡每轮有 ${native.synchronization_groups} 个同步批次，不增加训练样本。`, `Multi-GPU training has ${native.synchronization_groups} synchronization batches per epoch; they add no training samples.`)}</p>}
       <div className="bucket-heading"><h4>{nativeMode ? text('实际训练尺寸', 'Training sizes') : text('分桶布局', 'Bucket layout')}</h4><div className="ui-segmented ui-segmented-sm" role="group" aria-label={text('分桶显示方式', 'Bucket view')}><button type="button" aria-label={text('分桶图形视图', 'Bucket shape view')} aria-pressed={view === 'shape'} onClick={() => setView('shape')}><Grid2X2 size={13} /></button><button type="button" aria-label={text('分桶明细表', 'Bucket table')} aria-pressed={view === 'table'} onClick={() => setView('table')}><BarChart3 size={13} /></button><SlidingIndicator className="ui-segmented-thumb"/></div></div>
       {buckets.length === 0 ? <div className="bucket-empty"><Database size={23} /><p>{loading ? text('正在计算实际分桶…', 'Computing buckets…') : awaitingPlan ? text('请完成待配置项后计算。', 'Complete the pending settings to calculate.') : text('尚无训练图片。', 'No training images yet.')}</p><button type="button" className="ui-link" onClick={awaitingPlan && onIssues ? onIssues : onData}>{awaitingPlan && onIssues ? text('检查待配置项', 'Review pending settings') : text('配置训练数据', 'Configure dataset')}</button></div> : <>
         {view === 'shape' ? <div className="bucket-groups" data-testid="plan-buckets">{groups.map(group => grouped
@@ -196,7 +211,7 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
             <ul className={gridClass} role="list">{group.buckets.map(tile)}</ul>
           </section>
           : <ul key={group.base} className={gridClass} role="list">{group.buckets.map(tile)}</ul>)}</div>
-          : <div className="bucket-table-wrap" data-testid="plan-buckets"><table className="bucket-table"><thead><tr>{grouped && <th>{text('分辨率', 'Resolution')}</th>}<th>{text('尺寸', 'Size')}</th><th>{text('样本', 'Items')}</th><th>{native ? <span className="bucket-column-help">{text('计算次数', 'Model runs')}<ConfigHelp label={text('计算次数说明', 'Model runs help')}>{text('每轮对这个尺寸运行模型的次数。同尺寸图片在不超过图像面积上限时合并为一次计算；单张已接近上限时逐张计算，因此常与样本数相同。', 'How many times the model runs on this size per epoch. Same-size images are combined while they fit the image area limit; images near the limit run one at a time, so this often equals the sample count.')}</ConfigHelp></span> : text('批次', 'Batches')}</th></tr></thead><tbody>{buckets.map(bucket => <tr key={bucketKey(bucket)}>{grouped && <td>{bucket.base}</td>}<td>{bucket.w} × {bucket.h}</td><td>{bucket.items}</td><td>{bucket.batches ?? '—'}</td></tr>)}</tbody></table></div>}
+          : <div className="bucket-table-wrap" data-testid="plan-buckets"><table className="bucket-table"><thead><tr>{grouped && <th>{text('分辨率', 'Resolution')}</th>}<th>{text('尺寸', 'Size')}</th><th>{text('样本', 'Items')}</th><th>{native ? <span className="bucket-column-help">{text('计算次数', 'Model runs')}<ConfigHelp label={text('计算次数说明', 'Model runs help')}>{sizeBatchHelp}</ConfigHelp></span> : text('批次', 'Batches')}</th></tr></thead><tbody>{buckets.map(bucket => <tr key={bucketKey(bucket)}>{grouped && <td>{bucket.base}</td>}<td>{bucket.w} × {bucket.h}</td><td>{bucket.items}</td><td>{bucket.batches ?? '—'}</td></tr>)}</tbody></table></div>}
       </>}
       {plan?.image_fit && <div className="image-fit-summary">
         <div className="image-fit-head">
@@ -208,12 +223,12 @@ export default function BucketInspector({ plan, loading, onData, hasSources = fa
       </div>}
       <div className="estimate-block"><h4>{text('执行估算', 'Execution estimate')}</h4>
         <dl className="estimate-stats">
-          <div><dt>{text('等效批次', 'Effective batch')}<ConfigHelp label={text('等效批次说明', 'Effective batch help')}>{text('每次更新参数所用的图片数 = 批量大小 × 梯度累积 × 显卡数。原生分辨率下，同一批里尺寸不同的图片会分开计算，整批算完后才合并梯度更新参数，所以等效批次不会因此变小。', 'Images behind each parameter update = batch size × gradient accumulation × GPUs. In native resolution, differently sized images in a batch are computed separately, and their gradients are combined before the update, so the effective batch stays the same.')}</ConfigHelp></dt><dd>{effectiveBatch ? text(`${effectiveBatch} 张`, `${effectiveBatch}`) : '—'}</dd>{batchFormula && <small>{batchFormula}</small>}</div>
+          <div><dt>{text('等效批次', 'Effective batch')}<ConfigHelp label={text('等效批次说明', 'Effective batch help')}>{effectiveBatchHelp}</ConfigHelp></dt><dd>{effectiveBatch ? nativeBatches ? text(`最多 ${effectiveBatch} 张`, `Up to ${effectiveBatch}`) : text(`${effectiveBatch} 张`, `${effectiveBatch}`) : '—'}</dd>{batchFormula && <small>{batchFormula}</small>}</div>
           <div><dt>{text('每轮步数', 'Steps / epoch')}</dt><dd>{plan?.steps_per_epoch ?? '—'}</dd>{stepSource && <small>{stepSource}</small>}</div>
           <div><dt>{text('总训练步数', 'Total steps')}</dt><dd>{plan?.total_steps ?? '—'}</dd>{totalSource && <small>{totalSource}</small>}</div>
         </dl>
         <dl className="estimate-list">
-          {native && <div><dt>{text('每轮计算次数', 'Model runs / epoch')}<ConfigHelp label={text('每轮计算次数说明', 'Model runs help')}>{text('原生分辨率下，同一批里尺寸不同的图片要分开计算，所以计算次数可能多于批次数。这只影响速度；整批算完后才更新参数，等效批次不变。', 'In native resolution, differently sized images in a batch are computed separately, so there can be more runs than batches. This only affects speed; parameters update after the whole batch, so the effective batch is unchanged.')}</ConfigHelp></dt><dd>{native.forward_groups == null ? '—' : text(`${native.forward_groups} 次`, `${native.forward_groups}`)}</dd></div>}
+          {native && <div><dt>{text('每轮计算次数', 'Model runs / epoch')}<ConfigHelp label={text('每轮计算次数说明', 'Model runs help')}>{forwardHelp}</ConfigHelp></dt><dd>{native.forward_groups == null ? '—' : text(`${native.forward_groups} 次`, `${native.forward_groups}`)}</dd></div>}
           {gpus > 1 && <div><dt>{text('训练显卡', 'Training GPUs')}</dt><dd>{text(`${gpus} 张`, `${gpus}`)}</dd></div>}
           {!!distributed?.dropped_samples && gpus > 1 && <div><dt>{text('首轮末尾略过', 'First epoch tail skipped')}</dt><dd>{distributed.dropped_samples} {text('张', 'images')}</dd></div>}
           <div><dt>{text('可训练参数', 'Trainable parameters')}</dt><dd>{formatParams(plan?.params?.trainable)}</dd></div>

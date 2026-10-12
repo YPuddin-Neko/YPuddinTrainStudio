@@ -48,6 +48,16 @@ const trainingDraftKey = (projectId: string, versionId?: string) => `training-dr
 class DatasetListUnavailable extends Error {}
 const isConfigObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
+function mergeTrainingDefaults(defaults: Record<string, any>, draft: Record<string, any>) {
+  const next = mergeConfig(defaults, normalizeLegacyIntervals(draft));
+  // Older resume recipes inherit their authenticated checkpoint's policy.
+  if (draft.checkpoint?.resume && !Object.prototype.hasOwnProperty.call(draft.dataset || {}, 'native_batching_version')) {
+    next.dataset = { ...next.dataset };
+    delete next.dataset.native_batching_version;
+  }
+  return next;
+}
+
 // Restore only locally changed fields, preserving unrelated server changes made while away.
 function restoreDraftChanges(current: unknown, base: unknown, draft: unknown): unknown {
   if (JSON.stringify(base) === JSON.stringify(draft)) return current;
@@ -377,7 +387,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       projectId ? apiClient.get<Record<string, any>>(versionConfigUrl(projectId, versionId), { silent: true }) : Promise.resolve({}),
     ]).then(([nextSchema, nextDefaults, draft]) => {
       if (!active) return;
-      const next = fillDefaultModels(mergeConfig(nextDefaults, normalizeLegacyIntervals(draft)), registeredModelsRef.current);
+      const next = fillDefaultModels(mergeTrainingDefaults(nextDefaults, draft), registeredModelsRef.current);
       setSchema(nextSchema);
       setDefaults(nextDefaults);
       initialConfigRef.current = JSON.stringify(next);
@@ -462,7 +472,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         const [remote, nextDatasets] = await request;
         await saveQueueRef.current.catch(() => {});
         if (controller.signal.aborted || draftRef.current.projectId !== projectId || draftRef.current.versionId !== versionId) return;
-        const next = fillDefaultModels(mergeConfig(defaults, normalizeLegacyIntervals(remote)), registeredModelsRef.current);
+        const next = fillDefaultModels(mergeTrainingDefaults(defaults, remote), registeredModelsRef.current);
         // An in-flight save may have reached the server after this GET snapshot.
         // Keep its acknowledged baseline so the merged dataset changes are saved again.
         if (!savingAtStart) lastSavedRef.current = JSON.stringify(next);
@@ -615,6 +625,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
   const handleConfigChange = (next: Record<string, any>) => {
     if (inactiveTrainingReason(config)) return;
+    if (next.checkpoint?.resume !== config.checkpoint?.resume) {
+      next = { ...next, dataset: { ...next.dataset } };
+      delete next.dataset.native_batching_version;
+    }
     const family = familyByName(families, next.model?.family);
     setConfig(family && next.model?.family !== config.model?.family ? changeModelFamily(next, family, registeredModels) : next);
   };
@@ -698,6 +712,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const checked = loaded && !validating && !datasetRefreshing && !datasetRefreshError && gpuPlanCurrent && validatedConfig === JSON.stringify(config) && plan !== null;
   const computePolicy = currentTrainingComputePolicy(plan?.compute_policy, config, validatedConfig, validating || !gpuPlanCurrent || datasetRefreshing || !!datasetRefreshError);
   const doraPrecision = checked ? readDoraPrecisionReport(plan?.dora) : null;
+  const nativeBatchingMarker = checked && !planError ? plan?.native?.batching_version : null;
+  const nativeBatchingVersion = nativeBatchingMarker === 1 || nativeBatchingMarker === 2 ? nativeBatchingMarker : null;
   const nativeAreaEstimate: NativeAreaEstimate = planError ? {state: 'error'}
     : !checked ? {state: 'loading'}
     : plan?.native ? {state: 'ready', maxPixels: plan.native.auto_max_pixels, vramMaxPixels: plan.native.auto_vram_max_pixels, vramError: plan.native.auto_vram_error}
@@ -753,7 +769,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     <div className="training-title-actions">
     {project ? <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} beforeAction={flushDraft} status={draftStatus} titleBadge={familyBadge} error={versions.error}/> : <div className="project-heading-placeholder"><h1>{text('训练参数', 'Training parameters')}</h1>{familyBadge}{draftStatus}</div>}
     <div className="training-launch-bar training-header-actions" role="group" aria-label={text('训练启动操作', 'Training launch controls')} id="training-launch" ref={launchBarRef}>
-      {issuesOpen && issues.length > 0 && <section className="readiness-panel" aria-label={text('训练前检查', 'Preflight checks')}><div className="readiness-heading"><h2>{text('完成以下配置即可启动训练', 'Complete these settings to start training')}</h2><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" onClick={() => setIssuesOpen(false)}>{text('收起', 'Collapse')}</button></div>{issues.map((issue,index) => <div className="readiness-item" key={`${issue.path}-${index}`}><button aria-label={issue.path === 'memory' ? text('查看显存估算与解决办法', 'Review the memory estimate and fixes') : text(`配置${issue.label}`, `Configure ${issue.label}`)} onClick={() => goToIssue(issue)}><span>{issue.label}</span><span>{issue.message}</span><ChevronRight size={14}/></button>{issue.message === OPAQUE_CONFIG_ISSUE && <details><summary>{text('技术详情', 'Technical details')}</summary><code>{issue.detail}</code></details>}</div>)}</section>}
+      {issuesOpen && issues.length > 0 && <section className="readiness-panel" aria-label={text('训练前检查', 'Preflight checks')}><div className="readiness-heading"><h2>{text('完成以下配置即可启动训练', 'Complete these settings to start training')}</h2><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" onClick={() => setIssuesOpen(false)}>{text('收起', 'Collapse')}</button></div>{issues.map((issue,index) => <div className="readiness-item" key={`${issue.path}-${index}`}><button aria-label={issue.path === 'memory' ? text('查看显存估算与解决办法', 'Review the memory estimate and fixes') : text(`配置${issue.label}`, `Configure ${issue.label}`)} onClick={() => goToIssue(issue)}><span>{issue.label}</span><span>{issue.message}</span><ChevronRight size={14}/></button>{issue.message === OPAQUE_CONFIG_ISSUE && <details><summary>{text('错误详情', 'Error details')}</summary><code>{issue.detail}</code></details>}</div>)}</section>}
       <div className="launch-status" role="status">{validating ? <><Loader2 size={15} className="animate-spin"/><span>{text('正在检查配置…', 'Checking configuration…')}</span></> : ready ? <><CheckCircle2 size={16} className="text-emerald-500"/><span>{text('可以开始训练', 'Ready to train')}</span></> : <button onClick={() => setIssuesOpen(value => !value)} className="readiness-toggle"><AlertCircle size={16}/><span>{issues.length ? text(`${issues.length} 项待配置`, `${issues.length} settings to complete`) : text('尚未通过检查', 'Checks incomplete')}</span><ChevronRight size={14}/></button>}</div>
       <button type="button" className="ui-btn launch-plan-toggle" aria-label={text('训练估算与分桶', 'Estimates and buckets')} aria-expanded={inspectorOpen} aria-controls="training-plan-panel" onClick={() => setInspectorOpen(open => !open)}><BarChart3 size={15}/><span>{text('执行估算', 'Estimates')}</span><ChevronDown size={14}/></button>
       <GpuDevicePicker compact training label={text('训练显卡', 'Training GPUs')} value={gpuDevices} count={gpuCount} deviceState={queueDevices}
@@ -814,10 +830,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
           {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong></div><div className="context-actions"><Link to={`${dataUrl}&data_step=datasets`} className="ui-btn ui-btn-sm">{text('添加数据', 'Add dataset')}</Link><Link to={`${dataUrl}&data_step=captions${sourceQuery}`} className="ui-btn ui-btn-sm">{text('标签编辑', 'Caption editor')}</Link><Link to={`${dataUrl}&data_step=preprocess${sourceQuery}`} className="ui-btn ui-btn-sm"><Brush size={13}/>{text('数据集预处理', 'Preprocessing')}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
 
 
-          {!loaded ? <LoadingNote block label={text('正在读取训练参数…', 'Loading training parameters…')}/> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} nativeAreaEstimate={nativeAreaEstimate} doraPrecision={doraPrecision} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} notices={(plan?.warnings || []).flatMap(warning => { const advice = presentValueAdvice(warning, english); return advice ? [{ loc: advice.loc, msg: advice.inline, fix: advice.fix }] : []; })} family={familyByName(families, config?.model?.family)} families={families} />}
+          {!loaded ? <LoadingNote block label={text('正在读取训练参数…', 'Loading training parameters…')}/> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} nativeAreaEstimate={nativeAreaEstimate} nativeBatchingVersion={nativeBatchingVersion} doraPrecision={doraPrecision} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} notices={(plan?.warnings || []).flatMap(warning => { const advice = presentValueAdvice(warning, english); return advice ? [{ loc: advice.loc, msg: advice.inline, fix: advice.fix }] : []; })} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
-      <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="ui-btn ui-btn-quiet inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector familyName={config.model?.family} plan={plan} loading={validating || datasetRefreshing} dataset={config.dataset} onField={path => { setInspectorOpen(false); goToIssue({ path, label: '', message: '', detail: '', tab: configTabForPath(path) }); }} error={planError} onRetry={()=>datasetRefreshError ? refreshDatasetConfiguration() : setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
+      <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="ui-btn ui-btn-quiet inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector familyName={config.model?.family} plan={plan} planCurrent={checked} loading={validating || datasetRefreshing} dataset={config.dataset} onField={path => { setInspectorOpen(false); goToIssue({ path, label: '', message: '', detail: '', tab: configTabForPath(path) }); }} error={planError} onRetry={()=>datasetRefreshError ? refreshDatasetConfiguration() : setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
         {!!plan?.warnings?.length && <details className="plan-notes"><summary><AlertCircle size={13}/>{text('配置提示', 'Configuration notes')} · {plan.warnings.length}</summary><ul>{plan.warnings.map((warning,index) => <li key={index}>{presentPlanWarning(warning.code,warning.msg,english,warning)}</li>)}</ul></details>}
       </aside>
     </div>

@@ -1,10 +1,4 @@
-"""Model-independent native sizes and bounded, heterogeneous logical batches.
-
-Unlike sequence packing, this path does not change the model's attention operator.
-One logical image batch is evaluated as homogeneous microbatches; the trainer
-weights their gradients by image count. Legacy crop and whole-image padding use
-separate geometry; neither path repeats tail samples to fill a batch.
-"""
+"""Native canvas geometry and deterministic batches of equal-sized images."""
 
 from __future__ import annotations
 
@@ -159,42 +153,95 @@ def _native_pad_size(
 
 
 class NativeBatchSampler(BucketBatchSampler):
-    """Shuffle each image once, preserving a fixed logical batch size across shapes."""
+    """Shuffle within each canvas size and across batches, retaining every tail.
+
+    Distributed ranks consume equally many slots. An empty slot contains no
+    sample; the trainer participates only in gradient communication for that slot.
+    """
+
+    def __init__(self, *args, batching_version: int = 2, **kwargs):
+        super().__init__(*args, **kwargs)
+        if batching_version not in {1, 2}:
+            raise ValueError("unsupported native batching version")
+        self.batching_version = batching_version
 
     def plan(self, epoch: int | None = None) -> list[list[int]]:
         epoch = self.epoch if epoch is None else epoch
         if self._plan_cache and self._plan_cache[0] == epoch:
             return self._plan_cache[1]
-        indices = list(range(len(self.bucket_of)))
-        random.Random(self.seed * 1_000_003 + epoch).shuffle(indices)
-        batches = [indices[i : i + self.batch_size] for i in range(0, len(indices), self.batch_size)]
-        if self.drop_last and batches and len(batches[-1]) < self.batch_size:
-            batches.pop()
+        if self.batching_version == 1:
+            indices = list(range(len(self.bucket_of)))
+            random.Random(self.seed * 1_000_003 + epoch).shuffle(indices)
+            batches = [indices[i : i + self.batch_size] for i in range(0, len(indices), self.batch_size)]
+            if self.drop_last and batches and len(batches[-1]) < self.batch_size:
+                batches.pop()
+            if self.world_size > 1:
+                usable = len(batches) - len(batches) % self.world_size
+                batches = batches[self.rank : usable : self.world_size]
+            self._plan_cache = epoch, batches
+            return batches
+        if self.drop_last:
+            raise ValueError("native batches retain incomplete batches; drop_last is unsupported")
+        batches = BucketBatchSampler(
+            self.bucket_of, self.batch_size, seed=self.seed,
+        ).plan(epoch)
         if self.world_size > 1:
-            usable = len(batches) - len(batches) % self.world_size
-            batches = batches[self.rank : usable : self.world_size]
+            batches = [
+                batches[offset + self.rank] if offset + self.rank < len(batches) else []
+                for offset in range(0, len(batches), self.world_size)
+            ]
         self._plan_cache = epoch, batches
         return batches
 
+    def state_dict(self) -> dict[str, Any]:
+        if self.batching_version == 1:
+            return super().state_dict()
+        return {
+            **super().state_dict(), "native_batching_version": 2,
+            "batch_size": self.batch_size, "world_size": self.world_size,
+        }
 
-def microbatch_indices(shapes: Sequence[tuple[int, int]], max_pixels: int) -> list[list[int]]:
-    """Same-size groups fit within the configured simultaneous pixel budget."""
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        if self.batching_version == 1:
+            if state.get("native_batching_version", 1) != 1:
+                raise ValueError("native checkpoint batching version does not match")
+            super().load_state_dict(state)
+            return
+        expected = {
+            "native_batching_version": 2, "batch_size": self.batch_size,
+            "world_size": self.world_size, "seed": self.seed,
+        }
+        if any(state.get(key) != value for key, value in expected.items()):
+            raise ValueError("原生批量策略或采样设置与检查点不一致，不能精确恢复；请加载权重创建新任务。")
+        super().load_state_dict(state)
+
+
+def microbatch_indices(
+    shapes: Sequence[tuple[int, int]], max_pixels: int, *, batching_version: int = 2,
+) -> list[list[int]]:
+    """Group equal canvases; the area limit applies to each image independently."""
     groups: dict[tuple[int, int], list[int]] = {}
     for i, shape in enumerate(shapes):
         if shape[0] * shape[1] > max_pixels:
-            raise ValueError(f"native image {shape} exceeds the microbatch pixel budget")
+            raise ValueError(f"native image {shape} exceeds the single-image pixel limit")
         groups.setdefault(shape, []).append(i)
-    result = []
-    for (width, height), indices in groups.items():
-        capacity = max_pixels // (width * height)
-        result.extend(indices[i : i + capacity] for i in range(0, len(indices), capacity))
-    return result
+    if batching_version == 1:
+        result = []
+        for (width, height), indices in groups.items():
+            capacity = max_pixels // (width * height)
+            result.extend(indices[i : i + capacity] for i in range(0, len(indices), capacity))
+        return result
+    return list(groups.values())
 
 
-def collate_native(samples: list[dict[str, Any]], *, max_pixels: int) -> dict[str, Any]:
+def collate_native(
+    samples: list[dict[str, Any]], *, max_pixels: int, batching_version: int = 2,
+) -> dict[str, Any]:
     from .dataset import collate
 
-    groups = microbatch_indices([sample["bucket"] for sample in samples], max_pixels)
+    groups = microbatch_indices(
+        [sample["bucket"] for sample in samples], max_pixels, batching_version=batching_version,
+    )
     return {
         "caption": [sample["caption"] for sample in samples],
         "microbatches": [collate([samples[i] for i in group]) for group in groups],

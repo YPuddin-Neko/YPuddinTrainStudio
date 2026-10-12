@@ -85,6 +85,16 @@ from ypuddin.runtime_profiles import current_profile
 
 from .events import Emitter, NullEmitter
 from .logging import TrainingLogs, log_directory
+from .native_batch_contract import (
+    STATE_KEY as NATIVE_BATCH_STATE_KEY,
+)
+from .native_batch_contract import (
+    native_batch_contract,
+    read_native_batch_contract,
+    resolve_native_batching_config,
+    validate_native_batch_contract,
+    validate_native_batch_resume,
+)
 from .reproducibility import (
     capture_compute_runtime,
     configure_reproducibility,
@@ -214,6 +224,9 @@ class Trainer:
     def __init__(
         self, cfg: TrainConfig, *, device: str | torch.device | None = None, emitter: Emitter | None = None
     ):
+        cfg = resolve_native_batching_config(
+            cfg, world_size=getattr(getattr(self, "distributed", None), "world_size", 1),
+        )
         self.device = torch.device(device) if device else self._pick_device()
         self.cfg, self.compute_policy = resolve_training_compute_config(
             cfg, self.device.type, current_profile()
@@ -702,17 +715,24 @@ class Trainer:
         if is_schedule_free(cfg.optimizer):
             self.optimizer.train()
         native = cfg.dataset.resolution_mode == "native"
+        self._native_batch_contract = native_batch_contract(
+            cfg, world_size=getattr(getattr(self, "distributed", None), "world_size", 1),
+        )
         sampler_type = NativeBatchSampler if native else BucketBatchSampler
         self.sampler = sampler_type(
             self.bundle.train.bucket_keys(),
             cfg.dataset.batch_size,
             seed=cfg.loop.seed,
+            **({"batching_version": cfg.dataset.native_batching_version} if native else {}),
             **self._sampler_options(),
         )
         self.loader = DataLoader(
             self.bundle.train,
             batch_sampler=self.sampler,
-            collate_fn=partial(collate_native, max_pixels=self.bundle.plan.native_max_pixels)
+            collate_fn=partial(
+                collate_native, max_pixels=self.bundle.plan.native_max_pixels,
+                batching_version=cfg.dataset.native_batching_version,
+            )
             if native
             else collate,
             num_workers=cfg.dataset.num_workers,
@@ -765,15 +785,21 @@ class Trainer:
             }
         if cfg.checkpoint.resume:
             self._resume(cfg.checkpoint.resume)
-            if self.is_primary:
+
+            def record_resumed_config():
+                from .native_batch_contract import preserve_native_resume_recipe
+
                 # A rejected same-directory legacy resume must preserve the
                 # original config that authenticates its scheduler closure.
+                preserve_native_resume_recipe(cfg, self._record_dir())
                 write_config(cfg, self._record_dir() / "config.toml")
                 if cfg.dataset.resolution_mode == "native":
                     (self._record_dir() / "data-plan.json").write_text(
                         json.dumps(self.bundle.plan.to_dict(), ensure_ascii=False, indent=2) + "\n",
                         encoding="utf-8",
                     )
+
+            self._primary_call(record_resumed_config)
         if cfg.loop.distributed_strategy != "fsdp" or not hasattr(self, "distributed"):
             # DDP saves on rank zero but every rank must retain identical progress.
             self.progress.extra["scheduler_contract"] = deepcopy(self._scheduler_contract)
@@ -782,6 +808,7 @@ class Trainer:
         self.progress.extra["deterministic"] = cfg.loop.deterministic
         if cfg.dataset.resolution_mode == "native":
             self.progress.extra["native_max_pixels"] = self.bundle.plan.native_max_pixels
+            self.progress.extra[NATIVE_BATCH_STATE_KEY] = deepcopy(self._native_batch_contract)
         if self.compute_policy is not None:
             self.progress.extra["compute_policy"] = dict(self.compute_policy)
             self.progress.extra["compute_runtime"] = self.compute_runtime
@@ -1144,6 +1171,13 @@ class Trainer:
         path = Path(self.cfg.checkpoint.resume) / "state.json"
         metadata = json.loads(path.read_text(encoding="utf-8"))
         extra = metadata.get("progress", {}).get("extra", {})
+        validate_native_batch_resume(
+            self.cfg, read_native_batch_contract(
+                path.parent, metadata=metadata, config=self.cfg,
+                require_native=self.cfg.dataset.resolution_mode == "native",
+            ),
+            world_size=getattr(getattr(self, "distributed", None), "world_size", 1),
+        )
         validate_training_feature_resume(self.cfg, extra.get(TRAINING_FEATURE_STATE_KEY))
         validate_resume_reproducibility(self.cfg.loop.deterministic, extra.get("deterministic"))
         validate_resume_compute_policy(self.compute_policy, extra.get("compute_policy"))
@@ -1190,6 +1224,11 @@ class Trainer:
         validate_scheduler_recipe(captured_scheduler.contract, self.cfg, self.progress.total_steps)
         validate_scheduler_instance(captured_scheduler.contract, self.scheduler)
         ck = load_checkpoint(path)
+        validate_native_batch_contract(
+            self._native_batch_contract, read_native_batch_contract(
+                path, config=self.cfg, require_native=self.cfg.dataset.resolution_mode == "native",
+            ),
+        )
         adaptive = self._validate_timestep_checkpoint(ck["progress"].extra, ck["rng"], ck["progress"].step)
         validate_training_feature_resume(self.cfg, ck["progress"].extra.get(TRAINING_FEATURE_STATE_KEY))
         validate_resume_contract(compute_contract(self.adapters), ck["progress"].extra.get(DORA_STATE_KEY))
@@ -1516,6 +1555,12 @@ class Trainer:
         return path
 
     def _save_state(self, tag: str | None = None) -> Path:
+        validate_native_batch_resume(
+            self.cfg, self._native_batch_contract,
+            world_size=getattr(getattr(self, "distributed", None), "world_size", 1),
+        )
+        if self._native_batch_contract is not None:
+            self.progress.extra[NATIVE_BATCH_STATE_KEY] = deepcopy(self._native_batch_contract)
         self._save_timestep_state()
         self._validate_dora_contract()
         self._validate_training_compute_policy()
@@ -2220,11 +2265,9 @@ class Trainer:
         self._epoch_hooks(epoch + 1)
 
     def _run_native_epoch(self) -> None:
-        """A logical batch may contain many sizes; backward releases each group's graph.
+        """Execute each equal-canvas batch and normalize by real images across GA.
 
-        Normalise by the actual image count across accumulation, including tails.
-        Thus a singleton shape does not outweigh a group containing several images.
-        All model/loss/Mask/precision paths still go through compute_loss.
+        A short size-group tail has the same per-image weight as a full batch.
         """
         cfg = self.cfg
         epoch = self.progress.epoch
@@ -2517,7 +2560,7 @@ class Trainer:
         bs = max(1, self.cfg.dataset.batch_size)
         for indices in by_bucket.values():
             effective_bs = bs
-            if self.cfg.dataset.resolution_mode == "native":
+            if self.cfg.dataset.resolution_mode == "native" and self.cfg.dataset.native_batching_version == 1:
                 effective_bs = min(
                     bs, max(1, self.bundle.plan.native_max_pixels // ds.items[indices[0]].bucket.area)
                 )

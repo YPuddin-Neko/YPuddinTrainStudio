@@ -106,7 +106,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"invalid: {e}")
         return 1
-    print(dump_toml(cfg) if args.dump else "ok")
+    print(dump_toml(cfg, for_export=True) if args.dump else "ok")
     return 0
 
 

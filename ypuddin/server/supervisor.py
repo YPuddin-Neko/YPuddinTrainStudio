@@ -736,6 +736,7 @@ class JobSupervisor:
             payload.setdefault("loop", {}).setdefault("deterministic", False)
             # Snapshots from before the DoRA axis option trained output rows, then the default.
             payload.setdefault("adapter", {}).setdefault("dora_axis", "output")
+            payload.setdefault("dataset", {}).setdefault("native_batching_version", 1)
             if job["type"] == "cache":
                 payload.setdefault("loop", {}).update(gpu_count=1, distributed_strategy="ddp")
             cfg = absolute_paths(TrainConfig.model_validate(payload))

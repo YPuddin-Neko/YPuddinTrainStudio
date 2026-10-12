@@ -16617,6 +16617,15 @@
             ],
             "title": "Format",
             "default": "toml"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "config",
+              "preset"
+            ],
+            "title": "Kind",
+            "default": "config"
           }
         },
         "type": "object",
@@ -17063,12 +17072,25 @@
               "native"
             ],
             "title": "Resolution Mode",
-            "description": "分桶在面积和比例限制内选择裁切或补边最少的尺寸；效果相同时优先减少缩放。原生按每图尺寸和预算分组，不放大小图。是否保留完整画面由下方图像适配方式控制，超预算按策略缩小或报错。",
+            "description": "分桶在面积和比例限制内选择裁切或补边最少的尺寸；效果相同时优先减少缩放。原生保留每图尺寸，不放大小图，并按最终相同宽高合批。是否保留完整画面由下方图像适配方式控制，超出单图上限按策略缩小或报错。",
             "default": "bucket",
             "x-ui": {
               "control": "select",
               "group": "dataset",
               "order": 5
+            }
+          },
+          "native_batching_version": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Native Batching Version",
+            "description": "原生训练批量策略版本，用于区分任务快照与恢复点。",
+            "default": 2,
+            "x-ui": {
+              "hidden": true
             }
           },
           "image_fit": {
@@ -17148,7 +17170,7 @@
             "maximum": 67108864.0,
             "minimum": 1024.0,
             "title": "Native Max Pixels",
-            "description": "原生模式单图及一次计算的像素上限。最长边限制和模型对齐同时生效，调大通常需要更多显存。",
+            "description": "原生模式单张训练画布的像素上限，包含补边，不限制整批总面积。最长边限制和模型对齐同时生效，调大通常需要更多显存。",
             "default": 1048576,
             "x-ui": {
               "group": "dataset",
@@ -17250,7 +17272,7 @@
             "type": "integer",
             "minimum": 1.0,
             "title": "Batch Size",
-            "description": "每个逻辑批次的目标图片数。分桶按相同尺寸组批，不足一批的尾部不会复制图片补齐；原生模式会按尺寸和像素预算拆成多次前向。实际更新还受梯度累积影响。",
+            "description": "每张显卡一次前向与反向同时处理的图片数上限。分桶和原生模式均按最终相同宽高合批；同尺寸图片充足时达到此数量，尾批按实际图数执行，不复制补齐。梯度累积决定多少批次后更新参数；原生模式按参与更新的实际图片数归一化。",
             "default": 1,
             "x-ui": {
               "group": "dataset",
@@ -24409,6 +24431,14 @@
       },
       "NativePlan": {
         "properties": {
+          "batching_version": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Batching Version"
+          },
           "images": {
             "type": "integer",
             "title": "Images"
@@ -24500,6 +24530,7 @@
         "additionalProperties": true,
         "type": "object",
         "required": [
+          "batching_version",
           "images",
           "downscaled",
           "sizes",

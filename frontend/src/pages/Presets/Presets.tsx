@@ -53,7 +53,11 @@ function ImagePresets() {
   const parameterContent = useEnterAnimation<HTMLDivElement>(draft ? `${draft.originalName || 'new'}:${draft.config.model?.family}` : null, { skipFirst: true });
   const inactiveReason = inactiveTrainingReason(draft?.config, english);
   const [saved, setSaved] = React.useState('');
-  const [busy, setBusy] = React.useState(false);
+  const [working, setBusy] = React.useState(false);
+  const [exporting, setExporting] = React.useState(false);
+  const exportRequest = React.useRef<AbortController | null>(null);
+  const busy = working || exporting;
+  React.useEffect(() => () => { exportRequest.current?.abort(); exportRequest.current = null; }, []);
   const [error, setError] = React.useState('');
   const [notice, setNotice] = React.useState('');
   const [errors, setErrors] = React.useState<ValidationError[]>([]);
@@ -124,14 +128,26 @@ function ImagePresets() {
     if (!opened) throw new Error(text('无法载入预设，请重试。', 'Could not load the preset. Please try again.'));
     return true;
   };
-  const exportPreset = () => {
-    if (!draft) return;
+  const exportPreset = async () => {
+    if (!draft || busy || exportRequest.current) return;
     const body = presetPayload(draft);
-    const filename = body.name.replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 128) || 'preset';
-    const url = URL.createObjectURL(new Blob([JSON.stringify(body, null, 2) + '\n'], { type: 'application/json' }));
-    const link = document.createElement('a'); link.href = url; link.download = `${filename}.json`;
-    document.body.append(link); link.click(); link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const controller = new AbortController();
+    exportRequest.current = controller;
+    setExporting(true); setError('');
+    try {
+      const result = await apiClient.post<{ text: string }>('/config/export', { config: body.config, format: 'json', kind: 'preset' }, { silent: true, signal: controller.signal });
+      if (exportRequest.current !== controller || controller.signal.aborted) return;
+      const exported = { ...body, config: JSON.parse(result.text) };
+      const filename = body.name.replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 128) || 'preset';
+      const url = URL.createObjectURL(new Blob([JSON.stringify(exported, null, 2) + '\n'], { type: 'application/json' }));
+      const link = document.createElement('a'); link.href = url; link.download = `${filename}.json`;
+      document.body.append(link); link.click(); link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (failure) {
+      if (exportRequest.current === controller && !controller.signal.aborted) setError(formatApiError(failure));
+    } finally {
+      if (exportRequest.current === controller) { exportRequest.current = null; setExporting(false); }
+    }
   };
   const requestAction = (action: () => void) => { if (busy) return; if (dirty) setPending(() => action); else action(); };
   const initial = React.useRef(false);
@@ -216,9 +232,9 @@ function ImagePresets() {
         <span role="status" className={`presets-status${draft && dirty ? ' presets-dirty' : ''}`}>{!draft ? notice : dirty ? text('有未保存修改', 'Unsaved changes') : notice || (draft.originalName ? text('已保存', 'Saved') : text('尚未创建', 'Not created yet'))}</span>
         <button type="button" className="ui-btn" disabled={busy || !schema.data || !families.data || list.isPending || list.isError} onClick={() => requestAction(() => void begin())}><Plus size={15}/>{text('新建预设', 'New preset')}</button>
         <button type="button" className="ui-btn" disabled={busy || !schema.data || !families.data || list.isPending || list.isError} onClick={() => requestAction(() => setImporting(true))}><Upload size={15}/>{text('导入', 'Import')}</button>
-        <button type="button" className="ui-btn" disabled={busy || !draft} onClick={exportPreset}><Download size={15}/>{text('导出', 'Export')}</button>
+        <button type="button" className="ui-btn" disabled={busy || !draft} onClick={() => void exportPreset()}><Download size={15}/>{exporting ? text('导出中…', 'Exporting…') : text('导出', 'Export')}</button>
         {draft?.originalName && <><button type="button" className="ui-btn" aria-label={text('复制为新预设', 'Duplicate')} disabled={busy || !!inactiveReason} onClick={() => requestAction(() => void begin({name:draft.name,description:draft.description,config:draft.config,builtin:false,updated_at:null},true))}><Copy size={15}/>{text('复制', 'Duplicate')}</button><button type="button" className="ui-btn ui-btn-danger presets-delete" aria-label={text('删除预设', 'Delete preset')} disabled={busy} onClick={()=>setDeleting(true)}><Trash2 size={15}/>{text('删除', 'Delete')}</button></>}
-        <button type="button" className="ui-btn ui-btn-primary" disabled={busy || !!inactiveReason || !dirty || !editorSchema} onClick={()=>void save()}><Save size={15}/>{busy ? text('保存中…', 'Saving…') : text('保存预设', 'Save preset')}</button>
+        <button type="button" className="ui-btn ui-btn-primary" disabled={busy || !!inactiveReason || !dirty || !editorSchema} onClick={()=>void save()}><Save size={15}/>{working ? text('保存中…', 'Saving…') : text('保存预设', 'Save preset')}</button>
       </div>
     </div>
     {/* Which preset, and its identity: the switcher first, then the model, name and description it is saved with. */}

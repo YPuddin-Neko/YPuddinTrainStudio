@@ -521,6 +521,7 @@ class ConfigImportBody(BaseModel):
 class ConfigExportBody(BaseModel):
     config: dict[str, Any]
     format: Literal["toml", "json"] = "toml"
+    kind: Literal["config", "preset"] = "config"
 
 
 class ConfigText(BaseModel):
@@ -535,7 +536,7 @@ def _validated_or_error(raw: dict[str, Any]) -> TrainConfig:
 
 
 @router.post("/config/import", response_model=TrainConfig)
-def config_import(body: ConfigImportBody) -> dict[str, Any]:
+def config_import(body: ConfigImportBody) -> Any:
     from ypuddin.config.io import parse_toml
 
     try:
@@ -544,11 +545,23 @@ def config_import(body: ConfigImportBody) -> dict[str, Any]:
         raise ApiError(str(exc), code="config.parse") from exc
     if not isinstance(raw, dict):
         raise ApiError("config must be an object", code="config.invalid")
-    return _validated_or_error(raw).to_dict()
+    cfg = _validated_or_error(raw)
+    value = cfg.to_dict()
+    if (
+        cfg.dataset.resolution_mode == "native" and cfg.checkpoint.resume
+        and "native_batching_version" not in raw.get("dataset", {})
+    ):
+        from fastapi.responses import JSONResponse
+
+        # Preserve an omitted recovery identity through response-model defaults.
+        value["dataset"].pop("native_batching_version", None)
+        return JSONResponse(value)
+    return value
 
 
 @router.post("/config/export", response_model=ConfigText)
 def config_export(body: ConfigExportBody) -> dict[str, str]:
+    from ypuddin.config.export import project_config_for_export
     from ypuddin.train.native_resolution import clear_native_vram_resolution
 
     raw = body.config
@@ -556,10 +569,11 @@ def config_export(body: ConfigExportBody) -> dict[str, str]:
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         raw = clear_native_vram_resolution(raw)
     cfg = _validated_or_error(raw)
+    exported = project_config_for_export(raw if body.kind == "preset" else cfg)
     return {
-        "text": dump_toml(cfg)
+        "text": dump_toml(exported)
         if body.format == "toml"
-        else json.dumps(cfg.to_dict(), ensure_ascii=False, indent=2)
+        else json.dumps(exported, ensure_ascii=False, indent=2)
     }
 
 
@@ -615,6 +629,8 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
     checkpoint = cfg.get("checkpoint")
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         cfg = clear_native_vram_resolution(cfg)
+        if isinstance(cfg.get("dataset"), dict) and cfg["dataset"].get("resolution_mode") == "native":
+            cfg = {**cfg, "dataset": {**cfg["dataset"], "native_batching_version": 2}}
     if body.dataset_ids is not None:
         from .routes_work import _get_dataset
 
@@ -842,6 +858,7 @@ def delete_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]
 @router.post("/presets/{name}/resolve")
 def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     """Overlay ``body.config`` on the preset and return the fully resolved config (+ TOML)."""
+    from ypuddin.config.export import public_config_dict
     from ypuddin.train.native_resolution import clear_native_vram_resolution
 
     preset = get_preset(name, c)
@@ -849,22 +866,29 @@ def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)
     checkpoint = raw.get("checkpoint")
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         raw = clear_native_vram_resolution(raw)
-    merged = deep_merge(
-        TrainConfig().to_dict(),
-        deep_merge(normalize_legacy_intervals(clear_native_vram_resolution(preset["config"])), raw),
-    )
+    overlay = deep_merge(normalize_legacy_intervals(clear_native_vram_resolution(preset["config"])), raw)
+    merged = deep_merge(TrainConfig().to_dict(), overlay)
+    dataset, checkpoint = merged.get("dataset"), merged.get("checkpoint")
+    if (
+        isinstance(dataset, dict) and dataset.get("resolution_mode") == "native"
+        and isinstance(checkpoint, dict) and checkpoint.get("resume")
+        and "native_batching_version" not in overlay.get("dataset", {})
+    ):
+        dataset.pop("native_batching_version", None)
     cfg, errors = _validate(merged)
     return {
         "ok": cfg is not None,
         "errors": errors,
-        "config": cfg.to_dict() if cfg else merged,
-        "toml": dump_toml(cfg) if cfg else None,
+        "config": public_config_dict(cfg) if cfg else merged,
+        "toml": dump_toml(cfg, for_export=True) if cfg else None,
     }
 
 
 @router.post("/config/import-toml", response_model=m.ValidateResult, response_model_exclude_unset=True)
 def import_toml(body: dict[str, str]) -> dict[str, Any]:
     import tempfile
+
+    from ypuddin.config.export import public_config_dict
 
     with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False, encoding="utf-8") as f:
         f.write(body.get("toml", ""))
@@ -874,7 +898,7 @@ def import_toml(body: dict[str, str]) -> dict[str, Any]:
     finally:
         Path(path).unlink(missing_ok=True)
     cfg, errors = _validate(data)
-    return {"ok": cfg is not None, "errors": errors, "warnings": [], "config": cfg.to_dict() if cfg else data}
+    return {"ok": cfg is not None, "errors": errors, "warnings": [], "config": public_config_dict(cfg) if cfg else data}
 
 
 # --------------------------------------------------------------------------- models

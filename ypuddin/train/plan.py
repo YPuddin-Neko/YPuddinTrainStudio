@@ -75,12 +75,12 @@ def _vae_batches(
     encoding splits a training batch, native microbatch group or validation batch into calls of
     at most ``encode_batch`` images.
     """
-    native = ds.resolution_mode == "native"
+    legacy_native = ds.resolution_mode == "native" and ds.native_batching_version == 1
     cache, online = {}, {}
     for (width, height), entry in image_shapes.items():
         entries = len(entry["images"]) * (2 if ds.flip else 1) + len(entry["validation"])
         cache[width, height] = min(encode_batch, entries)
-        group = min(ds.batch_size, max(1, ds.native_max_pixels // (width * height))) if native else ds.batch_size
+        group = min(ds.batch_size, max(1, ds.native_max_pixels // (width * height))) if legacy_native else ds.batch_size
         online[width, height] = min(encode_batch, group, max(entry["items"], len(entry["validation"])))
     return cache, online
 
@@ -273,7 +273,7 @@ def _append_data_plan(
     max_pixels = layout.native_max_pixels if layout and layout.native_max_pixels is not None else ds.native_max_pixels
     if layout is not None:
         # Count the shared training items after validation exclusion, before the
-        # sampler drops incomplete multi-rank tail groups. Never use registry totals.
+        # sampler distributes batches across ranks. Never use registry totals.
         source_paths: dict[int, set[str]] = {}
         source_items: dict[int, int] = {}
         for item in items:
@@ -305,9 +305,10 @@ def _append_data_plan(
         shape = (it.bucket.base, *it.bucket.key)
         shapes[shape] = shapes.get(shape, 0) + 1
     native = ds.resolution_mode == "native"
+    native_v2 = native and ds.native_batching_version == 2
     batches = (
         math.ceil(len(items) / ds.batch_size)
-        if native
+        if native and not native_v2
         else sum(math.ceil(n / ds.batch_size) for n in counts.values())
     )
     out.update(
@@ -330,7 +331,7 @@ def _append_data_plan(
         }
     )
     if loop is not None:
-        per_rank_batches = batches // loop.gpu_count
+        per_rank_batches = math.ceil(batches / loop.gpu_count) if native_v2 else batches // loop.gpu_count
         steps_per_epoch = math.ceil(per_rank_batches / loop.grad_accum) if per_rank_batches else 0
         by_epochs = (loop.epochs or 10**9) * steps_per_epoch
         total_steps = min(by_epochs, loop.max_steps or 10**9) if steps_per_epoch else 0
@@ -344,13 +345,21 @@ def _append_data_plan(
             "per_device_batch_size": ds.batch_size,
             "effective_batch_size": ds.batch_size * loop.grad_accum * loop.gpu_count,
             "batches_per_rank": per_rank_batches,
-            "tail_policy": "drop_incomplete_rank_group" if loop.gpu_count > 1 else "keep",
+            "tail_policy": ("empty_rank_slot" if native_v2 else "drop_incomplete_rank_group")
+            if loop.gpu_count > 1 else "keep",
             "dropped_samples": 0,
         }
-        if loop.gpu_count > 1:
+        if loop.gpu_count > 1 and native_v2:
+            if batches % loop.gpu_count and loop.distributed_strategy == "fsdp":
+                out["errors"].append({
+                    "loc": "loop.distributed_strategy",
+                    "msg": "原生分辨率批次数不能被卡数整除时无法使用 FSDP；请改用 DDP 或单卡训练。",
+                })
+        if loop.gpu_count > 1 and not native_v2:
             sampler_type = NativeBatchSampler if native else BucketBatchSampler
+            sampler_options = {"batching_version": ds.native_batching_version} if native else {}
             batch_plan = sampler_type(
-                [item.bucket.key for item in items], ds.batch_size, seed=seed or 0
+                [item.bucket.key for item in items], ds.batch_size, seed=seed or 0, **sampler_options,
             ).plan()
             usable = len(batch_plan) - len(batch_plan) % loop.gpu_count
             dropped = sum(map(len, batch_plan[usable:]))
@@ -427,26 +436,35 @@ def _append_data_plan(
         forward_counts: dict[tuple[int, int], int] = {}
         synchronization_groups = 0
         if seed is not None:
-            native_plan = NativeBatchSampler(shape_keys, ds.batch_size, seed=seed).plan()
-            if loop is not None and loop.gpu_count > 1:
-                native_plan = native_plan[: len(native_plan) - len(native_plan) % loop.gpu_count]
-            native_groups = []
-            for batch in native_plan:
-                shapes = [shape_keys[index] for index in batch]
-                groups = microbatch_indices(shapes, max_pixels)
-                native_groups.append([(shapes[group[0]], len(group)) for group in groups])
-                for group in groups:
-                    key = shapes[group[0]]
+            native_plan = NativeBatchSampler(
+                shape_keys, ds.batch_size, seed=seed, batching_version=ds.native_batching_version,
+            ).plan()
+            if native_v2:
+                for batch in native_plan:
+                    key = shape_keys[batch[0]]
                     forward_counts[key] = forward_counts.get(key, 0) + 1
-            if loop is not None and loop.gpu_count > 1:
-                for offset in range(0, len(native_groups), loop.gpu_count):
-                    ranks = native_groups[offset : offset + loop.gpu_count]
-                    slots = max(map(len, ranks))
-                    for groups in ranks:
-                        padding = slots - len(groups)
-                        key, _ = min(groups, key=lambda entry: math.prod(entry[0]) * entry[1])
-                        forward_counts[key] += padding
-                        synchronization_groups += padding
+                if loop is not None and loop.gpu_count > 1:
+                    synchronization_groups = (-len(native_plan)) % loop.gpu_count
+            else:
+                if loop is not None and loop.gpu_count > 1:
+                    native_plan = native_plan[: len(native_plan) - len(native_plan) % loop.gpu_count]
+                native_groups = []
+                for batch in native_plan:
+                    shapes = [shape_keys[index] for index in batch]
+                    groups = microbatch_indices(shapes, max_pixels, batching_version=1)
+                    native_groups.append([(shapes[group[0]], len(group)) for group in groups])
+                    for group in groups:
+                        key = shapes[group[0]]
+                        forward_counts[key] = forward_counts.get(key, 0) + 1
+                if loop is not None and loop.gpu_count > 1:
+                    for offset in range(0, len(native_groups), loop.gpu_count):
+                        ranks = native_groups[offset : offset + loop.gpu_count]
+                        slots = max(map(len, ranks))
+                        for groups in ranks:
+                            padding = slots - len(groups)
+                            key, _ = min(groups, key=lambda entry: math.prod(entry[0]) * entry[1])
+                            forward_counts[key] += padding
+                            synchronization_groups += padding
         for bucket in out["buckets"]:
             bucket["batches"] = (
                 forward_counts.get((bucket["w"], bucket["h"]), 0) if seed is not None else None
@@ -469,6 +487,7 @@ def _append_data_plan(
             else 0
         )
         out["native"] = {
+            "batching_version": ds.native_batching_version,
             "images": len(records),
             "downscaled": resized,
             "sizes": len(counts),
@@ -485,8 +504,10 @@ def _append_data_plan(
         }
         out["warnings"].append(
             {
-                "code": "native.execution",
-                "msg": "native resolution uses pixel-bounded shape groups and image-weighted gradient accumulation; pixel budget is not a VRAM guarantee",
+                "code": "native.execution" if native_v2 else "native.execution.v1",
+                "msg": "Native resolution groups images with identical width and height into batches up to batch_size; "
+                "the image area limit applies to each image."
+                if native_v2 else "native resolution uses pixel-bounded shape groups and image-weighted gradient accumulation; pixel budget is not a VRAM guarantee",
             }
         )
     uncaptioned = len(records) - out["captioned"]
@@ -614,6 +635,10 @@ def plan(
         raw = cfg.to_dict() if isinstance(cfg, TrainConfig) else cfg
         if not isinstance(raw, dict):
             return out
+        checkpoint = raw.get("checkpoint")
+        if isinstance(checkpoint, dict) and checkpoint.get("resume"):
+            # A partial recipe cannot authenticate the checkpoint's batch strategy.
+            return out
         _preview_invalid_config(
             raw, out, index_db_path=index_db_path, image_shapes=image_shapes, layout_result=data_layouts,
         )
@@ -630,6 +655,10 @@ def plan(
                 out["errors"][0],
             )
     try:
+        if cfg.dataset is not None and cfg.checkpoint is not None:
+            from .native_batch_contract import resolve_native_batching_config
+
+            cfg = resolve_native_batching_config(cfg)
         if (
             cfg.dataset is not None and cfg.dataset.resolution_mode == "native"
             and cfg.dataset.native_max_pixels_mode == "auto_vram"
@@ -638,7 +667,7 @@ def plan(
             from .native_resolution import resolve_native_vram_config
 
             cfg = resolve_native_vram_config(cfg, device=device or "cpu")
-    except (OSError, ValueError, TypeError, AttributeError) as error:
+    except (OSError, ValueError, TypeError, AttributeError, EOFError, RuntimeError) as error:
         issue = {"loc": "checkpoint.resume", "msg": str(error)}
         out["errors"].append(issue)
         out.update(ok=False, memory={"unavailable_issue": issue})
@@ -795,6 +824,7 @@ def plan(
     # ---- data
     ds = cfg.dataset
     native = ds.resolution_mode == "native"
+    legacy_native = native and ds.native_batching_version == 1
     if draft:
         counts = {}
         for bucket in out.get("buckets", []):
@@ -1137,8 +1167,7 @@ def plan(
                         activation_bytes = torch.empty((), device="meta", dtype=activation_dtype).element_size()
                         forward_batch = (
                             min(ds.batch_size, max(1, ds.native_max_pixels // (w * h)))
-                            if native
-                            else ds.batch_size
+                            if legacy_native else ds.batch_size
                         )
                         if available_items:
                             forward_batch = min(forward_batch, available_items)
@@ -1281,7 +1310,7 @@ def plan(
                             data_layout = geometry.resolved_layout(chosen)
                             image_shapes.clear()
                             out["warnings"] = [w for w in out["warnings"] if w.get("code") not in {
-                                "images.padding", "native.execution", "captions.missing", "buckets.small",
+                                "images.padding", "native.execution", "native.execution.v1", "captions.missing", "buckets.small",
                                 "distributed.tail",
                             }]
                             counts = _append_data_plan(

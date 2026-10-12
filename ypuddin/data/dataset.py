@@ -649,6 +649,41 @@ def prepare_data_layout(
     return DataLayout(records, val_records, items, validation_items, sources, bm, resolved_pixels, auto_pixels)
 
 
+def _data_fingerprints(
+    cfg: TrainConfig, records: list[ImageRecord], sources: list[DatasetSourceConfig], settings: dict,
+) -> tuple[str, ...]:
+    from ypuddin.config.export import NATIVE_INACTIVE_BUCKET_FIELDS
+
+    current = dataset_fingerprint_variants(records, sources, settings=settings)
+    if cfg.dataset.resolution_mode != "native":
+        return current
+    fingerprints = list(current)
+    if cfg.dataset.native_batching_version == 2:
+        semantic_settings = {**settings, "dataset": {
+            key: value for key, value in settings["dataset"].items() if key not in NATIVE_INACTIVE_BUCKET_FIELDS
+        }}
+        semantic_sources = [source.model_copy(update={"resolutions": None}) for source in sources]
+        fingerprints = [*dataset_fingerprint_variants(records, semantic_sources, settings=semantic_settings), *current]
+    if cfg.checkpoint.resume:
+        from ypuddin.train.native_batch_contract import authenticated_native_recipe
+
+        original = authenticated_native_recipe(cfg.checkpoint.resume, config=cfg)
+        if original is not None and original.dataset.native_batching_version == cfg.dataset.native_batching_version:
+            old_validation = list(original.validation.sources) if original.validation.enabled else []
+            old_sources = list(original.dataset.sources) + old_validation
+            if len(original.dataset.sources) == len(cfg.dataset.sources) and len(old_sources) == len(sources):
+                # Historical native fingerprints included unused bucket settings. Authenticate
+                # their recipe, then rehash CURRENT content and every effective setting.
+                legacy_settings = {**settings, "dataset": {
+                    **settings["dataset"],
+                    **{key: getattr(original.dataset, key) for key in NATIVE_INACTIVE_BUCKET_FIELDS},
+                }}
+                legacy_sources = [source.model_copy(update={"resolutions": old.resolutions})
+                                  for source, old in zip(sources, old_sources, strict=True)]
+                fingerprints.extend(dataset_fingerprint_variants(records, legacy_sources, settings=legacy_settings))
+    return tuple(dict.fromkeys(fingerprints))
+
+
 def build_data(
     cfg: TrainConfig,
     latent_spec: LatentSpec,
@@ -692,33 +727,33 @@ def build_data(
     for it in items:
         k = (it.bucket.base, it.bucket.width, it.bucket.height)
         counts[k] = counts.get(k, 0) + 1
-    fingerprints = dataset_fingerprint_variants(
-        records + [item.record for item in layout.validation_items],
-        layout.sources,
-        settings={
-            **({"bucket_policy": BUCKET_POLICY} if ds.resolution_mode == "bucket" else {}),
-            "dataset": {
-                **ds.model_dump(
-                    mode="json",
-                    exclude={"sources", "cache_dir", "num_workers", "native_max_pixels_resolved"}
-                    | ({"image_fit"} if ds.image_fit == "crop" else set())
-                    | ({"crop_anchor"} if ds.crop_anchor == "center" or ds.image_fit == "pad" else set())
-                    | ({"native_max_pixels_mode"} if ds.native_max_pixels_mode == "custom" else set())
-                    | (
-                        {"resolution_mode", "native_max_pixels", "native_max_pixels_mode",
-                         "native_max_side", "native_overflow"}
-                        if ds.resolution_mode == "bucket"
-                        else set()
-                    ),
+    fingerprint_settings = {
+        **({"bucket_policy": BUCKET_POLICY} if ds.resolution_mode == "bucket" else {}),
+        "dataset": {
+            **ds.model_dump(
+                mode="json",
+                exclude={"sources", "cache_dir", "num_workers", "native_max_pixels_resolved"}
+                | ({"native_batching_version"} if ds.resolution_mode == "bucket" or ds.native_batching_version == 1 else set())
+                | ({"image_fit"} if ds.image_fit == "crop" else set())
+                | ({"crop_anchor"} if ds.crop_anchor == "center" or ds.image_fit == "pad" else set())
+                | ({"native_max_pixels_mode"} if ds.native_max_pixels_mode == "custom" else set())
+                | (
+                    {"resolution_mode", "native_max_pixels", "native_max_pixels_mode",
+                     "native_max_side", "native_overflow"}
+                    if ds.resolution_mode == "bucket"
+                    else set()
                 ),
-                **({"native_max_pixels": layout.native_max_pixels}
-                   if ds.resolution_mode == "native" and ds.native_max_pixels_mode in {"auto", "auto_vram"} else {}),
-            },
-            "validation": project_legacy_interval_section(
-                "validation", cfg.validation.model_dump(mode="json", exclude={"sources"}),
             ),
-            "validation_content": [item.record.content_hash for item in layout.validation_items],
+            **({"native_max_pixels": layout.native_max_pixels}
+               if ds.resolution_mode == "native" and ds.native_max_pixels_mode in {"auto", "auto_vram"} else {}),
         },
+        "validation": project_legacy_interval_section(
+            "validation", cfg.validation.model_dump(mode="json", exclude={"sources"}),
+        ),
+        "validation_content": [item.record.content_hash for item in layout.validation_items],
+    }
+    fingerprints = _data_fingerprints(
+        cfg, records + [item.record for item in layout.validation_items], layout.sources, fingerprint_settings,
     )
     plan = DataPlan(
         images=len(records),
