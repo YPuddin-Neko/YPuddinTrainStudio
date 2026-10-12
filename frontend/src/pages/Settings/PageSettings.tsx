@@ -49,7 +49,12 @@ export default function PageSettings({ focus }: { focus?: 'charts' }) {
   React.useEffect(() => {
     if (!loaded || focus !== 'charts') return;
     const section = root.current?.querySelector<HTMLElement>('#page-charts');
-    section?.scrollIntoView?.({ block: 'start' });
+    const container = section?.closest<HTMLElement>('.settings-scroll');
+    if (section && container) {
+      container.scrollTop += section.getBoundingClientRect().top - container.getBoundingClientRect().top
+        - (parseFloat(window.getComputedStyle(container).scrollPaddingTop) || 0)
+        - (parseFloat(window.getComputedStyle(section).scrollMarginTop) || 0);
+    }
     section?.focus({ preventScroll: true });
   }, [loaded, focus]);
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { ResourceActivityContext } from '../../api/resourcePolicy';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useNavigate, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -114,6 +115,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const english = i18n.language.startsWith('en');
   const text = useWorkspaceText();
   const location = useLocation();
+  const workspaceActive = React.useContext(ResourceActivityContext);
   const navigate = useNavigate();
   const { data: families } = useFamilies();
   const familiesRef = React.useRef(families);
@@ -327,6 +329,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   };
 
   const handleInternalLink = (event: MouseEvent) => {
+    if (!workspaceActive) return;
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
     if (!anchor || (anchor.target && anchor.target.toLowerCase() !== '_self') || anchor.hasAttribute('download')) return;
@@ -777,7 +780,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         <button type="button" className="ui-btn" disabled={!loaded || savingNavigation} onClick={() => setInspectionOpen(true)}><ListChecks size={14}/>{text('参数检查','Check parameters')}</button>
         <details className="config-tools" data-popover><summary className="ui-btn"><Settings2 size={14}/>{text('配置工具', 'Config tools')}</summary><div className="config-tools-menu">
           <Link to="/presets">{text('管理参数预设','Manage parameter presets')}</Link>
-          <Link to={modelUrl}>{text('管理与下载模型','Manage & download models')}</Link>
+          <Link to={modelUrl} state={{ backgroundLocation: location }}>{text('管理与下载模型','Manage & download models')}</Link>
           <button type="button" disabled={!loaded} onClick={() => {setImportError('');setImportOpen(true);}}>{t('train.importToml')}</button><button type="button" disabled={!loaded} onClick={handleExport}>{t('train.exportToml')}</button><button type="button" disabled={!loaded} onClick={async () => { if (await confirm({title:t('train.resetDefaults'),message:t('train.resetConfirm'),confirmLabel:t('train.resetDefaults'),danger:true})) setConfig(structuredClone(defaults)); }}>{t('train.resetDefaults')}</button>
         </div></details>
       </div>

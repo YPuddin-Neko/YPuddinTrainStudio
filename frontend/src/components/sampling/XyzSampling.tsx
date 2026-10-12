@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ArrowDown, ArrowRight, ChevronDown, Download, Grid2X2, Layers, Loader2, Play, X } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import type { FamilyInfo } from '../../api/types';
@@ -91,6 +91,7 @@ export default function XyzSampling({ sourceJobId, readOnly = false, initialTask
 
 function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJobId: string; readOnly: boolean; initialTaskId?: string }) {
   const text = useWorkspaceText();
+  const location = useLocation();
   const [options, setOptions] = React.useState<XyzOptions | null>(null);
   const [values, setValues] = React.useState<SamplingValues | null>(null);
   const [drafts, setDrafts] = React.useState<(AxisDraft | null)[]>([null, null, null]);
@@ -312,7 +313,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
               setValues(previous => previous && { ...previous, sampling_model_id: value || null, steps: turbo ? 8 : options.defaults.steps, cfg: turbo ? 0 : options.defaults.cfg, shift: null });
               if (drafts[0]?.key === 'steps') setDrafts(previous => [{ key: 'steps', raw: turbo ? '4, 8, 12' : initialAxis({ ...options, checkpoints: [] }).raw }, previous[1], previous[2]]);
             }}/></label>
-            <Link className="ui-link xyz-model-link" to={`/settings/environment?tab=models&family=${encodeURIComponent(options.family)}`}>{text('管理与下载模型', 'Manage & download models')}<ArrowRight size={12}/></Link></>}
+            <Link className="ui-link xyz-model-link" to={`/settings/environment?tab=models&family=${encodeURIComponent(options.family)}`} state={{ backgroundLocation: location }}>{text('管理与下载模型', 'Manage & download models')}<ArrowRight size={12}/></Link></>}
             <div className="xyz-weights"><span id="xyz-weights-label">{fullModel ? text('全量模型检查点', 'Full model checkpoint') : text('训练权重', 'Trained checkpoint')}</span>
               <CheckboxSelect aria-label={text('对比使用的训练权重', 'Checkpoints for comparison')} aria-describedby="xyz-weights-note" searchable disabled={locked || !options.checkpoints.length}
                 placeholder={fullModel ? text('请选择检查点', 'Choose a checkpoint') : text('不加载训练权重（只看底模）', 'No trained weights (base model only)')}

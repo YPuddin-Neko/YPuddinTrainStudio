@@ -9,6 +9,7 @@ import { useEnterAnimation } from '../../utils/motion';
 import '../../styles/settings.css';
 import PageLocation from '../../components/PageLocation';
 import OverflowStrip from '../../components/OverflowStrip';
+import { settingsDestination } from '../../utils/settingsNavigation';
 
 export default function Settings() {
   const text = useWorkspaceText();
@@ -18,7 +19,9 @@ export default function Settings() {
   const selected = location.pathname.endsWith('/updates') ? 'updates' : location.pathname.endsWith('/page') || location.pathname.endsWith('/charts') ? 'page' : location.pathname.endsWith('/preferences') ? params.get('section') === 'downloads' ? 'downloads' : params.get('section') === 'interface' ? 'interface' : 'storage' : params.get('tab') === 'credentials' ? 'credentials' : params.get('tab') === 'models' ? 'models' : params.get('tab') === 'tagging' ? 'tagging' : 'runtime';
   const scroll = React.useRef<HTMLDivElement>(null);
   const panel = useEnterAnimation<HTMLDivElement>(selected, { skipFirst: true });
-  React.useEffect(() => { if (scroll.current) scroll.current.scrollTop = 0; }, [selected]);
+  React.useEffect(() => {
+    if (!location.hash && scroll.current) scroll.current.scrollTop = 0;
+  }, [selected, location.hash]);
   const [restartRequired, setRestartRequired] = React.useState(false);
   const reported = React.useRef(false);
   const reportRestart = React.useCallback((required: boolean) => { reported.current = true; setRestartRequired(required); }, []);
@@ -42,7 +45,7 @@ export default function Settings() {
     { id: 'updates', label: text('训练器更新', 'Trainer updates'), Icon: RefreshCw },
   ];
   const select = (id: string) => {
-    if (id === 'page' || id === 'updates') { navigate(`/settings/${id}`, { state: location.state, replace: true }); return; }
+    if (id === 'page' || id === 'updates') { navigate(settingsDestination(location.search, `/settings/${id}`), { state: location.state, replace: true }); return; }
     const next = new URLSearchParams(location.search);
     const preferences = id === 'storage' || id === 'interface' || id === 'downloads';
     next.delete(preferences ? 'tab' : 'section');

@@ -1,6 +1,6 @@
 import { Cpu, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import type { GpuStats } from '../api/types';
 import { formatGpuPower, formatGpuTemperature, gpuPowerDescription, gpuTemperatureDescription } from '../utils/gpuTelemetry';
 import { gpuMemoryUsage, gpuMemoryDetails, formatGpuMemory } from '../utils/gpuMemory';
@@ -11,6 +11,7 @@ const known = (value: number | null | undefined): value is number => typeof valu
 export function GpuCard({ gpu }: { gpu: GpuStats }) {
   const { t } = useTranslation();
   const text = useWorkspaceText();
+  const location = useLocation();
   const apple = gpu.kind === 'mps';
   const missingReadings = [!known(gpu.util_pct) && t('hardware.gpuUtilizationMissing'), !known(gpu.power_w) && t('hardware.gpuPowerMissing'), !known(gpu.temp_c) && t('hardware.gpuTemperatureMissing')].filter(Boolean).join(' ');
   const showNote = gpu.telemetry_note && !(apple && gpu.telemetry_note === 'mps_power_unavailable');
@@ -36,7 +37,7 @@ export function GpuCard({ gpu }: { gpu: GpuStats }) {
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${usedPercent}%` }} /></div>
       {apple && <p className="mt-3 text-xs leading-relaxed text-slate-500">{t('hardware.systemGpuScope')}{gpu.telemetry_source === 'ioreg' && <> {t('hardware.appleGpuDriverSource')}</>}</p>}
       {apple && missingReadings && <p className="mt-1 text-xs leading-relaxed text-slate-500">{missingReadings}</p>}
-      {showNote && <p className="mt-3 text-xs leading-relaxed text-slate-500">{t(`hardware.${gpu.telemetry_note}`)}{!apple && <Link to="/settings#environment" className="ml-1 text-blue-600 hover:underline">{t('hardware.checkEnvironment')}</Link>}</p>}
+      {showNote && <p className="mt-3 text-xs leading-relaxed text-slate-500">{t(`hardware.${gpu.telemetry_note}`)}{!apple && <Link to="/settings#environment" state={{ backgroundLocation: location }} className="ml-1 text-blue-600 hover:underline">{t('hardware.checkEnvironment')}</Link>}</p>}
     </section>
   );
 }

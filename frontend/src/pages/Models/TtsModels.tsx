@@ -12,6 +12,7 @@ import { formatBytes, formatEta } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
 import { ttsEngineLabel } from '../../utils/ttsEngines';
 import { useWorkspaceText } from '../../utils/workspaceText';
+import { settingsDestination } from '../../utils/settingsNavigation';
 import './models.css';
 import { ModelToolbar, ModelCatalogSection, ModelCatalogRow } from './ModelDownloadLayout';
 
@@ -81,7 +82,7 @@ export default function TtsModels({ embedded = false, typeSelector }: { embedded
   const cancelButton = (task: TtsModelDownload) => <button type="button" className={`${secondary} model-button-downloading`} disabled={busy} aria-label={`${text('取消下载', 'Cancel download')} ${task.name}`} title={text('取消下载', 'Cancel download')} onClick={() => void action(() => ttsModelsApi.cancel(task.id))}><span className="model-download-active-label">{statusLabel(task)}</span><span className="model-download-cancel-label"><X size={13}/>{text('取消', 'Cancel')}</span></button>;
   const taskAction = (task: TtsModelDownload) => ttsDownloadActive(task) ? cancelButton(task) : task.installed_id && models.data?.some(model => model.id === task.installed_id && model.status === 'ready' && model.ready) ? <button type="button" className={secondary} onClick={() => updateParams({ view: 'library' })}>{text('查看本地模型', 'View local models')}</button> : ['failed', 'cancelled'].includes(task.status) ? <button type="button" className={secondary} disabled={busy || !listsReady} onClick={() => void action(() => ttsModelsApi.retry(task.id))}>{text('重试', 'Retry')}</button> : null;
   const startButton = (entry: TtsModelPackage, again: boolean) => <button type="button" className={primary} disabled={busy || !listsReady || !settings.data || !!settings.error || !entry.providers?.includes('huggingface')} onClick={() => void action(() => ttsModelsApi.start(entry.id))}><Download size={14}/>{again ? text('重新下载', 'Download again') : text('下载', 'Download')}</button>;
-  const recoveryHelp = () => <p className="model-help-text">{text('下载到当前模型目录。原目录仍存在时，请先', 'Downloads use the current model directory. If the original folder still exists, ')}<Link className="ui-link" to="/settings/preferences?section=storage" replace state={location.state}>{text('更改模型目录', 'change the model directory')}</Link>{text('。原文件会保留。', '. Existing files are preserved.')}</p>;
+  const recoveryHelp = () => <p className="model-help-text">{text('下载到当前模型目录。原目录仍存在时，请先', 'Downloads use the current model directory. If the original folder still exists, ')}<Link className="ui-link" to={settingsDestination(location.search, '/settings/preferences?section=storage')} replace state={location.state}>{text('更改模型目录', 'change the model directory')}</Link>{text('。原文件会保留。', '. Existing files are preserved.')}</p>;
   const taskStatus = (task: TtsModelDownload) => {
     if (!ttsDownloadActive(task)) return task.status === 'failed' ? <p role="alert" className="model-download-error">{ttsModelDownloadErrorText(task, text)}</p> : <p className="model-transfer-status" role="status">{statusLabel(task)}</p>;
     const transferring = task.phase === 'download' && task.status === 'downloading';

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import { useWorkspaceText } from '../../utils/workspaceText';
 
 function isVisibleSection(section: Element) {
@@ -12,9 +13,37 @@ function isVisibleSection(section: Element) {
 
 export function SettingsSections({ sections, children }: { sections: { id: string; label: string }[]; children: React.ReactNode }) {
   const text = useWorkspaceText();
+  const location = useLocation();
   const root = React.useRef<HTMLDivElement>(null);
-  const endNavigation = React.useRef<{ target: HTMLElement; reachedEnd: boolean } | null>(null);
+  const endNavigation = React.useRef<{ target: HTMLElement; reachedEnd: boolean; fromHash: boolean } | null>(null);
   const [current, setCurrent] = React.useState(sections[0]?.id);
+  const selectSection = React.useCallback((id: string, behavior: ScrollBehavior) => {
+    const target = [...root.current?.querySelectorAll<HTMLElement>('[data-settings-section]') || []].find(section => section.id === id);
+    if (!target || !isVisibleSection(target)) return false;
+    const container = root.current?.closest<HTMLElement>('.settings-scroll');
+    const offset = container ? target.getBoundingClientRect().top - container.getBoundingClientRect().top - (parseFloat(window.getComputedStyle(container).scrollPaddingTop) || 0) - (parseFloat(window.getComputedStyle(target).scrollMarginTop) || 0) : 0;
+    endNavigation.current = container && container.scrollTop + offset > container.scrollHeight - container.clientHeight ? { target, reachedEnd: false, fromHash: behavior === 'auto' } : null;
+    setCurrent(id);
+    if (container) {
+      if (behavior === 'auto') container.scrollTop += offset;
+      else container.scrollTo({ top: container.scrollTop + offset, behavior });
+    }
+    target.focus({ preventScroll: true });
+    return true;
+  }, []);
+  const sectionIds = sections.map(section => section.id).join('|');
+  React.useEffect(() => {
+    if (!location.hash) return;
+    let id: string;
+    try { id = decodeURIComponent(location.hash.slice(1)); } catch { return; }
+    if (!sectionIds.split('|').includes(id) || selectSection(id, 'auto')) return;
+    const container = root.current;
+    if (!container) return;
+    const observer = new MutationObserver(() => { if (selectSection(id, 'auto')) observer.disconnect(); });
+    observer.observe(container, { childList: true, subtree: true });
+    const timer = window.setTimeout(() => observer.disconnect(), 5000);
+    return () => { observer.disconnect(); window.clearTimeout(timer); };
+  }, [location.hash, sectionIds, selectSection]);
   React.useEffect(() => {
     setCurrent(previous => sections.some(section => section.id === previous) ? previous : sections[0]?.id);
   }, [sections]);
@@ -34,7 +63,7 @@ export function SettingsSections({ sections, children }: { sections: { id: strin
       if (navigation) {
         const target = navigation.target;
         const rect = target.getBoundingClientRect();
-        if (container && observed.has(target) && isVisibleSection(target) && Math.ceil(container.scrollTop + container.clientHeight) >= container.scrollHeight && rect.top > alignmentTop(target) && rect.top < viewport!.bottom) {
+        if (container && observed.has(target) && isVisibleSection(target) && (navigation.fromHash || Math.ceil(container.scrollTop + container.clientHeight) >= container.scrollHeight) && rect.top > alignmentTop(target) && rect.top < viewport!.bottom) {
           navigation.reachedEnd = true;
           setCurrent(target.id);
           return;
@@ -71,16 +100,7 @@ export function SettingsSections({ sections, children }: { sections: { id: strin
     <div className="settings-main">{children}</div>
     <nav className="settings-index" aria-label={text('当前页章节', 'Page sections')}>
       <p>{text('本页内容', 'On this page')}</p>
-      {sections.map(section => <button key={section.id} type="button" aria-current={current === section.id ? 'location' : undefined} onClick={() => {
-        const target = root.current?.querySelector<HTMLElement>(`[id="${section.id}"]`);
-        if (!target || !isVisibleSection(target)) return;
-        const container = root.current?.closest<HTMLElement>('.settings-scroll');
-        const offset = container ? target.getBoundingClientRect().top - container.getBoundingClientRect().top - (parseFloat(window.getComputedStyle(container).scrollPaddingTop) || 0) - (parseFloat(window.getComputedStyle(target).scrollMarginTop) || 0) : 0;
-        endNavigation.current = container && container.scrollTop + offset > container.scrollHeight - container.clientHeight ? { target, reachedEnd: false } : null;
-        setCurrent(section.id);
-        target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-        target?.focus({ preventScroll: true });
-      }}>{section.label}</button>)}
+      {sections.map(section => <button key={section.id} type="button" aria-current={current === section.id ? 'location' : undefined} onClick={() => selectSection(section.id, 'smooth')}>{section.label}</button>)}
     </nav>
   </div>;
 }

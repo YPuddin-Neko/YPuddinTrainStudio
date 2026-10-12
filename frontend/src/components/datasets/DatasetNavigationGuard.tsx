@@ -1,5 +1,6 @@
 import React from 'react';
 import { useBlocker, type BlockerFunction, type Location } from 'react-router-dom';
+import { keepsSettingsWorkspace } from '../../utils/settingsWorkspace';
 
 interface Props {
   shouldBlock: (destination: Location) => boolean;
@@ -11,7 +12,8 @@ interface Props {
 export default function DatasetNavigationGuard(props: Props) {
   const callbacks = React.useRef(props);
   React.useLayoutEffect(() => { callbacks.current = props; });
-  const blocker = useBlocker(React.useCallback<BlockerFunction>(({ nextLocation }) => callbacks.current.shouldBlock(nextLocation), []));
+  const blocker = useBlocker(React.useCallback<BlockerFunction>(({ currentLocation, nextLocation }) =>
+    !keepsSettingsWorkspace(currentLocation, nextLocation) && callbacks.current.shouldBlock(nextLocation), []));
   const saving = React.useRef(false);
   React.useEffect(() => {
     if (blocker.state !== 'blocked' || saving.current) return;
