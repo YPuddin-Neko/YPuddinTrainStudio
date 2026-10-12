@@ -56,7 +56,7 @@ class NativeVramGeometry:
         return dict(counts), images
 
     def interval_start(self, pixels: int) -> int:
-        """Lowest budget with the same canvases and shape-group membership."""
+        """Lowest budget with the same canvases, shape groups and physical batch capacities."""
         minimum = lower = self.align * self.align
         for original in self.originals:
             size = self.size(original, pixels)
@@ -80,7 +80,7 @@ class NativeVramGeometry:
                 start = low
                 self._plateaus[original] = (shape, start)
             lower = max(lower, start)
-            if self.dataset.native_batching_version == 1:
+            if self.dataset.native_batching_version in (1, 3):
                 area = shape[0] * shape[1]
                 simultaneous = min(self.dataset.batch_size, max(1, pixels // area))
                 lower = max(lower, simultaneous * area)

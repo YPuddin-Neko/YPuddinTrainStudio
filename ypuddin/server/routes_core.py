@@ -549,12 +549,14 @@ def config_import(body: ConfigImportBody) -> Any:
     value = cfg.to_dict()
     if (
         cfg.dataset.resolution_mode == "native" and cfg.checkpoint.resume
-        and "native_batching_version" not in raw.get("dataset", {})
+        and any(key not in raw.get("dataset", {}) for key in ("native_batching_version", "native_batch_mode"))
     ):
         from fastapi.responses import JSONResponse
 
         # Preserve an omitted recovery identity through response-model defaults.
-        value["dataset"].pop("native_batching_version", None)
+        for key in ("native_batching_version", "native_batch_mode"):
+            if key not in raw.get("dataset", {}):
+                value["dataset"].pop(key, None)
         return JSONResponse(value)
     return value
 
@@ -630,7 +632,10 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         cfg = clear_native_vram_resolution(cfg)
         if isinstance(cfg.get("dataset"), dict) and cfg["dataset"].get("resolution_mode") == "native":
-            cfg = {**cfg, "dataset": {**cfg["dataset"], "native_batching_version": 2}}
+            cfg = {**cfg, "dataset": {
+                **cfg["dataset"],
+                "native_batching_version": 3 if cfg["dataset"].get("native_batch_mode") == "area" else 2,
+            }}
     if body.dataset_ids is not None:
         from .routes_work import _get_dataset
 
@@ -872,9 +877,10 @@ def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)
     if (
         isinstance(dataset, dict) and dataset.get("resolution_mode") == "native"
         and isinstance(checkpoint, dict) and checkpoint.get("resume")
-        and "native_batching_version" not in overlay.get("dataset", {})
     ):
-        dataset.pop("native_batching_version", None)
+        for key in ("native_batching_version", "native_batch_mode"):
+            if key not in overlay.get("dataset", {}):
+                dataset.pop(key, None)
     cfg, errors = _validate(merged)
     return {
         "ok": cfg is not None,

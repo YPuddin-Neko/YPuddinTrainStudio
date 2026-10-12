@@ -31,6 +31,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'dataset.resolution_mode': ['分桶统一训练面积；原生保留每张图的尺寸。', 'Buckets share one area; native keeps each image size.'],
   'dataset.resolutions': ['每个分桶的基准边长，多个用逗号分隔。', 'Base side per bucket; separate several with commas.'],
   'dataset.image_fit': ['图片与训练尺寸比例不同时补边或裁切。', 'Pad or crop when the image and training shape differ.'],
+  'dataset.native_batch_mode': ['选择同时合批计算，或按面积分次计算后汇总梯度。', 'Process a batch together, or split it by area and combine gradients.'],
   'dataset.native_max_pixels': ['单张训练画布允许的最大面积。', 'Largest area allowed for one training canvas.'],
   'dataset.native_max_side': ['宽或高超过此值时等比缩小。', 'Wider or taller images are scaled down.'],
   'dataset.native_overflow': ['图片超出尺寸上限时的处理方式。', 'What happens when an image exceeds the limits.'],

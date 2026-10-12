@@ -51,9 +51,11 @@ const isConfigObject = (value: unknown): value is Record<string, unknown> => !!v
 function mergeTrainingDefaults(defaults: Record<string, any>, draft: Record<string, any>) {
   const next = mergeConfig(defaults, normalizeLegacyIntervals(draft));
   // Older resume recipes inherit their authenticated checkpoint's policy.
-  if (draft.checkpoint?.resume && !Object.prototype.hasOwnProperty.call(draft.dataset || {}, 'native_batching_version')) {
+  if (draft.checkpoint?.resume) {
     next.dataset = { ...next.dataset };
-    delete next.dataset.native_batching_version;
+    for (const field of ['native_batching_version', 'native_batch_mode']) {
+      if (!Object.prototype.hasOwnProperty.call(draft.dataset || {}, field)) delete next.dataset[field];
+    }
   }
   return next;
 }
@@ -628,6 +630,14 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     if (next.checkpoint?.resume !== config.checkpoint?.resume) {
       next = { ...next, dataset: { ...next.dataset } };
       delete next.dataset.native_batching_version;
+      delete next.dataset.native_max_pixels_resolved;
+      if (next.checkpoint?.resume) delete next.dataset.native_batch_mode;
+      else next.dataset.native_batch_mode ??= 'physical';
+    }
+    if (!next.checkpoint?.resume && next.dataset?.native_batch_mode !== config.dataset?.native_batch_mode) {
+      next = { ...next, dataset: { ...next.dataset } };
+      delete next.dataset.native_batching_version;
+      delete next.dataset.native_max_pixels_resolved;
     }
     const family = familyByName(families, next.model?.family);
     setConfig(family && next.model?.family !== config.model?.family ? changeModelFamily(next, family, registeredModels) : next);
@@ -635,9 +645,16 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
   const handleSavePreset = async () => {
     if (inactiveTrainingReason(config) || !presetName.trim() || savingPreset) return;
+    const resumedNative = config.dataset?.resolution_mode === 'native' && !!config.checkpoint?.resume;
+    if (resumedNative && nativeBatchingVersion == null) {
+      setPresetError(text('请先完成恢复点检查，再保存预设。', 'Check the recovery point before saving the preset.'));
+      return;
+    }
+    const reusable = reusableTrainingPreset(config);
+    if (resumedNative) reusable.dataset = { ...reusable.dataset, native_batch_mode: nativeBatchingVersion === 2 ? 'physical' : 'area' };
     setSavingPreset(true); setPresetError('');
     try {
-      const created = await apiClient.post<Preset>('/presets', { name: presetName.trim(), config: reusableTrainingPreset(config) }, { silent: true });
+      const created = await apiClient.post<Preset>('/presets', { name: presetName.trim(), config: reusable }, { silent: true });
       setPresets(previous => [...previous.filter(item=>item.name!==created.name), created]);
       setPresetName(''); setPresetDialog(false);
     } catch (err: unknown) { setPresetError(formatApiError(err)); }
@@ -713,7 +730,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const computePolicy = currentTrainingComputePolicy(plan?.compute_policy, config, validatedConfig, validating || !gpuPlanCurrent || datasetRefreshing || !!datasetRefreshError);
   const doraPrecision = checked ? readDoraPrecisionReport(plan?.dora) : null;
   const nativeBatchingMarker = checked && !planError ? plan?.native?.batching_version : null;
-  const nativeBatchingVersion = nativeBatchingMarker === 1 || nativeBatchingMarker === 2 ? nativeBatchingMarker : null;
+  const nativeBatchingVersion = nativeBatchingMarker === 1 || nativeBatchingMarker === 2 || nativeBatchingMarker === 3 ? nativeBatchingMarker : null;
   const nativeAreaEstimate: NativeAreaEstimate = planError ? {state: 'error'}
     : !checked ? {state: 'loading'}
     : plan?.native ? {state: 'ready', maxPixels: plan.native.auto_max_pixels, vramMaxPixels: plan.native.auto_vram_max_pixels, vramError: plan.native.auto_vram_error}

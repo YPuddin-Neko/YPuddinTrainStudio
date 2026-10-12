@@ -28,7 +28,7 @@ const labels: Record<string, string> = {
   'model.vae_path': 'VAE', 'model.tokenizer_path': '分词器目录', 'model.dtype': '底模加载精度', 'model.attention': '注意力后端',
   'dataset.sources': '训练数据源', 'dataset.resolutions': '训练分辨率', 'dataset.aspect_ratio_limit': '最大长宽比',
   'dataset.resolution_mode': '分辨率模式', 'dataset.image_fit': '图片适配方式', 'dataset.crop_anchor': '裁切保留位置', 'dataset.native_max_pixels': '图像面积上限（等效边长 px）', 'dataset.native_max_pixels_mode': '图像面积上限模式',
-  'dataset.native_max_side': '最长边上限（px）', 'dataset.native_overflow': '超出尺寸上限时',
+  'dataset.native_batch_mode': '原生批次方式', 'dataset.native_max_side': '最长边上限（px）', 'dataset.native_overflow': '超出尺寸上限时',
   'dataset.area_tolerance': '面积容差', 'dataset.bucket_step': '分桶步长', 'dataset.bucket_no_upscale': '不放大小图',
   'dataset.batch_size': '批量大小', 'dataset.flip': '随机水平翻转', 'dataset.masked_loss': '遮罩加权训练',
   'dataset.num_workers': '数据加载线程', 'dataset.cache_dir': '缓存目录', 'dataset.cache_latents': '训练图像缓存',
@@ -138,7 +138,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
   } as Record<string, string>)[path.slice('checkpoint.metadata_'.length)] || fallback;
   if (english && path === 'checkpoint.save_state_every_steps') return 'Recovery save interval';
   if (english && path === 'checkpoint.save_state_every_epochs') return 'Recovery save interval (epochs)';
-  if (english && path.startsWith('dataset.native_')) return ({'dataset.native_max_pixels':'Image area limit (equivalent side, px)','dataset.native_max_pixels_mode':'Image area limit mode','dataset.native_max_side':'Longest side limit (px)','dataset.native_overflow':'When a size limit is exceeded'} as Record<string,string>)[path] || fallback;
+  if (english && path.startsWith('dataset.native_')) return ({'dataset.native_batch_mode':'Native batch mode','dataset.native_max_pixels':'Image area limit (equivalent side, px)','dataset.native_max_pixels_mode':'Image area limit mode','dataset.native_max_side':'Longest side limit (px)','dataset.native_overflow':'When a size limit is exceeded'} as Record<string,string>)[path] || fallback;
   if (english && path === 'model.sdxl_max_token_length') return 'SDXL caption length';
   if (english && path === 'memory') return 'Memory estimate';
   if (english && path === 'memory.vae_attention_chunking') return 'VAE attention chunking';
@@ -236,6 +236,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
     ? 'β1 controls schedule-free weight averaging; β2 smooths the estimate of gradient size. Usually keep this optimizer’s defaults.'
     : 'β1 控制免调度训练中的权重平均，β2 平滑梯度大小的估计。通常保留当前优化器的默认值。';
   const help: Record<string, [string, string]> = {
+    'dataset.native_batch_mode': ['真实合批：相同最终宽高的图片按批量大小一起计算。\n按面积拆微批：先按相同宽高组成逻辑批，再按图像面积上限分次计算并汇总梯度，可减少同时参与计算的图片数。\n面积模式同时用图像面积上限限制单张画布和每个微批的画布总面积；批量大小、梯度累积和训练步数仍按逻辑批计算。', 'Physical: processes images with the same final width and height together, up to the batch size.\nArea: forms the same logical batches, then splits each batch by the image area limit and combines gradients, reducing the number of images processed together.\nArea mode uses the image area limit for both each canvas and the total canvas area of each microbatch. Batch size, gradient accumulation and training steps still follow logical batches.'],
     'dataset.native_max_pixels': ['自动分辨率优先：按训练图片计算，尽量保留原图尺寸。\n自动显存优先：在自动分辨率优先的上限内，按可用显存和训练参数缩小。\n自定义：填写等效边长，面积上限为其平方。\n上限约束单张训练画布，包含模型对齐补边，并与最长边上限同时生效。', 'Resolution first calculates the limit from training images to preserve their original size.\nVRAM first reduces the resolution-first limit to fit available GPU memory and training settings.\nCustom uses the square of the entered equivalent side length.\nThe limit applies to each training canvas, including model-alignment padding; the longest-side limit also applies.'],
     'dataset.native_max_side': ['填宽或高允许达到的最大长度，单位为像素。例如 4096 表示宽、高都不得超过 4096。\n面积上限和最长边上限必须同时满足，以先触及的限制为准。面积填 1024、最长边填 4096 时，2048×2048 的图片仍会因面积超限而缩小。\n想保留原图尺寸，两个上限都需要容纳原图及模型对齐补边。', 'Enter the maximum allowed width or height in pixels. 4096 means neither dimension may exceed 4096.\nBoth the area and longest-side limits must be satisfied; the tighter limit determines the size. An area setting of 1024 still downscales a 2048×2048 image even if the longest-side limit is 4096.\nTo retain the original size, both limits must accommodate the image and any model-alignment padding.'],
     'checkpoint.save_state_every_steps': ['Step：按参数更新次数保存，100 Step 为每 100 步保存。\nEpoch：按完整训练轮数保存，2 Epoch 为每完成 2 轮保存。轮中达到最大步数不算完成一轮。\n默认每 100 Step 保存；关闭开关可停用定期保存。暂停时仍会保存当前恢复点；意外退出只能从最近一次成功保存的位置继续。', 'Step: saves by optimizer updates; 100 Step saves every 100 updates.\nEpoch: saves by completed dataset passes; 2 Epoch saves after every two complete epochs. Reaching the step limit partway through an epoch does not complete it.\nDefaults to 100 Step; turn off the switch to disable periodic saving. Pausing still saves a recovery point; crashes can only recover the last successful save.'],
@@ -351,6 +352,7 @@ export function configOptionLabel(path: string, option: string, english = false)
     'sampling.noise': { comfyui:['ComfyUI', 'ComfyUI'], a1111:['A1111 WebUI', 'A1111 WebUI'] },
     'sampling.scheduler': { uniform:['均匀', 'Uniform'], simple:['简单', 'Simple'], sgm_uniform:['SGM 均匀', 'SGM Uniform'], normal:['常规', 'Normal'] },
     'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
+    'dataset.native_batch_mode': { physical: ['真实合批', 'Physical'], area: ['按面积拆微批', 'Area'] },
     'dataset.native_max_pixels_mode': {auto: ['自动分辨率优先', 'Auto, resolution first'], auto_vram: ['自动显存优先', 'Auto, VRAM first'], custom: ['自定义', 'Custom']},
     'dataset.resolution_mode': { bucket: ['按设定分辨率训练', 'Bucket'], native: ['按原图尺寸训练', 'Native'] },
     'dataset.text_encoding': {auto:['自动','Auto'],online:['每步编码文本','Online'],cached:['训练前缓存文本特征','Cached']},
@@ -374,7 +376,7 @@ export const CONFIG_TAB_GROUPS: Record<ConfigTab, string[]> = {
 };
 export function configTabForPath(path: string): ConfigTab {
   if (path === 'model.attention') return 'train';
-  if (path === 'dataset.batch_size') return 'train';
+  if (['dataset.batch_size', 'dataset.native_batch_mode'].includes(path)) return 'train';
   const group = path.split('.')[0];
   return (Object.keys(CONFIG_TAB_GROUPS) as ConfigTab[]).find(tab => CONFIG_TAB_GROUPS[tab].includes(group)) || 'advanced';
 }
@@ -483,6 +485,7 @@ export function presentPlanWarning(code: string, fallback: string, english = fal
     'captions.missing': '部分图片没有标签，可到数据集补充标签或设置类别提示词。',
     'buckets.small': '部分分桶不足一个完整批次，最后一个批次会使用较少的图片。',
     'native.execution': '图像面积上限约束单张训练画布；实际显存占用还受批量大小和训练参数影响。',
+    'native.execution.area': '同宽高图片先组成逻辑批，再按图像面积上限拆成微批；梯度按实际图片数汇总，逻辑批量和训练步数保持不变。',
     'native.execution.v1': '图像面积上限同时限制单张图片与一次计算的总面积，不等于显存上限。',
   } as Record<string, string>)[code] || fallback;
 }

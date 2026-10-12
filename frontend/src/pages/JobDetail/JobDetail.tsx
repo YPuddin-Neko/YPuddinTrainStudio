@@ -39,6 +39,30 @@ type VersionedJob = Job & { version_id?: string | null; latest: Job['latest'] & 
 type PendingMetrics = { id: string; pending: boolean; steps: Record<string, any>[]; validation: ValidationPoint[] };
 type PendingJob = { id: string; pending: boolean; samplingStep: number; sampling: { event: Record<string, any>; kind: 'step' | 'phase' } | null };
 
+function nativeSnapshotDisplay(snapshot: any) {
+  if (snapshot?.dataset?.resolution_mode !== 'native') return snapshot;
+  let changed = false;
+  const dataset = { ...snapshot.dataset };
+  for (const field of ['resolutions', 'aspect_ratio_limit', 'area_tolerance', 'bucket_step', 'bucket_no_upscale']) {
+    if (Object.prototype.hasOwnProperty.call(dataset, field)) {
+      delete dataset[field]; changed = true;
+    }
+  }
+  const projectSources = (section: any) => {
+    if (!Array.isArray(section?.sources)) return section;
+    const sources = section.sources.map((source: any) => {
+      if (!source || typeof source !== 'object' || Array.isArray(source) || !Object.prototype.hasOwnProperty.call(source, 'resolutions')) return source;
+      const projected = { ...source };
+      delete projected.resolutions; changed = true;
+      return projected;
+    });
+    return { ...section, sources };
+  };
+  const projectedDataset = projectSources(dataset);
+  const validation = projectSources(snapshot.validation);
+  return changed ? { ...snapshot, dataset: projectedDataset, ...(validation !== snapshot.validation ? { validation } : {}) } : snapshot;
+}
+
 function mergeJobProjection(previous: VersionedJob, updated: VersionedJob, metricsChanged: boolean, samplingChanged: boolean): VersionedJob {
   const projectionChanged = metricsChanged || samplingChanged && previous.latest.timestep_sampling != null;
   const next = projectionChanged ? { ...updated, progress: previous.progress, latest: previous.latest } : updated;
@@ -235,6 +259,9 @@ export default function JobDetail() {
   const deleteJobId = React.useRef(id); deleteJobId.current = id;
   React.useEffect(() => { setDeleting(null); setDeleteBusy(false); setDeleteError(''); }, [id]);
   const [configSnapshot, setConfigSnapshot] = React.useState<any>(null);
+  const [showRawConfig, setShowRawConfig] = React.useState(false);
+  const displayConfigSnapshot = React.useMemo(() => job?.type === 'train' ? nativeSnapshotDisplay(configSnapshot) : configSnapshot, [configSnapshot, job?.type]);
+  const hasFilteredConfig = displayConfigSnapshot !== configSnapshot;
   const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
   const requestedTab = params.get('tab') || '';
@@ -273,7 +300,7 @@ export default function JobDetail() {
       pending.pending = false; pending.steps = []; pending.validation = [];
       setMetrics(next);
     };
-    setDataError(''); setJob(null); setMetrics(null); setSamples([]); setSamplesLoaded(false); setSelectedSample(null); setCheckpoints([]); setCheckpointsLoaded(false); setConfigSnapshot(null); setSampleProgress(null);
+    setDataError(''); setJob(null); setMetrics(null); setSamples([]); setSamplesLoaded(false); setSelectedSample(null); setCheckpoints([]); setCheckpointsLoaded(false); setConfigSnapshot(null); setShowRawConfig(false); setSampleProgress(null);
     jobKind.current = null;
     apiClient.get<VersionedJob>(`/jobs/${id}`, options).then(loaded => {
       if (controller.signal.aborted || jobRequestRef.current !== pendingJob) return;
@@ -290,7 +317,7 @@ export default function JobDetail() {
       ignoreAbort(error);
       finishMetrics({ steps: [], loss: [], loss_ema: [], lr: {}, grad_norm: [], vram_mb: [], it_s: [], validation: [] });
     });
-    apiClient.get<any>(`/jobs/${id}/config`, options).then(setConfigSnapshot).catch(ignoreAbort);
+    apiClient.get<any>(`/jobs/${id}/config`, options).then(snapshot => { if (!controller.signal.aborted) setConfigSnapshot(snapshot); }).catch(ignoreAbort);
     return () => { controller.abort(); samplesRequestRef.current?.abort(); };
   }, [id, refreshSamples]);
 
@@ -604,16 +631,21 @@ export default function JobDetail() {
 
       {activeTab === 'config' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
-          {configSnapshot == null ? (
+          {configSnapshot == null || job?.id !== id ? (
             <EmptyState
               icon={Code}
               title={t('job.noConfig', '暂无配置快照')}
 
             />
           ) : (
-            <pre className="job-config-snapshot text-xs font-mono bg-slate-50 dark:bg-slate-900 p-4 rounded-lg overflow-x-auto">
-              {JSON.stringify(configSnapshot, null, 2)}
-            </pre>
+            <>
+              {hasFilteredConfig && <button type="button" className="ui-btn ui-btn-sm mb-2" onClick={() => setShowRawConfig(value => !value)}>
+                {showRawConfig ? text('返回配置快照', 'Back to configuration snapshot') : text('查看原始配置', 'View raw configuration')}
+              </button>}
+              <pre className="job-config-snapshot text-xs font-mono bg-slate-50 dark:bg-slate-900 p-4 rounded-lg overflow-x-auto">
+                {JSON.stringify(showRawConfig ? configSnapshot : displayConfigSnapshot, null, 2)}
+              </pre>
+            </>
           )}
         </div>
       )}

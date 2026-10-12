@@ -4405,12 +4405,19 @@ export interface components {
              */
             resolution_mode: "bucket" | "native";
             /**
+             * Native Batch Mode
+             * @description 物理批次将相同宽高的图片一起计算；按面积拆分将同一批图片分次计算并汇总梯度，减少单次计算的显存占用。两种方式保留相同的批量大小和训练步数。
+             * @default physical
+             * @enum {string}
+             */
+            native_batch_mode: "physical" | "area";
+            /**
              * Native Batching Version
              * @description 原生训练批量策略版本，用于区分任务快照与恢复点。
              * @default 2
              * @enum {integer}
              */
-            native_batching_version: 1 | 2;
+            native_batching_version: 1 | 2 | 3;
             /**
              * Image Fit
              * @description 保留完整画面：等比缩放后补边，补边区域不计入直接损失，但仍作为模型输入。裁切填满尺寸：等比缩放至填满后，按裁切保留位置裁剪。新项目默认保留完整画面；旧配置沿用原来的裁切设置。
@@ -4439,7 +4446,7 @@ export interface components {
             native_max_pixels_resolved?: number | null;
             /**
              * Native Max Pixels
-             * @description 原生模式单张训练画布的像素上限，包含补边，不限制整批总面积。最长边限制和模型对齐同时生效，调大通常需要更多显存。
+             * @description 原生模式单张训练画布的像素上限，包含补边。按面积拆分时，也用此上限控制每次计算的图片总面积。最长边限制和模型对齐同时生效，调大通常需要更多显存。
              * @default 1048576
              */
             native_max_pixels: number;
@@ -7049,7 +7056,15 @@ export interface components {
              * Batching Version
              * @enum {integer}
              */
-            batching_version: 1 | 2;
+            batching_version: 1 | 2 | 3;
+            /**
+             * Batch Mode
+             * @default physical
+             * @enum {string}
+             */
+            batch_mode: "physical" | "area";
+            /** Microbatch Max Pixels */
+            microbatch_max_pixels?: number | null;
             /** Images */
             images: number;
             /** Downscaled */

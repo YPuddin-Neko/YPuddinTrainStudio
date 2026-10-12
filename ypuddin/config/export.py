@@ -16,11 +16,10 @@ NATIVE_INACTIVE_BUCKET_FIELDS = frozenset({
 def public_config_dict(config: TrainConfig) -> dict[str, Any]:
     """Keep an omitted checkpoint strategy omitted across public config round trips."""
     data = config.to_dict()
-    if (
-        config.dataset.resolution_mode == "native" and config.checkpoint.resume
-        and "native_batching_version" not in config.dataset.model_fields_set
-    ):
-        data["dataset"].pop("native_batching_version", None)
+    if config.dataset.resolution_mode == "native" and config.checkpoint.resume:
+        for field in ("native_batching_version", "native_batch_mode"):
+            if field not in config.dataset.model_fields_set:
+                data["dataset"].pop(field, None)
     return data
 
 

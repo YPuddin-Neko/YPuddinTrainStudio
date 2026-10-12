@@ -473,7 +473,9 @@ class PlanMemory(_Out):
 
 
 class NativePlan(_Out):
-    batching_version: Literal[1, 2]
+    batching_version: Literal[1, 2, 3]
+    batch_mode: Literal["physical", "area"] = "physical"
+    microbatch_max_pixels: int | None = None
     images: int
     downscaled: int
     sizes: int

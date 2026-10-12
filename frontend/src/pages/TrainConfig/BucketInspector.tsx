@@ -62,7 +62,8 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
   const buckets = plan?.buckets || [];
   const native = plan?.native;
   const nativeVersion = planCurrent && !loading && !error ? native?.batching_version : undefined;
-  const nativeBatches = nativeVersion === 2;
+  const areaNative = nativeVersion === 3;
+  const nativeBatches = nativeVersion === 2 || areaNative;
   const legacyNative = nativeVersion === 1;
   const nativeMode = dataset ? dataset.resolution_mode === 'native' : !!native;
   const awaitingPlan = hasSources && !buckets.length && !plan?.ok;
@@ -127,22 +128,33 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
       : !masked ? text('遮罩加权训练已开启，但没有找到遮罩文件或含透明像素的图片，所有图片按整图计算。', 'Masked loss is on, but no mask files or images with transparent pixels were found; every image counts in full.')
         : text(`按遮罩计算损失：${maskSources}；其余 ${Math.max(0, (plan?.images ?? masked) - masked)} 张按整图计算。`, `Loss follows ${maskSources}; the other ${Math.max(0, (plan?.images ?? masked) - masked)} images count in full.`);
   const distributed = plan?.distributed;
+  const emptyNativeSync = nativeVersion === 2 || (areaNative && distributed?.strategy === 'ddp');
+  const paddedNativeSync = legacyNative || (areaNative && distributed?.strategy === 'fsdp');
   const gpus = distributed?.world_size ?? 1;
   const perBatch = distributed?.per_device_batch_size ?? null;
   const effectiveBatch = distributed?.effective_batch_size ?? null;
   const accumulation = effectiveBatch && perBatch ? Math.max(1, Math.round(effectiveBatch / (perBatch * gpus))) : null;
   const batchFormula = perBatch == null || accumulation == null ? ''
     : gpus > 1 ? text(`${perBatch}\u00a0张 × ${gpus}\u00a0卡 × 累积\u00a0${accumulation}`, `${perBatch} × ${gpus}\u00a0GPUs × ${accumulation}\u00a0accumulation`)
-      : accumulation > 1 ? text(`${perBatch}\u00a0张 × 累积\u00a0${accumulation}`, `${perBatch} × ${accumulation}\u00a0accumulation`) : nativeBatches ? text(`每批最多 ${perBatch}\u00a0张`, `Up to ${perBatch} per batch`) : nativeMode && !legacyNative ? text(`每卡批量 ${perBatch}`, `Batch size per GPU: ${perBatch}`) : text(`每批 ${perBatch}\u00a0张`, `${perBatch} per batch`);
-  const sizeBatchHelp = nativeBatches
+      : accumulation > 1 ? text(`${perBatch}\u00a0张 × 累积\u00a0${accumulation}`, `${perBatch} × ${accumulation}\u00a0accumulation`) : areaNative ? text(`每逻辑批最多 ${perBatch}\u00a0张`, `Up to ${perBatch} per logical batch`) : nativeBatches ? text(`每批最多 ${perBatch}\u00a0张`, `Up to ${perBatch} per batch`) : nativeMode && !legacyNative ? text(`每卡批量 ${perBatch}`, `Batch size per GPU: ${perBatch}`) : text(`每批 ${perBatch}\u00a0张`, `${perBatch} per batch`);
+  const areaRunScope = paddedNativeSync
+    ? text('包含不计入损失的补齐计算。', 'Includes padding runs that carry no loss.')
+    : emptyNativeSync ? text('不包含空同步批次。', 'Excludes empty synchronization batches.') : '';
+  const sizeBatchHelp = areaNative
+    ? text(`每轮此尺寸的实际微批计算次数，多卡时合计所有显卡。${areaRunScope}\n最终宽高相同的图片先组成逻辑批次，再按微批面积上限拆分计算；尾批按实际图片数训练。`, `Actual microbatch runs of this size per epoch, summed across GPUs. ${areaRunScope}\nImages with the same final width and height form logical batches, then split by the microbatch pixel budget; a short final batch uses its actual image count.`)
+    : nativeBatches
     ? text('每轮此尺寸的实际批次数，多卡时合计所有显卡。最终宽高相同的图片按每卡批量大小组批，尾批按实际图片数训练；图像面积上限分别约束每张画布。', 'Actual batches of this size per epoch, summed across GPUs. Images with the same final width and height are grouped by the per-GPU batch size; a short final batch uses its actual image count. The image area limit applies to each canvas.')
     : legacyNative ? text('每轮对这个尺寸运行模型的次数。同尺寸图片在不超过图像面积上限时合并为一次计算；单张已接近上限时逐张计算，因此常与样本数相同。', 'How many times the model runs on this size per epoch. Same-size images are combined while they fit the image area limit; images near the limit run one at a time, so this often equals the sample count.')
       : text('每轮对这个尺寸运行模型的次数。', 'How many times the model runs on this size per epoch.');
-  const effectiveBatchHelp = nativeBatches
+  const effectiveBatchHelp = areaNative
+    ? text('每次参数更新最多使用的图片数 = 批量大小 × 梯度累积 × 显卡数。\n最终宽高相同的图片组成逻辑批次；按面积拆分微批不增加逻辑批次数或参数更新次数。\n各尺寸尾批或轮末累积不足时，按实际参与的图片数更新，不复制图片补齐。', 'Maximum images per parameter update = batch size × gradient accumulation × GPUs.\nImages with the same final width and height form logical batches; splitting them into area-based microbatches adds no logical batches or parameter updates.\nShort batches or incomplete accumulation at the end of an epoch use the actual image count, without repeated padding.')
+    : nativeBatches
     ? text('每次参数更新最多使用的图片数 = 批量大小 × 梯度累积 × 显卡数。\n各尺寸尾批或轮末累积不足时，按实际参与的图片数更新，不复制图片补齐。', 'Maximum images per parameter update = batch size × gradient accumulation × GPUs.\nShort batches or incomplete accumulation at the end of an epoch use the actual image count, without repeated padding.')
     : legacyNative || !nativeMode ? text('每次更新参数所用的图片数 = 批量大小 × 梯度累积 × 显卡数。原生分辨率下，同一批里尺寸不同的图片会分开计算，整批算完后才合并梯度更新参数，所以等效批次不会因此变小。', 'Images behind each parameter update = batch size × gradient accumulation × GPUs. In native resolution, differently sized images in a batch are computed separately, and their gradients are combined before the update, so the effective batch stays the same.')
       : text('由批量大小 × 梯度累积 × 显卡数计算。', 'Calculated as batch size × gradient accumulation × GPUs.');
-  const forwardHelp = nativeBatches
+  const forwardHelp = areaNative
+    ? text(`每轮所有尺寸的实际微批计算次数，多卡时合计所有显卡。${areaRunScope}\n逻辑批次按微批面积上限拆分计算，梯度累积仍按逻辑批次计数；微批拆分不增加训练步数。`, `Actual microbatch runs across all sizes and GPUs in one epoch. ${areaRunScope}\nLogical batches are split by the microbatch pixel budget, while gradient accumulation still counts logical batches; splitting into microbatches adds no training steps.`)
+    : nativeBatches
     ? text('每轮所有尺寸的实际批次数，多卡时合计所有显卡，不包含空同步批次。梯度累积会将多个批次合为一次参数更新，因此计算次数与训练步数可能不同。', 'Actual batches across all sizes and GPUs in one epoch, excluding empty synchronization batches. Gradient accumulation combines batches into a parameter update, so model runs and training steps can differ.')
     : legacyNative ? text('原生分辨率下，同一批里尺寸不同的图片要分开计算，所以计算次数可能多于批次数。这只影响速度；整批算完后才更新参数，等效批次不变。', 'In native resolution, differently sized images in a batch are computed separately, so there can be more runs than batches. This only affects speed; parameters update after the whole batch, so the effective batch is unchanged.')
       : text('每轮对所有训练尺寸运行模型的总次数。计算次数与参数更新步数可能不同。', 'Total model runs across training sizes in one epoch. Model runs and parameter updates can differ.');
@@ -209,7 +221,7 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
       </dl>
       {maskLine && <p className="dataset-masks"><strong>{text('遮罩', 'Masks')}</strong><span>{maskLine}</span>{masks && !masks.enabled && onField && <button type="button" className="ui-link" onClick={() => onField('dataset.masked_loss')}>{text('开启遮罩加权训练', 'Turn on masked loss')}</button>}</p>}
       <SourceBalance sources={plan?.source_balance} loading={loading} hasSources={hasSources}/>
-      {!!native?.synchronization_groups && <p className="inspector-note">{nativeBatches ? text(`多卡每轮有 ${native.synchronization_groups} 个空同步批次，不执行图片计算，也不增加训练样本。`, `Multi-GPU training has ${native.synchronization_groups} empty synchronization batches per epoch; they run no images and add no training samples.`) : legacyNative ? text(`多卡每轮额外 ${native.synchronization_groups} 次补齐计算，不计入损失，也不增加训练样本。`, `Multi-GPU training adds ${native.synchronization_groups} padding runs per epoch; they carry no loss and add no samples.`) : text(`多卡每轮有 ${native.synchronization_groups} 个同步批次，不增加训练样本。`, `Multi-GPU training has ${native.synchronization_groups} synchronization batches per epoch; they add no training samples.`)}</p>}
+      {!!native?.synchronization_groups && <p className="inspector-note">{emptyNativeSync ? text(`多卡每轮有 ${native.synchronization_groups} 个空同步批次，不执行图片计算，也不增加训练样本。`, `Multi-GPU training has ${native.synchronization_groups} empty synchronization batches per epoch; they run no images and add no training samples.`) : paddedNativeSync ? text(`多卡每轮额外 ${native.synchronization_groups} 次补齐计算，不计入损失，也不增加训练样本。`, `Multi-GPU training adds ${native.synchronization_groups} padding runs per epoch; they carry no loss and add no samples.`) : text(`多卡每轮有 ${native.synchronization_groups} 个同步批次，不增加训练样本。`, `Multi-GPU training has ${native.synchronization_groups} synchronization batches per epoch; they add no training samples.`)}</p>}
       <div className="bucket-heading"><h4>{nativeMode ? text('实际训练尺寸', 'Training sizes') : text('分桶布局', 'Bucket layout')}</h4><div className="ui-segmented ui-segmented-sm" role="group" aria-label={text('分桶显示方式', 'Bucket view')}><button type="button" aria-label={text('分桶图形视图', 'Bucket shape view')} aria-pressed={view === 'shape'} onClick={() => setView('shape')}><Grid2X2 size={13} /></button><button type="button" aria-label={text('分桶明细表', 'Bucket table')} aria-pressed={view === 'table'} onClick={() => setView('table')}><BarChart3 size={13} /></button><SlidingIndicator className="ui-segmented-thumb"/></div></div>
       {buckets.length === 0 ? <div className="bucket-empty"><Database size={23} /><p>{loading ? text('正在计算实际分桶…', 'Computing buckets…') : awaitingPlan ? text('请完成待配置项后计算。', 'Complete the pending settings to calculate.') : text('尚无训练图片。', 'No training images yet.')}</p><button type="button" className="ui-link" onClick={awaitingPlan && onIssues ? onIssues : onData}>{awaitingPlan && onIssues ? text('检查待配置项', 'Review pending settings') : text('配置训练数据', 'Configure dataset')}</button></div> : <>
         {view === 'shape' ? <div className="bucket-groups" data-testid="plan-buckets">{groups.map(group => grouped

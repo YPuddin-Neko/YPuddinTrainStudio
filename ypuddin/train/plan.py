@@ -128,12 +128,12 @@ def _vae_batches(
     encoding splits a training batch, native microbatch group or validation batch into calls of
     at most ``encode_batch`` images.
     """
-    legacy_native = ds.resolution_mode == "native" and ds.native_batching_version == 1
+    area_native = ds.resolution_mode == "native" and ds.native_batching_version in (1, 3)
     cache, online = {}, {}
     for (width, height), entry in image_shapes.items():
         entries = len(entry["images"]) * (2 if ds.flip else 1) + len(entry["validation"])
         cache[width, height] = min(encode_batch, entries)
-        group = min(ds.batch_size, max(1, ds.native_max_pixels // (width * height))) if legacy_native else ds.batch_size
+        group = min(ds.batch_size, max(1, ds.native_max_pixels // (width * height))) if area_native else ds.batch_size
         validation_items = entry.get("validation_items", len(entry["validation"]))
         items = (entry["items"] if online_kind == "training" else validation_items
                  if online_kind == "validation" else max(entry["items"], validation_items))
@@ -377,10 +377,11 @@ def _append_data_plan(
         shape = (it.bucket.base, *it.bucket.key)
         shapes[shape] = shapes.get(shape, 0) + 1
     native = ds.resolution_mode == "native"
-    native_v2 = native and ds.native_batching_version == 2
+    native_modern = native and ds.native_batching_version in (2, 3)
+    area_native = native and ds.native_batching_version in (1, 3)
     batches = (
         math.ceil(len(items) / ds.batch_size)
-        if native and not native_v2
+        if native and not native_modern
         else sum(math.ceil(n / ds.batch_size) for n in counts.values())
     )
     out.update(
@@ -403,7 +404,7 @@ def _append_data_plan(
         }
     )
     if loop is not None:
-        per_rank_batches = math.ceil(batches / loop.gpu_count) if native_v2 else batches // loop.gpu_count
+        per_rank_batches = math.ceil(batches / loop.gpu_count) if native_modern else batches // loop.gpu_count
         steps_per_epoch = math.ceil(per_rank_batches / loop.grad_accum) if per_rank_batches else 0
         by_epochs = (loop.epochs or 10**9) * steps_per_epoch
         total_steps = min(by_epochs, loop.max_steps or 10**9) if steps_per_epoch else 0
@@ -417,17 +418,17 @@ def _append_data_plan(
             "per_device_batch_size": ds.batch_size,
             "effective_batch_size": ds.batch_size * loop.grad_accum * loop.gpu_count,
             "batches_per_rank": per_rank_batches,
-            "tail_policy": ("empty_rank_slot" if native_v2 else "drop_incomplete_rank_group")
+            "tail_policy": ("empty_rank_slot" if native_modern else "drop_incomplete_rank_group")
             if loop.gpu_count > 1 else "keep",
             "dropped_samples": 0,
         }
-        if loop.gpu_count > 1 and native_v2:
+        if loop.gpu_count > 1 and native_modern:
             if batches % loop.gpu_count and loop.distributed_strategy == "fsdp":
                 out["errors"].append({
                     "loc": "loop.distributed_strategy",
                     "msg": "原生分辨率批次数不能被卡数整除时无法使用 FSDP；请改用 DDP 或单卡训练。",
                 })
-        if loop.gpu_count > 1 and not native_v2:
+        if loop.gpu_count > 1 and not native_modern:
             sampler_type = NativeBatchSampler if native else BucketBatchSampler
             sampler_options = {"batching_version": ds.native_batching_version} if native else {}
             batch_plan = sampler_type(
@@ -511,19 +512,19 @@ def _append_data_plan(
             native_plan = NativeBatchSampler(
                 shape_keys, ds.batch_size, seed=seed, batching_version=ds.native_batching_version,
             ).plan()
-            if native_v2:
+            if not area_native:
                 for batch in native_plan:
                     key = shape_keys[batch[0]]
                     forward_counts[key] = forward_counts.get(key, 0) + 1
                 if loop is not None and loop.gpu_count > 1:
                     synchronization_groups = (-len(native_plan)) % loop.gpu_count
             else:
-                if loop is not None and loop.gpu_count > 1:
+                if loop is not None and loop.gpu_count > 1 and not native_modern:
                     native_plan = native_plan[: len(native_plan) - len(native_plan) % loop.gpu_count]
                 native_groups = []
                 for batch in native_plan:
                     shapes = [shape_keys[index] for index in batch]
-                    groups = microbatch_indices(shapes, max_pixels, batching_version=1)
+                    groups = microbatch_indices(shapes, max_pixels, batching_version=ds.native_batching_version)
                     native_groups.append([(shapes[group[0]], len(group)) for group in groups])
                     for group in groups:
                         key = shapes[group[0]]
@@ -532,10 +533,13 @@ def _append_data_plan(
                     for offset in range(0, len(native_groups), loop.gpu_count):
                         ranks = native_groups[offset : offset + loop.gpu_count]
                         slots = max(map(len, ranks))
+                        if native_modern:
+                            ranks.extend([] for _ in range(loop.gpu_count - len(ranks)))
                         for groups in ranks:
                             padding = slots - len(groups)
-                            key, _ = min(groups, key=lambda entry: math.prod(entry[0]) * entry[1])
-                            forward_counts[key] += padding
+                            if groups and (not native_modern or loop.distributed_strategy == "fsdp"):
+                                key, _ = min(groups, key=lambda entry: math.prod(entry[0]) * entry[1])
+                                forward_counts[key] += padding
                             synchronization_groups += padding
         for bucket in out["buckets"]:
             bucket["batches"] = (
@@ -560,6 +564,8 @@ def _append_data_plan(
         )
         out["native"] = {
             "batching_version": ds.native_batching_version,
+            "batch_mode": "area" if area_native else "physical",
+            "microbatch_max_pixels": max_pixels if area_native else None,
             "images": len(records),
             "downscaled": resized,
             "sizes": len(counts),
@@ -574,14 +580,25 @@ def _append_data_plan(
             "forward_groups": sum(forward_counts.values()) if seed is not None else None,
             "synchronization_groups": synchronization_groups,
         }
-        out["warnings"].append(
-            {
-                "code": "native.execution" if native_v2 else "native.execution.v1",
-                "msg": "Native resolution groups images with identical width and height into batches up to batch_size; "
+        if ds.native_batching_version == 3:
+            execution_code = "native.execution.area"
+            execution_message = (
+                "Native resolution keeps same-size logical batches and splits their forward passes by the microbatch "
+                "pixel budget; gradients are accumulated over the real images."
+            )
+        elif native_modern:
+            execution_code = "native.execution"
+            execution_message = (
+                "Native resolution groups images with identical width and height into batches up to batch_size; "
                 "the image area limit applies to each image."
-                if native_v2 else "native resolution uses pixel-bounded shape groups and image-weighted gradient accumulation; pixel budget is not a VRAM guarantee",
-            }
-        )
+            )
+        else:
+            execution_code = "native.execution.v1"
+            execution_message = (
+                "native resolution uses pixel-bounded shape groups and image-weighted gradient accumulation; "
+                "pixel budget is not a VRAM guarantee"
+            )
+        out["warnings"].append({"code": execution_code, "msg": execution_message})
     uncaptioned = len(records) - out["captioned"]
     if uncaptioned and not any(s.class_prompt for s in ds.sources):
         out["warnings"].append(
@@ -627,6 +644,9 @@ def _preview_invalid_config(
                     out["errors"].append(issue)
     if len(fields) != 2:
         return
+    dataset = fields["dataset"]
+    if dataset.resolution_mode == "native" and dataset.native_batching_version != 1:
+        dataset.native_batching_version = 3 if dataset.native_batch_mode == "area" else 2
     validation = fields["validation"]
     if validation.enabled and validation.split_ratio == 0 and not validation.sources:
         out["errors"].append(
@@ -896,7 +916,7 @@ def plan(
     # ---- data
     ds = cfg.dataset
     native = ds.resolution_mode == "native"
-    legacy_native = native and ds.native_batching_version == 1
+    area_native = native and ds.native_batching_version in (1, 3)
     if draft:
         counts = {}
         for bucket in out.get("buckets", []):
@@ -1483,7 +1503,7 @@ def plan(
                     for (w, h), available_items in sorted(counts.items()) or [((r, r), 0) for r in ds.resolutions]:
                         forward_batch = (
                             min(ds.batch_size, max(1, ds.native_max_pixels // (w * h)))
-                            if legacy_native else ds.batch_size
+                            if area_native else ds.batch_size
                         )
                         if available_items:
                             forward_batch = min(forward_batch, available_items)
@@ -1532,7 +1552,7 @@ def plan(
                         if not count:
                             continue
                         batch = min(count, ds.batch_size,
-                                    max(1, ds.native_max_pixels // (w * h)) if legacy_native else ds.batch_size)
+                                    max(1, ds.native_max_pixels // (w * h)) if area_native else ds.batch_size)
                         estimate = estimate_backbone_memory(
                             activation_layout, width=w, height=h, batch_size=batch, checkpointing="none",
                             text_tokens=condition_tokens("validation"), training=False,
@@ -1547,7 +1567,7 @@ def plan(
                     if not cfg.training.train_text_encoder:
                         validation_batch = max((
                             min(entry.get("validation_items", len(entry["validation"])), ds.batch_size,
-                                max(1, ds.native_max_pixels // (w * h)) if legacy_native else ds.batch_size)
+                                max(1, ds.native_max_pixels // (w * h)) if area_native else ds.batch_size)
                             for (w, h), entry in image_shapes.items()
                         ), default=0)
                         if validation_batch:
@@ -1807,7 +1827,7 @@ def plan(
                             data_layout = geometry.resolved_layout(chosen)
                             image_shapes.clear()
                             out["warnings"] = [w for w in out["warnings"] if w.get("code") not in {
-                                "images.padding", "native.execution", "native.execution.v1", "captions.missing", "buckets.small",
+                                "images.padding", "native.execution", "native.execution.v1", "native.execution.area", "captions.missing", "buckets.small",
                                 "distributed.tail",
                             }]
                             counts = _append_data_plan(

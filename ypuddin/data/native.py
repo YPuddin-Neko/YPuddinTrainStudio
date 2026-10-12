@@ -161,7 +161,7 @@ class NativeBatchSampler(BucketBatchSampler):
 
     def __init__(self, *args, batching_version: int = 2, **kwargs):
         super().__init__(*args, **kwargs)
-        if batching_version not in {1, 2}:
+        if batching_version not in {1, 2, 3}:
             raise ValueError("unsupported native batching version")
         self.batching_version = batching_version
 
@@ -197,7 +197,7 @@ class NativeBatchSampler(BucketBatchSampler):
         if self.batching_version == 1:
             return super().state_dict()
         return {
-            **super().state_dict(), "native_batching_version": 2,
+            **super().state_dict(), "native_batching_version": self.batching_version,
             "batch_size": self.batch_size, "world_size": self.world_size,
         }
 
@@ -208,7 +208,7 @@ class NativeBatchSampler(BucketBatchSampler):
             super().load_state_dict(state)
             return
         expected = {
-            "native_batching_version": 2, "batch_size": self.batch_size,
+            "native_batching_version": self.batching_version, "batch_size": self.batch_size,
             "world_size": self.world_size, "seed": self.seed,
         }
         if any(state.get(key) != value for key, value in expected.items()):
@@ -219,13 +219,15 @@ class NativeBatchSampler(BucketBatchSampler):
 def microbatch_indices(
     shapes: Sequence[tuple[int, int]], max_pixels: int, *, batching_version: int = 2,
 ) -> list[list[int]]:
-    """Group equal canvases; the area limit applies to each image independently."""
+    """Group equal canvases, optionally limiting the total area of each forward."""
+    if batching_version not in {1, 2, 3}:
+        raise ValueError("unsupported native batching version")
     groups: dict[tuple[int, int], list[int]] = {}
     for i, shape in enumerate(shapes):
         if shape[0] * shape[1] > max_pixels:
             raise ValueError(f"native image {shape} exceeds the single-image pixel limit")
         groups.setdefault(shape, []).append(i)
-    if batching_version == 1:
+    if batching_version in {1, 3}:
         result = []
         for (width, height), indices in groups.items():
             capacity = max_pixels // (width * height)

@@ -2201,7 +2201,10 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         config = clear_native_vram_resolution(config)
         if isinstance(config.get("dataset"), dict) and config["dataset"].get("resolution_mode") == "native":
-            config = {**config, "dataset": {**config["dataset"], "native_batching_version": 2}}
+            config = {**config, "dataset": {
+                **config["dataset"],
+                "native_batching_version": 3 if config["dataset"].get("native_batch_mode") == "area" else 2,
+            }}
     if body.project_id:
         from .output_binding import bind_output_name
         from .source_roles import normalize_source_roles

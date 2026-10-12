@@ -658,7 +658,7 @@ def _data_fingerprints(
     if cfg.dataset.resolution_mode != "native":
         return current
     fingerprints = list(current)
-    if cfg.dataset.native_batching_version == 2:
+    if cfg.dataset.native_batching_version in {2, 3}:
         semantic_settings = {**settings, "dataset": {
             key: value for key, value in settings["dataset"].items() if key not in NATIVE_INACTIVE_BUCKET_FIELDS
         }}
@@ -734,6 +734,8 @@ def build_data(
                 mode="json",
                 exclude={"sources", "cache_dir", "num_workers", "native_max_pixels_resolved"}
                 | ({"native_batching_version"} if ds.resolution_mode == "bucket" or ds.native_batching_version == 1 else set())
+                | ({"native_batch_mode"}
+                   if ds.resolution_mode == "bucket" or ds.native_batching_version in {1, 2} else set())
                 | ({"image_fit"} if ds.image_fit == "crop" else set())
                 | ({"crop_anchor"} if ds.crop_anchor == "center" or ds.image_fit == "pad" else set())
                 | ({"native_max_pixels_mode"} if ds.native_max_pixels_mode == "custom" else set())

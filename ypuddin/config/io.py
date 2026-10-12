@@ -244,9 +244,16 @@ def _fingerprint(
     if isinstance(dataset, Mapping) and (
         dataset.get("resolution_mode", "bucket") != "native"
         or dataset.get("native_batching_version", 1) == 1
+        or dataset.get("native_batch_mode", "physical") == "physical"
+    ):
+        # The new selection must not change either historical strategy's identity.
+        data["dataset"] = dataset = {key: value for key, value in dataset.items() if key != "native_batch_mode"}
+    if isinstance(dataset, Mapping) and (
+        dataset.get("resolution_mode", "bucket") != "native"
+        or dataset.get("native_batching_version", 1) == 1
     ):
         # Bucket execution is unchanged; version 1 identifies the original native
-        # strategy. Version 2 must never authenticate an old native config hash.
+        # strategy. Later versions must never authenticate an old native config hash.
         data["dataset"] = {key: value for key, value in dataset.items() if key != "native_batching_version"}
     for section, legacy in _LEGACY_VALUES.items():
         values = data.get(section)

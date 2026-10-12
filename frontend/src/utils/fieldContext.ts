@@ -10,7 +10,7 @@ export interface FieldContext {
   config: Record<string, any>;
   english: boolean;
   /** Confirmed native execution policy; null or omitted means it is not known. */
-  nativeBatchingVersion?: 1 | 2 | null;
+  nativeBatchingVersion?: 1 | 2 | 3 | null;
 }
 
 type Runtime = 'cuda' | 'hip' | 'mps' | 'cpu';
@@ -126,8 +126,23 @@ type Lines = Array<string | false | undefined>;
 const join = (lines: Lines) => lines.filter(Boolean).join('\n');
 
 function nativeBatchingHelp(path: string, { config, english, nativeBatchingVersion }: FieldContext): string | undefined {
-  if (config.dataset?.resolution_mode !== 'native' || !['dataset.batch_size', 'loop.grad_accum', 'dataset.native_max_pixels'].includes(path)) return undefined;
+  if (config.dataset?.resolution_mode !== 'native' || !['dataset.batch_size', 'loop.grad_accum', 'dataset.native_max_pixels', 'dataset.native_batch_mode'].includes(path)) return undefined;
   const text = (zh: string, en: string) => english ? en : zh;
+  if (path === 'dataset.native_batch_mode') {
+    if (!config.checkpoint?.resume) return undefined;
+    if (nativeBatchingVersion === 1) return text('沿用恢复点的批次方式。\n同一逻辑批内不同尺寸的图片分开计算；相同尺寸也按图像面积上限拆分，并按实际图片数汇总梯度。', 'Continues with the batch mode saved in the recovery point.\nDifferent sizes within one logical batch run separately; same-size images are also split by the image area limit. Gradients are combined according to the actual image counts.');
+    if (nativeBatchingVersion === 2) return text('沿用恢复点的真实合批方式。\n最终宽高相同的图片按批量大小一起计算；图像面积上限只限制单张画布，尾批按实际图片数训练。', 'Continues with the physical batches saved in the recovery point.\nImages with the same final width and height are processed together up to the batch size. The image area limit applies only to each canvas; a short final batch uses its actual image count.');
+    if (nativeBatchingVersion === 3) return text('沿用恢复点的按面积拆微批方式。\n最终宽高相同的图片先组成逻辑批次，再按图像面积上限拆成微批；按实际图片数汇总梯度，尾批不复制补齐。', 'Continues with the area-based microbatches saved in the recovery point.\nImages with the same final width and height form logical batches, then split into microbatches by the image area limit. Gradients are combined according to the actual image counts, without padding short batches with repeated images.');
+    return text('恢复点校验通过后确定批次方式。', 'The batch mode is determined after the recovery point is verified.');
+  }
+  if (nativeBatchingVersion === 3) {
+    if (path === 'dataset.batch_size') return text('每张显卡每批参与训练的图片数。等效批次 = 批量大小 × 梯度累积 × 显卡数。\n原生分辨率模式下，最终宽高相同的图片按批量大小组成逻辑批次；每批再按图像面积上限拆成微批，分次计算。\n各微批按实际图片数汇总梯度，不足一批的尾部不复制补齐。微批拆分不改变逻辑批次数和训练步数。', 'Images used for training in each batch on each GPU. Effective batch = batch size × gradient accumulation × GPUs.\nIn Native resolution mode, images with the same final width and height form logical batches of the configured size; each batch is split into microbatches that fit the image area limit and run separately.\nMicrobatch gradients are combined according to their actual image counts. A short final batch is not padded with repeated images. Splitting into microbatches does not change logical batch counts or training steps.');
+    if (path === 'loop.grad_accum') return text('累计指定数量的逻辑批次后再更新一次参数；每批内部的微批拆分不增加累积计数。一次更新最多使用批量大小 × 梯度累积 × 显卡数张图片。\n原生分辨率模式下，累积窗口可跨不同尺寸的逻辑批次；尾批或轮末不足累积数量时，按窗口内所有显卡实际参与的图片数计算平均梯度。', 'Updates parameters after the specified number of logical batches; splitting a batch into microbatches does not add accumulation steps. Each update uses at most batch size × gradient accumulation × GPUs images.\nIn Native resolution mode, an accumulation window can span logical batches of different sizes. Short batches or incomplete windows at the end of an epoch use the mean gradient over the actual images across all GPUs in the window.');
+    return join([
+      configFieldHelp(path, undefined, english),
+      text('按面积拆微批时，同一上限还限制每张显卡一次模型计算的画布总面积；每个逻辑批次按此拆分，并按实际图片数汇总梯度。', 'With area-based microbatches, the same limit also caps the total canvas area in one model run on each GPU. Each logical batch is split accordingly, and gradients are combined according to the actual image counts.'),
+    ]);
+  }
   if (nativeBatchingVersion === 2) return path === 'dataset.batch_size'
     ? text('每张显卡每批参与训练的图片数。等效批次 = 批量大小 × 梯度累积 × 显卡数。\n原生分辨率模式下，不同尺寸的图片分开组批；相同尺寸的图片按批量大小一起计算。图像面积上限只限制单张图片的训练尺寸。不足一批的尾部不复制补齐。\n增大批量大小通常会增加同时计算的图片数和训练显存占用。显存不足时，可以减小批量大小，并增加梯度累积来保持等效批次。', 'Images used for training in each batch on each GPU. Effective batch = batch size × gradient accumulation × GPUs.\nIn Native resolution mode, different sizes form separate batches; images with the same final width and height are processed together up to the configured batch size. The image area limit only limits the training size of each image. A short final batch is not padded with repeated images.\nIncreasing batch size usually increases the number of images processed together and training memory use. If GPU memory is insufficient, reduce the batch size and increase gradient accumulation to keep the same effective batch.')
     : configFieldHelp(path, undefined, english);

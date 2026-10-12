@@ -14,7 +14,7 @@ const layouts: Record<string, Section[]> = {
   ],
   dataset: [
     section('sources', ['sources']),
-    section('sizing', ['resolution_mode', 'resolutions', 'native_max_pixels', 'native_max_side', 'image_fit', 'crop_anchor', 'aspect_ratio_limit', 'native_overflow', 'area_tolerance', 'bucket_step', 'bucket_no_upscale'], ['尺寸与分桶', 'Sizing and buckets']),
+    section('sizing', ['resolution_mode', 'resolutions', 'native_batch_mode', 'native_max_pixels', 'native_max_side', 'image_fit', 'crop_anchor', 'aspect_ratio_limit', 'native_overflow', 'area_tolerance', 'bucket_step', 'bucket_no_upscale'], ['尺寸与分桶', 'Sizing and buckets']),
     section('images', ['flip', 'masked_loss'], ['增强与遮罩', 'Augmentation and masks']),
     section('loading', ['text_encoding', 'num_workers', 'cache_latents', 'cache_dir'], ['数据读取与缓存', 'Data loading and caching']),
   ],
@@ -26,7 +26,7 @@ const layouts: Record<string, Section[]> = {
     section('variants', ['dataset.caption.cache_variants', 'dataset.caption.wildcard'], ['文本变化', 'Text variation']),
   ],
   loop: [
-    section('batch', ['gpu_count', 'distributed_strategy', 'dataset.batch_size', 'grad_accum'], ['设备与批量', 'Devices and batches']),
+    section('batch', ['gpu_count', 'distributed_strategy', 'dataset.batch_size', 'dataset.native_batch_mode', 'grad_accum'], ['设备与批量', 'Devices and batches']),
     section('duration', ['epochs', 'max_steps'], ['训练时长', 'Training duration']),
     section('compute', ['mixed_precision', 'seed', 'deterministic'], ['精度与随机性', 'Precision and randomness']),
     section('ema', ['ema', 'ema_decay'], ['权重平均', 'Weight averaging'], { togglesFirst: true }),

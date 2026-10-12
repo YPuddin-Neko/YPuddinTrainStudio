@@ -5,6 +5,7 @@ const VERSION_FIELDS = [
   ['dataset', 'sources'],
   ['dataset', 'cache_dir'],
   ['dataset', 'native_max_pixels_resolved'],
+  ['dataset', 'native_batching_version'],
   ['validation', 'sources'],
   ['checkpoint', 'output_dir'],
   ['checkpoint', 'resume'],
@@ -45,7 +46,11 @@ export function reusableTrainingPreset(config: Record<string, any>): Record<stri
 export function applyTrainingPreset(current: Record<string, any>, preset: Record<string, any>) {
   const reusable = reusableTrainingPreset(preset);
   // A preset cannot change the policy belonging to the retained recovery point.
-  if (current.checkpoint?.resume && reusable.dataset) delete reusable.dataset.native_batching_version;
+  if (current.checkpoint?.resume && reusable.dataset) {
+    for (const field of ['native_batch_mode', 'native_max_pixels_mode', 'native_max_pixels']) delete reusable.dataset[field];
+  } else if (!current.checkpoint?.resume && (current.dataset || reusable.dataset)) {
+    reusable.dataset = { ...reusable.dataset, native_batch_mode: reusable.dataset?.native_batch_mode ?? 'physical' };
+  }
   // Missing opt-ins in older recipes must not inherit an enabled adaptive run.
   reusable.objective = { ...reusable.objective };
   if (!Object.prototype.hasOwnProperty.call(reusable.objective, 'infonoise_enabled')) reusable.objective.infonoise_enabled = false;
@@ -67,9 +72,10 @@ export function applyTrainingPreset(current: Record<string, any>, preset: Record
     for (const field of PRESET_MODEL_FIELDS) delete reusable.model[field];
   }
   const merged = mergeConfig(current, reusable);
-  if (!current.checkpoint?.resume && merged.dataset?.native_max_pixels_resolved != null) {
+  if (!current.checkpoint?.resume && merged.dataset) {
     merged.dataset = { ...merged.dataset };
     delete merged.dataset.native_max_pixels_resolved;
+    delete merged.dataset.native_batching_version;
   }
   if (current.model?.family) merged.model = { ...merged.model, family: current.model.family };
   return merged;

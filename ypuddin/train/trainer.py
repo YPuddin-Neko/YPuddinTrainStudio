@@ -2560,7 +2560,7 @@ class Trainer:
         bs = max(1, self.cfg.dataset.batch_size)
         for indices in by_bucket.values():
             effective_bs = bs
-            if self.cfg.dataset.resolution_mode == "native" and self.cfg.dataset.native_batching_version == 1:
+            if self.cfg.dataset.resolution_mode == "native" and self.cfg.dataset.native_batching_version in {1, 3}:
                 effective_bs = min(
                     bs, max(1, self.bundle.plan.native_max_pixels // ds.items[indices[0]].bucket.area)
                 )

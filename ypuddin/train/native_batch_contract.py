@@ -12,14 +12,19 @@ from ypuddin.config import TrainConfig
 from ypuddin.config.io import config_hash_variants, load_config, write_config
 
 STATE_KEY = "native_batch_contract"
-CURRENT_VERSION = 2
+CURRENT_VERSION = 3
+SUPPORTED_VERSIONS = frozenset({1, 2, 3})
+
+
+def _mode(version: int) -> str:
+    return "physical" if version == 2 else "area"
 
 
 def native_batch_contract(cfg: TrainConfig, *, world_size: int | None = None) -> dict[str, Any] | None:
     if cfg.dataset.resolution_mode != "native":
         return None
     world = cfg.loop.gpu_count if world_size is None else world_size
-    return {
+    contract = {
         "version": cfg.dataset.native_batching_version,
         "batch_size": cfg.dataset.batch_size,
         "grad_accum": cfg.loop.grad_accum,
@@ -27,6 +32,17 @@ def native_batch_contract(cfg: TrainConfig, *, world_size: int | None = None) ->
         "world_size": world,
         "distributed_strategy": cfg.loop.distributed_strategy if world > 1 else "single",
     }
+    if cfg.dataset.native_batching_version == 3:
+        contract["mode"] = "area"
+    return contract
+
+
+def _recipe_mode(config: TrainConfig, version: int) -> TrainConfig | None:
+    """Only an absent selection may inherit the authenticated historical strategy."""
+    if "native_batch_mode" in config.dataset.model_fields_set and config.dataset.native_batch_mode != _mode(version):
+        return None
+    config.dataset.native_batch_mode = _mode(version)
+    return config
 
 
 def read_native_resume_metadata(path: str | Path, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -61,7 +77,7 @@ def authenticated_native_recipe(
     if STATE_KEY in extra and not isinstance(contract, dict):
         return None
     version = contract.get("version") if isinstance(contract, dict) else 1
-    if type(version) is not int or version not in (1, CURRENT_VERSION):
+    if type(version) is not int or version not in SUPPORTED_VERSIONS:
         return None
     original = None
     sources = [source for folder in (path, path.parent, path.parent.parent)
@@ -73,6 +89,9 @@ def authenticated_native_recipe(
             candidate = load_config(source, overrides={"dataset": {"native_batching_version": version}})
         except (OSError, ValueError):
             continue
+        candidate = _recipe_mode(candidate, version)
+        if candidate is None:
+            continue
         if metadata.get("config_hash") in config_hash_variants(candidate):
             original = candidate
             break
@@ -80,7 +99,8 @@ def authenticated_native_recipe(
         candidate = config.model_copy(deep=True)
         candidate.dataset.native_batching_version = version
         candidate.checkpoint.resume = None
-        if metadata.get("config_hash") in config_hash_variants(candidate):
+        candidate = _recipe_mode(candidate, version)
+        if candidate is not None and metadata.get("config_hash") in config_hash_variants(candidate):
             original = candidate
     if original is not None and original.dataset.resolution_mode == "native":
         return original
@@ -152,22 +172,35 @@ def read_native_batch_contract(
 def resolve_native_batching_config(cfg: TrainConfig, *, world_size: int | None = None) -> TrainConfig:
     """An omitted version inherits the frozen checkpoint, never the current default."""
     if not cfg.checkpoint.resume:
-        return cfg
+        if cfg.dataset.resolution_mode != "native":
+            return cfg
+        resolved = cfg.model_copy(deep=True)
+        if cfg.dataset.native_batching_version == 1:
+            # Already frozen legacy jobs retain their original sampler and update boundaries.
+            if "native_batch_mode" in cfg.dataset.model_fields_set and cfg.dataset.native_batch_mode != "area":
+                raise ValueError("旧原生任务使用按面积拆分，不能改用物理批次继续执行。")
+            resolved.dataset.native_batch_mode = "area"
+        else:
+            resolved.dataset.native_batching_version = 3 if cfg.dataset.native_batch_mode == "area" else 2
+        return resolved
     saved = read_native_batch_contract(
         cfg.checkpoint.resume, require_native=cfg.dataset.resolution_mode == "native", config=cfg
     )
     resolved = cfg
     if saved is not None and cfg.dataset.resolution_mode == "native":
         version = saved.get("version") if isinstance(saved, dict) else None
-        if type(version) is not int or version not in (1, CURRENT_VERSION):
+        if type(version) is not int or version not in SUPPORTED_VERSIONS:
             raise ValueError("恢复点的原生批量策略版本无效，不能精确恢复。")
         if (
             "native_batching_version" in cfg.dataset.model_fields_set
             and cfg.dataset.native_batching_version != version
         ):
             raise ValueError("原生批量策略版本与恢复点不同，不能精确恢复；请沿用原任务或从导出权重开始新任务。")
+        if "native_batch_mode" in cfg.dataset.model_fields_set and cfg.dataset.native_batch_mode != _mode(version):
+            raise ValueError("原生批次方式与恢复点不同，不能精确恢复；请沿用原任务或从导出权重开始新任务。")
         resolved = cfg.model_copy(deep=True)
         resolved.dataset.native_batching_version = version
+        resolved.dataset.native_batch_mode = _mode(version)
     validate_native_batch_contract(native_batch_contract(resolved, world_size=world_size), saved)
     return resolved
 
@@ -185,7 +218,8 @@ def validate_native_batch_contract(expected: dict[str, Any] | None, saved: Any) 
         not isinstance(saved, dict)
         or saved.keys() != expected.keys()
         or any(type(saved.get(key)) is not int for key in ("version", "batch_size", "grad_accum", "seed", "world_size"))
-        or saved.get("version") not in (1, CURRENT_VERSION)
+        or saved.get("version") not in SUPPORTED_VERSIONS
+        or (saved.get("version") == 3 and saved.get("mode") != "area")
         or any(saved.get(key, 0) < 1 for key in ("batch_size", "grad_accum", "world_size"))
         or not isinstance(saved.get("distributed_strategy"), str)
     ):

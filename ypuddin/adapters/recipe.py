@@ -56,6 +56,8 @@ def training_recipe_metadata(
         recipe["adapter"] = cfg.adapter.model_dump(mode="json", exclude={"resume_weights"})
     recipe["dataset"]["caption"] = _select(cfg.dataset.caption, _CAPTION_FIELDS)
     if cfg.dataset.resolution_mode == "native":
+        recipe["dataset"]["native_batch_mode"] = cfg.dataset.native_batch_mode
+        recipe["dataset"]["native_batching_version"] = cfg.dataset.native_batching_version
         recipe["dataset"]["resolved_native_max_pixels"] = bundle.plan.native_max_pixels
     counts = Counter(record.source_index for record in bundle.records)
     sources = []

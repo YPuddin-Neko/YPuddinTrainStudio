@@ -233,7 +233,12 @@ class DatasetConfig(_Strict):
         help="分桶在面积和比例限制内选择裁切或补边最少的尺寸；效果相同时优先减少缩放。原生保留每图尺寸，不放大小图，并按最终相同宽高合批。是否保留完整画面由下方图像适配方式控制，超出单图上限按策略缩小或报错。",
         ui_=ui("dataset", order=5, control="select"),
     )
-    native_batching_version: Literal[1, 2] = F(
+    native_batch_mode: Literal["physical", "area"] = F(
+        "physical",
+        help="物理批次将相同宽高的图片一起计算；按面积拆分将同一批图片分次计算并汇总梯度，减少单次计算的显存占用。两种方式保留相同的批量大小和训练步数。",
+        ui_=ui("dataset", order=8, control="select", show_when="dataset.resolution_mode == 'native'"),
+    )
+    native_batching_version: Literal[1, 2, 3] = F(
         2,
         help="原生训练批量策略版本，用于区分任务快照与恢复点。",
         ui_={"x-ui": {"hidden": True}},
@@ -264,7 +269,7 @@ class DatasetConfig(_Strict):
         1_048_576,
         ge=1024,
         le=67_108_864,
-        help="原生模式单张训练画布的像素上限，包含补边，不限制整批总面积。最长边限制和模型对齐同时生效，调大通常需要更多显存。",
+        help="原生模式单张训练画布的像素上限，包含补边。按面积拆分时，也用此上限控制每次计算的图片总面积。最长边限制和模型对齐同时生效，调大通常需要更多显存。",
         ui_=ui("dataset", order=11, show_when="dataset.resolution_mode == 'native'"),
     )
     native_max_side: int = F(

@@ -126,7 +126,7 @@ interface SchemaFormProps {
   computePolicy?: unknown;
   nativeAreaEstimate?: NativeAreaEstimate;
   /** Confirmed policy for this draft; presets without a supplied policy describe new tasks. */
-  nativeBatchingVersion?: 1 | 2 | null;
+  nativeBatchingVersion?: 1 | 2 | 3 | null;
   /** Precision resolved by the server for this exact draft; absent while stale or unchecked. */
   doraPrecision?: DoraPrecisionReport | null;
   /** Preset drafts: model files are optional and keep the training configuration's files when empty. */
@@ -709,9 +709,10 @@ function NativePixelLimit({value, mode, estimate, english, label, onChange, onMo
   </div>;
 }
 
-const nativePixelsHint = (value: unknown, english: boolean, nativeBatchingVersion?: 1 | 2 | null) => {
+const nativePixelsHint = (value: unknown, english: boolean, nativeBatchingVersion?: 1 | 2 | 3 | null) => {
   if (typeof value !== 'number' || value <= 0) return undefined;
   const amount = english ? (value / 1e6).toLocaleString('en', {maximumFractionDigits:2}) : (value / 1e4).toLocaleString('zh-CN', {maximumFractionDigits:value < 1e4 ? 2 : 0});
+  if (nativeBatchingVersion === 3) return english ? `Up to ${amount} megapixels per canvas and per microbatch.` : `单张画布和每个微批总面积均不超过约 ${amount} 万像素。`;
   if (english) return nativeBatchingVersion === 2
     ? `Up to ${amount} megapixels per training canvas; keeps the image aspect ratio.`
     : `Up to ${amount} megapixels; keeps the image aspect ratio.`;
@@ -720,7 +721,7 @@ const nativePixelsHint = (value: unknown, english: boolean, nativeBatchingVersio
     : `最多约 ${amount} 万像素，保持原图比例。`;
 };
 
-function nativeAreaHint(mode: unknown, estimate: NativeAreaEstimate | undefined, english: boolean, nativeBatchingVersion?: 1 | 2 | null) {
+function nativeAreaHint(mode: unknown, estimate: NativeAreaEstimate | undefined, english: boolean, nativeBatchingVersion?: 1 | 2 | 3 | null) {
   const vram = mode === 'auto_vram';
   if (estimate?.state === 'error') return english ? 'Could not calculate the area limit. Recalculate the training plan.' : '面积上限计算失败，请重新计算训练计划。';
   if (estimate?.state === 'loading') return english ? 'Calculating the area limit…' : '正在计算面积上限…';
@@ -920,7 +921,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
   const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', image_fit: 'crop', ...value.dataset } };
   const weights = modelFamilyWeights(family);
-  const fieldContext: FieldContext = { family, config: value, english, nativeBatchingVersion: nativeBatchingVersion === undefined && preset ? 2 : nativeBatchingVersion };
+  const fieldContext: FieldContext = { family, config: value, english, nativeBatchingVersion: nativeBatchingVersion === undefined && preset ? value.dataset?.native_batch_mode === 'area' ? 3 : 2 : nativeBatchingVersion };
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
@@ -955,7 +956,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (value.adapter?.algo === 'full' && ['adapter.rank', 'adapter.alpha', 'adapter.rs_lora', 'adapter.init', 'adapter.dropout', 'adapter.rank_dropout', 'adapter.conv_rank', 'adapter.conv_alpha'].includes(fullPathKey)) return null;
     // Convolutions that follow a full LoKr rank take its fixed scale too.
     if (fullPathKey === 'adapter.conv_alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && value.adapter?.conv_rank == null) return null;
-    const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' && prop['x-ui']?.group === 'training' ? {group:'model'} : {}), ...(compact && fullPathKey === 'dataset.batch_size' ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}), ...(fullPathKey === 'adapter.layer_types' && value.training?.mode === 'full' ? {group: compact ? 'model' : 'training'} : {}) };
+    const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' && prop['x-ui']?.group === 'training' ? {group:'model'} : {}), ...(compact && ['dataset.batch_size', 'dataset.native_batch_mode'].includes(fullPathKey) ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}), ...(fullPathKey === 'adapter.layer_types' && value.training?.mode === 'full' ? {group: compact ? 'model' : 'training'} : {}) };
     if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
 
@@ -971,7 +972,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup) && !(compact && parentPath[0] === 'training' && groupFilter.includes('training'))) return null;
-    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${intervalRule ? `${fullPathKey}_enabled` : ''} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs checkpoint.save_state_every_epochs_enabled epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto auto_vram custom 自动 分辨率优先 显存优先 resolution first VRAM first 自定义' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
+    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${intervalRule ? `${fullPathKey}_enabled` : ''} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs checkpoint.save_state_every_epochs_enabled epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto auto_vram custom 自动 分辨率优先 显存优先 resolution first VRAM first 自定义' : fullPathKey === 'dataset.native_batch_mode' ? 'physical area 真实合批 按面积拆微批 microbatch' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
     const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || intervalRule && e.loc === `${fullPathKey}_enabled` || fullPathKey === 'checkpoint.save_state_every_steps' && ['checkpoint.save_state_every_epochs', 'checkpoint.save_state_every_epochs_enabled'].includes(e.loc || '') || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode');
     const revealOutputName = versionSources && fullPathKey === 'checkpoint.name' && (editOutput === 'name' || !!errorItem || !!search.trim());
@@ -1192,6 +1193,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <StudioSelect aria-label={fieldLabel} value={fieldValue || family.default_preset || ''} data-testid="adapter-preset-select"
           onValueChange={next => onChange(setNestedValue(value,path,next))} options={(family.presets || []).map(preset=>({value:preset.name,label:configPresetLabel(preset.name, preset.description, family.default_preset, english)}))}/>
       );
+    } else if (fullPathKey === 'dataset.native_batch_mode') {
+      const resumed = !!value.checkpoint?.resume && !preset;
+      const confirmed = fieldContext.nativeBatchingVersion;
+      const mode = resumed ? confirmed === 2 ? 'physical' : confirmed === 1 || confirmed === 3 ? 'area' : value.dataset?.native_batch_mode ?? '' : fieldValue ?? 'physical';
+      control = <StudioSelect aria-label={fieldLabel} value={mode} disabled={resumed}
+        placeholder={english ? 'Read from the recovery point' : '由恢复点确定'}
+        onValueChange={next => onChange(setNestedValue(value, path, next))}
+        options={['physical', 'area'].map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
     } else if (fullPathKey === 'dataset.text_encoding' && family) {
       // 文本编码选项受族 text_modes 约束（krea2 无 online）
       control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'} data-testid="text-encoding-select"
@@ -1384,9 +1393,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : fullPathKey === 'adapter.dora_compute_mode' ? fieldValue === 'comfyui'
         ? (english ? 'Reduces computation differences before and after weight export.' : '减少权重导出前后的计算差异。')
         : (english ? 'Computes DoRA in FP32.' : '使用 FP32 计算 DoRA。')
+      : fullPathKey === 'dataset.native_batch_mode' && value.checkpoint?.resume && !preset ? (english ? 'Continues with the batch mode saved in the recovery point.' : '继续训练沿用恢复点的批次方式。')
       : fullPathKey === 'dataset.native_max_pixels' ? ['auto', 'auto_vram'].includes(value.dataset?.native_max_pixels_mode)
         ? nativeAreaHint(value.dataset?.native_max_pixels_mode, nativeAreaEstimate, english, fieldContext.nativeBatchingVersion)
         : nativePixelsHint(fieldValue, english, fieldContext.nativeBatchingVersion) || (fieldContext.nativeBatchingVersion === 2 ? configFieldHint(fullPathKey, english) : english ? 'Largest area allowed for one image.' : '单张图片允许的最大面积。')
+      : fullPathKey === 'dataset.batch_size' && value.dataset?.resolution_mode === 'native' && fieldContext.nativeBatchingVersion === 3
+        ? (english ? 'Maximum images in each logical batch per GPU; split by area before computation.' : '每卡逻辑批的图片数上限，计算时按面积拆成微批。')
       : fullPathKey === 'dataset.batch_size' && value.dataset?.resolution_mode === 'native' && fieldContext.nativeBatchingVersion !== 2
         ? (english ? 'Images in each batch on every GPU.' : '每张显卡每批的图片数。')
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')

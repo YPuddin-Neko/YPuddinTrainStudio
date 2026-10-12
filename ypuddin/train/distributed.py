@@ -130,7 +130,7 @@ class _TrainingGraph(nn.Module):
         self._native_empty_slot = (
             nn.Parameter(torch.zeros((), device=trainer.device))
             if trainer.cfg.dataset.resolution_mode == "native"
-            and trainer.cfg.dataset.native_batching_version == 2
+            and trainer.cfg.dataset.native_batching_version in {2, 3}
             and trainer.cfg.loop.distributed_strategy == "ddp" else None
         )
         # Trainer is deliberately not a child Module: it owns caches, optimizer and I/O.
@@ -295,7 +295,7 @@ class DistributedTrainer(Trainer):
         ).plan()
         if (
             self.cfg.dataset.resolution_mode == "native"
-            and self.cfg.dataset.native_batching_version == 2
+            and self.cfg.dataset.native_batching_version in {2, 3}
             and self.cfg.loop.distributed_strategy == "fsdp"
             and len(unsharded) % self.distributed.world_size
         ):
@@ -304,7 +304,7 @@ class DistributedTrainer(Trainer):
                 "请调整批量大小、数据或显卡数量，也可改用数据并行。"
             )
         usable = len(unsharded) - len(unsharded) % self.distributed.world_size
-        native = self.cfg.dataset.resolution_mode == "native" and self.cfg.dataset.native_batching_version == 2
+        native = self.cfg.dataset.resolution_mode == "native" and self.cfg.dataset.native_batching_version in {2, 3}
         self.emit(
             "distributed.plan",
             strategy=self.cfg.loop.distributed_strategy,
@@ -464,7 +464,7 @@ class DistributedTrainer(Trainer):
         self._epoch_hooks(epoch + 1)
 
     def _distributed_microbatches(self, batch):
-        """One same-size forward per slot; empty DDP slots use only the reducer."""
+        """Align rank forwards; empty DDP slots use only the reducer."""
         if self.cfg.dataset.resolution_mode != "native":
             return [(batch, len(batch["caption"]))]
         parts = batch["microbatches"]
@@ -474,6 +474,19 @@ class DistributedTrainer(Trainer):
             result = [(part, len(part["caption"])) for part in parts]
             filler = min(parts, key=lambda part: len(part["caption"]) * part["bucket"][0] * part["bucket"][1])
             result.extend(({**filler, "_adaptive_observe": False}, 0) for _ in range(slots.item() - len(parts)))
+            return result
+        if self.cfg.dataset.native_batching_version == 3:
+            slots = torch.tensor(len(parts), device=self.device, dtype=torch.int64)
+            dist.all_reduce(slots, op=dist.ReduceOp.MAX)
+            result = [(part, len(part["caption"])) for part in parts]
+            if self.cfg.loop.distributed_strategy == "fsdp":
+                if not parts:
+                    raise ValueError("原生显存分片需要各卡都有真实批次；请调整批量大小、数据或显卡数量。")
+                filler = min(parts, key=lambda part: len(part["caption"]) * part["bucket"][0] * part["bucket"][1])
+                empty = {**filler, "_adaptive_observe": False}
+            else:
+                empty = {"_native_empty": True}
+            result.extend((empty, 0) for _ in range(int(slots.item()) - len(parts)))
             return result
         if not parts:
             if self.cfg.loop.distributed_strategy == "fsdp":
