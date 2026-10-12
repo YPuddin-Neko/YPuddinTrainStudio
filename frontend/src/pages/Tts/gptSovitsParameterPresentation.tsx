@@ -1,5 +1,6 @@
 import type React from 'react';
 import ConfigHelp from '../../components/ConfigHelp';
+import ConfigFieldKey from '../../components/ConfigFieldKey';
 import Switch from '../../components/Switch';
 import StudioSelect from '../../components/StudioSelect';
 import TtsEnvironmentPanel from '../../components/TtsEnvironmentPanel';
@@ -49,7 +50,7 @@ export function gptSovitsParameterGroups({ draft, properties, problems, orderedG
       {problem && <p id={`${id}-error`} role="alert" className="config-field-error">{problem}</p>}
     </div>;
     return <div key={field} data-field={field} className={`config-field${pathField ? ' config-field-wide' : ''}${property.type === 'boolean' ? ' config-field-boolean' : ''}${problem ? ' config-field-invalid' : ''}`}>
-      <div className="config-field-heading"><label htmlFor={pathField ? undefined : id}>{copy.label}{isScientificField(field) && <TtsScientificBadge value={value} english={english}/>}</label><span className="config-field-reference"><code tabIndex={0} className="config-field-key">{field}</code>{help && <ConfigHelp label={`${copy.label} · ${text('说明', 'Help')}`}>{help}</ConfigHelp>}</span></div>
+      <div className="config-field-heading"><label htmlFor={pathField ? undefined : id}>{copy.label}{isScientificField(field) && <TtsScientificBadge value={value} english={english}/>}</label><span className="config-field-reference"><ConfigFieldKey>{field}</ConfigFieldKey>{help && <ConfigHelp label={`${copy.label} · ${text('说明', 'Help')}`}>{help}</ConfigHelp>}</span></div>
       <fieldset className={`config-field-control${pathField ? ' model-path-control' : ''}`} disabled={readOnly || saving || schemaUnavailable}>
         {property.enum ? <StudioSelect id={id} aria-label={copy.label} aria-invalid={!!problem} aria-describedby={describedBy} value={String(value)} options={property.enum.map(option => ({ value: String(option), label: optionLabel(field, option) }))} onValueChange={next => change(field, next)}/>
             : pathField ? <PathInput ariaLabel={copy.label} value={String(value)} onChange={next => change(field, next)} directoryOnly={field === 'trainer_path' || field === 'model_path'}/>

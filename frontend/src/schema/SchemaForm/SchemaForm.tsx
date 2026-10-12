@@ -21,6 +21,7 @@ import { scientificText } from '../../utils/numberText';
 import StudioSelect, { type StudioSelectOption } from '../../components/StudioSelect';
 import Switch from '../../components/Switch';
 import ConfigHelp from '../../components/ConfigHelp';
+import ConfigFieldKey from '../../components/ConfigFieldKey';
 import CaptionFormatSelect from '../../components/CaptionFormatSelect';
 import './config-fields.css';
 import { optionalValueLabel } from './optionalValues';
@@ -1431,7 +1432,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
             {scientific && <span className="config-field-badge" title={english ? 'The same value in scientific notation' : '同一数值的科学计数法'}><span className="sr-only">{english ? ', scientific notation ' : '，科学计数法 '}</span>{scientific}</span>}
           </label>
           <span className="config-field-reference">
-            <code className="config-field-key" tabIndex={0} title={fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs_enabled ? 'checkpoint.save_state_every_epochs' : fullPathKey}>{fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs_enabled ? 'checkpoint.save_state_every_epochs' : fullPathKey}</code>
+            <ConfigFieldKey>{fullPathKey === 'checkpoint.save_state_every_steps' && value.checkpoint?.save_state_every_epochs_enabled ? 'checkpoint.save_state_every_epochs' : fullPathKey}</ConfigFieldKey>
             {helpButton}
           </span>
         </div>
@@ -1449,7 +1450,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       groups[groupName].fields.push(<div key="adapter.parameter_mode" id={fieldValue === 'full' ? 'field-adapter.rank' : 'field-adapter.parameter_mode'} data-testid="field-adapter.parameter_mode" data-field-path="adapter.parameter_mode" className={`config-field${fieldValue === 'full' && errorItem ? ' config-field-invalid' : ''}`}>
         <div className="config-field-heading">
           <label htmlFor={modeId}>{lokrModeLabel}</label>
-          <span className="config-field-reference"><code className="config-field-key" tabIndex={0} title={fullPathKey}>adapter.rank</code><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha.\nLow rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。\n低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
+          <span className="config-field-reference"><ConfigFieldKey title={fullPathKey}>adapter.rank</ConfigFieldKey><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha.\nLow rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。\n低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
         </div>
         <div className="config-field-control"><StudioSelect id={modeId} aria-label={lokrModeLabel} disabled={readOnly} value={fieldValue === 'full' ? 'full' : 'low_rank'}
           aria-invalid={fieldValue === 'full' && !!errorItem}

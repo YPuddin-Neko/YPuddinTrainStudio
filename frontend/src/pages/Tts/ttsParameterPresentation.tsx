@@ -1,5 +1,6 @@
 import type React from 'react';
 import ConfigHelp from '../../components/ConfigHelp';
+import ConfigFieldKey from '../../components/ConfigFieldKey';
 import CheckboxSelect from '../../components/CheckboxSelect';
 import Switch from '../../components/Switch';
 import TtsEnvironmentPanel from '../../components/TtsEnvironmentPanel';
@@ -22,7 +23,7 @@ export function ttsParameterGroups({ draft, properties, problems, orderedGroups,
     const disabled = readOnly || saving || !!targetOwners[field] && draft[targetOwners[field]!] !== true;
     const describedBy = `${copy.hint ? `${id}-hint` : ''}${problem ? ` ${id}-error` : ''}`.trim() || undefined;
     const help = <ConfigHelp label={`${copy.label} · ${text('说明', 'Help')}`}>{copy.help}</ConfigHelp>;
-    const heading = <div className="config-field-heading"><label htmlFor={property.type === 'string' || property.type === 'array' ? undefined : id}>{copy.label}{field === 'learning_rate' && <TtsScientificBadge value={value} english={english}/>}</label><span className="config-field-reference"><code tabIndex={0} className="config-field-key">{field}</code>{help}</span></div>;
+    const heading = <div className="config-field-heading"><label htmlFor={property.type === 'string' || property.type === 'array' ? undefined : id}>{copy.label}{field === 'learning_rate' && <TtsScientificBadge value={value} english={english}/>}</label><span className="config-field-reference"><ConfigFieldKey>{field}</ConfigFieldKey>{help}</span></div>;
     if (property.type === 'boolean') {
       const target = Object.keys(targetOwners).find(name => targetOwners[name as TtsField] === field) as TtsField;
       return <section key={field} data-field={field} className="parameter-toggle-layout tts-lora-component" aria-labelledby={`${id}-title`}>
