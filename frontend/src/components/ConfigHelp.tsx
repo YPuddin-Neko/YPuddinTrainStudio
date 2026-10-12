@@ -102,8 +102,11 @@ export default function ConfigHelp({ label, children }: { label: string; childre
       if (target instanceof Node && !button.contains(target) && !popup.contains(target)) close();
     };
     const scrolled = (event: Event) => {
+      const target = event.target;
+      // A parameter key scrolls within its own box without moving the help anchor.
+      if (target instanceof Element && target.matches('.config-field-key')) return;
       // Scrolling a long explanation must remain possible without dismissing it.
-      if (!(event.target instanceof Node && popup.contains(event.target))) close();
+      if (!(target instanceof Node && popup.contains(target))) close();
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
