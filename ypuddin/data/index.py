@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sqlite3
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -213,19 +214,54 @@ class IndexDB:
     def __init__(self, path: str | Path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(path), timeout=30)
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS files_v2 (path TEXT PRIMARY KEY, signature TEXT, hash TEXT, width INTEGER, height INTEGER, has_alpha INTEGER)"
-        )
-        # Rows from before carry NULL and are measured on their next scan, without rehashing the file.
-        if "transparent" not in {row[1] for row in self.conn.execute("PRAGMA table_info(files_v2)")}:
-            self.conn.execute("ALTER TABLE files_v2 ADD COLUMN transparent INTEGER")
-        # Whole-file digests of images and sidecars, kept across restarts and keyed by file identity.
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS file_digests (path TEXT PRIMARY KEY, signature TEXT NOT NULL,"
-            " digest TEXT NOT NULL)"
-        )
-        self.conn.commit()
+        try:
+            # Simultaneous first opens can return SQLITE_BUSY here without
+            # invoking SQLite's busy timeout while the journal mode changes.
+            deadline = time.monotonic() + 30
+
+            def remaining_timeout():
+                self.conn.execute(f"PRAGMA busy_timeout={max(0, int((deadline - time.monotonic()) * 1000))}")
+
+            while True:
+                try:
+                    remaining_timeout()
+                    self.conn.execute("PRAGMA journal_mode=WAL").fetchone()
+                    break
+                except sqlite3.OperationalError as error:
+                    code = getattr(error, "sqlite_errorcode", None)
+                    # Python 3.10 has neither sqlite_errorcode nor result-code
+                    # constants. SQLite's BUSY/LOCKED primary codes are 5/6.
+                    locked = (code & 0xFF in (5, 6)) if code is not None else (
+                        str(error) in {"database is locked", "database table is locked", "database schema is locked"}
+                        or str(error).startswith(("database table is locked: ", "database schema is locked: "))
+                    )
+                    if not locked or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(min(0.02, max(0, deadline - time.monotonic())))
+            columns = {row[1] for row in self.conn.execute("PRAGMA table_info(files_v2)")}
+            digests = self.conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='file_digests'").fetchone()
+            if "transparent" in columns and digests:
+                self.conn.execute("PRAGMA busy_timeout=30000")
+                return
+            # Serialize the schema check with migration across threads and
+            # processes; an existing index needs no write transaction to open.
+            remaining_timeout()
+            self.conn.execute("BEGIN IMMEDIATE")
+            self.conn.execute(
+                "CREATE TABLE IF NOT EXISTS files_v2 (path TEXT PRIMARY KEY, signature TEXT, hash TEXT, width INTEGER, height INTEGER, has_alpha INTEGER)"
+            )
+            # Older rows are measured on their next scan without rehashing.
+            if "transparent" not in {row[1] for row in self.conn.execute("PRAGMA table_info(files_v2)")}:
+                self.conn.execute("ALTER TABLE files_v2 ADD COLUMN transparent INTEGER")
+            self.conn.execute(
+                "CREATE TABLE IF NOT EXISTS file_digests (path TEXT PRIMARY KEY, signature TEXT NOT NULL,"
+                " digest TEXT NOT NULL)"
+            )
+            self.conn.commit()
+            self.conn.execute("PRAGMA busy_timeout=30000")
+        except BaseException:
+            self.conn.close()
+            raise
 
     def digests(self, files: dict[str, str]) -> dict[str, str]:
         """Stored digests of ``{path: stat signature}`` whose file is unchanged since it was read."""

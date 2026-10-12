@@ -389,7 +389,31 @@ class PlanParams(_Out):
 class PlanActivation(_Out):
     w: int
     h: int
-    mb: float
+    mb: float | None
+
+
+class PlanVaePhase(_Out):
+    width: int
+    height: int
+    batch_size: int
+    tile_pixels: int | None = None
+    attention_tokens: int
+    dtype: str
+    attention_backend: str
+    query_chunking: bool
+    mode: Literal["cached", "online"] | None = None
+    weights_mb: float
+    resident_mb_estimate: float | None = None
+    workspace_mb_estimate: float
+    reserved_workspace_mb_estimate: float
+    capacity_workspace_mb_estimate: float
+    attention_workspace_mb_estimate: float
+    allocated_peak_mb_estimate: float
+    peak_mb_estimate: float
+    capacity_peak_mb_estimate: float
+    workspace_reductions_mb: dict[str, float] = Field(default_factory=dict)
+    reserved_workspace_reductions_mb: dict[str, float] = Field(default_factory=dict)
+    capacity_workspace_reductions_mb: dict[str, float] = Field(default_factory=dict)
 
 
 class PlanMemory(_Out):
@@ -399,15 +423,19 @@ class PlanMemory(_Out):
     swapped_mb: float = 0
     text_encoder_mb: float = 0
     adapter_mb: float = 0
-    optimizer_mb: float = 0
+    optimizer_mb: float | None = 0
     cpu_optimizer_mb: float = 0
     cpu_ema_mb: float = 0
-    host_memory_mb_estimate: float = 0
+    host_memory_mb_estimate: float | None = 0
     gpu_memory_budget_mb: float | None = None
     gradients_mb: float = 0
     estimate_scope: Literal["per_device"] = "per_device"
     communication_mb_estimate: float = 0
-    optimizer_workspace_mb_estimate: float = 0
+    optimizer_workspace_mb_estimate: float | None = 0
+    evaluation_snapshot_mb_estimate: float = 0
+    evaluation_host_snapshot_mb_estimate: float = 0
+    evaluation_restore_workspace_mb_estimate: float = 0
+    evaluation_restore_host_workspace_mb_estimate: float = 0
     adapter_graph_mb_estimate: float = 0
     adapter_workspace_mb_estimate: float = 0
     auxiliary_activations_mb_estimate: float = 0
@@ -417,11 +445,27 @@ class PlanMemory(_Out):
     sharding: dict[str, Any] | None = None
     heuristic: bool = True
     activations_mb_by_bucket: list[PlanActivation] = Field(default_factory=list)
+    activation_estimate_method: str | None = None
+    activation_includes_gradients: bool = False
+    activation_includes_adapter_graph: bool = False
+    validation_allocated_peak_mb_estimate: float | None = None
+    validation_capacity_mb_estimate: float | None = None
     peak_mb_estimate: float | None = None
+    allocated_peak_mb_estimate: float | None = None
+    capacity_peak_mb_estimate: float | None = None
+    cache_phase_peak_mb_estimates: dict[str, float | None] | None = None
+    cache_phase_allocated_mb_estimates: dict[str, float | None] | None = None
+    cache_phase_capacity_mb_estimates: dict[str, float | None] | None = None
+    checkpointing_capacity_mb_estimates: dict[str, float | None] | None = None
+    vae_setting_capacity_mb_estimates: dict[str, float | None] | None = None
+    vae_setting_peak_mb_estimates: dict[str, float | None] | None = None
+    image_encoding: PlanVaePhase | None = None
+    preview_decoding: PlanVaePhase | None = None
     unavailable_issue: ConfigError | None = None
     # Peak under each activation checkpointing mode ("none", "block", "unsloth").
-    checkpointing_peak_mb_estimates: dict[str, float] | None = None
+    checkpointing_peak_mb_estimates: dict[str, float | None] | None = None
     training_peak_mb_estimate: float | None = None
+    training_capacity_mb_estimate: float | None = None
     known_training_residency_mb: float | None = None
     unestimated_components: list[str] = Field(default_factory=list)
     gpu_total_mb: float | None = None

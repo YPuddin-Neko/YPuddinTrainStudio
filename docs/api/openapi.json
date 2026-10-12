@@ -26304,7 +26304,14 @@
             "title": "H"
           },
           "mb": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Mb"
           }
         },
@@ -26604,7 +26611,14 @@
             "default": 0
           },
           "optimizer_mb": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Optimizer Mb",
             "default": 0
           },
@@ -26619,7 +26633,14 @@
             "default": 0
           },
           "host_memory_mb_estimate": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Host Memory Mb Estimate",
             "default": 0
           },
@@ -26651,8 +26672,35 @@
             "default": 0
           },
           "optimizer_workspace_mb_estimate": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Optimizer Workspace Mb Estimate",
+            "default": 0
+          },
+          "evaluation_snapshot_mb_estimate": {
+            "type": "number",
+            "title": "Evaluation Snapshot Mb Estimate",
+            "default": 0
+          },
+          "evaluation_host_snapshot_mb_estimate": {
+            "type": "number",
+            "title": "Evaluation Host Snapshot Mb Estimate",
+            "default": 0
+          },
+          "evaluation_restore_workspace_mb_estimate": {
+            "type": "number",
+            "title": "Evaluation Restore Workspace Mb Estimate",
+            "default": 0
+          },
+          "evaluation_restore_host_workspace_mb_estimate": {
+            "type": "number",
+            "title": "Evaluation Restore Host Workspace Mb Estimate",
             "default": 0
           },
           "adapter_graph_mb_estimate": {
@@ -26717,6 +26765,49 @@
             "type": "array",
             "title": "Activations Mb By Bucket"
           },
+          "activation_estimate_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activation Estimate Method"
+          },
+          "activation_includes_gradients": {
+            "type": "boolean",
+            "title": "Activation Includes Gradients",
+            "default": false
+          },
+          "activation_includes_adapter_graph": {
+            "type": "boolean",
+            "title": "Activation Includes Adapter Graph",
+            "default": false
+          },
+          "validation_allocated_peak_mb_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Allocated Peak Mb Estimate"
+          },
+          "validation_capacity_mb_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Capacity Mb Estimate"
+          },
           "peak_mb_estimate": {
             "anyOf": [
               {
@@ -26727,6 +26818,174 @@
               }
             ],
             "title": "Peak Mb Estimate"
+          },
+          "allocated_peak_mb_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocated Peak Mb Estimate"
+          },
+          "capacity_peak_mb_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity Peak Mb Estimate"
+          },
+          "cache_phase_peak_mb_estimates": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Phase Peak Mb Estimates"
+          },
+          "cache_phase_allocated_mb_estimates": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Phase Allocated Mb Estimates"
+          },
+          "cache_phase_capacity_mb_estimates": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Phase Capacity Mb Estimates"
+          },
+          "checkpointing_capacity_mb_estimates": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpointing Capacity Mb Estimates"
+          },
+          "vae_setting_capacity_mb_estimates": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vae Setting Capacity Mb Estimates"
+          },
+          "vae_setting_peak_mb_estimates": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vae Setting Peak Mb Estimates"
+          },
+          "image_encoding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanVaePhase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preview_decoding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanVaePhase"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "unavailable_issue": {
             "anyOf": [
@@ -26742,7 +27001,14 @@
             "anyOf": [
               {
                 "additionalProperties": {
-                  "type": "number"
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "type": "object"
               },
@@ -26762,6 +27028,17 @@
               }
             ],
             "title": "Training Peak Mb Estimate"
+          },
+          "training_capacity_mb_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Training Capacity Mb Estimate"
           },
           "known_training_residency_mb": {
             "anyOf": [
@@ -26950,6 +27227,148 @@
           "items"
         ],
         "title": "PlanSourceBalance"
+      },
+      "PlanVaePhase": {
+        "properties": {
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "batch_size": {
+            "type": "integer",
+            "title": "Batch Size"
+          },
+          "tile_pixels": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tile Pixels"
+          },
+          "attention_tokens": {
+            "type": "integer",
+            "title": "Attention Tokens"
+          },
+          "dtype": {
+            "type": "string",
+            "title": "Dtype"
+          },
+          "attention_backend": {
+            "type": "string",
+            "title": "Attention Backend"
+          },
+          "query_chunking": {
+            "type": "boolean",
+            "title": "Query Chunking"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "cached",
+                  "online"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "weights_mb": {
+            "type": "number",
+            "title": "Weights Mb"
+          },
+          "resident_mb_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resident Mb Estimate"
+          },
+          "workspace_mb_estimate": {
+            "type": "number",
+            "title": "Workspace Mb Estimate"
+          },
+          "reserved_workspace_mb_estimate": {
+            "type": "number",
+            "title": "Reserved Workspace Mb Estimate"
+          },
+          "capacity_workspace_mb_estimate": {
+            "type": "number",
+            "title": "Capacity Workspace Mb Estimate"
+          },
+          "attention_workspace_mb_estimate": {
+            "type": "number",
+            "title": "Attention Workspace Mb Estimate"
+          },
+          "allocated_peak_mb_estimate": {
+            "type": "number",
+            "title": "Allocated Peak Mb Estimate"
+          },
+          "peak_mb_estimate": {
+            "type": "number",
+            "title": "Peak Mb Estimate"
+          },
+          "capacity_peak_mb_estimate": {
+            "type": "number",
+            "title": "Capacity Peak Mb Estimate"
+          },
+          "workspace_reductions_mb": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Workspace Reductions Mb"
+          },
+          "reserved_workspace_reductions_mb": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Reserved Workspace Reductions Mb"
+          },
+          "capacity_workspace_reductions_mb": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Capacity Workspace Reductions Mb"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "width",
+          "height",
+          "batch_size",
+          "attention_tokens",
+          "dtype",
+          "attention_backend",
+          "query_chunking",
+          "weights_mb",
+          "workspace_mb_estimate",
+          "reserved_workspace_mb_estimate",
+          "capacity_workspace_mb_estimate",
+          "attention_workspace_mb_estimate",
+          "allocated_peak_mb_estimate",
+          "peak_mb_estimate",
+          "capacity_peak_mb_estimate"
+        ],
+        "title": "PlanVaePhase"
       },
       "PreprocessOptions": {
         "properties": {

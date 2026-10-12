@@ -7,10 +7,36 @@ of waiting in the queue.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from ypuddin.train.memory_budget import HEADROOM, available_memory_budget, device_capacity
 from ypuddin.train.memory_budget import host_memory_error as host_memory_error
+
+
+def admission_estimate(memory: dict[str, Any], *, cache_only: bool = False) -> float | None:
+    """Use the planner's capacity estimate, or a legacy payload's original peak.
+
+    An explicit unknown stays unknown. Cache workers only run encoding phases,
+    so their admission value must not inherit the training or preview peak.
+    """
+    if cache_only:
+        key = (
+            "cache_phase_capacity_mb_estimates"
+            if "cache_phase_capacity_mb_estimates" in memory
+            else "cache_phase_peak_mb_estimates"
+        )
+        phases = memory.get(key)
+        values = list(phases.values()) if isinstance(phases, dict) else []
+        return max(values) if values and all(
+            type(value) in (int, float) and math.isfinite(value) and value >= 0
+            for value in values
+        ) else None
+    value = memory.get(
+        "capacity_peak_mb_estimate",
+        memory.get("peak_mb_estimate"),
+    )
+    return value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
 
 
 def gb(mb: float) -> str:

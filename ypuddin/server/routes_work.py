@@ -2337,21 +2337,10 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         **memory_target,
     )
     memory = preflight.get("memory") or {}
-    estimated_peak_mb = memory.get("peak_mb_estimate")
+    from .memory_fit import admission_estimate, capacity_shortfall, host_memory_error, shortfall_error
+
+    estimated_peak_mb = admission_estimate(memory, cache_only=body.type == "cache")
     estimated_host_mb = memory.get("host_memory_mb_estimate") if body.type == "train" else None
-    if body.type == "cache":
-        # This worker only caches text/latent features; it never materializes
-        # the trainable backbone, gradients or optimizer. Missing/partial phase
-        # estimates stay unknown instead of inheriting the training peak.
-        phases = memory.get("cache_phase_peak_mb_estimates")
-        values = list(phases.values()) if isinstance(phases, dict) else []
-        estimated_peak_mb = (
-            max(values)
-            if values
-            and all(type(value) in (int, float) and math.isfinite(value) and value >= 0 for value in values)
-            else None
-        )
-    from .memory_fit import capacity_shortfall, host_memory_error, shortfall_error
 
     if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
         shortfall := capacity_shortfall(estimated_peak_mb, selected or devices, cfg.loop.gpu_count)

@@ -552,7 +552,8 @@ def _cuda_inventory() -> list[dict[str, Any]]:
 
     Torch device properties initialize a primary CUDA context. Keep that allocation
     out of the long-lived HTTP process; the worker inherits device masks and ordering.
-    Live memory readings come from the driver, not this temporary process.
+    Live memory readings come from the driver, not this temporary process. Keep
+    the runtime capacity separate from the driver's physical total for admission.
     """
     code = """
 import json, torch
@@ -560,6 +561,7 @@ out = []
 for i in range(torch.cuda.device_count() if torch.cuda.is_available() else 0):
     p = torch.cuda.get_device_properties(i)
     out.append(dict(index=i, name=p.name, mem_total_mb=round(p.total_memory / 2**20),
+                    memory_capacity_mb=p.total_memory / 2**20,
                     uuid=str(p.uuid) if getattr(p, 'uuid', None) else None,
                     pci_bus_id=str(p.pci_bus_id) if getattr(p, 'pci_bus_id', None) else None,
                     compute_capability=[p.major, p.minor]))

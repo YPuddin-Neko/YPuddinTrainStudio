@@ -28,8 +28,13 @@ const vaeMemory = (memory: Plan['memory'] | undefined) => (memory ?? {}) as VaeM
 function memoryFixes(memory: Plan['memory'], native: boolean, text: (zh: string, en: string) => string) {
   const suggestions = memory?.suggestions || [];
   const about = (peak: number | null | undefined) => peak == null ? '' : text(`（预计 ${formatBytesMB(peak)}）`, ` (about ${formatBytesMB(peak)})`);
-  const estimate = (mode: string) => about(memory?.checkpointing_peak_mb_estimates?.[mode]);
-  const vaeEstimate = (path: string) => about(vaeMemory(memory).vae_setting_peak_mb_estimates?.[path]);
+  // Older responses omit capacity estimates; an explicit null remains unknown.
+  const checkpointing = memory?.checkpointing_capacity_mb_estimates === undefined
+    ? memory?.checkpointing_peak_mb_estimates : memory.checkpointing_capacity_mb_estimates;
+  const vaeSettings = memory?.vae_setting_capacity_mb_estimates === undefined
+    ? vaeMemory(memory).vae_setting_peak_mb_estimates : memory.vae_setting_capacity_mb_estimates;
+  const estimate = (mode: string) => about(checkpointing?.[mode]);
+  const vaeEstimate = (path: string) => about(vaeSettings?.[path]);
   const known: [RegExp, string, string][] = [
     [/vae_encode_batch_size/, 'memory.vae_encode_batch_size', text('VAE 编码批量改为 1', 'Set the VAE encode batch to 1') + vaeEstimate('memory.vae_encode_batch_size')],
     [/vae_attention_chunking/, 'memory.vae_attention_chunking', text('开启 VAE 注意力分块', 'Turn on VAE attention chunking') + vaeEstimate('memory.vae_attention_chunking')],
@@ -144,7 +149,9 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
   const batchesPerEpoch = native ? native.logical_batches : buckets.reduce((sum, bucket) => sum + (bucket.batches ?? 0), 0);
   const stepSource = !plan?.steps_per_epoch ? '' : gpus > 1 && distributed ? text(`每卡 ${distributed.batches_per_rank} 批`, `${distributed.batches_per_rank} batches per GPU`) : batchesPerEpoch ? text(`${batchesPerEpoch} 批`, `${batchesPerEpoch} batches`) : '';
   const totalSource = !plan?.total_steps || !plan.steps_per_epoch ? '' : plan.epochs && plan.total_steps === plan.epochs * plan.steps_per_epoch ? text(`${plan.epochs} 轮`, `${plan.epochs} epochs`) : text('按最大步数', 'max steps');
-  const peak = plan?.memory?.peak_mb_estimate ?? null;
+  const devicePeak = plan?.memory?.peak_mb_estimate ?? null;
+  const peak = plan?.memory?.capacity_peak_mb_estimate === undefined
+    ? devicePeak : plan.memory.capacity_peak_mb_estimate;
   const capacity = plan?.memory?.gpu_total_mb ?? null;
   const budget = plan?.memory?.gpu_memory_budget_mb ?? (capacity ? capacity * 0.95 : null);
   const memoryIssue = peak == null && plan?.memory?.unavailable_issue
@@ -160,7 +167,7 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
     ? text('此设备的 VAE 注意力没有融合实现，整张图的注意力矩阵会一次占用显存，图片越大增长越快。', "This device has no fused VAE attention, so the whole image's attention matrix is held at once and grows quickly with image size.")
     : phase.attention_backend === 'unknown' ? text('未能确认此设备的 VAE 注意力实现，按整张图的注意力矩阵估算。', "The VAE attention backend on this device could not be confirmed; the estimate assumes the whole image's attention matrix.") : '';
   const shape = (phase: VaePhase) => `${phase.width} × ${phase.height}`;
-  const vaePhases = peak == null || trainingPeak == null ? [] : [
+  const vaePhases = devicePeak == null || trainingPeak == null ? [] : [
     encoding && { key: 'encoding', phase: encoding, label: text('图片编码峰值', 'Image encoding peak'),
       help: [encoding.mode === 'online'
         ? text(`关闭训练图像缓存后，每批训练前都用 VAE 编码，VAE 与模型和训练状态同时占用显存。按 ${shape(encoding)} 每次 ${encoding.batch_size} 张计算。`, `With training image caching off, every batch is encoded by the VAE while the model and training state stay in memory. Estimated for ${shape(encoding)}, ${encoding.batch_size} at a time.`)

@@ -25,12 +25,25 @@ from ypuddin.models.base import LatentSpec
 from ypuddin.runtime_compile import CompileEnvironmentError, validate_compile_environment
 from ypuddin.runtime_profiles import current_profile
 
+from .activation_plan import backbone_memory_layout, estimate_backbone_memory
 from .adapter_memory import adapter_memory
 from .advice import value_advice
+from .evaluation_memory import evaluation_snapshot_memory
+from .evaluation_plan import evaluation_mode_stages, evaluation_operations, project_evaluation_stages
+from .gradient_memory import gradient_workspace_bytes
 from .memory_budget import HEADROOM
 from .metal_compute import resolve_metal_attention_runtime, validate_metal_attention_resume
 from .native_vram import NativeVramGeometry, maximum_fitting_pixels
-from .optimizer_memory import optimizer_state_bytes
+from .optimizer_memory import optimizer_memory_breakdown
+from .preview_memory import (
+    cached_text_phase_capacity,
+    preview_residency,
+    preview_working_memory,
+    text_capacity_complete,
+    text_phase_capacity,
+)
+from .text_memory import frozen_text_phase
+from .text_plan_inputs import text_plan_inputs
 from .vae_memory import (
     VaeMemory,
     latent_cache_phase,
@@ -52,10 +65,49 @@ def _frozen_storage_bytes(module: nn.Module) -> int:
     return sum(t.numel() * t.element_size() for t in tensors.values())
 
 
+def _adapter_ema_bytes(adapters) -> int:
+    """EMA stores FP32 copies of exported factors, including frozen export components."""
+    from ypuddin.adapters.ortho import OrthoLoRA
+
+    elements = 0
+    with torch.no_grad(), torch.device("meta"):
+        for layer in adapters.layers.values():
+            adapter = layer.adapter
+            if isinstance(adapter, OrthoLoRA):
+                # The basis is bound only after real weights load; its plain LoRA export
+                # has two rank-r factors and alpha, independently of those values.
+                elements += adapter.rank * (adapter.out_features + adapter.fan_in) + 1
+            else:
+                elements += sum(t.numel() for t in adapter.export_tensors().values())
+            if layer.dora is not None:
+                elements += layer.dora.export_tensor().numel()
+    return elements * 4
+
+
 def _training_peak_mb(live_mb: float) -> float:
     # The allocator keeps reusable blocks in addition to live tensors. This is a
     # workspace allowance, separate from the device headroom used at admission.
     return live_mb + max(512.0, live_mb * 0.05)
+
+
+def _resident_vae_phase(phase: dict[str, Any], resident_mb: float, *, capacity_host_mb: float = 0.0) -> dict[str, Any]:
+    """Project one VAE invocation beside the tensors that coexist with it."""
+    result = dict(phase)
+    result["resident_mb_estimate"] = round(resident_mb, 1)
+    result["allocated_peak_mb_estimate"] = round(resident_mb + phase["workspace_mb_estimate"])
+    result["peak_mb_estimate"] = round(resident_mb + phase["reserved_workspace_mb_estimate"])
+    result["capacity_peak_mb_estimate"] = round(resident_mb + capacity_host_mb + phase["capacity_workspace_mb_estimate"])
+    return result
+
+
+def _combined_vae_phase(calls: list[tuple[dict, float, float]]) -> dict | None:
+    if not calls:
+        return None
+    projected = [_resident_vae_phase(phase, resident, capacity_host_mb=host) for phase, resident, host in calls]
+    result = dict(max(projected, key=lambda phase: phase["allocated_peak_mb_estimate"]))
+    for key in ("allocated_peak_mb_estimate", "peak_mb_estimate", "capacity_peak_mb_estimate"):
+        result[key] = max(phase[key] for phase in projected)
+    return result
 
 
 def _plan_vae(cfg: TrainConfig, dtype: torch.dtype, device: str | torch.device | None) -> VaeMemory | None:
@@ -67,7 +119,8 @@ def _plan_vae(cfg: TrainConfig, dtype: torch.dtype, device: str | torch.device |
 
 
 def _vae_batches(
-    image_shapes: dict[tuple[int, int], dict[str, Any]], ds: DatasetConfig, encode_batch: int
+    image_shapes: dict[tuple[int, int], dict[str, Any]], ds: DatasetConfig, encode_batch: int,
+    *, online_kind: str = "combined",
 ) -> tuple[dict[tuple[int, int], int], dict[tuple[int, int], int]]:
     """Images per VAE call by shape: while caching, and while training or validating online.
 
@@ -81,8 +134,24 @@ def _vae_batches(
         entries = len(entry["images"]) * (2 if ds.flip else 1) + len(entry["validation"])
         cache[width, height] = min(encode_batch, entries)
         group = min(ds.batch_size, max(1, ds.native_max_pixels // (width * height))) if legacy_native else ds.batch_size
-        online[width, height] = min(encode_batch, group, max(entry["items"], len(entry["validation"])))
+        validation_items = entry.get("validation_items", len(entry["validation"]))
+        items = (entry["items"] if online_kind == "training" else validation_items
+                 if online_kind == "validation" else max(entry["items"], validation_items))
+        if items:
+            online[width, height] = min(encode_batch, group, items)
     return cache, online
+
+
+def _encoding_vae_phase(vae, batches, *, cached):
+    encode = latent_cache_phase if cached else online_encoding_phase
+    phase = encode(vae, batches)
+    single = encode(vae, dict.fromkeys(batches, 1))
+    if phase is not None and single is not None:
+        for prefix in ("", "capacity_", "reserved_"):
+            key = prefix + "workspace_mb_estimate"
+            if single[key] < phase[key]:
+                phase[prefix + "workspace_reductions_mb"]["memory.vae_encode_batch_size"] = single[key]
+    return phase
 
 
 def _fsdp_memory(backbone: nn.Module, blocks: list[nn.Module], cfg: TrainConfig) -> dict[str, Any]:
@@ -256,9 +325,12 @@ def _append_data_plan(
             for item, validation in [(item, False) for item in items] + [
                 (item, True) for item in layout.validation_items
             ]:
-                entry = image_shapes.setdefault(item.bucket.key, {"items": 0, "images": set(), "validation": set()})
+                entry = image_shapes.setdefault(item.bucket.key, {
+                    "items": 0, "images": set(), "validation": set(), "validation_items": 0,
+                })
                 entry["validation" if validation else "images"].add(item.record.path)
                 entry["items"] += not validation
+                entry["validation_items"] += validation
     except DataConfigError as e:
         out["errors"].append({"loc": e.loc, "msg": str(e)})
     except (OSError, ValueError) as e:
@@ -969,30 +1041,51 @@ def plan(
                     * (4 if full_training or cfg.adapter.param_dtype == "fp32" else 2)
                     / 2**20
                 )
-                optimizer_mb = aset.num_params() * 4 * (0.5 if "8bit" in cfg.optimizer.type else 2) / 2**20
+                optimizer_mb = 0.0
                 from .optimizer_memory import cpu_offload_memory_bytes, cpu_offload_step_workspace_bytes
 
                 optimizer_groups = aset.param_groups(cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr)
-                optimizer_bytes = optimizer_state_bytes(cfg.optimizer, optimizer_groups)
+                optimizer_estimate = optimizer_memory_breakdown(
+                    cfg.optimizer, optimizer_groups, device_type=device_type or "cuda",
+                )
+                optimizer_bytes = optimizer_estimate["state_bytes"]
                 if optimizer_bytes is not None:
                     optimizer_mb = optimizer_bytes / 2**20
                 cpu_optimizer = cpu_offload_memory_bytes(cfg.optimizer, optimizer_groups)
                 gradients_mb = adapter_mb
-                compensation_mb = adapter_mb if cfg.optimizer.kahan else 0.0
-                ema_mb = adapter_mb if cfg.loop.ema else 0.0
+                compensation_mb = optimizer_estimate["kahan_bytes"] / 2**20
+                # EMA snapshots are FP32 exports on the host for both adapters and full training.
+                ema_mb = 0.0
                 cpu_ema_mb = 0.0
-                if full_training and cfg.loop.ema:
-                    cpu_ema_mb = sum(t.numel() * 4 for module in aset.modules.values() for t in module.state_dict().values()) / 2**20
-                    ema_mb = 0.0
-                cpu_optimizer_mb = sum(cpu_optimizer.values()) / 2**20
+                if cfg.loop.ema:
+                    if full_training:
+                        cpu_ema_mb = sum(t.numel() * 4 for module in aset.modules.values() for t in module.state_dict().values()) / 2**20
+                    else:
+                        cpu_ema_mb = _adapter_ema_bytes(aset) / 2**20
+                cpu_optimizer_mb = (
+                    sum(cpu_optimizer.values()) + optimizer_estimate["host_state_bytes"]
+                ) / 2**20
                 cpu_workspace_mb = cpu_offload_step_workspace_bytes(cfg.optimizer, optimizer_groups) / 2**20
                 # Each DDP process creates its optimizer shadows and CPU EMA copy.
                 host_memory_mb = (cpu_optimizer_mb + cpu_workspace_mb + cpu_ema_mb) * cfg.loop.gpu_count
+                host_resident_mb = (cpu_optimizer_mb + cpu_ema_mb) * cfg.loop.gpu_count
+                host_step_workspace_mb = cpu_workspace_mb * cfg.loop.gpu_count
+                unified_host_mb = host_resident_mb if device_type == "mps" else 0.0
+                unified_step_workspace_mb = host_step_workspace_mb if device_type == "mps" else 0.0
                 layout = (
                     family.memory_layout_meta(backbone) if hasattr(family, "memory_layout_meta") else None
                 )
                 sharding = None
-                communication_mb = optimizer_workspace_mb = 0.0
+                communication_mb = 0.0
+                optimizer_workspace_mb = (optimizer_estimate["step_workspace_bytes"] or 0) / 2**20
+                gradient_workspace_unknown = False
+                if cfg.loop.distributed_strategy != "fsdp":
+                    try:
+                        norm_workspace = gradient_workspace_bytes(optimizer_groups, clip_norm=cfg.optimizer.grad_clip_norm)
+                        # Norm/clip temporaries are released before optimizer.step.
+                        optimizer_workspace_mb = max(optimizer_workspace_mb, norm_workspace / 2**20)
+                    except (NotImplementedError, RuntimeError, ValueError):
+                        gradient_workspace_unknown = True
                 if cfg.loop.gpu_count > 1 and cfg.loop.distributed_strategy == "ddp":
                     # DDP keeps reduction buckets beside the accumulated parameter gradients.
                     if full_training:
@@ -1047,17 +1140,6 @@ def plan(
                     if "block" in supported_modes
                     else "none"
                 )
-                units = family.spec.activation_units
-                n_blocks = len(layout.blocks) if layout else 1
-                # A backbone measured as a whole already counts its width; the others scale by it.
-                whole = dict(family.spec.backbone_activation_units)
-                block_units = whole or {
-                    "none": units * n_blocks,
-                    # Each block keeps only its input; one block is recomputed at a time.
-                    "block": min(units * n_blocks, n_blocks + units + 2),
-                    # Block inputs wait in system memory, so only the recomputed block stays.
-                    "unsloth": min(units * n_blocks, units + 3),
-                }
                 activation_dtype = (
                     torch.float32
                     if device_type in ("cpu", "mps")
@@ -1072,10 +1154,6 @@ def plan(
                     backbone, fusion_blocks, activation_dtype,
                     autocast_enabled=cfg.loop.mixed_precision != "no" and device_type not in ("cpu", "mps"),
                 )
-                fusion_mb = {
-                    mode: (fusion[mode]["retained_bytes"] + fusion[mode]["workspace_bytes"]) / 2**20
-                    for mode in supported_modes
-                }
                 swapped_mb = 0.0
                 swap_staging_mb = 0.0
                 if layout and cfg.memory.blocks_to_swap and layout.blocks and device_type in (None, "cuda"):
@@ -1097,19 +1175,75 @@ def plan(
                 text_mode = "online" if cfg.training.train_text_encoder else ds.text_encoding
                 if text_mode == "auto":
                     text_mode = "online" if "online_text" in family.spec.capabilities else "cached"
+                text_inputs = (
+                    text_plan_inputs(cfg, family.spec.latent, data_layouts[0] if data_layouts else None)
+                    if cfg.model.family in {"anima", "krea2", "sdxl", "flux2"} else {}
+                )
+                out["errors"].extend(issue for issue in text_inputs.get("errors", []) if issue not in out["errors"])
+                text_preview_unknown = (
+                    cfg.model.family == "sdxl" and text_inputs.get("sdxl_prompt_batches", []) is None
+                )
                 text_encoder_mb = 0.0
+                text_profiles = {}
+                text_capacity_unknown = False
+                cache_text_capacity_unknown = False
+
+                def profile_capacity(profile, *, cached_text=False):
+                    nonlocal text_capacity_unknown
+                    if not text_capacity_complete(profile, unified_memory=device_type == "mps", cached_text=cached_text):
+                        text_capacity_unknown = True
+                    capacity = cached_text_phase_capacity if cached_text else text_phase_capacity
+                    return capacity(profile, unified_memory=device_type == "mps")
+
+                def text_profile(batch_size: int, *, phase: str = "online", token_length: int | None = None,
+                                 t5_token_length: int | None = None, prompt_spec: dict | None = None,
+                                 include_condition: bool = True, cached_condition_kind: str = "training"):
+                    if token_length is None:
+                        token_length = text_inputs.get("anima_lengths", {}).get(phase, {}).get("qwen_tokens")
+                    if t5_token_length is None:
+                        t5_token_length = text_inputs.get("anima_lengths", {}).get(phase, {}).get("t5_tokens")
+                    key = (batch_size, token_length, t5_token_length, json.dumps(prompt_spec, sort_keys=True),
+                           include_condition, cached_condition_kind)
+                    if key not in text_profiles:
+                        text_profiles[key] = frozen_text_phase(
+                            cfg, compute_dtype, batch_size=batch_size, device_type=device_type,
+                            token_length=token_length,
+                            t5_token_length=t5_token_length,
+                            include_condition=include_condition,
+                            cached_condition_kind=cached_condition_kind,
+                            prompt_spec=prompt_spec,
+                            attention_backend=(
+                                "math" if current_profile() == "linux-dtk" and cfg.loop.deterministic else None
+                            ),
+                            linear_compute_dtype=(
+                                torch.float32 if (compute_policy or {}).get("frozen_text_implementation") else None
+                            ),
+                        )
+                    return text_profiles[key]
+
                 if (
                     text_mode == "online"
-                    and not cfg.memory.offload_text_encoder
+                    and (not cfg.memory.offload_text_encoder or device_type == "cpu")
                     and not cfg.training.train_text_encoder
                 ):
-                    text_encoder_mb = family.spec.text.encoder_params * DTYPE_BYTES[effective_dtype] / 2**20
+                    profile = text_profile(1)
+                    text_encoder_mb = (
+                        profile["weights_mb"] if profile is not None
+                        else family.spec.text.encoder_params * DTYPE_BYTES[effective_dtype] / 2**20
+                    )
                 if cfg.training.mode == "adapter" and cfg.training.train_text_encoder:
                     text_encoder_mb = (
                         sum(_frozen_storage_bytes(module) for module in text_modules.values()) / 2**20
                     )
                 if full_training and cfg.training.train_text_encoder:
                     text_encoder_mb = sum(_frozen_storage_bytes(module) for module in text_modules.values()) / 2**20
+                offloaded_text_mb = 0.0
+                if text_mode == "online" and cfg.memory.offload_text_encoder and device_type != "cpu":
+                    profile = text_profile(1)
+                    if profile is not None:
+                        offloaded_text_mb = profile["weights_mb"]
+                        host_memory_mb += offloaded_text_mb * cfg.loop.gpu_count
+                unified_training_host_mb = unified_host_mb + (offloaded_text_mb if device_type == "mps" else 0.0)
                 vae = _plan_vae(cfg, compute_dtype, device)
                 latent_encoder_mb = latent_workspace_mb = 0.0
                 if vae is not None and not ds.cache_latents:
@@ -1120,6 +1254,12 @@ def plan(
                             "关闭图像编码缓存后，完整 VAE 在每张卡上与训练状态同时驻留；"
                             "权重与在线编码工作区均计入单卡估算，不按卡数分摊。"
                         )
+                optimizer_unknown = sharding is None and (
+                    optimizer_estimate["state_bytes"] is None
+                    or optimizer_estimate["step_workspace_bytes"] is None
+                    or gradient_workspace_unknown
+                )
+                vae_unknown = vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2"}
                 training_base = (
                     weights_mb
                     - swapped_mb
@@ -1133,125 +1273,465 @@ def plan(
                     + swap_staging_mb
                     + dequant_mb
                     + communication_mb
-                    + optimizer_workspace_mb
-                    + (host_memory_mb if device_type in {"cpu", "mps"} else 0.0)
+                    + (host_resident_mb if device_type == "cpu" else 0.0)
                 )
+                # Optimizer temporaries are created after backward releases its saved activations.
+                optimizer_step_live = (
+                    training_base + optimizer_workspace_mb - dequant_mb
+                    + (host_step_workspace_mb if device_type == "cpu" else 0.0)
+                )
+                evaluation_ops = evaluation_operations(aset, cfg, optimizer_estimate, device_type=device_type or "cuda")
+                evaluation_state = evaluation_snapshot_memory(
+                    aset, cfg.optimizer, meta_device_type=device_type or "cuda",
+                )
+                if not evaluation_ops["context_active"]:
+                    evaluation_state = dict(evaluation_state, enabled=False, snapshot_device_bytes=0, snapshot_host_bytes=0,
+                                            restore_workspace_device_bytes=0, restore_workspace_host_bytes=0)
+                evaluation_snapshot_mb = evaluation_state["snapshot_device_bytes"] / 2**20
+                evaluation_host_mb = evaluation_state["snapshot_host_bytes"] / 2**20
+                evaluation_restore_mb = evaluation_state["restore_workspace_device_bytes"] / 2**20
+                evaluation_restore_host_mb = evaluation_state["restore_workspace_host_bytes"] / 2**20
+                if device_type == "cpu":
+                    evaluation_snapshot_mb += evaluation_host_mb
+                    evaluation_restore_mb += evaluation_restore_host_mb
+                evaluation_host_capacity_mb = evaluation_host_mb if device_type == "mps" else 0.0
+                evaluation_restore_host_capacity_mb = evaluation_restore_host_mb if device_type == "mps" else 0.0
+                host_memory_mb = max(host_memory_mb, host_resident_mb + offloaded_text_mb * cfg.loop.gpu_count
+                                     + evaluation_host_mb + evaluation_restore_host_mb)
+                evaluation_base_mb = training_base - gradients_mb - dequant_mb + evaluation_snapshot_mb
+                evaluation_restore_live = evaluation_base_mb + evaluation_restore_mb
+                evaluation_restore_capacity = (
+                    evaluation_restore_live + unified_training_host_mb
+                    + evaluation_host_capacity_mb + evaluation_restore_host_capacity_mb
+                )
+                # Export stages already contain their own raw/restore copies.
+                evaluation_resident_mb = training_base - gradients_mb - dequant_mb
+                evaluation_host_resident_mb = host_resident_mb + offloaded_text_mb * cfg.loop.gpu_count
+                mode_projection = project_evaluation_stages(
+                    evaluation_mode_stages(evaluation_ops["mode"], evaluation_state) if evaluation_ops["context_active"] else [],
+                    resident_mb=evaluation_resident_mb, host_resident_mb=evaluation_host_resident_mb,
+                    device_type=device_type or "cuda", processes=cfg.loop.gpu_count,
+                )
+                export_projection = project_evaluation_stages(
+                    evaluation_ops["stages"], resident_mb=evaluation_resident_mb,
+                    host_resident_mb=evaluation_host_resident_mb,
+                    device_type=device_type or "cuda", processes=cfg.loop.gpu_count,
+                )
+                evaluation_restore_live = max(evaluation_restore_live, mode_projection["known_allocated_mb"])
+                evaluation_restore_capacity = max(evaluation_restore_capacity, mode_projection["known_capacity_mb"])
+                host_memory_mb = max(host_memory_mb, mode_projection["known_host_mb"], export_projection["known_host_mb"])
+                evaluation_allocated_unknown = bool(mode_projection["allocated_unknowns"] or export_projection["allocated_unknowns"])
+                evaluation_capacity_unknown = bool(mode_projection["capacity_unknowns"] or export_projection["capacity_unknowns"])
+                evaluation_host_unknown = bool(mode_projection["host_unknowns"] or export_projection["host_unknowns"])
                 fixed_cache_phases = family.cache_memory_estimate(cfg, compute_dtype)
-                previews = preview_shapes(cfg, family.spec.latent.align)
+                fixed_cache_capacity = dict(fixed_cache_phases)
+                fixed_cache_allocated = dict(fixed_cache_phases)
+                if text_mode == "cached" and not cfg.training.train_text_encoder:
+                    batches = text_inputs.get("anima_cache_batches", [
+                        {"batch_size": text_inputs.get("cache_batch_size", 16), "qwen_tokens": None},
+                    ])
+                    profiles = [text_profile(batch["batch_size"], phase="cache", token_length=batch["qwen_tokens"],
+                                             t5_token_length=batch.get("t5_tokens"), include_condition=False)
+                                for batch in batches]
+                    if cfg.model.family == "sdxl":
+                        profiles.extend(text_profile(1, phase="prompt", prompt_spec=spec)
+                                        for spec in text_inputs.get("sdxl_prompt_batches") or [])
+                    elif text_inputs.get("prompt_cache_batch_size"):
+                        profiles.append(text_profile(text_inputs["prompt_cache_batch_size"], phase="prompt"))
+                    profiles = [profile for profile in profiles if profile is not None]
+                    if profiles:
+                        cache_text_capacity_unknown = any(
+                            not text_capacity_complete(profile, unified_memory=device_type == "mps")
+                            for profile in profiles
+                        )
+                        text_cache_peak = max(profile["peak_mb_estimate"] for profile in profiles)
+                        fixed_cache_phases["text_cache"] = _training_peak_mb(text_cache_peak)
+                        fixed_cache_allocated["text_cache"] = text_cache_peak
+                        fixed_cache_capacity["text_cache"] = _training_peak_mb(max(
+                            text_phase_capacity(profile, unified_memory=device_type == "mps") for profile in profiles
+                        ))
+                preview_issue = next((issue for issue in text_inputs.get("errors", [])
+                                      if issue["loc"].startswith("sampling.")), None)
+                if "preview_items" in text_inputs:
+                    previews = {(item["width"], item["height"]): 1
+                                for item in text_inputs["preview_items"] or []
+                                if cfg.sampling is not None and cfg.sampling.enabled}
+                else:
+                    try:
+                        previews = preview_shapes(cfg, family.spec.latent.align)
+                    except (OSError, ValueError) as error:
+                        preview_issue = {"loc": "sampling.prompts_file", "msg": str(error)}
+                        if preview_issue not in out["errors"]:
+                            out["errors"].append(preview_issue)
+                        previews = {}
                 if initialization_peak is not None:
                     initialization_peak += text_encoder_mb
-                fixed_preview = None
-                if vae is not None and previews:
-                    fixed_preview = preview_decoding_phase(vae, previews)
-                    fixed_preview["peak_mb_estimate"] = round(
-                        training_base - gradients_mb - optimizer_workspace_mb - dequant_mb
-                        + (vae.weights_mb if ds.cache_latents else 0.0)
-                        + fixed_preview["workspace_mb_estimate"] + 512
+                preview_base_mb = evaluation_base_mb
+
+                def prompt_profile(spec):
+                    return text_profile(1, phase="prompt", token_length=spec.get("qwen_tokens"),
+                                        t5_token_length=spec.get("t5_tokens"), prompt_spec=spec.get("prompt_spec"),
+                                        cached_condition_kind="preview")
+
+                preview_items = (text_inputs.get("preview_items", [
+                        {"width": width, "height": height, "positive": {}, "negative": {}}
+                        for width, height in previews
+                    ]) or []) if previews else []
+                preview_stages = preview_residency(
+                    preview_items, prompt_profile, family.spec.latent,
+                    cached_text=text_mode == "cached", unified_memory=device_type == "mps",
+                )
+                fixed_preview_inputs = []
+                preview_text_peak = preview_text_capacity = 0.0
+                for stage in preview_stages:
+                    text_capacity_unknown |= not stage["text_capacity_complete"]
+                    vae_resident = vae.weights_mb if vae is not None and ds.cache_latents else 0.0
+                    text_resident = preview_base_mb - (text_encoder_mb if text_mode == "online" else 0.0)
+                    if stage["previous_image"]:
+                        text_resident += vae_resident
+                    preview_text_peak = max(preview_text_peak, text_resident + stage["text_peak_mb"])
+                    preview_text_capacity = max(
+                        preview_text_capacity, text_resident + stage["text_capacity_mb"] + evaluation_host_capacity_mb,
                     )
-                auxiliary_by_batch = {}
+                    if vae is not None:
+                        phase = preview_decoding_phase(vae, {(stage["width"], stage["height"]): 1})
+                        resident = preview_base_mb + vae_resident + stage["decoding_retained_mb"]
+                        fixed_preview_inputs.append((phase, resident, unified_training_host_mb + evaluation_host_capacity_mb))
+                fixed_preview = _combined_vae_phase(fixed_preview_inputs)
+                activation_layout = backbone_memory_layout(
+                    backbone, family, cfg, compute_dtype, activation_dtype, device_type or "cuda", layout=layout,
+                )
+                fusion_mb = {mode: (fusion[mode]["retained_bytes"] + fusion[mode]["workspace_bytes"]) / 2**20
+                             for mode in supported_modes}
+                preview_profile = preview_working_memory(
+                    cfg, backbone, aset, preview_items, preview_stages,
+                    dtype=activation_dtype, device_type=device_type or "cuda",
+                    export_layout=evaluation_ops["export_layout"],
+                    backbone_workspace=lambda width, height, batch, text_tokens: estimate_backbone_memory(
+                        activation_layout, width=width, height=height, batch_size=batch,
+                        checkpointing="none", text_tokens=text_tokens, training=False,
+                    )["forward_workspace_bytes"],
+                ) if preview_items else None
+                preview_live = preview_base_mb + preview_profile["allocated_additional_mb"] if preview_profile else 0.0
+                preview_host = evaluation_host_resident_mb + evaluation_host_mb + preview_profile["host_additional_mb"] if preview_profile else 0.0
+                preview_capacity = preview_live + (preview_host if device_type == "mps" else 0.0)
+                if preview_profile:
+                    for stage, row in zip(preview_stages, preview_profile["rows"], strict=True):
+                        for phase in ("sampling", "image_conversion", "pixel_clamp"):
+                            cached_vae = vae.weights_mb if vae is not None and ds.cache_latents and (stage["previous_image"] or phase != "sampling") else 0.0
+                            preview_live = max(preview_live, preview_base_mb + cached_vae + row[phase + "_additional_mb"])
+                            capacity = preview_base_mb + cached_vae + row[phase + "_additional_mb"]
+                            if device_type == "mps":
+                                capacity = preview_base_mb + cached_vae + evaluation_host_resident_mb + evaluation_host_mb + row[phase + "_shared_additional_mb"]
+                            preview_capacity = max(preview_capacity, capacity)
+                        vae_resident = vae.weights_mb if vae is not None and ds.cache_latents and stage["previous_image"] else 0.0
+                        text_resident = preview_base_mb - (text_encoder_mb if text_mode == "online" else 0.0) + vae_resident
+                        preview_text_peak = max(preview_text_peak, text_resident + stage["text_peak_mb"] + row["text_context_device_mb"])
+                        preview_text_capacity = max(preview_text_capacity, text_resident + stage["text_capacity_mb"]
+                                                    + (row["text_context_shared_mb"] + unified_training_host_mb + evaluation_host_capacity_mb
+                                                       if device_type == "mps" else row["text_context_device_mb"]))
+                    fixed_preview_inputs = [
+                        (phase, resident + row["decode_context_device_mb"],
+                         host + (row["decode_context_host_mb"] if device_type == "mps" else 0.0))
+                        for (phase, resident, host), row in zip(fixed_preview_inputs, preview_profile["rows"], strict=False)
+                    ]
+                    fixed_preview = _combined_vae_phase(fixed_preview_inputs)
+
+                def condition_tokens(phase):
+                    if cfg.model.family == "anima":
+                        return text_inputs.get("anima_lengths", {}).get(phase, {}).get("t5_tokens", 512)
+                    if cfg.model.family == "sdxl":
+                        return cfg.model.sdxl_max_token_length + 2
+                    return 512
 
                 def evaluate_sizing(counts, image_shapes, ds):
+                    adaptive_device_mb = adaptive_host_mb = adaptive_host_peak_mb = 0.0
+                    adaptive_update_live = adaptive_update_capacity = 0.0
+                    if cfg.objective.infonoise_enabled:
+                        bins = cfg.objective.infonoise_bins
+                        keys = len(counts) if cfg.objective.timestep_sampling == "resolution_sqrt" else 1
+                        # Constructor arrays, cached baselines, and a bounded set of update vectors.
+                        target_bytes = 4 if device_type == "mps" else 8
+                        device_bytes = (4 * bins + 8) * target_bytes + ds.batch_size * 12
+                        host_bytes = (5 * bins + 6 + max(1, keys) * bins) * 8
+                        host_peak = host_bytes + bins * 128 + ds.batch_size * 96
+                        if device_type == "cpu":
+                            device_bytes += host_bytes
+                            host_bytes = host_peak = 0
+                        adaptive_device_mb, adaptive_host_mb = device_bytes / 2**20, host_bytes / 2**20
+                        adaptive_host_peak_mb = host_peak / 2**20
+                        adaptive_update_live = training_base - dequant_mb - gradients_mb + adaptive_device_mb
+                        adaptive_update_capacity = adaptive_update_live + unified_training_host_mb
+                        if device_type == "mps":
+                            adaptive_update_capacity += adaptive_host_peak_mb
+                    adaptive_shared_mb = adaptive_device_mb + (adaptive_host_mb if device_type == "mps" else 0.0)
+
                     act_by_bucket = []
-                    act_peak = auxiliary_act_peak = 0.0
+                    auxiliary_act_peak = 0.0
                     act_by_mode = dict.fromkeys(supported_modes, 0.0)
-                    cache_batches, online_batches = _vae_batches(image_shapes, ds, cfg.memory.vae_encode_batch_size)
+                    backbone_by_mode = dict.fromkeys(supported_modes, 0.0)
+                    text_encoding_peak = preview_text_peak + adaptive_device_mb
+                    text_encoding_capacity = preview_text_capacity + adaptive_shared_mb
+                    validation_live = validation_capacity = 0.0
+                    hook_mb = caller_host_mb = validation_caller_host_mb = 0.0
+                    cache_batches, training_batches = _vae_batches(
+                        image_shapes, ds, cfg.memory.vae_encode_batch_size, online_kind="training",
+                    )
+                    _, validation_batches = _vae_batches(
+                        image_shapes, ds, cfg.memory.vae_encode_batch_size, online_kind="validation",
+                    )
                     for (w, h), available_items in sorted(counts.items()) or [((r, r), 0) for r in ds.resolutions]:
-                        tokens = (w // family.spec.latent.align) * (h // family.spec.latent.align)
-                        tokens = family.training_tokens_for_plan(tokens)
-                        hidden = (
-                            getattr(backbone, "dim", None)
-                            or getattr(backbone, "model_channels", None)
-                            or getattr(backbone, "inner_dim", None)
-                            or getattr(getattr(backbone, "config", None), "features", 2048)
-                        )
-                        activation_bytes = torch.empty((), device="meta", dtype=activation_dtype).element_size()
                         forward_batch = (
                             min(ds.batch_size, max(1, ds.native_max_pixels // (w * h)))
                             if legacy_native else ds.batch_size
                         )
                         if available_items:
                             forward_batch = min(forward_batch, available_items)
-                        unit_mb = tokens * (1 if whole else hidden) * activation_bytes * forward_batch / 2**20
-                        if forward_batch not in auxiliary_by_batch:
-                            auxiliary_by_batch[forward_batch] = family.auxiliary_activation_bytes_for_plan(
-                                backbone, forward_batch, activation_dtype,
-                            ) / 2**20
-                        auxiliary_act_peak = max(auxiliary_act_peak, auxiliary_by_batch[forward_batch])
+                        if text_mode == "online" and not cfg.training.train_text_encoder:
+                            profile = text_profile(forward_batch)
+                            if profile is not None:
+                                text_encoding_peak = max(
+                                    text_encoding_peak,
+                                    training_base - dequant_mb - text_encoder_mb + profile["peak_mb_estimate"] + adaptive_device_mb,
+                                )
+                                text_encoding_capacity = max(
+                                    text_encoding_capacity, training_base - dequant_mb - text_encoder_mb
+                                    + profile_capacity(profile) + adaptive_shared_mb + unified_host_mb,
+                                )
+                        elif text_mode == "cached":
+                            profile = text_profile(forward_batch, phase="cached_training")
+                            if profile is not None:
+                                text_encoding_peak = max(
+                                    text_encoding_peak,
+                                    training_base - dequant_mb + profile["cached_condition_workspace_mb_estimate"] + adaptive_device_mb,
+                                )
+                                text_encoding_capacity = max(
+                                    text_encoding_capacity, training_base - dequant_mb
+                                    + profile_capacity(profile, cached_text=True) + adaptive_shared_mb + unified_training_host_mb,
+                                )
                         for mode in act_by_mode:
-                            act_by_mode[mode] = max(act_by_mode[mode], unit_mb * block_units[mode])
-                        act = unit_mb * block_units[current_mode]
-                        act_by_bucket.append({"w": w, "h": h, "mb": round(act)})
-                        act_peak = max(act_peak, act)
-                    training_live = training_base + act_peak + auxiliary_act_peak + fusion_mb[current_mode]
+                            estimate = estimate_backbone_memory(
+                                activation_layout, width=w, height=h, batch_size=forward_batch, checkpointing=mode,
+                                text_tokens=condition_tokens("cached_training" if text_mode == "cached" else "online"),
+                            )
+                            dynamic_mb = (estimate["activation_bytes"] + estimate["input_bytes"]) / 2**20 + fusion_mb[mode]
+                            act_by_mode[mode] = max(act_by_mode[mode], dynamic_mb)
+                            backbone_by_mode[mode] = max(backbone_by_mode[mode], training_base + dynamic_mb + adaptive_device_mb)
+                            if mode == current_mode:
+                                auxiliary_act_peak = max(auxiliary_act_peak, estimate.get("auxiliary_activation_bytes", 0) / 2**20)
+                                hook_mb = max(hook_mb, estimate["input_bytes"] / 2**20)
+                                caller_host_mb = max(caller_host_mb, estimate["host_input_bytes"] / 2**20)
+                                act_by_bucket.append({"w": w, "h": h, "mb": round(dynamic_mb)})
+                    hook_capacity_mb = hook_mb + (caller_host_mb if device_type == "mps" else 0.0)
+                    text_encoding_peak += hook_mb
+                    text_encoding_capacity += hook_capacity_mb
+                    adaptive_update_live += hook_mb
+                    adaptive_update_capacity += hook_capacity_mb
+                    for (w, h), entry in image_shapes.items():
+                        count = entry.get("validation_items", len(entry["validation"]))
+                        if not count:
+                            continue
+                        batch = min(count, ds.batch_size,
+                                    max(1, ds.native_max_pixels // (w * h)) if legacy_native else ds.batch_size)
+                        estimate = estimate_backbone_memory(
+                            activation_layout, width=w, height=h, batch_size=batch, checkpointing="none",
+                            text_tokens=condition_tokens("validation"), training=False,
+                        )
+                        live = (evaluation_base_mb + adaptive_device_mb
+                                + (estimate["forward_workspace_bytes"] + estimate["input_bytes"]) / 2**20)
+                        validation_live = max(validation_live, live)
+                        validation_caller_host_mb = max(validation_caller_host_mb, estimate["host_input_bytes"] / 2**20)
+                        validation_capacity = max(validation_capacity, live + unified_training_host_mb
+                                                  + evaluation_host_capacity_mb + (adaptive_host_mb + validation_caller_host_mb
+                                                                                  if device_type == "mps" else 0.0))
+                    if not cfg.training.train_text_encoder:
+                        validation_batch = max((
+                            min(entry.get("validation_items", len(entry["validation"])), ds.batch_size,
+                                max(1, ds.native_max_pixels // (w * h)) if legacy_native else ds.batch_size)
+                            for (w, h), entry in image_shapes.items()
+                        ), default=0)
+                        if validation_batch:
+                            profile = text_profile(validation_batch, phase="validation")
+                            if profile is not None:
+                                cached = text_mode == "cached"
+                                resident = evaluation_base_mb - (0 if cached else text_encoder_mb) + adaptive_device_mb
+                                key = "cached_condition_workspace_mb_estimate" if cached else "peak_mb_estimate"
+                                text_encoding_peak = max(
+                                    text_encoding_peak, resident + profile[key],
+                                )
+                                text_encoding_capacity = max(
+                                    text_encoding_capacity, resident + profile_capacity(profile, cached_text=cached)
+                                    + evaluation_host_capacity_mb + unified_host_mb
+                                    + (adaptive_host_mb if device_type == "mps" else 0.0),
+                                )
+                                validation_live = max(validation_live, resident + profile[key])
+                                validation_capacity = max(
+                                    validation_capacity, resident + profile_capacity(profile, cached_text=cached)
+                                    + unified_training_host_mb + evaluation_host_capacity_mb
+                                    + (adaptive_host_mb if device_type == "mps" else 0.0),
+                                )
+                    if validation_batches:
+                        validation_live = max(validation_live, evaluation_restore_live + adaptive_device_mb)
+                        validation_capacity = max(validation_capacity, evaluation_restore_capacity + adaptive_shared_mb)
+                    validation_live += hook_mb if validation_batches else 0.0
+                    validation_capacity += hook_capacity_mb if validation_batches else 0.0
+                    backbone_live = backbone_by_mode[current_mode]
+                    common_live = max(
+                        optimizer_step_live + adaptive_device_mb + hook_mb,
+                        text_encoding_peak,
+                        evaluation_restore_live + adaptive_device_mb + hook_mb,
+                        validation_live,
+                        export_projection["known_allocated_mb"] + adaptive_device_mb + hook_mb,
+                        adaptive_update_live,
+                        preview_live + adaptive_device_mb + hook_mb,
+                    )
+                    training_live = max(backbone_live, common_live)
                     training_peak = _training_peak_mb(training_live)
+                    common_capacity = max(
+                        optimizer_step_live + unified_training_host_mb + unified_step_workspace_mb + adaptive_shared_mb + hook_capacity_mb,
+                        text_encoding_capacity,
+                        evaluation_restore_capacity + adaptive_shared_mb + hook_capacity_mb,
+                        validation_capacity,
+                        export_projection["known_capacity_mb"] + adaptive_shared_mb + hook_capacity_mb,
+                        adaptive_update_capacity,
+                        preview_capacity + adaptive_shared_mb + hook_capacity_mb,
+                    )
+                    training_capacity = _training_peak_mb(max(
+                        backbone_live + unified_training_host_mb
+                        + (adaptive_host_mb + caller_host_mb if device_type == "mps" else 0.0), common_capacity,
+                    ))
                     cache_phases = dict(fixed_cache_phases)
+                    cache_capacity = dict(fixed_cache_capacity)
+                    cache_allocated = dict(fixed_cache_allocated)
                     # The VAE's own phases: caching with nothing else on the device, or encoding and
                     # preview decoding beside the training state (no activations; gradients are
                     # cleared before previews).
                     image_encoding = preview_decoding = None
                     vae_phases = []
+                    vae_capacity = []
+                    vae_allocated = []
+                    vae_phase_inputs = []
                     if vae is not None:
-                        encode_phase = latent_cache_phase if ds.cache_latents else online_encoding_phase
-                        batches = cache_batches if ds.cache_latents else online_batches
-                        image_encoding = encode_phase(vae, batches)
-                        single = encode_phase(vae, dict.fromkeys(batches, 1))
-                        if single is not None and single["workspace_mb_estimate"] < image_encoding["workspace_mb_estimate"]:
-                            image_encoding["workspace_reductions_mb"]["memory.vae_encode_batch_size"] = single[
-                                "workspace_mb_estimate"
-                            ]
+                        if ds.cache_latents:
+                            image_encoding = _encoding_vae_phase(vae, cache_batches, cached=True)
+                        else:
+                            for batches, resident, host, validating in (
+                                (training_batches, training_base - dequant_mb + adaptive_device_mb + hook_mb,
+                                 unified_training_host_mb + (adaptive_host_mb + caller_host_mb if device_type == "mps" else 0.0), False),
+                                (validation_batches, evaluation_base_mb + adaptive_device_mb + hook_mb,
+                                 unified_training_host_mb + evaluation_host_capacity_mb
+                                 + (adaptive_host_mb + caller_host_mb if device_type == "mps" else 0.0), True),
+                            ):
+                                phase = _encoding_vae_phase(vae, batches, cached=False)
+                                if phase is not None:
+                                    vae_phase_inputs.append((phase, resident, host))
+                                    if validating:
+                                        validation_live = max(validation_live, resident + phase["workspace_mb_estimate"])
+                                        validation_capacity = max(
+                                            validation_capacity, resident + host + phase["capacity_workspace_mb_estimate"],
+                                        )
+                            image_encoding = _combined_vae_phase(vae_phase_inputs)
                     if image_encoding is not None and ds.cache_latents:
+                        image_encoding = _resident_vae_phase(image_encoding, vae.weights_mb)
+                        vae_phase_inputs.append((image_encoding, vae.weights_mb, 0.0))
                         image_encoding["mode"] = "cached"
                         cache_phases["latent_cache"] = image_encoding["peak_mb_estimate"]
+                        cache_capacity["latent_cache"] = image_encoding["capacity_peak_mb_estimate"]
+                        cache_allocated["latent_cache"] = image_encoding["allocated_peak_mb_estimate"]
                     elif image_encoding is not None:
                         image_encoding["mode"] = "online"
-                        image_encoding["peak_mb_estimate"] = round(
-                            training_base - optimizer_workspace_mb - dequant_mb
-                            + image_encoding["workspace_mb_estimate"] + 512
-                        )
                         vae_phases.append(image_encoding["peak_mb_estimate"])
+                        vae_capacity.append(image_encoding["capacity_peak_mb_estimate"])
+                        vae_allocated.append(image_encoding["allocated_peak_mb_estimate"])
                     if fixed_preview is not None:
-                        preview_decoding = fixed_preview
+                        adaptive_preview_inputs = [
+                            (phase, resident + adaptive_device_mb + hook_mb,
+                             host + (adaptive_host_mb + caller_host_mb if device_type == "mps" else 0.0))
+                            for phase, resident, host in fixed_preview_inputs
+                        ]
+                        preview_decoding = _combined_vae_phase(adaptive_preview_inputs)
+                        vae_phase_inputs.extend(adaptive_preview_inputs)
                         vae_phases.append(preview_decoding["peak_mb_estimate"])
+                        vae_capacity.append(preview_decoding["capacity_peak_mb_estimate"])
+                        vae_allocated.append(preview_decoding["allocated_peak_mb_estimate"])
                     peak = max([training_peak, *cache_phases.values(), *vae_phases])
+                    capacity_peak = max([training_capacity, *cache_capacity.values(), *vae_capacity])
+                    allocated_peak = max([training_live, *cache_allocated.values(), *vae_allocated])
                     if initialization_peak is not None:
                         peak = max(peak, initialization_peak)
+                        capacity_peak = max(capacity_peak, initialization_peak)
+                        allocated_peak = max(allocated_peak, initialization_peak - 512)
                     latent_workspace_mb = (
                         image_encoding["workspace_mb_estimate"]
                         if image_encoding is not None and image_encoding["mode"] == "online" else 0.0
                     )
                     # The overall peak after each VAE setting that lowers one of its phases.
                     vae_setting_peaks = {}
+                    vae_setting_capacity = {}
                     for path in dict.fromkeys(
                         path
-                        for phase in (image_encoding, preview_decoding)
-                        if phase is not None
-                        for path in phase["workspace_reductions_mb"]
+                        for phase, _, _ in vae_phase_inputs
+                        for path in phase["reserved_workspace_reductions_mb"]
                     ):
                         values = [
                             training_peak,
                             initialization_peak or 0,
                             *(value for key, value in cache_phases.items() if key != "latent_cache"),
                         ]
-                        for phase in (image_encoding, preview_decoding):
-                            if phase is not None:
-                                reduced = phase["workspace_reductions_mb"].get(path, phase["workspace_mb_estimate"])
-                                values.append(phase["peak_mb_estimate"] - phase["workspace_mb_estimate"] + reduced)
+                        for phase, resident, _ in vae_phase_inputs:
+                            reduced = phase["reserved_workspace_reductions_mb"].get(path, phase["reserved_workspace_mb_estimate"])
+                            values.append(resident + reduced)
                         vae_setting_peaks[path] = round(max(values))
+                    for path in dict.fromkeys(
+                        path for phase, _, _ in vae_phase_inputs
+                        for path in phase["capacity_workspace_reductions_mb"]
+                    ):
+                        values = [training_capacity, initialization_peak or 0,
+                                  *(value for key, value in cache_capacity.items() if key != "latent_cache")]
+                        for phase, resident, host in vae_phase_inputs:
+                            reduced = phase["capacity_workspace_reductions_mb"].get(path, phase["capacity_workspace_mb_estimate"])
+                            values.append(resident + host + reduced)
+                        vae_setting_capacity[path] = round(max(values))
                     return {
                         "act_by_bucket": act_by_bucket,
                         "auxiliary_act_peak": auxiliary_act_peak,
                         "act_by_mode": act_by_mode,
+                        "backbone_by_mode": backbone_by_mode,
+                        "adaptive_device_mb": adaptive_device_mb,
+                        "adaptive_host_mb": adaptive_host_mb,
+                        "adaptive_shared_mb": adaptive_shared_mb,
+                        "adaptive_host_peak_mb": adaptive_host_peak_mb,
+                        "adaptive_update_live": adaptive_update_live,
+                        "adaptive_update_capacity": adaptive_update_capacity,
+                        "caller_hook_mb": hook_mb,
+                        "caller_host_mb": caller_host_mb,
+                        "validation_caller_host_mb": validation_caller_host_mb,
+                        "common_live": common_live,
+                        "common_capacity": common_capacity,
                         "training_live": training_live,
+                        "text_encoding_peak": text_encoding_peak,
+                        "text_encoding_capacity": text_encoding_capacity,
                         "training_peak": training_peak,
+                        "training_capacity": training_capacity,
+                        "validation_live": validation_live,
+                        "validation_capacity": validation_capacity,
                         "cache_phases": cache_phases,
+                        "cache_capacity": cache_capacity,
+                        "cache_allocated": cache_allocated,
                         "image_encoding": image_encoding,
                         "preview_decoding": preview_decoding,
                         "vae_phases": vae_phases,
+                        "vae_capacity": vae_capacity,
                         "peak": peak,
+                        "capacity_peak": capacity_peak,
+                        "allocated_peak": allocated_peak,
                         "latent_workspace_mb": latent_workspace_mb,
                         "vae_setting_peaks": vae_setting_peaks,
+                        "vae_setting_capacity": vae_setting_capacity,
                     }
 
+                sized = evaluate_sizing(counts, image_shapes, ds)
+                sized_dataset = ds
                 if native and out.get("native") is not None:
                     native_out = out["native"]
                     resolved = ds.native_max_pixels_resolved if ds.native_max_pixels_mode == "auto_vram" else None
@@ -1264,6 +1744,16 @@ def plan(
                             selection_error = "无法读取训练显卡的显存容量。"
                         elif cfg.training.train_text_encoder:
                             selection_error = "训练文本编码器时无法估算完整显存占用；请改用自动分辨率优先或自定义。"
+                        elif preview_issue is not None:
+                            selection_error = "无法读取预览提示词，请先修正提示词文件。"
+                        elif text_preview_unknown:
+                            selection_error = "无法读取预览提示词的编码长度，请检查本地分词器。"
+                        elif text_capacity_unknown or cache_text_capacity_unknown:
+                            selection_error = "无法估算当前文本条件的统一内存占用，请使用自定义面积上限。"
+                        elif optimizer_unknown:
+                            selection_error = "无法读取当前优化器的内存布局，请检查优化器版本或使用自定义面积上限。"
+                        elif evaluation_capacity_unknown:
+                            selection_error = "无法估算当前检查点保存的内存占用，请使用自定义面积上限。"
                         elif fusion["unsupported"]:
                             selection_error = "当前适配器无法估算完整显存占用；请改用自动分辨率优先或自定义。"
                         elif vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2"}:
@@ -1273,27 +1763,34 @@ def plan(
                         else:
                             geometry = NativeVramGeometry(data_layouts[0], ds)
                             fixed_peak = max(
-                                _training_peak_mb(training_base + fusion_mb[current_mode]),
-                                initialization_peak or 0, *fixed_cache_phases.values(),
-                                fixed_preview["peak_mb_estimate"] if fixed_preview else 0,
+                                _training_peak_mb(max(
+                                    training_base,
+                                    optimizer_step_live + unified_step_workspace_mb,
+                                ) + unified_training_host_mb),
+                                initialization_peak or 0, *fixed_cache_capacity.values(),
+                                _training_peak_mb(evaluation_restore_capacity),
+                                _training_peak_mb(export_projection["known_capacity_mb"]),
+                                fixed_preview["capacity_peak_mb_estimate"] if fixed_preview else 0,
                                 vae.weights_mb + 512 if vae is not None and ds.cache_latents else 0,
                             )
                             budget = min(gpu_total_mb * HEADROOM, gpu_memory_budget_mb) if gpu_memory_budget_mb is not None else gpu_total_mb * HEADROOM
 
                             def candidate_peak(pixels, candidate_counts, candidate_images):
                                 candidate_ds = ds.model_copy(update={"native_max_pixels": pixels})
-                                return round(evaluate_sizing(candidate_counts, candidate_images, candidate_ds)["peak"])
+                                estimate = evaluate_sizing(candidate_counts, candidate_images, candidate_ds)
+                                return round(estimate["capacity_peak"])
 
                             def training_lower_bound(pixels, candidate_counts, candidate_images):
                                 candidate_ds = ds.model_copy(update={"native_max_pixels": pixels, "batch_size": 1})
-                                return round(evaluate_sizing(candidate_counts, candidate_images, candidate_ds)["training_peak"])
+                                estimate = evaluate_sizing(candidate_counts, candidate_images, candidate_ds)
+                                return round(estimate["training_capacity"])
 
                             if round(fixed_peak) <= budget:
                                 chosen = maximum_fitting_pixels(
                                     geometry, native_out["auto_max_pixels"], candidate_peak, budget,
                                     training_lower_bound=training_lower_bound,
                                 )
-                            if chosen is None:
+                            if chosen is None and selection_error is None:
                                 selection_error = (
                                     "当前配置在显存预算内无法保留训练图片尺寸；请允许超限图片等比缩小，或调整训练参数。"
                                     if ds.native_overflow == "error"
@@ -1318,26 +1815,79 @@ def plan(
                                 index_db_path=None, image_shapes=image_shapes, prepared_layout=data_layout,
                             )
                             out["native"].update(auto_vram_max_pixels=chosen, auto_vram_error=None)
-                sized = evaluate_sizing(counts, image_shapes, ds)
+                if ds is not sized_dataset:
+                    sized = evaluate_sizing(counts, image_shapes, ds)
                 act_by_bucket = sized["act_by_bucket"]
                 auxiliary_act_peak = sized["auxiliary_act_peak"]
                 act_by_mode = sized["act_by_mode"]
                 training_live = sized["training_live"]
                 training_peak = sized["training_peak"]
+                training_capacity = sized["training_capacity"]
                 cache_phases = sized["cache_phases"]
                 image_encoding = sized["image_encoding"]
                 preview_decoding = sized["preview_decoding"]
                 vae_phases = sized["vae_phases"]
                 peak = sized["peak"]
+                capacity_peak = sized["capacity_peak"]
                 latent_workspace_mb = sized["latent_workspace_mb"]
                 vae_setting_peaks = sized["vae_setting_peaks"]
+                adaptive_device_mb = sized["adaptive_device_mb"]
+                adaptive_shared_mb = sized["adaptive_shared_mb"]
+                host_memory_mb = max(
+                    host_memory_mb + sized["adaptive_host_mb"],
+                    evaluation_host_resident_mb + sized["adaptive_host_peak_mb"],
+                    preview_host + sized["adaptive_host_mb"],
+                )
+                host_memory_mb += sized["caller_host_mb"]
+                host_memory_mb = max(host_memory_mb, evaluation_host_resident_mb + evaluation_host_mb
+                                     + sized["adaptive_host_mb"] + sized["validation_caller_host_mb"])
+                total_unknown = bool(
+                    cfg.training.train_text_encoder or preview_issue or text_preview_unknown
+                    or optimizer_unknown or vae_unknown
+                    or evaluation_allocated_unknown
+                    or (preview_profile and preview_profile["export_layout_unknowns"])
+                )
+                training_unknown = (
+                    cfg.training.train_text_encoder or optimizer_unknown
+                    or (vae_unknown and not ds.cache_latents)
+                    or evaluation_allocated_unknown
+                    or (preview_profile and preview_profile["export_layout_unknowns"])
+                )
+                validation_unknown = bool(cfg.training.train_text_encoder
+                                          or (vae_unknown and not ds.cache_latents)
+                                          or mode_projection["allocated_unknowns"])
+
+                def phase_estimates(values, *, capacity=False):
+                    result = {
+                        key: None if key == "text_cache" and (
+                            text_preview_unknown or (capacity and cache_text_capacity_unknown)
+                        ) else round(value)
+                        for key, value in values.items()
+                    }
+                    if vae_unknown and ds.cache_latents:
+                        result["latent_cache"] = None
+                    return result
+
                 memory = {
                     "estimate_scope": "per_device",
                     "communication_mb_estimate": round(communication_mb, 1),
-                    "optimizer_workspace_mb_estimate": round(optimizer_workspace_mb, 1),
+                    "optimizer_workspace_mb_estimate": None
+                    if gradient_workspace_unknown or (optimizer_unknown and optimizer_estimate["step_workspace_bytes"] is None)
+                    else round(optimizer_workspace_mb, 1),
+                    "evaluation_snapshot_mb_estimate": round(evaluation_snapshot_mb, 1),
+                    "evaluation_host_snapshot_mb_estimate": round(evaluation_host_mb, 1),
+                    "evaluation_restore_workspace_mb_estimate": round(evaluation_restore_mb, 1),
+                    "evaluation_restore_host_workspace_mb_estimate": round(evaluation_restore_host_mb, 1),
                     "adapter_graph_mb_estimate": round(fusion[current_mode]["retained_bytes"] / 2**20, 1),
                     "adapter_workspace_mb_estimate": round(fusion[current_mode]["workspace_bytes"] / 2**20, 1),
                     "auxiliary_activations_mb_estimate": round(auxiliary_act_peak, 1),
+                    "activation_estimate_method": "family_geometry_dtype_estimate",
+                    "activation_includes_gradients": False,
+                    "activation_includes_adapter_graph": True,
+                    "validation_allocated_peak_mb_estimate": None if validation_unknown else round(sized["validation_live"]),
+                    "validation_capacity_mb_estimate": None
+                    if validation_unknown or text_capacity_unknown or mode_projection["capacity_unknowns"]
+                    else round(sized["validation_capacity"]),
                     "training_runtime_mb_estimate": round(training_peak - training_live, 1),
                     "initialization_peak_mb_estimate": round(initialization_peak)
                     if initialization_peak is not None
@@ -1350,10 +1900,10 @@ def plan(
                     "latent_encoder_mb": round(latent_encoder_mb, 1),
                     "latent_encoding_workspace_mb_estimate": round(latent_workspace_mb, 1),
                     "adapter_mb": round(adapter_mb, 1),
-                    "optimizer_mb": round(optimizer_mb, 1),
+                    "optimizer_mb": None if optimizer_unknown and optimizer_bytes is None else round(optimizer_mb, 1),
                     "cpu_optimizer_mb": round(cpu_optimizer_mb, 1),
                     "cpu_ema_mb": round(cpu_ema_mb, 1),
-                    "host_memory_mb_estimate": round(host_memory_mb, 1),
+                    "host_memory_mb_estimate": None if evaluation_host_unknown else round(host_memory_mb, 1),
                     "gpu_memory_budget_mb": gpu_memory_budget_mb,
                     "gradients_mb": round(gradients_mb, 1),
                     "compensation_mb": round(compensation_mb, 1),
@@ -1361,43 +1911,87 @@ def plan(
                     "swap_staging_mb": round(swap_staging_mb, 1),
                     "dequant_mb": round(dequant_mb, 1),
                     "training_peak_mb_estimate": None
-                    if cfg.training.train_text_encoder
+                    if training_unknown
                     else round(training_peak),
-                    "known_training_residency_mb": round(
-                        weights_mb
-                        + text_encoder_mb
-                        + latent_encoder_mb
-                        + adapter_mb
-                        + optimizer_mb
-                        + gradients_mb
-                        + compensation_mb
-                        + ema_mb
-                        + communication_mb
-                    ),
+                    "training_capacity_mb_estimate": None
+                    if training_unknown or text_capacity_unknown or evaluation_capacity_unknown
+                    else round(training_capacity),
+                    "known_training_residency_mb": round(training_base - dequant_mb + adaptive_device_mb),
                     "unestimated_components": (
                         (["text_encoder_activations"] if cfg.training.train_text_encoder else [])
                         + (["adapter_reconstruction"] if fusion["unsupported"] else [])
+                        + ([] if sharding is not None else optimizer_estimate["unknowns"])
+                        + (["gradient_norm_workspace"] if gradient_workspace_unknown else [])
+                        + (["compiled_kernel_workspace"] if cfg.memory.compile and device_type in {None, "cuda"} else [])
+                        + ["text_" + issue["reason"] for issue in text_inputs.get("unknowns", [])]
+                        + (["preview_shapes"] if preview_issue is not None else [])
+                        + (["image_vae"] if vae_unknown else [])
+                        + (["text_condition_host_staging"] if text_capacity_unknown or cache_text_capacity_unknown else [])
+                        + sorted(set(mode_projection["allocated_unknowns"] + mode_projection["capacity_unknowns"]
+                                     + mode_projection["host_unknowns"] + export_projection["allocated_unknowns"]
+                                     + export_projection["capacity_unknowns"] + export_projection["host_unknowns"]))
+                        + evaluation_ops["non_tensor_unknowns"]
+                        + (preview_profile["export_layout_unknowns"] if preview_profile else [])
                     ),
                     "image_encoding": image_encoding,
                     "preview_decoding": preview_decoding,
-                    "vae_setting_peak_mb_estimates": vae_setting_peaks,
-                    "cache_phase_peak_mb_estimates": {
-                        key: round(value) for key, value in cache_phases.items()
-                    },
+                    "vae_setting_peak_mb_estimates": None
+                    if total_unknown
+                    else vae_setting_peaks,
+                    "vae_setting_capacity_mb_estimates": None
+                    if total_unknown or text_capacity_unknown or cache_text_capacity_unknown or evaluation_capacity_unknown
+                    else sized["vae_setting_capacity"],
+                    "cache_phase_peak_mb_estimates": phase_estimates(cache_phases),
+                    "cache_phase_capacity_mb_estimates": phase_estimates(sized["cache_capacity"], capacity=True),
+                    "cache_phase_allocated_mb_estimates": phase_estimates(sized["cache_allocated"]),
                     "activations_mb_by_bucket": act_by_bucket,
-                    "peak_mb_estimate": None if cfg.training.train_text_encoder else round(peak),
+                    "peak_mb_estimate": None if total_unknown else round(peak),
+                    "capacity_peak_mb_estimate": None
+                    if total_unknown or text_capacity_unknown or cache_text_capacity_unknown or evaluation_capacity_unknown
+                    else round(capacity_peak),
+                    "allocated_peak_mb_estimate": None if total_unknown else round(sized["allocated_peak"]),
                     # The same estimate under each checkpointing mode, so a fix can say what it saves.
                     "checkpointing_peak_mb_estimates": None
-                    if cfg.training.train_text_encoder or "activation_checkpointing" not in caps
+                    if total_unknown or "activation_checkpointing" not in caps
                     else {
                         mode: round(
                             max(
-                                _training_peak_mb(training_base + act + auxiliary_act_peak + fusion_mb[mode]),
+                                _training_peak_mb(max(
+                                    sized["backbone_by_mode"][mode],
+                                    optimizer_step_live + adaptive_device_mb,
+                                    sized["text_encoding_peak"],
+                                    evaluation_restore_live + adaptive_device_mb,
+                                    export_projection["known_allocated_mb"] + adaptive_device_mb,
+                                    sized["validation_live"],
+                                    sized["adaptive_update_live"],
+                                    sized["common_live"],
+                                )),
                                 *cache_phases.values(),
                                 *vae_phases,
                                 initialization_peak or 0,
                             )
                         )
+                        for mode, act in act_by_mode.items()
+                    },
+                    "checkpointing_capacity_mb_estimates": None
+                    if (total_unknown or text_capacity_unknown or cache_text_capacity_unknown or evaluation_capacity_unknown
+                        or "activation_checkpointing" not in caps)
+                    else {
+                        mode: round(max(
+                            _training_peak_mb(max(
+                                sized["backbone_by_mode"][mode] + unified_training_host_mb
+                                + (sized["adaptive_host_mb"] + sized["caller_host_mb"] if device_type == "mps" else 0.0),
+                                optimizer_step_live + unified_step_workspace_mb + unified_training_host_mb + adaptive_shared_mb,
+                                sized["text_encoding_capacity"],
+                                evaluation_restore_capacity + adaptive_shared_mb,
+                                export_projection["known_capacity_mb"] + adaptive_shared_mb,
+                                sized["validation_capacity"],
+                                sized["adaptive_update_capacity"],
+                                sized["common_capacity"],
+                            )),
+                            *sized["cache_capacity"].values(), *sized["vae_capacity"],
+                            initialization_peak or 0,
+                        ))
                         for mode, act in act_by_mode.items()
                     },
                     "gpu_total_mb": gpu_total_mb,
@@ -1411,8 +2005,8 @@ def plan(
                 if tight:
                     # Each fix only where it lowers the phase that is over the budget.
                     for phase in (image_encoding, preview_decoding):
-                        if phase is not None and phase["peak_mb_estimate"] > tight:
-                            for path in phase["workspace_reductions_mb"]:
+                        if phase is not None and phase["capacity_peak_mb_estimate"] > tight:
+                            for path in phase["capacity_workspace_reductions_mb"]:
                                 suggestion = (
                                     "set memory.vae_encode_batch_size = 1"
                                     if path == "memory.vae_encode_batch_size"
@@ -1423,15 +2017,18 @@ def plan(
                     if (
                         image_encoding is not None
                         and image_encoding["mode"] == "online"
-                        and max(training_peak, image_encoding["peak_mb_estimate"]) > tight
+                        and max(training_capacity, image_encoding["capacity_peak_mb_estimate"]) > tight
                     ):
                         memory["suggestions"].append("enable dataset.cache_latents")
-                    if preview_decoding is not None and preview_decoding["peak_mb_estimate"] > tight:
+                    if preview_decoding is not None and preview_decoding["capacity_peak_mb_estimate"] > tight:
                         memory["suggestions"].append("lower sampling.width / sampling.height")
-                if tight and training_peak > tight:
+                if tight and not training_unknown and not text_capacity_unknown and training_capacity > tight:
                     # Multi-GPU training rejects offloaded checkpoints and block swap.
                     multi_gpu = cfg.loop.gpu_count > 1 or cfg.loop.distributed_strategy == "fsdp"
-                    if cfg.memory.activation_checkpointing == "none":
+                    if (
+                        cfg.memory.activation_checkpointing == "none"
+                        and act_by_mode["block"] < act_by_mode["none"]
+                    ):
                         memory["suggestions"].append("set memory.activation_checkpointing = 'block'")
                     elif (
                         cfg.memory.activation_checkpointing == "block"
@@ -1464,11 +2061,11 @@ def plan(
                         memory["suggestions"].append(
                             "set dataset.text_encoding = 'cached' (frees the text encoder)"
                         )
-                if tight and peak > tight:
+                if tight and capacity_peak > tight:
                     out["warnings"].append(
                         {
                             "code": "vram.tight",
-                            "msg": f"estimated peak {peak:.0f} MB vs {gpu_total_mb:.0f} MB available",
+                            "msg": f"estimated peak {capacity_peak:.0f} MB vs {gpu_total_mb:.0f} MB available",
                         }
                     )
         except Exception as e:  # noqa: BLE001

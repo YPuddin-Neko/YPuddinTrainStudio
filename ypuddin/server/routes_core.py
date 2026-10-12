@@ -706,7 +706,7 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
         index_db_path=c.service_cache_dir("index") / "index.sqlite",
         **planning_memory(selected),
     )
-    from .memory_fit import capacity_shortfall, host_memory_error, shortfall_error
+    from .memory_fit import admission_estimate, capacity_shortfall, host_memory_error, shortfall_error
     from .supervisor import training_device_error
 
     count = (result.get("distributed") or {}).get("world_size", 1)
@@ -723,7 +723,7 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
         result["ok"] = False
     # Starting would only wait forever, so the plan names the shortfall while it can still be fixed.
     if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
-        shortfall := capacity_shortfall((result.get("memory") or {}).get("peak_mb_estimate"), selected, count)
+        shortfall := capacity_shortfall(admission_estimate(result.get("memory") or {}), selected, count)
     ):
         result["errors"].append(shortfall_error(shortfall))
         # The error supersedes the note that memory may be tight.

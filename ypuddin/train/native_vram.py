@@ -23,9 +23,12 @@ class NativeVramGeometry:
         for items, validation in ((layout.items, False), (layout.validation_items, True)):
             for item in items:
                 key = (item.record.width, item.record.height)
-                entry = self.originals.setdefault(key, {"items": 0, "images": set(), "validation": set()})
+                entry = self.originals.setdefault(key, {
+                    "items": 0, "images": set(), "validation": set(), "validation_items": 0,
+                })
                 entry["validation" if validation else "images"].add(item.record.path)
                 entry["items"] += not validation
+                entry["validation_items"] += validation
         # Each source canvas has a monotone size even when the memory estimate does not.
         self._plateaus: dict[tuple[int, int], tuple[tuple[int, int], int]] = {}
 
@@ -43,10 +46,13 @@ class NativeVramGeometry:
             key = (size.width, size.height)
             if entry["items"]:
                 counts[key] += entry["items"]
-            target = images.setdefault(key, {"items": 0, "images": set(), "validation": set()})
+            target = images.setdefault(key, {
+                "items": 0, "images": set(), "validation": set(), "validation_items": 0,
+            })
             target["items"] += entry["items"]
-            target["images"].update(entry["images"])
-            target["validation"].update(entry["validation"])
+            target["validation_items"] += entry["validation_items"]
+            for field in ("images", "validation"):
+                target[field].update(entry[field])
         return dict(counts), images
 
     def interval_start(self, pixels: int) -> int:

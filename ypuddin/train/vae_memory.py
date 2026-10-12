@@ -39,6 +39,7 @@ _FRAGMENTATION = 1.1
 # Math SDPA holds FP32 scores, their softmax and a mask: 9 bytes per score on PyTorch 2.11 CUDA. The
 # composite safe softmax of earlier releases adds another FP32 copy, which HIP builds may still use.
 _SCORE_BYTES = 13
+_CUDA_SCORE_BYTES = 9
 _QUERY_CHUNK = 2048
 _MARGIN_MB = 512
 # Reserved workspace above the weights and input, from the same 5070 Ti probes.
@@ -178,6 +179,9 @@ class VaeMemory:
     cache_tiling: bool = False
     # Whether VAE attention chunking applies to this runtime at all (Qwen VAE on HIP).
     chunking_available: bool = False
+    # CUDA 2.11 probes use the fused safe-softmax implementation; HIP/MPS retain the older envelope.
+    math_score_bytes: int = _CUDA_SCORE_BYTES
+    latent_channels: int = 0
 
     @property
     def element_size(self) -> int:
@@ -225,6 +229,8 @@ def vae_memory(
         tiling=qwen and cfg.memory.vae_tiling,
         cache_tiling=qwen and cfg.memory.cache_encode_tiled,
         chunking_available=qwen and hip,
+        math_score_bytes=_SCORE_BYTES if hip or device_type == "mps" else _CUDA_SCORE_BYTES,
+        latent_channels=16 if qwen else 32 if family == "flux2" else 4,
     )
 
 
@@ -237,8 +243,7 @@ def _reserved_workspace_floor(vae: VaeMemory, decode: bool, pixels: int, batch: 
     reserved = pixels * coefficient
     if cap_mb is not None:
         reserved = min(reserved, cap_mb * 2**20)
-    # Every caller already includes this margin once in the enclosing phase.
-    return max(0.0, batch * reserved - _MARGIN_MB * 2**20)
+    return batch * reserved
 
 
 def _invocation(vae: VaeMemory, decode: bool, width: int, height: int, batch: int, tile: int | None) -> dict:
@@ -248,32 +253,56 @@ def _invocation(vae: VaeMemory, decode: bool, width: int, height: int, batch: in
         w, h, b = min(width, tile), min(height, tile), 1
     else:
         w, h, b = width, height, batch
-    conv = b * w * h * _PIXEL_WORKSPACE[(vae.kind, max(2, element))][decode] * _FRAGMENTATION
-    attention = 0.0
+    conv = b * w * h * _PIXEL_WORKSPACE[(vae.kind, max(2, element))][decode]
+    attention = capacity_attention = 0.0
     tokens = (w // 8) * (h // 8)
     if vae.attention_backend != "fused":
         queries = min(tokens, _QUERY_CHUNK) if vae.query_chunking else tokens
-        attention = b * (queries * tokens * _SCORE_BYTES + tokens * vae.attention_channels * (10 * element + 16))
+        states = tokens * vae.attention_channels * (10 * element + 16)
+        attention = b * (queries * tokens * vae.math_score_bytes + states)
+        capacity_attention = b * (queries * tokens * _SCORE_BYTES + states)
     # Encoding keeps the FP32 batch and, while tiles run, its full cast copy on the device.
-    resident = 0 if decode else batch * width * height * 3 * (4 + (element if tile and vae.kind == "qwen" else 0))
+    channels = vae.latent_channels or (16 if vae.kind == "qwen" else 4)
+    resident = (
+        batch * (width // 8) * (height // 8) * channels * 4
+        if decode else batch * width * height * 3 * (4 + (element if tile and vae.kind == "qwen" else 0))
+    )
     reserved = _reserved_workspace_floor(vae, decode, w * h, b)
+    allocated_workspace = resident + max(conv, attention)
+    reserved_workspace = resident + max(conv * _FRAGMENTATION, attention, reserved)
+    capacity_workspace = resident + max(
+        conv * _FRAGMENTATION + _MARGIN_MB * 2**20,
+        capacity_attention + _MARGIN_MB * 2**20,
+        reserved,
+    )
+    if not decode and element == 4 and (
+        vae.kind == "kl" and (vae.attention_backend != "fused" or channels == 4)
+        or vae.kind == "qwen" and vae.attention_backend != "fused" and not vae.query_chunking
+    ):
+        # FP32 encoding retains allocator segments beyond the live convolution/attention peak.
+        reserved_workspace = capacity_workspace
     return {
         "width": width,
         "height": height,
         "batch_size": batch,
         "tile_pixels": tile,
         "attention_tokens": tokens,
-        "workspace_mb_estimate": round((resident + max(conv, attention, reserved)) / 2**20, 1),
+        "workspace_mb_estimate": round(allocated_workspace / 2**20, 1),
+        "reserved_workspace_mb_estimate": round(reserved_workspace / 2**20, 1),
+        "capacity_workspace_mb_estimate": round(capacity_workspace / 2**20, 1),
         "attention_workspace_mb_estimate": round(attention / 2**20, 1),
     }
 
 
-def _largest(vae: VaeMemory, decode: bool, shapes: dict[tuple[int, int], int], tile_for) -> dict | None:
+def _largest(
+    vae: VaeMemory, decode: bool, shapes: dict[tuple[int, int], int], tile_for,
+    metric: str = "workspace_mb_estimate",
+) -> dict | None:
     calls = [
         _invocation(vae, decode, width, height, batch, tile_for(vae, width, height))
         for (width, height), batch in sorted(shapes.items())
     ]
-    return max(calls, key=lambda call: call["workspace_mb_estimate"], default=None)
+    return max(calls, key=lambda call: call[metric], default=None)
 
 
 def _cache_tile(vae: VaeMemory, width: int, height: int) -> int | None:
@@ -291,11 +320,19 @@ def _phase(vae: VaeMemory, decode: bool, shapes: dict[tuple[int, int], int], til
     largest = _largest(vae, decode, shapes, tile_for)
     if largest is None:
         return None
-    reductions = {}
+    for metric in ("reserved_workspace_mb_estimate", "capacity_workspace_mb_estimate"):
+        largest[metric] = _largest(vae, decode, shapes, tile_for, metric)[metric]
+    reductions, reserved_reductions, capacity_reductions = {}, {}, {}
     for path, changed in alternatives:
         call = _largest(changed, decode, shapes, tile_for)
         if call is not None and call["workspace_mb_estimate"] < largest["workspace_mb_estimate"]:
             reductions[path] = call["workspace_mb_estimate"]
+        reserved = _largest(changed, decode, shapes, tile_for, "reserved_workspace_mb_estimate")
+        if reserved is not None and reserved["reserved_workspace_mb_estimate"] < largest["reserved_workspace_mb_estimate"]:
+            reserved_reductions[path] = reserved["reserved_workspace_mb_estimate"]
+        capacity = _largest(changed, decode, shapes, tile_for, "capacity_workspace_mb_estimate")
+        if capacity is not None and capacity["capacity_workspace_mb_estimate"] < largest["capacity_workspace_mb_estimate"]:
+            capacity_reductions[path] = capacity["capacity_workspace_mb_estimate"]
     return {
         **largest,
         "dtype": _DTYPES[vae.dtype],
@@ -303,6 +340,8 @@ def _phase(vae: VaeMemory, decode: bool, shapes: dict[tuple[int, int], int], til
         "query_chunking": vae.query_chunking,
         "weights_mb": round(vae.weights_mb, 1),
         "workspace_reductions_mb": reductions,
+        "reserved_workspace_reductions_mb": reserved_reductions,
+        "capacity_workspace_reductions_mb": capacity_reductions,
     }
 
 
@@ -324,7 +363,10 @@ def latent_cache_phase(vae: VaeMemory, shapes: dict[tuple[int, int], int]) -> di
     """Caching runs before the backbone, text encoder or training state reach the device: only the VAE."""
     phase = _phase(vae, False, shapes, _cache_tile, _alternatives(vae, caching=True, shapes=shapes))
     if phase is not None:
-        phase["peak_mb_estimate"] = round(vae.weights_mb + phase["workspace_mb_estimate"] + _MARGIN_MB)
+        phase["allocated_peak_mb_estimate"] = round(vae.weights_mb + phase["workspace_mb_estimate"])
+        phase["reserved_peak_mb_estimate"] = round(vae.weights_mb + phase["reserved_workspace_mb_estimate"])
+        phase["peak_mb_estimate"] = phase["reserved_peak_mb_estimate"]
+        phase["capacity_peak_mb_estimate"] = round(vae.weights_mb + phase["capacity_workspace_mb_estimate"])
     return phase
 
 
@@ -343,10 +385,12 @@ def preview_shapes(cfg: TrainConfig, align: int) -> dict[tuple[int, int], int]:
     sampling = cfg.sampling
     if sampling is None or not sampling.enabled:
         return {}
-    sizes = [(prompt.width or sampling.width, prompt.height or sampling.height) for prompt in sampling.prompts]
+    prompts = list(sampling.prompts)
     if sampling.prompts_file:
-        # A prompt file can set its own sizes; the defaults stand in for them here.
-        sizes.append((sampling.width, sampling.height))
+        from .trainer import _load_prompts_file
+
+        prompts.extend(_load_prompts_file(sampling.prompts_file))
+    sizes = [(prompt.width or sampling.width, prompt.height or sampling.height) for prompt in prompts]
     return {
         (width // align * align, height // align * align): 1
         for width, height in sizes
