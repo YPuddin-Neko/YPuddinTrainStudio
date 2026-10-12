@@ -26,6 +26,9 @@
 .training-studio .bucket-heading h4, .training-studio .estimate-block h4 { font-size: 12px; }
 .training-studio .estimate-stats dd { font-size: 16px; }
 .training-studio .estimate-list > div, .training-studio .estimate-memory { font-size: 12px; }
+.training-studio .estimate-alert, .training-studio .estimate-alert > ul { min-width: 0; grid-template-columns: minmax(0, 1fr); white-space: normal; overflow-wrap: anywhere; }
+.training-studio .estimate-alert > *, .training-studio .estimate-alert > ul > li { min-width: 0; max-width: 100%; }
+.training-studio .estimate-alert > ul > li > .ui-link { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
 .training-studio .inspector-note, .training-studio .bucket-empty, .training-studio .plan-notes { font-size: 12px; line-height: 1.6; }
 .training-studio .dataset-masks, .training-studio .dataset-masks .ui-link { font-size: 12px; }
 .training-studio .bucket-size { font-size: 11px; }

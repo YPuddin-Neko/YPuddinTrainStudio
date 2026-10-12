@@ -25,6 +25,7 @@ export default function ConfigHelp({ label, children }: { label: string; childre
   const [position, setPosition] = React.useState<React.CSSProperties>({ visibility: 'hidden' });
   const [scrollEdges, setScrollEdges] = React.useState({ above: false, below: false });
   const inRouter = useInRouterContext();
+  const sections = children.split(/\r\n?|\n/).filter(section => section.trim());
   const close = React.useCallback(() => setOpen(false), []);
   const updateScrollEdges = React.useCallback(() => {
     const body = content.current;
@@ -150,7 +151,10 @@ export default function ConfigHelp({ label, children }: { label: string; childre
     {open && createPortal(<div ref={panel} id={id} role="tooltip" className="config-help-popover" style={position}
       data-scroll-above={scrollEdges.above || undefined} data-scroll-below={scrollEdges.below || undefined}>
       <div ref={content} className="config-help-content" onScroll={updateScrollEdges}
-        tabIndex={scrollEdges.above || scrollEdges.below ? 0 : undefined}>{children}</div>
+        tabIndex={scrollEdges.above || scrollEdges.below ? 0 : undefined}>{sections.map((section, index) => <React.Fragment key={index}>
+          {index > 0 && <hr className="config-help-divider" aria-hidden="true"/>}
+          <div className="config-help-section">{section}</div>
+        </React.Fragment>)}</div>
     </div>, document.body)}
   </>;
 }
