@@ -47,6 +47,14 @@ Anima、Krea 2、Klein 的对齐单位为 16，SDXL 为 8。以 1001×777 原图
 
 参数页的“每轮计算次数”表示每轮按尺寸分组运行模型的次数。梯度累积决定参数更新次数：单卡有 4 批、梯度累积为 3 时，每轮更新 2 次，最后一次使用剩余批次。原生模式不按分辨率列表复制样本，来源重复次数仍生效。VAE 编码批量独立控制编码调用，不改变合批后的模型训练批量。
 
+## CUDA 显存分配
+
+Linux NVIDIA 单卡原生尺寸训练通过界面或 `ypuddin train` 启动时，会在加载训练器前为 PyTorch 原生 allocator 配置 `expandable_segments:True`，减少不同批次尺寸反复分配产生的显存碎片。该设置按原生模式启用，单一画布的数据集同样适用，不额外扫描图片；Windows、分桶训练、独立缓存任务、多卡、CPU、MPS 和 HIP 保持原来的分配策略。已初始化 CUDA 的进程不自动修改 allocator。
+
+设置 `PYTORCH_CUDA_ALLOC_CONF`、`PYTORCH_HIP_ALLOC_CONF` 或 `PYTORCH_ALLOC_CONF` 中任意一个环境变量后，程序保留其完整内容，不追加或覆盖选项；空值也视为显式设置。例如 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False` 可关闭自动策略。自定义 allocator 和 `cudaMallocAsync` 不会被切换为原生 allocator。
+
+显存分配策略不改变批大小、梯度累积、训练计算或模型编译选项，也不降低真实张量所需的显存。直接调用 Python `Trainer` 的程序自行管理 allocator。
+
 ## 多卡与恢复
 
 v2 的 DDP 将同尺寸批次分配给各卡，保留所有训练项。最后一组中未分到批次的卡只参与零梯度归约，不读取或复制图片，也不增加模型计算次数和样本数。

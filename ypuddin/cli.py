@@ -36,10 +36,13 @@ def _worker_config(args: argparse.Namespace) -> TrainConfig:
 
 
 def cmd_train(args: argparse.Namespace) -> int:
+    from ypuddin.runtime_allocator import configure_native_allocator
     from ypuddin.runtime_attention import AttentionEnvironmentError
-    from ypuddin.train import train
 
     cfg = _worker_config(args)
+    configure_native_allocator(cfg, device=args.device)
+    from ypuddin.train import train
+
     try:
         outcome = train(cfg, device=args.device)
     except AttentionEnvironmentError as exc:
