@@ -1393,12 +1393,14 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : fullPathKey === 'adapter.dora_compute_mode' ? fieldValue === 'comfyui'
         ? (english ? 'Reduces computation differences before and after weight export.' : '减少权重导出前后的计算差异。')
         : (english ? 'Computes DoRA in FP32.' : '使用 FP32 计算 DoRA。')
-      : fullPathKey === 'dataset.native_batch_mode' && value.checkpoint?.resume && !preset ? (english ? 'Continues with the batch mode saved in the recovery point.' : '继续训练沿用恢复点的批次方式。')
+      : fullPathKey === 'dataset.native_batch_mode' && value.checkpoint?.resume && !preset ? fieldContext.nativeBatchingVersion === 1 || fieldContext.nativeBatchingVersion === 3
+        ? (english ? 'Keeps the recovery point’s area microbatches to save GPU memory.' : '沿用恢复点的面积拆分方式，可节省显存。')
+        : (english ? 'Continues with the batch mode saved in the recovery point.' : '继续训练沿用恢复点的批次方式。')
       : fullPathKey === 'dataset.native_max_pixels' ? ['auto', 'auto_vram'].includes(value.dataset?.native_max_pixels_mode)
         ? nativeAreaHint(value.dataset?.native_max_pixels_mode, nativeAreaEstimate, english, fieldContext.nativeBatchingVersion)
         : nativePixelsHint(fieldValue, english, fieldContext.nativeBatchingVersion) || (fieldContext.nativeBatchingVersion === 2 ? configFieldHint(fullPathKey, english) : english ? 'Largest area allowed for one image.' : '单张图片允许的最大面积。')
-      : fullPathKey === 'dataset.batch_size' && value.dataset?.resolution_mode === 'native' && fieldContext.nativeBatchingVersion === 3
-        ? (english ? 'Maximum images in each logical batch per GPU; split by area before computation.' : '每卡逻辑批的图片数上限，计算时按面积拆成微批。')
+      : fullPathKey === 'dataset.batch_size' && value.dataset?.resolution_mode === 'native' && (fieldContext.nativeBatchingVersion === 1 || fieldContext.nativeBatchingVersion === 3)
+        ? (english ? 'Logical batch limit per GPU; the area limit may allow fewer images per model run.' : '每卡逻辑批的图片数上限；单次计算受面积上限限制，可能少于此值。')
       : fullPathKey === 'dataset.batch_size' && value.dataset?.resolution_mode === 'native' && fieldContext.nativeBatchingVersion !== 2
         ? (english ? 'Images in each batch on every GPU.' : '每张显卡每批的图片数。')
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')
