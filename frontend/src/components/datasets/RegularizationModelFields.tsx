@@ -17,8 +17,11 @@ export default function RegularizationModelFields({ model, families, assets, dis
   const text = useWorkspaceText();
   const family = families.find(item => item.name === model.family);
   const weights = modelFamilyWeights(family);
-  const setPath = (field: string, value: string) => {
+  const setPath = (field: string, value: string, selectedAsset?: ModelAsset) => {
     const next: GenerationModel = { ...model, [field]: value || null };
+    if (field === 'text_encoder_path' && selectedAsset && 'processor_path' in selectedAsset && typeof selectedAsset.processor_path === 'string' && selectedAsset.processor_path.trim()) {
+      next.tokenizer_path = selectedAsset.processor_path;
+    }
     if (field === 'dit_path' && model.family === 'krea2') {
       const asset = assets.find(item => item.family === 'krea2' && item.kind === 'dit' && item.path === value);
       next.krea2_variant = asset?.variant === 'raw' || asset?.variant === 'turbo' ? asset.variant : 'auto';
@@ -42,7 +45,7 @@ export default function RegularizationModelFields({ model, families, assets, dis
         const matches = assets.filter(asset => asset.exists && asset.kind === weight.kind && (asset.family === model.family || asset.compatible_families?.includes(model.family)) && !modelAssetUnsupportedReason(asset));
         return <label key={field}><span className="reg-model-label">{weight.label}{weight.hint && <ConfigHelp label={text(`${weight.label}说明`, `${weight.label} help`)}>{weight.hint}</ConfigHelp>}</span><div className="reg-model-path">
           <PathInput ariaLabel={weight.label} value={value} placeholder={weight.required ? undefined : text('可选', 'Optional')} onChange={next => setPath(field, next)} resolveDefaultPath={async () => (await apiClient.get<{path:string}>('/models/browse-root', { params: { kind: weight.kind }, silent: true })).path}/>
-          {!!matches.length && <StudioSelect aria-label={`${weight.label} · ${text('从已注册模型选择', 'Select a registered model')}`} disabled={disabled} value={matches.some(asset => asset.path === value) ? value : ''} placeholder={text('从已注册模型选择', 'Select a registered model')} options={matches.map(asset => ({ value: asset.path, label: asset.path.split(/[\\/]/).pop() || asset.path }))} onValueChange={next => setPath(field, next)}/>}
+          {!!matches.length && <StudioSelect aria-label={`${weight.label} · ${text('从已注册模型选择', 'Select a registered model')}`} disabled={disabled} value={matches.some(asset => asset.path === value) ? value : ''} placeholder={text('从已注册模型选择', 'Select a registered model')} options={matches.filter((asset, index) => matches.findIndex(item => item.path === asset.path) === index).map(asset => ({ value: asset.path, label: asset.path.split(/[\\/]/).pop() || asset.path }))} onValueChange={next => setPath(field, next, matches.find(asset => asset.path === next && asset.family === model.family) ?? matches.find(asset => asset.path === next))}/>}
         </div></label>;
       })}
       {model.family === 'krea2' && <label>{text('Krea 2 类型', 'Krea 2 variant')}<StudioSelect aria-label={text('Krea 2 类型', 'Krea 2 variant')} value={model.krea2_variant || 'auto'} disabled={disabled} options={[{value:'auto',label:text('读取模型记录', 'Read model record')},{value:'raw',label:'Raw'},{value:'turbo',label:'Turbo'}]} onValueChange={value=>onChange({...model,krea2_variant:value as GenerationModel['krea2_variant']})}/></label>}

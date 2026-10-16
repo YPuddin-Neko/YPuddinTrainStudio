@@ -11453,6 +11453,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RecommendationUseRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -23502,6 +23519,28 @@
             "type": "array",
             "title": "Compatible Families"
           },
+          "processor_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processor Path"
+          },
+          "source_download_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Download Id"
+          },
           "id": {
             "type": "string",
             "title": "Id"
@@ -23626,6 +23665,17 @@
           "path": {
             "type": "string",
             "title": "Path"
+          },
+          "processor_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processor Path"
           },
           "dtype": {
             "anyOf": [
@@ -24259,6 +24309,37 @@
             ],
             "title": "Bundle"
           },
+          "layout_version": {
+            "type": "integer",
+            "title": "Layout Version",
+            "default": 1
+          },
+          "components": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Components"
+          },
+          "component_plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Plan"
+          },
           "manifest": {
             "anyOf": [
               {
@@ -24440,6 +24521,15 @@
               }
             ],
             "title": "Bundle"
+          },
+          "layout_version": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Layout Version",
+            "default": 2
           }
         },
         "additionalProperties": false,
@@ -28818,6 +28908,18 @@
         "type": "object",
         "title": "RecommendationDownloadRequest"
       },
+      "RecommendationUseRequest": {
+        "properties": {
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RecommendationUseRequest"
+      },
       "RecommendedModel": {
         "properties": {
           "id": {
@@ -28959,6 +29061,28 @@
               }
             ],
             "title": "Available Path"
+          },
+          "processor_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processor Path"
+          },
+          "active_download_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Download Id"
           },
           "is_default": {
             "type": "boolean",

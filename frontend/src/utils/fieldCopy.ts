@@ -306,7 +306,7 @@ const MODEL_PATH_HINTS: Record<string, Record<string, Copy>> = {
   },
   flux3: {
     dit_path: ['FLUX.3 Image Klein Base 完整目录或 BF16／FP32 主模型文件。', 'FLUX.3 Image Klein Base folder or BF16/FP32 transformer file.'],
-    text_encoder_path: ['Qwen3-VL-4B-Instruct 完整目录，使用完整模型包时可留空。', 'Full Qwen3-VL-4B-Instruct folder; optional with the full model package.'],
+    text_encoder_path: ['Qwen3-VL-4B-Instruct 完整目录或带配套处理器的 BF16 单文件，使用完整模型包时可留空。', 'Qwen3-VL-4B-Instruct folder or BF16 single file with its matching processor; optional with the full model package.'],
     vae_path: ['FLUX.3 配套 VAE，使用完整模型包时可留空。', 'FLUX.3 autoencoder; optional with the full model package.'],
     tokenizer_path: ['留空使用文本编码器内含的分词器与处理器。', 'Blank uses the tokenizer and processor bundled with the text encoder.'],
   },

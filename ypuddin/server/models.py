@@ -669,6 +669,8 @@ class FamilyInfo(_Out):
 
 class ModelAsset(_Out):
     compatible_families: list[str] = Field(default_factory=list)
+    processor_path: str | None = None
+    source_download_id: str | None = None
     id: str
     family: str
     kind: str

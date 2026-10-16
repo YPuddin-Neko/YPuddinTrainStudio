@@ -196,6 +196,10 @@ def _exact_members(path, spec):
 
 def available_bundle(context, path, spec):
     """Reuse the completed transfer proof while every member retains its filesystem identity."""
+    from .flux3_components import available_installation, proof_key
+
+    if context.db.get_kv(proof_key(path), {}).get("layout_version") == 2:
+        return available_installation(context, path, spec)
     try:
         if not context.is_allowed(path.resolve()) or path.is_symlink() or not _exact_members(path, spec):
             return False
@@ -213,6 +217,10 @@ def available_bundle(context, path, spec):
 
 def recover_publication(service, row):
     """Reconcile only an interrupted task's unchanged, explicitly owned publication."""
+    if row.get("layout_version", 1) == 2:
+        from .flux3_components import recover_installation
+
+        return recover_installation(service, row)
     from .model_layout import model_folder
 
     root, target = Path(row["storage_root"]), Path(row["target_path"])
@@ -256,18 +264,51 @@ def validate_bundle(path, spec):
         Flux3Text.validate_paths(path)
 
 
-def start_bundle(service, body, recommendation=None, *, frozen=None):
+def start_bundle(service, body, recommendation=None, *, frozen=None, layout_version=None, plan=None):
+    with service._starting:
+        return _start_bundle(service, body, recommendation, frozen=frozen, layout_version=layout_version, plan=plan)
+
+
+def _start_bundle(service, body, recommendation=None, *, frozen=None, layout_version=None, plan=None):
     from .model_downloads import ACTIVE, ModelDownload
     from .model_layout import model_folder
+    from .model_recommendations import find_recommendation, related_download
 
     spec = BundleManifest.model_validate(frozen) if frozen else validate_request(body)
+    entry = recommendation or find_recommendation(spec.id)
+    if entry is not None:
+        active = related_download(entry, service.list())
+        if active:
+            if (active.get("recommendation_id") or active.get("bundle")) == entry.id:
+                raise Conflict("this model file is already downloading", code="download.active",
+                               details={"download_id": active["id"]})
+            return dict(active)
+    layout_version = layout_version if layout_version is not None else getattr(body, "layout_version", 2)
+    if layout_version not in {1, 2}:
+        raise ValueError("unsupported FLUX.3 installation layout")
     root = Path(service.context.settings()["paths"]["models_dir"]).resolve()
     if not service.context.is_allowed(root):
         raise ApiError("model directory is outside allowed storage roots", status=403)
-    target = _inside(root, model_folder(root, "flux3", body.kind) / spec.digest[:12])
+    if layout_version == 2:
+        from .flux3_components import _recover_groups, installation_plan, validate_plan
+
+        for previous in list(service.tasks.values()):
+            if (previous.get("layout_version") == 2 and previous["status"] in {"failed", "cancelled"}
+                    and previous.get("manifest") == spec.model_dump()):
+                _recover_groups(service, previous)
+        plan = validate_plan(service.context, root, spec, plan) if plan is not None else installation_plan(service.context, root, spec)
+    target = _inside(root, model_folder(root, "flux3", body.kind) / (("v2-" if layout_version == 2 else "") + spec.digest[:12]))
     with service.lock:
         if service.closed:
             raise Conflict("download service is stopping")
+        if layout_version == 2:
+            claims = {group["role"] for group in plan["groups"]}
+            for active in service.tasks.values():
+                if active["status"] in ACTIVE and active.get("layout_version") == 2 and (
+                    claims & {group["role"] for group in (active.get("component_plan") or {}).get("groups", [])}
+                ):
+                    raise Conflict("a shared FLUX.3 component is downloading", code="download.active",
+                                   details={"download_id": active["id"]})
         if target.exists() or any(row["target_path"] == str(target) and row["status"] in ACTIVE for row in service.tasks.values()):
             raise Conflict("this model directory exists or is downloading", code="download.exists")
         id_ = new_id("dl")
@@ -280,6 +321,11 @@ def start_bundle(service, body, recommendation=None, *, frozen=None):
             bundle=spec.id, manifest=spec,
             verification_source="pinned_revision_and_sha256" if all(item.sha256 for item in spec.files) else "pinned_revision_and_sizes",
         ).model_dump()
+        row["layout_version"] = layout_version
+        if layout_version == 2:
+            row["component_plan"] = plan
+            row["expected_size"] = row["total_bytes"] = sum(item["size"] for item in plan["files"]) + sum(
+                item["size"] for group in plan["groups"] for item in group["files"])
         row["storage_root"] = str(root)
         service.tasks[id_] = row
         service.cancelled[id_] = threading.Event()
@@ -290,6 +336,10 @@ def start_bundle(service, body, recommendation=None, *, frozen=None):
 
 
 def run_bundle(service, id_, root):
+    if service.tasks[id_].get("layout_version", 1) == 2:
+        from .flux3_components import run_installation
+
+        return run_installation(service, id_, root)
     from .download_errors import download_auth_error, download_http_error
     from .model_downloads import _Cancelled, _check_download_header, _Redirect
     from .network import ProxyPolicy
@@ -389,8 +439,11 @@ def run_bundle(service, id_, root):
         service._update(id_, status="cancelled", finished_at=now())
     except Exception as error:
         if published and not registered:
-            _inside(root, target)
-            shutil.rmtree(target)
+            from .flux3_components import registered_under
+
+            with service.context.db.transaction():
+                if not registered_under(service.context, target):
+                    shutil.rmtree(_inside(root, target))
         message = policy.redact(error)
         if token:
             message = message.replace(token, "[redacted]")

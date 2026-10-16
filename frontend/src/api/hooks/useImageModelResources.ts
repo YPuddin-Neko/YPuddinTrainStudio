@@ -13,6 +13,17 @@ export const imageModelKeys = {
   catalog: ['image-models', 'catalog'], assets: ['image-models', 'assets'], tasks: ['image-models', 'tasks'],
 } as const;
 export const imageDownloadActive = (task: ModelDownload) => ['queued', 'downloading'].includes(task.status);
+export const imageRecommendationWaitingForComponent = (entry: ImageRecommendation, task: ModelDownload) =>
+  entry.bundle === 'flux3-base' && task.recommendation_id !== entry.id && task.bundle !== 'flux3-base';
+
+export const imageRecommendationOwnerPending = (entry: ImageRecommendation, tasks: ModelDownload[]) =>
+  !!entry.active_download_id && !tasks.some(task => task.id === entry.active_download_id);
+
+export function imageRecommendationTask(entry: ImageRecommendation, tasks: ModelDownload[]): ModelDownload | undefined {
+  if (imageRecommendationOwnerPending(entry, tasks)) return undefined;
+  const linked = tasks.find(task => task.id === entry.active_download_id && imageDownloadActive(task));
+  return linked ?? tasks.filter(task => task.recommendation_id === entry.id).sort((a, b) => b.created_at - a.created_at)[0];
+}
 
 const updates = new WeakMap<QueryClient, { revision: number; tasks: Map<string, { revision: number; task: ModelDownload }> }>();
 const changesFor = (client: QueryClient) => {
@@ -21,6 +32,9 @@ const changesFor = (client: QueryClient) => {
   return changes;
 };
 function refreshInstalled(client: QueryClient, before: ModelDownload[] | undefined, after: ModelDownload[], fromEvent = false) {
+  if (before && after.some(task => imageDownloadActive(task) && !before.some(previous => previous.id === task.id))) {
+    invalidateResource(client, imageModelKeys.catalog);
+  }
   if (after.some(task => !imageDownloadActive(task) && (before?.some(previous => previous.id === task.id && imageDownloadActive(previous))
     || fromEvent && !before?.some(previous => previous.id === task.id)))) {
     invalidateResource(client, imageModelKeys.assets); invalidateResource(client, imageModelKeys.catalog);
@@ -34,6 +48,7 @@ export function updateImageDownload(client: QueryClient, task: ModelDownload, fr
     || task.status === 'queued' && current.status !== 'queued'
     || imageDownloadActive(task) && (task.progress_at ?? 0) < (current.progress_at ?? 0))) return;
   if (current && JSON.stringify(current) === JSON.stringify(task)) return;
+  if (!previous && !current && imageDownloadActive(task)) invalidateResource(client, imageModelKeys.catalog);
   changes.tasks.set(task.id, { revision: ++changes.revision, task });
   const next = [task, ...(previous ?? []).filter(item => item.id !== task.id)];
   // A task event is not a complete list. Keep it until the initial list arrives.
@@ -64,13 +79,18 @@ export function useImageModelResources(enabled = true) {
   const tasks = useResourceQuery<ModelDownload[]>({ queryKey: imageModelKeys.tasks,
     queryFn: ({ signal }) => readTasks(client, signal), enabled,
     pollInterval: rows => connection !== 'connected' && rows?.some(imageDownloadActive) ? 3000 : IDLE_POLL_MS });
+  const pendingOwners = tasks.data === undefined ? "" : [...new Set(catalog.data?.filter(entry => imageRecommendationOwnerPending(entry, tasks.data!)).map(entry => entry.active_download_id))].sort().join("\0");
+  useEffect(() => {
+    if (enabled && pendingOwners) invalidateResource(client, imageModelKeys.tasks);
+  }, [client, enabled, pendingOwners]);
   const acceptDownload = (task: ModelDownload) => updateImageDownload(client, task);
   const acceptModel = (model: ModelAsset, recommendationId?: string) => {
     void client.cancelQueries({ queryKey: imageModelKeys.assets, exact: true });
     void client.cancelQueries({ queryKey: imageModelKeys.catalog, exact: true });
     client.setQueryData<ModelAsset[]>(imageModelKeys.assets, previous => [...(previous ?? []).filter(item => item.id !== model.id)
       .map(item => model.is_default && item.family === model.family && item.kind === model.kind ? { ...item, is_default: false } : item), model]);
-    client.setQueryData<ImageRecommendation[]>(imageModelKeys.catalog, previous => previous?.map(entry => entry.id === recommendationId || entry.model_id === model.id || entry.available_path === model.path
+    client.setQueryData<ImageRecommendation[]>(imageModelKeys.catalog, previous => previous?.map(entry => entry.family === model.family && entry.kind === model.kind
+      && (entry.id === recommendationId || entry.model_id === model.id || entry.available_path === model.path)
       ? { ...entry, model_id: model.id, available_path: model.path, is_default: model.is_default }
       : model.is_default && entry.family === model.family && entry.kind === model.kind ? { ...entry, is_default: false } : entry));
   };

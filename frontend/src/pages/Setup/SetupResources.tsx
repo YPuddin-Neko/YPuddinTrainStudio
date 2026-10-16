@@ -2,7 +2,7 @@ import React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { invalidateResource, useResourceCacheEvents, useResourceQuery } from '../../api/resourcePolicy';
 import { readCredentialStatus } from '../../api/hooks/useCredentialsStatus';
-import { useImageModelResources } from '../../api/hooks/useImageModelResources';
+import { imageRecommendationOwnerPending, imageRecommendationTask, imageRecommendationWaitingForComponent, useImageModelResources } from '../../api/hooks/useImageModelResources';
 import { Check, Download, ExternalLink, Loader2 } from 'lucide-react';
 import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { Settings } from '../../api/types';
@@ -13,6 +13,7 @@ import { formatApiError } from '../../utils/errors';
 import { modelAssetUnsupportedReason, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import SetupTtsModels from './SetupTtsModels';
 import { modelRecommendationName } from '../../utils/modelRecommendations';
+import { modelOrigin } from '../../utils/modelOrigin';
 import TtsEnvironmentPanel from '../../components/TtsEnvironmentPanel';
 
 const AttentionSetup = React.lazy(() => import('../../components/EnvironmentManagerPanel').then(module => ({ default: module.EnvironmentManagerPanel })));
@@ -90,10 +91,11 @@ function modelBundle(catalog: Recommendation[], family: string, main: string) {
     && (entry.kind !== 'dit' || entry.id === main)
     && (family !== 'flux2' || entry.kind !== 'text_encoder' || entry.id === kleinEncoders[main]));
 }
-function latestModelTasks(tasks: DownloadTask[]) {
+function latestModelTasks(tasks: DownloadTask[], catalog: Recommendation[]) {
   const latest = new Map<string, DownloadTask>();
-  for (const task of [...tasks].sort((a, b) => b.created_at - a.created_at)) {
-    if (task.recommendation_id && !latest.has(task.recommendation_id)) latest.set(task.recommendation_id, task);
+  for (const entry of catalog) {
+    const task = imageRecommendationTask(entry, tasks);
+    if (task) latest.set(entry.id, task);
   }
   return latest;
 }
@@ -142,7 +144,7 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
     .filter(option => snapshot?.catalog.some(entry => entry.family === option.value && entry.recommended && entry.purpose !== 'inference'));
   const currentFamily = availableFamilies.some(option => option.value === family) ? family : availableFamilies[0]?.value ?? family;
   const mains = snapshot?.catalog.filter(entry => entry.family === currentFamily && entry.kind === 'dit' && entry.recommended && entry.purpose !== 'inference') ?? [];
-  const latest = latestModelTasks(snapshot?.tasks ?? []);
+  const latest = latestModelTasks(snapshot?.tasks ?? [], snapshot?.catalog ?? []);
   const currentMain = mains.some(entry => entry.id === main) ? main
     : mains.find(entry => entry.is_default || snapshot?.assets.some(asset => asset.is_default && asset.exists && matchingAsset(entry, asset)))?.id
       ?? mains.find(entry => { const task = latest.get(entry.id); return task && activeDownload(task); })?.id ?? mains[0]?.id ?? '';
@@ -153,15 +155,19 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
     && !value.tasks.some(task => task.family === currentFamily && task.is_default && activeDownload(task) && !bundle.some(entry => entry.id === task.recommendation_id));
   const setDefaults = snapshot ? canSetDefaults(snapshot, entries) : false;
   const needsPreparation = (entry: Recommendation, value: ModelSnapshot, defaults: boolean) => {
-    if (value.tasks.some(task => activeDownload(task) && task.recommendation_id === entry.id)) return false;
+    if (imageRecommendationOwnerPending(entry, value.tasks)) return false;
+    const task = imageRecommendationTask(entry, value.tasks);
+    if (task && activeDownload(task)) return false;
     if (!entry.available_path) return true;
+    if (!value.assets.some(asset => validAsset(asset) && matchingAsset(entry, asset))) return true;
     return defaults && !entry.is_default;
   };
   const chosen = selected ?? entries.filter(entry => snapshot && needsPreparation(entry, snapshot, setDefaults)).map(entry => entry.id);
-  const familyDownloading = snapshot?.tasks.some(task => task.family === currentFamily && activeDownload(task));
+  const familyDownloading = snapshot?.tasks.some(task => task.family === currentFamily && activeDownload(task))
+    || entries.some(entry => { const task = latest.get(entry.id); return imageRecommendationOwnerPending(entry, snapshot.tasks) || task && activeDownload(task); });
   const packageKey = `${currentFamily}/${currentMain}`;
   const completePackage = entries.length > 0 && entries.every(entry => snapshot?.assets.some(asset => validAsset(asset) && matchingAsset(entry, asset)));
-  const startedPackage = entries.some(entry => snapshot?.tasks.some(task => task.recommendation_id === entry.id && activeDownload(task)));
+  const startedPackage = entries.some(entry => { const task = latest.get(entry.id); return task && activeDownload(task) && !imageRecommendationWaitingForComponent(entry, task); });
   const continueReady = !!snapshot && !!listsReady && !loadError && (completePackage || startedPackage || preparedPackage === packageKey);
   React.useEffect(() => { onContinueChange?.(continueReady); }, [continueReady, onContinueChange]);
   const prepare = async (ids: string[]) => {
@@ -179,8 +185,9 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
         const entry = bundle.find(item => item.id === id);
         const defaults = canSetDefaults(current, bundle);
         if (!entry || !needsPreparation(entry, current, defaults)) continue;
+        let preparingPackage = true;
         if (entry.available_path) {
-          const model = await apiClient.post<ModelAsset>(`/models/recommendations/${encodeURIComponent(entry.id)}/use`, {}, { silent: true });
+          const model = await apiClient.post<ModelAsset>(`/models/recommendations/${encodeURIComponent(entry.id)}/use`, { is_default: defaults }, { silent: true });
           current = { ...current,
             assets: [...current.assets.filter(item => item.id !== model.id).map(item => model.is_default && item.family === model.family && item.kind === model.kind ? { ...item, is_default: false } : item), model],
             catalog: current.catalog.map(item => item.id === entry.id ? { ...item, model_id: model.id, available_path: model.path, is_default: model.is_default }
@@ -190,10 +197,11 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
           if (!entry.sources.some(source => source.provider === provider)) continue;
           // A fresh attempt uses today's default policy; old retries can carry a stale is_default flag.
           const task = await apiClient.post<DownloadTask>(`/models/recommendations/${encodeURIComponent(entry.id)}/download`, { provider, is_default: defaults }, { silent: true });
+          preparingPackage = !imageRecommendationWaitingForComponent(entry, task);
           current = { ...current, tasks: [task, ...current.tasks.filter(item => item.id !== task.id)] };
         }
         if (controller.signal.aborted) return;
-        setPreparedPackage(packageKey);
+        if (preparingPackage) setPreparedPackage(packageKey);
         current = resources.acceptSnapshot(current);
       }
     } catch (failure) { if (!controller.signal.aborted) setError(formatApiError(failure)); }
@@ -211,7 +219,9 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
     {mains.length > 1 && <label>{text('主模型', 'Main model')}<StudioSelect aria-label={text('主模型', 'Main model')} value={currentMain} disabled={busy || familyDownloading} onValueChange={value => { setMain(value); setSelected(null); setError(''); }} options={mains.map(entry => ({ value: entry.id, label: modelRecommendationName(entry) }))}/></label>}</div>
     <div className="setup-model-list">{entries.map(entry => {
       const task = latest.get(entry.id); const active = task && activeDownload(task);
+      const pending = imageRecommendationOwnerPending(entry, snapshot.tasks);
       const local = !!entry.available_path;
+      const origin = modelOrigin(snapshot.assets.find(asset => matchingAsset(entry, asset)), loaded.tasks ? snapshot.tasks : undefined);
       const needs = needsPreparation(entry, snapshot, setDefaults);
       const supported = local || entry.sources.some(source => source.provider === provider);
       const failed = !local && task?.status === 'failed';
@@ -220,7 +230,7 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
         <span><strong>{modelRecommendationName(entry)}</strong><small>{entry.kind === 'dit' ? text('主模型', 'Main model') : entry.kind === 'vae' ? 'VAE' : text('文本编码器', 'Text encoder')}{entry.size > 0 ? ` · ${(entry.size / 1024 ** 3).toFixed(1)} GiB` : ''}</small>
           {failed && <span role="alert" className="setup-error">{text('下载失败：', 'Download failed: ')}{task.error || text('未返回详细错误，请重试。', 'No detailed error was returned. Retry the download.')}</span>}
         </span>
-        <span className="setup-model-status">{active ? <><Loader2 size={14} className="animate-spin"/>{text('下载中', 'Downloading')}</> : local ? <><Check size={14}/>{entry.is_default ? text('当前默认', 'Current default') : needs ? text('本地文件待确认', 'Local file to verify') : text('已下载', 'Downloaded')}</> : failed || cancelled ? <><span>{cancelled ? text('已取消', 'Cancelled') : ''}</span><button className="ui-link" disabled={busy || !listsReady || !supported || loadError} onClick={() => void prepare([entry.id])}>{text('重试', 'Retry')}</button></> : !supported ? text('此来源不可用', 'Unavailable here') : ''}</span></div>;
+        <span className="setup-model-status">{pending ? <><Loader2 size={14} className="animate-spin"/>{text('正在读取下载状态…', 'Loading download status…')}</> : active ? <><Loader2 size={14} className="animate-spin"/>{imageRecommendationWaitingForComponent(entry, task) ? text('等待共用组件', 'Waiting for shared component') : task.recommendation_id !== entry.id ? text('共享下载中', 'Shared download') : text('下载中', 'Downloading')}</> : local ? <><Check size={14}/>{entry.is_default ? text('当前默认', 'Current default') : needs ? text('本地文件待确认', 'Local file to verify') : origin === 'downloaded' ? text('已下载', 'Downloaded') : origin === 'imported' ? text('已导入', 'Imported') : text('已添加', 'Added')}</> : failed || cancelled ? <><span>{cancelled ? text('已取消', 'Cancelled') : ''}</span><button className="ui-link" disabled={busy || !listsReady || !supported || loadError} onClick={() => void prepare([entry.id])}>{text('重试', 'Retry')}</button></> : !supported ? text('此来源不可用', 'Unavailable here') : ''}</span></div>;
     })}{!entries.length && <p className="setup-note">{text('暂无推荐组件，可稍后在模型设置中添加。', 'No recommended components. Add models later in Settings.')}</p>}</div>
     {loadError && <ResourceState error={loadMessage} retry={reload}/>}
     {!listsReady && !loadError && <ResourceState error="" retry={reload} label={text('正在读取本地模型与下载记录…', 'Loading local models and downloads…')}/>}{error && <div role="alert" className="setup-error">{error}</div>}

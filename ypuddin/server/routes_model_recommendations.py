@@ -23,9 +23,14 @@ class RecommendationDownloadRequest(BaseModel):
     is_default: bool = True
 
 
+class RecommendationUseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    is_default: bool = True
+
+
 @router.get("/models/recommendations", response_model=list[RecommendedModel])
-def recommendations(context: ServiceContext = Depends(ctx)):
-    return available_models(context)
+def recommendations(context: ServiceContext = Depends(ctx), service: ModelDownloads = Depends(downloads)):
+    return available_models(context, tasks=service.list())
 
 
 @router.post("/models/recommendations/{model_id}/download", response_model=ModelDownload, status_code=202)
@@ -57,7 +62,9 @@ def download_recommendation(
 
 
 @router.post("/models/recommendations/{model_id}/use", response_model=ModelAsset)
-def use_recommendation(model_id: str, context: ServiceContext = Depends(ctx)):
+def use_recommendation(
+    model_id: str, body: RecommendationUseRequest | None = None, context: ServiceContext = Depends(ctx)
+):
     entry = next((item for item in available_models(context) if item.id == model_id), None)
     if entry is None or not entry.available_path:
         raise NotFound("download or register this model first", code="model.not_found")
@@ -69,8 +76,9 @@ def use_recommendation(model_id: str, context: ServiceContext = Depends(ctx)):
             family=entry.family,
             kind=entry.kind,
             path=entry.available_path,
+            processor_path=entry.processor_path,
             dtype=entry.dtype,
-            is_default=entry.purpose == "training",
+            is_default=entry.purpose == "training" and (body is None or body.is_default),
             purpose=entry.purpose,
             variant=entry.variant,
         ),

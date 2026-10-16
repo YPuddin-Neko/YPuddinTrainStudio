@@ -7,6 +7,7 @@ import StudioSelect from '../../components/StudioSelect';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { availableTrainingFamilies, modelFamilyWeights } from '../../utils/trainingFamilies';
+import { modelComponentLabel } from '../../utils/modelComponents';
 import Switch from '../../components/Switch';
 
 export interface ModelInspection {
@@ -42,7 +43,7 @@ export default function LocalModelRegistration({ initialFamily, initialKind = ''
         if(controller.signal.aborted)return;
         setDetected(result);setKind(result.kind||'');setDtype(result.dtype||'');setVariant(result.variant||'');if(result.variant==='turbo')setIsDefault(false);
         const available = familyNames.split('\0').filter(name => name && (!result.family_candidates.length || result.family_candidates.includes(name)));
-        setFamily(current=>result.family ? available.includes(result.family) ? result.family : '' : available.includes(current) ? current : available[0] || '');
+        setFamily(current=>available.length > 1 && available.includes(current) ? current : result.family ? available.includes(result.family) ? result.family : '' : available.includes(current) ? current : available[0] || '');
         inspectedPath.current=path.trim();setDetecting(false);
       }).catch(error=>{if(!controller.signal.aborted){setError(formatApiError(error));setDetecting(false);}});
     },300);
@@ -56,10 +57,11 @@ export default function LocalModelRegistration({ initialFamily, initialKind = ''
     const available = supportedKinds.split('\0').filter(Boolean);
     setKind(current => available.includes(current) ? current : available.includes(initialKind) ? initialKind : '');
   }, [detected, family, initialKind, supportedKinds]);
+  const registrationFamilies = families.filter(item=>item.name!=='toy'&&(!detected?.family_candidates.length||detected.family_candidates.includes(item.name)));
   const needsVariant = family === 'krea2' && kind === 'dit';
   const inferenceOnly = needsVariant && variant === 'turbo';
   const knownComponent = weights.some(weight => weight.kind === kind);
-  const label = (kind: string) => weights.find(weight => weight.kind === kind)?.label || ({dit:text('主模型 / DiT','Base model / DiT'),vae:'VAE',text_encoder:text('文本编码器','Text encoder'),text_encoder_2:text('第二文本编码器','Second text encoder'),tokenizer:text('分词器目录','Tokenizer directory')}[kind] || kind);
+  const label = (kind: string) => modelComponentLabel(family, kind, text);
   return <form className="model-source-form" data-testid="add-model-modal" onSubmit={event=>{
     event.preventDefault();if(!ready||!family||!knownComponent||(needsVariant&&!variant)||saving)return;
     setSaving(true);onBusyChange(true);setError('');
@@ -71,7 +73,7 @@ export default function LocalModelRegistration({ initialFamily, initialKind = ''
       {detecting&&<p role="status"><Loader2 size={14} className="animate-spin"/>{text('正在检测模型…','Inspecting model…')}</p>}
       {ready&&<p role="status" data-testid="model-inspection-status">{detected.confidence==='high'?text('已识别模型结构','Model structure identified'):text('部分信息未识别，请确认下方选项','Some information is unknown; confirm the choices below')}</p>}
       <div className="model-form-grid">
-        <label>{text('模型系列','Model family')}<StudioSelect aria-label={text('登记模型系列','Registration model family')} value={family} disabled={!ready||!!detected?.family} onValueChange={next=>{setFamily(next);if(!detected?.kind)setKind('');}} placeholder={text('请选择','Choose')} options={families.filter(item=>item.name!=='toy'&&(!detected?.family_candidates.length||detected.family_candidates.includes(item.name))).map(item=>({value:item.name,label:item.label||item.name}))}/></label>
+        <label>{text('模型系列','Model family')}<StudioSelect aria-label={text('登记模型系列','Registration model family')} value={family} disabled={!ready||!!detected?.family&&registrationFamilies.length<=1} onValueChange={next=>{setFamily(next);if(!detected?.kind)setKind('');}} placeholder={text('请选择','Choose')} options={registrationFamilies.map(item=>({value:item.name,label:item.label||item.name}))}/></label>
         <label>{text('组件','Component')}<StudioSelect aria-label={text('组件','Component')} value={knownComponent ? kind : ''} disabled={!ready||!!detected?.kind} onValueChange={setKind} placeholder={text('未识别，请选择','Unknown; choose')} options={weights.map(weight=>({value:weight.kind,label:label(weight.kind)}))}/></label>
         <label>{text('权重精度','Weight precision')}<StudioSelect aria-label={text('权重精度','Weight precision')} value={dtype} disabled={!ready||!!detected?.dtype||kind==='tokenizer'} onValueChange={setDtype} options={['','bf16','fp16','fp32','fp8','mixed'].map(value=>({value,label:value.toUpperCase()||text('未知','Unknown')}))}/></label>
       </div>

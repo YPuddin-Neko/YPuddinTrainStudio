@@ -586,7 +586,7 @@ const BetasEditor: React.FC<{
 const ModelPathInput: React.FC<{
   value: string;
   kind: string | null;
-  onChange: (val: string) => void;
+  onChange: (val: string, selectedAsset?: ModelAsset) => void;
   label?: string;
   familyName?: string;
   models: ModelAsset[];
@@ -609,8 +609,8 @@ const ModelPathInput: React.FC<{
     <div className={`model-path-control ${matched.length > 0 ? 'has-registry' : ''}`}>
       <PathInput ariaLabel={label} value={value} defaultPath={defaultPath} resolveDefaultPath={resolveDefaultPath} directoryOnly={directoryOnly} allowMissingDirectory={allowMissingDirectory} onChange={onChange} />
       {matched.length > 0 && (
-        <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value={matched.some(model => model.path === value) ? value : ''} onValueChange={onChange} data-testid="model-registry-select"
-          placeholder={t('models.fromRegistry')} options={matched.map(model=>({value:model.path,label:model.path.split(/[\\/]/).pop() || model.path}))}/>
+        <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value={matched.some(model => model.path === value) ? value : ''} onValueChange={next => onChange(next, matched.find(model => model.path === next && model.family === familyName) ?? matched.find(model => model.path === next))} data-testid="model-registry-select"
+          placeholder={t('models.fromRegistry')} options={matched.filter((model, index) => matched.findIndex(item => item.path === model.path) === index).map(model=>({value:model.path,label:model.path.split(/[\\/]/).pop() || model.path}))}/>
 
       )}
     </div>
@@ -1155,8 +1155,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           models={modelAssets}
           resolveDefaultPath={['checkpoint.resume','adapter.resume_weights','training.resume_weights'].includes(fullPathKey)
             ? async()=> (await apiClient.get<{path:string}>('/fs/browse-root',{params:{field:fullPathKey,project_id:projectId,version_id:versionId,output_dir:value.checkpoint?.output_dir,custom_dir:fullPathKey==='checkpoint.resume'?value.checkpoint?.state_dir:undefined},silent:true})).path : undefined}
-          onChange={(val) => {
+          onChange={(val, selectedAsset) => {
             let next = setNestedValue(value, path, val === '' && prop.anyOf?.some((p) => p.type === 'null') ? null : val);
+            if (fullPathKey === 'model.text_encoder_path' && selectedAsset && 'processor_path' in selectedAsset && typeof selectedAsset.processor_path === 'string' && selectedAsset.processor_path.trim()) {
+              next = setNestedValue(next, ['model', 'tokenizer_path'], selectedAsset.processor_path);
+            }
             if (fullPathKey === 'model.dit_path' && value.model?.family === 'krea2') {
               const asset = modelAssets.find(item => item.path === val && item.family === 'krea2' && item.kind === 'dit');
               next = setNestedValue(next, ['model', 'krea2_variant'], asset?.variant || 'auto');
@@ -1376,7 +1379,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
     ].filter(Boolean).join('\n\n') : fullPathKey === 'model.tokenizer_path' && family?.name === 'sdxl' ? (english ? 'Optional root containing tokenizer/ and tokenizer_2/. Leave blank to use the model directory’s tokenizers, or the built-in CLIP-L / CLIP-G tokenizers when absent.' : '可选根目录，需同时包含 tokenizer/ 和 tokenizer_2/。留空自动读取模型目录；没有时使用内置 CLIP-L / CLIP-G 双分词器。')
-      : fullPathKey === 'model.tokenizer_path' && family?.name === 'flux3' ? contextHelp(fullPathKey, fieldContext, offeredOptions)
+      : ['model.text_encoder_path', 'model.tokenizer_path'].includes(fullPathKey) && family?.name === 'flux3' ? contextHelp(fullPathKey, fieldContext, offeredOptions)
       : [weightMeta?.hint ? [configFieldHelp(fullPathKey, undefined, english), weightMeta.hint].filter(Boolean).join('\n') : contextHelp(fullPathKey, fieldContext, offeredOptions) || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree), dtkReproducibility].filter(Boolean).join('\n\n');
     // Switches carry no standing description; a status or warning still shows beneath them.
     const statusHint = (fullPathKey === 'model.dit_path' && selectedModel ? [selectedModel.variant?.toUpperCase(), selectedModel.dtype?.toUpperCase()].filter(Boolean).join(' · ') : undefined)

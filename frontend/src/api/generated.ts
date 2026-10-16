@@ -6729,6 +6729,10 @@ export interface components {
         ModelAsset: {
             /** Compatible Families */
             compatible_families?: string[];
+            /** Processor Path */
+            processor_path?: string | null;
+            /** Source Download Id */
+            source_download_id?: string | null;
             /** Id */
             id: string;
             /** Family */
@@ -6774,6 +6778,8 @@ export interface components {
             kind: "dit" | "text_encoder" | "text_encoder_2" | "vae" | "tokenizer" | "tagger";
             /** Path */
             path: string;
+            /** Processor Path */
+            processor_path?: string | null;
             /** Dtype */
             dtype?: string | null;
             /**
@@ -6995,6 +7001,19 @@ export interface components {
             sha256?: string | null;
             /** Bundle */
             bundle?: ("flux3-base" | "flux3-text") | null;
+            /**
+             * Layout Version
+             * @default 1
+             */
+            layout_version: number;
+            /** Components */
+            components?: {
+                [key: string]: string;
+            } | null;
+            /** Component Plan */
+            component_plan?: {
+                [key: string]: unknown;
+            } | null;
             manifest?: components["schemas"]["BundleManifest"] | null;
             /** Verification Source */
             verification_source?: ("pinned_revision_and_sizes" | "pinned_revision_and_sha256") | null;
@@ -7048,6 +7067,12 @@ export interface components {
             variant?: ("raw" | "turbo") | null;
             /** Bundle */
             bundle?: ("flux3-base" | "flux3-text") | null;
+            /**
+             * Layout Version
+             * @default 2
+             * @enum {integer}
+             */
+            layout_version: 1 | 2;
         };
         /** ModelInspection */
         ModelInspection: {
@@ -8735,6 +8760,14 @@ export interface components {
              */
             is_default: boolean;
         };
+        /** RecommendationUseRequest */
+        RecommendationUseRequest: {
+            /**
+             * Is Default
+             * @default true
+             */
+            is_default: boolean;
+        };
         /** RecommendedModel */
         RecommendedModel: {
             /** Id */
@@ -8782,6 +8815,10 @@ export interface components {
             model_id?: string | null;
             /** Available Path */
             available_path?: string | null;
+            /** Processor Path */
+            processor_path?: string | null;
+            /** Active Download Id */
+            active_download_id?: string | null;
             /**
              * Is Default
              * @default false
@@ -21510,7 +21547,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RecommendationUseRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

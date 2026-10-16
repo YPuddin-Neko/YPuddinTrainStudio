@@ -31,6 +31,7 @@ def _check_family(family: str) -> None:
 def _default_model_paths(c: Any, family: str) -> dict[str, str]:
     """Only reuse registered defaults whose role and current filesystem type still match."""
     paths: dict[str, str] = {}
+    text_processor: str | None = None
     for row in c.db.fetchall(
         "SELECT kind,path FROM models WHERE family=? AND is_default=1 AND purpose='training' ORDER BY created_at DESC,id",
         (family,),
@@ -54,7 +55,19 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
 
                     if verified_variant(path) == "turbo":
                         continue
-                if family in {"flux2", "flux3"}:
+                associated = None
+                if family in {"flux3", "krea2"} and kind == "text_encoder":
+                    from .model_recommendations import component_metadata
+
+                    associated = component_metadata(c, path).get("processor_path")
+                if family == "flux3" and kind in {"text_encoder", "tokenizer"}:
+                    from .routes_core import _check_model_admission
+
+                    processor = Path(associated or (path if path.is_dir() else path.parent)).resolve()
+                    _check_model_admission(path, family, kind, c, processor_path=processor)
+                    if kind == "text_encoder":
+                        text_processor = str(processor)
+                elif family in {"flux2", "flux3"}:
                     from .model_inspection import inspect_model, training_rejection
 
                     if family == "flux2" and kind == "text_encoder" and path.is_file():
@@ -64,8 +77,12 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
                     if training_rejection(inspect_model(path, allowed=c.is_allowed), family):
                         continue  # Retain legacy dev rows without selecting them for a new Klein recipe.
                 paths[field] = str(path)
-        except (OSError, RuntimeError, ValueError):
+                if family == "krea2" and associated:
+                    text_processor = str(Path(associated).resolve())
+        except (OSError, RuntimeError, ValueError, ApiError):
             continue
+    if text_processor is not None:
+        paths.setdefault("tokenizer_path", text_processor)
     return paths
 
 

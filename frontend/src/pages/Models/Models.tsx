@@ -2,7 +2,7 @@ import React from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { Check, Download, ExternalLink, FolderSearch, Loader2, Plus, Search, Star, Trash2, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
-import { useImageModelResources, type ImageRecommendation as Recommendation } from '../../api/hooks/useImageModelResources';
+import { imageRecommendationOwnerPending, imageRecommendationTask, imageRecommendationWaitingForComponent, useImageModelResources, type ImageRecommendation as Recommendation } from '../../api/hooks/useImageModelResources';
 import { usePageVisible, useSharedSettings } from '../../api/resourcePolicy';
 import type { ModelAsset, ModelDownload as BaseDownload, ModelDownloadRequest } from '../../api/types';
 import { useFamilies } from '../../api/hooks/useFamilies';
@@ -15,6 +15,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { modelOrigin } from '../../utils/modelOrigin';
 import { modelRecommendationName } from '../../utils/modelRecommendations';
+import { modelComponentLabel } from '../../utils/modelComponents';
 import './models.css';
 import Switch from '../../components/Switch';
 import ProgressBar from '../../components/ProgressBar';
@@ -46,7 +47,7 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const { data: families = [], isPending: familiesLoading, error: familiesError, refetch: refreshFamilies } = useFamilies();
-  const family = params.get('family') || families.find(item => item.name !== 'toy')?.name || '';
+  const family = String(params.get('family') || families.find(item => item.name !== 'toy')?.name || '');
   const selectedFamily = families.find(item => item.name === family);
   const weights = modelFamilyWeights(selectedFamily);
   const kinds = weights.map(weight => weight.kind);
@@ -91,7 +92,7 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
   const [filename, setFilename] = React.useState('');
   const [revision, setRevision] = React.useState('');
   const [remove, setRemove] = React.useState<ModelAsset | null>(null);
-  const label = (kind: string) => weights.find(weight => weight.kind === kind)?.label || ({ dit: text('主模型 / DiT', 'Base model / DiT'), text_encoder: text('文本编码器', 'Text encoder'), text_encoder_2: text('第二文本编码器', 'Second text encoder'), vae: 'VAE', tokenizer: text('分词器目录', 'Tokenizer directory') }[kind] || kind);
+  const label = (kind: string) => modelComponentLabel(family, kind, text);
   const transfer = (task: ModelDownload) => {
     const recent = task.progress_at && observedAt - task.progress_at < 10;
     const rate = recent ? task.bytes_per_second || 0 : 0;
@@ -155,7 +156,17 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
   const required = weights.filter(weight => weight.required).map(weight => weight.kind);
   const availableRequired = required.filter(kind => supportedSelected.some(model => model.kind === kind && model.exists));
   const missing = required.filter(kind => !availableRequired.includes(kind)).map(kind => entries.find(entry => entry.kind === kind && entry.recommended && entry.purpose !== 'inference' && !entry.available_path)).filter((entry): entry is Recommendation => Boolean(entry));
-  const taskFor = (entry: Recommendation) => tasks.find(task => task.recommendation_id === entry.id);
+  const ownerPending = (entry: Recommendation) => imageRecommendationOwnerPending(entry, downloads);
+  const taskFor = (entry: Recommendation) => {
+    const task = imageRecommendationTask(entry, downloads);
+    return task?.status === 'completed' ? undefined : task;
+  };
+  const downloadName = (task: ModelDownload) => {
+    const entry = catalog.find(entry => entry.id === task.recommendation_id);
+    return entry ? modelRecommendationName(entry) : task.filename;
+  };
+  const transferLabel = (entry: Recommendation, task: ModelDownload) => task.recommendation_id && task.recommendation_id !== entry.id
+    ? `${imageRecommendationWaitingForComponent(entry, task) ? text('等待共用组件', 'Waiting for shared component') : text('共享下载', 'Shared download')} · ${downloadName(task)} · ${transfer(task)}` : transfer(task);
   const addedLabel = (entry: Recommendation) => {
     if (!entry.model_id) return text('待检查', 'Not checked');
     const model = models.find(model => model.id === entry.model_id) || models.find(model => model.path === entry.available_path && model.kind === entry.kind);
@@ -163,16 +174,17 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
     return origin === 'downloaded' ? text('已下载', 'Downloaded') : origin === 'imported' ? text('已导入', 'Imported') : text('已添加', 'Added');
   };
   const startEntry = async (entry: Recommendation) => {
+    if (ownerPending(entry)) return;
     if (entry.available_path) acceptModel(await apiClient.post<ModelAsset>(`/models/recommendations/${entry.id}/use`, {}), entry.id);
     else acceptDownload(await apiClient.post<ModelDownload>(`/models/recommendations/${entry.id}/download`, { provider: catalogProvider, is_default: entry.purpose !== 'inference' && !ready.includes(entry.kind) }));
   };
   const retryTask = (task: ModelDownload) => void action(async () => {
     acceptDownload(await apiClient.post<ModelDownload>(`/models/downloads/${task.id}/retry`, task.recommendation_id ? { provider: catalogProvider } : {}));
   });
-  const cancelButton = (task: ModelDownload) => <button type="button" className={`${secondary} model-button-downloading`} disabled={busy} aria-label={`${text('取消下载', 'Cancel download')} ${task.filename}`} title={text('取消下载', 'Cancel download')} onClick={() => void action(async () => { acceptDownload(await apiClient.post<ModelDownload>(`/models/downloads/${task.id}/cancel`, {})); })}><span className="model-download-active-label">{statusLabel(task)}</span><span className="model-download-cancel-label"><X size={13}/>{text('取消', 'Cancel')}</span></button>;
+  const cancelButton = (task: ModelDownload) => <button type="button" className={`${secondary} model-button-downloading`} disabled={busy} aria-label={`${text('取消下载', 'Cancel download')} ${task.filename}`} title={`${text('取消下载', 'Cancel download')} ${downloadName(task)}`} onClick={() => void action(async () => { acceptDownload(await apiClient.post<ModelDownload>(`/models/downloads/${task.id}/cancel`, {})); })}><span className="model-download-active-label">{statusLabel(task)}</span><span className="model-download-cancel-label"><X size={13}/>{text('取消', 'Cancel')}</span></button>;
   const searchValue = query.trim().toLocaleLowerCase();
   const filteredModels = selected.filter(model => `${model.path} ${label(model.kind)}`.toLocaleLowerCase().includes(searchValue));
-  const discovered = entries.filter((entry, index) => entry.available_path && !entry.model_id && models.some(model => model.path === entry.available_path && model.family !== family)
+  const discovered = entries.filter((entry, index) => entry.available_path && !entry.model_id
     && !selected.some(model => model.path === entry.available_path && model.kind === entry.kind)
     && entries.findIndex(other => other.available_path === entry.available_path && other.kind === entry.kind) === index);
   const filteredDiscovered = discovered.filter(entry => `${entry.available_path} ${entry.name} ${label(entry.kind)}`.toLocaleLowerCase().includes(searchValue));
@@ -197,7 +209,7 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
   // Downloads join their catalog rows once both lists are known (or the catalog cannot be read).
   const listsSettled = !!loaded.downloads && (!!loaded.prepare || !!loadErrors.prepare);
   const linkedTaskIds = new Set(entries.map(taskFor).filter((task): task is ModelDownload => Boolean(task)).map(task => task.id));
-  const standaloneTasks = tasks.filter(task => !linkedTaskIds.has(task.id));
+  const standaloneTasks = tasks.filter(task => !linkedTaskIds.has(task.id) && !entries.some(entry => entry.id === task.recommendation_id));
   const downloadTaskRow = (task: ModelDownload) => <div className="model-download-inline-row" key={task.id}>
     <div className="model-download-heading"><div><strong>{task.filename}</strong><p>{task.provider === 'modelscope' ? 'ModelScope' : task.mirror === 'hf-mirror' ? 'HF-Mirror' : 'Hugging Face'} · {statusLabel(task)} · {formatBytes(task.downloaded_bytes)}{task.total_bytes ? ` / ${formatBytes(task.total_bytes)}` : ''}</p></div><div className="model-actions">{isActive(task) ? cancelButton(task) : <button className={secondary} disabled={busy} onClick={() => retryTask(task)}>{text('重试', 'Retry')}</button>}</div></div>
     {isActive(task) && <ProgressBar className="model-download-progress" label={text('下载进度', 'Download progress')} max={task.total_bytes || undefined} value={task.total_bytes ? task.downloaded_bytes : undefined}/>} {isActive(task) ? <p className="model-transfer-status">{transfer(task)}</p> : task.status === 'failed' ? <p role="alert" className="model-download-error">{text('下载失败', 'Download failed')}：{task.error || text('未返回详细错误，请重试。', 'No detailed error was returned. Retry the download.')}</p> : <p role="status" className="model-transfer-status">{text('下载已取消，可以重新下载。', 'Download cancelled. You can retry it.')}</p>}
@@ -216,13 +228,13 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
     {family === 'flux' && <p role="alert" className="settings-alert">{text('FLUX.1 已停用。已有模型文件保持原样，请选择受支持的模型系列。', 'FLUX.1 is retired. Existing model files are preserved; choose a supported model family.')}</p>}
     {view === 'prepare' && familiesLoading ? <LoadingNote block className="model-empty" label={text('正在读取模型系列…', 'Loading model families…')}/> : view === 'prepare' && !selectedFamily ? <p className="model-empty">{text('请选择训练服务支持的模型系列。', 'Choose a model family supported by the training service.')}</p> : loadErrors[view] && !viewReady ? <p className="model-empty">{text('此列表暂时无法读取，请重试。其他视图仍可查看。', 'This list is unavailable. Retry or open another view.')}</p> : !viewReady ? <LoadingNote block className="model-empty" label={view === 'prepare' ? text('正在读取推荐模型…', 'Loading recommended models…') : text('正在读取本地模型…', 'Loading local models…')}/> : view === 'prepare' ? <>
       {family === 'toy' ? <p className="model-empty">{text('Toy 测试模型已内置，无需下载权重。', 'The Toy test model is built in; no weights required.')}</p> : <>
-        <div className="models-source-bar"><label>{text('下载来源', 'Download source')}<StudioSelect value={catalogProvider} aria-label={text('下载来源', 'Download source')} data-testid="model-provider" options={(catalogProviders.length ? catalogProviders : ['huggingface', 'modelscope']).map(value => ({ value, label: value === 'huggingface' ? 'Hugging Face' : '魔搭 ModelScope' }))} onValueChange={value => setProvider(value as Provider)}/></label>{loaded.library && <span>{text('已添加', 'Added')} {availableRequired.length} / {required.length}</span>}<button className={primary} disabled={busy || !loaded.downloads || !loaded.library || !!loadErrors.library || !!loadErrors.downloads || missing.length === 0 || missing.every(entry => taskFor(entry) || (!entry.available_path && !entry.sources.some(source => source.provider === catalogProvider)))} onClick={() => void action(async () => { for (const entry of missing) if (!taskFor(entry) && (entry.available_path || entry.sources.some(source => source.provider === catalogProvider))) await startEntry(entry); })}><Download size={14}/>{text('下载缺失组件', 'Download missing components')}</button></div>
+        <div className="models-source-bar"><label>{text('下载来源', 'Download source')}<StudioSelect value={catalogProvider} aria-label={text('下载来源', 'Download source')} data-testid="model-provider" options={(catalogProviders.length ? catalogProviders : ['huggingface', 'modelscope']).map(value => ({ value, label: value === 'huggingface' ? 'Hugging Face' : '魔搭 ModelScope' }))} onValueChange={value => setProvider(value as Provider)}/></label>{loaded.library && <span>{text('已添加', 'Added')} {availableRequired.length} / {required.length}</span>}<button className={primary} disabled={busy || !loaded.downloads || !loaded.library || !!loadErrors.library || !!loadErrors.downloads || missing.length === 0 || missing.every(entry => ownerPending(entry) || taskFor(entry) || (!entry.available_path && !entry.sources.some(source => source.provider === catalogProvider)))} onClick={() => void action(async () => { for (const entry of missing) if (!ownerPending(entry) && !taskFor(entry) && (entry.available_path || entry.sources.some(source => source.provider === catalogProvider))) await startEntry(entry); })}><Download size={14}/>{text('下载缺失组件', 'Download missing components')}</button></div>
         {entries.length === 0 && <p className="model-help-text">{text('当前系列暂无推荐模型，可通过自定义下载添加。', 'No recommended models are available for this family. Use Custom download.')}</p>}
         {kinds.filter(kind => entries.some(entry => entry.kind === kind)).map(kind => <ModelCatalogSection key={kind} testId={`model-component-${kind}`} heading={<>{label(kind)}{!required.includes(kind) && <span className="model-tag">{text('可选', 'Optional')}</span>}</>}>
           {entries.filter(entry => entry.kind === kind).map(entry => {
             const task = taskFor(entry); const source = entry.sources.find(source => source.provider === catalogProvider);
-            return <ModelCatalogRow key={entry.id} name={modelRecommendationName(entry)} metadata={<><span>{formatBytes(entry.size)}</span>{entry.recommended && <span className="model-tag">{text('推荐', 'Recommended')}</span>}<a className="ui-link" href={(source || entry.sources[0])?.url} target="_blank" rel="noreferrer">{text('发布页', 'Source')}<ExternalLink size={11}/></a></>} action={task ? isActive(task) ? cancelButton(task) : <button className={secondary} disabled={busy} onClick={() => retryTask(task)}>{text('重试', 'Retry')}</button> : entry.available_path ? <span className="model-ready"><Check size={14}/>{addedLabel(entry)}</span> : <button className={primary} disabled={busy || !loaded.downloads || !loaded.library || !source || !!loadErrors.library || !!loadErrors.downloads} onClick={() => void action(async () => { await startEntry(entry); })}><Download size={14}/>{text('下载', 'Download')}</button>}>
-              {task && (isActive(task) ? <><p className="model-transfer-status">{transfer(task)}</p><ProgressBar className="model-download-progress" label={`${modelRecommendationName(entry)} ${text('下载进度', 'download progress')}`} max={task.total_bytes || undefined} value={task.total_bytes ? task.downloaded_bytes : undefined}/></> : task.status === 'failed' ? <p role="alert" className="model-download-error">{text('下载失败', 'Download failed')}：{task.error || text('未返回详细错误，请重试。', 'No detailed error was returned. Retry the download.')}</p> : <p role="status" className="model-transfer-status">{text('下载已取消，可以重新下载。', 'Download cancelled. You can retry it.')}</p>)}
+            return <ModelCatalogRow key={entry.id} name={modelRecommendationName(entry)} metadata={<><span>{formatBytes(entry.size)}</span>{entry.recommended && <span className="model-tag">{text('推荐', 'Recommended')}</span>}<a className="ui-link" href={(source || entry.sources[0])?.url} target="_blank" rel="noreferrer">{text('发布页', 'Source')}<ExternalLink size={11}/></a></>} action={ownerPending(entry) ? <span className="model-ready"><Loader2 size={14} className="animate-spin"/>{text('正在读取下载状态…', 'Loading download status…')}</span> : task ? isActive(task) ? cancelButton(task) : <button className={secondary} disabled={busy} onClick={() => retryTask(task)}>{text('重试', 'Retry')}</button> : entry.available_path ? <span className="model-ready"><Check size={14}/>{addedLabel(entry)}</span> : <button className={primary} disabled={busy || !loaded.downloads || !loaded.library || !source || !!loadErrors.library || !!loadErrors.downloads} onClick={() => void action(async () => { await startEntry(entry); })}><Download size={14}/>{text('下载', 'Download')}</button>}>
+              {task && (isActive(task) ? <><p className="model-transfer-status">{transferLabel(entry, task)}</p><ProgressBar className="model-download-progress" label={`${downloadName(task)} ${text('下载进度', 'download progress')}`} max={task.total_bytes || undefined} value={task.total_bytes ? task.downloaded_bytes : undefined}/></> : task.status === 'failed' ? <p role="alert" className="model-download-error">{text('下载失败', 'Download failed')}：{task.error || text('未返回详细错误，请重试。', 'No detailed error was returned. Retry the download.')}</p> : <p role="status" className="model-transfer-status">{text('下载已取消，可以重新下载。', 'Download cancelled. You can retry it.')}</p>)}
             </ModelCatalogRow>;
           })}
 
@@ -263,6 +275,6 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
       {formError && <div role="alert" className="settings-alert">{formError}</div>}
       <footer><button type="button" className={secondary} disabled={busy} onClick={closeForm}>{text('取消', 'Cancel')}</button><button className={primary} data-testid="model-download-start" disabled={busy} type="submit">{busy && <Loader2 size={14} className="animate-spin"/>}{text('开始下载', 'Start download')}</button></footer>
     </form>}</Dialog>}
-    {remove && <Dialog title={text('移除模型登记', 'Remove model registration')} onClose={() => !busy && setRemove(null)} closeDisabled={busy}><div className="model-source-form"><p>{text('移除后不再显示在模型库，磁盘文件会保留。已有项目路径不会改变。', 'The entry will be removed from the library. Its file and existing project paths are retained.')}</p><code>{remove.path}</code><footer><button className={secondary} disabled={busy} onClick={() => setRemove(null)}>{text('取消', 'Cancel')}</button><button type="button" className={`${primary} ui-btn-danger`} disabled={busy} onClick={() => void action(async () => { await apiClient.delete(`/models/${remove.id}`); resources.removeModel(remove.id); setRemove(null); })}>{text('移除登记', 'Remove registration')}</button></footer></div></Dialog>}
+    {remove && <Dialog title={text('移除模型登记', 'Remove model registration')} onClose={() => !busy && setRemove(null)} closeDisabled={busy}><div className="model-source-form"><p>{text('移除此系列的模型登记，磁盘文件和已有项目路径会保留。', 'Remove this family’s model registration. Its file and existing project paths are retained.')}</p><code>{remove.path}</code><footer><button className={secondary} disabled={busy} onClick={() => setRemove(null)}>{text('取消', 'Cancel')}</button><button type="button" className={`${primary} ui-btn-danger`} disabled={busy} onClick={() => void action(async () => { await apiClient.delete(`/models/${remove.id}`); resources.removeModel(remove.id); setRemove(null); })}>{text('移除登记', 'Remove registration')}</button></footer></div></Dialog>}
   </div>;
 }

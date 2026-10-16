@@ -10,6 +10,7 @@ repository; V-Pred 1.0 only in the ModelE mirror, whose file is byte-identical (
 """
 
 import hashlib
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -45,6 +46,8 @@ class RecommendedModel(BaseModel):
     sources: list[RecommendedSource]
     model_id: str | None = None
     available_path: str | None = None
+    processor_path: str | None = None
+    active_download_id: str | None = None
     is_default: bool = False
 
     @model_validator(mode="after")
@@ -458,6 +461,12 @@ RECOMMENDATIONS = [
 ]
 
 
+# The FLUX.3 AE is byte-identical to the already-pinned FLUX.2 VAE.
+RECOMMENDATIONS.insert(2, next(entry for entry in RECOMMENDATIONS if entry.id == "flux2-vae").model_copy(
+    update={"id": "flux3-vae", "family": "flux3", "name": "FLUX.3 VAE"}, deep=True,
+))
+
+
 def find_recommendation(id_: str) -> RecommendedModel | None:
     return next((item for item in RECOMMENDATIONS if item.id == id_), None)
 
@@ -495,6 +504,21 @@ def _bundle_manifests(entry):
 
 def verify_local_model(context, entry: RecommendedModel, path: Path) -> None:
     """Verify a local candidate once before choosing it as this exact recommendation."""
+    if entry.id in {"flux3-text", "krea2-qwen3vl"}:
+        from .flux3_components import find_components
+
+        shared = find_components(context)
+        if shared.get("text_encoder") == str(path.resolve()):
+            if entry.family == "flux3":
+                from ypuddin.models.flux3.text import Flux3Text
+
+                if not shared.get("tokenizer"):
+                    raise ApiError("Qwen3-VL processor 资源不完整。", code="model.component", status=422)
+                try:
+                    Flux3Text.validate_paths(path, Path(shared["tokenizer"]))
+                except (ValueError, OSError) as error:
+                    raise ApiError(str(error), code="model.component", status=422) from error
+            return
     if entry.bundle:
         from .flux3_downloads import available_bundle
 
@@ -507,7 +531,9 @@ def verify_local_model(context, entry: RecommendedModel, path: Path) -> None:
         signature = _signature(path)
         if signature[0] != entry.size:
             raise ApiError("local model size does not match the recommendation", code="model.integrity")
-        digest = cached_sha256(context, path)
+        from .flux3_components import component_sha256
+
+        digest = component_sha256(context, path)
         if digest is None:
             hasher = hashlib.sha256()
             with path.open("rb") as stream:
@@ -531,57 +557,180 @@ def verify_local_model(context, entry: RecommendedModel, path: Path) -> None:
         raise ApiError("cannot read the local model for verification", code="model.read") from None
 
 
-def available_models(context) -> list[RecommendedModel]:
+def component_key(path: Path) -> str:
+    return "model.component." + hashlib.sha256(str(path.resolve()).encode()).hexdigest()
+
+
+def _component_signature(path: Path, processor: Path | None = None) -> str:
+    from .model_status import signature
+
+    data = [signature(path), signature(processor) if processor else None]
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+
+
+def _weight_signature(path: Path) -> dict | None:
+    if path.is_file():
+        return {"": _signature(path)}
+    if path.is_dir():
+        files = sorted(member for member in path.rglob("*") if member.is_file()
+                       and member.name.endswith((".safetensors", ".safetensors.index.json")))
+        return {member.relative_to(path).as_posix(): _signature(member) for member in files} or None
+    return None
+
+
+def component_source_download(context, path: Path) -> str | None:
+    """Resolve the task that transferred these weights without reading their payloads."""
+    from .flux3_components import proof_key, valid_snapshot
+    from .flux3_downloads import BundleManifest, available_bundle
+
+    try:
+        path = path.resolve()
+        if not context.is_allowed(path) or not path.exists():
+            return None
+        current = _weight_signature(path)
+        if current is None:
+            return None
+        stored = context.db.get_kv(component_key(path), {})
+        if stored.get("source_signature") == current and stored.get("source_download_id"):
+            return stored["source_download_id"]
+        shared = path if path.is_dir() else path.parent
+        proof = context.db.get_kv(proof_key(shared), {})
+        role = proof.get("component")
+        if ((role == "text_encoder" and path == shared or role == "vae" and path == shared / "ae.safetensors")
+                and proof.get("owner_download_id") and valid_snapshot(context, proof)):
+            return proof["owner_download_id"]
+        if (path.is_dir() and proof.get("layout_version") == 2
+                and "model.safetensors" in proof.get("owned", {}).get("files", {})
+                and valid_snapshot(context, proof["owned"])):
+            return proof.get("download_id")
+        for task in context.db.get_kv("model_downloads", []):
+            if task.get("status") != "completed":
+                continue
+            target = Path(task["target_path"])
+            if not task.get("bundle"):
+                if (path == target and path.is_file() and task.get("sha256")
+                        and cached_sha256(context, path) == task["sha256"]):
+                    return task["id"]
+            elif task.get("layout_version", 1) == 1:
+                members = {target} if task["kind"] == "text_encoder" else {
+                    target, target / "text_encoder", target / "ae.safetensors"}
+                if path in members and available_bundle(context, target, BundleManifest.model_validate(task["manifest"])):
+                    return task["id"]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
+def remember_component(context, path: Path, *, processor_path=None, source_download_id=None) -> None:
+    processor = Path(processor_path).resolve() if processor_path else None
+    previous = component_metadata(context, path)
+    value = {"processor_path": str(processor) if processor else previous.get("processor_path"),
+             "source_download_id": source_download_id or component_source_download(context, path),
+             "source_signature": _weight_signature(path)}
+    processor = Path(value["processor_path"]) if value["processor_path"] else None
+    value["signature"] = _component_signature(path, processor)
+    context.db.set_kv(component_key(path), value)
+
+
+def component_metadata(context, path: Path) -> dict:
+    value = context.db.get_kv(component_key(path), {})
+    if not value:
+        return {}
+    processor = Path(value["processor_path"]) if value.get("processor_path") else None
+    if (not path.exists() or not context.is_allowed(path.resolve())
+        or processor and (not processor.is_dir() or not context.is_allowed(processor.resolve()))):
+        return {}
+    if value.get("signature") != _component_signature(path, processor):
+        return {}
+    return value
+
+
+def related_download(entry, tasks):
+    """A shared component reports the task that owns its actual preparation."""
+    shared_text = {"krea2-qwen3vl", "flux3-text"}
+    shared_vae = {"flux2-vae", "flux3-vae"}
+    for row in tasks:
+        if row.get("status") not in {"queued", "downloading"}:
+            continue
+        owner = row.get("recommendation_id") or row.get("bundle")
+        if owner == entry.id:
+            return row
+        if entry.sha256 and row.get("sha256") == entry.sha256 and row.get("kind") == entry.kind:
+            return row
+        if entry.id in shared_text and (owner in shared_text or row.get("bundle") == "flux3-base"):
+            return row
+        if entry.id in shared_vae and (owner in shared_vae or row.get("bundle") == "flux3-base"):
+            return row
+        if entry.id == "flux3-base" and owner in shared_text | shared_vae:
+            return row
+    return None
+
+
+def available_models(context, *, tasks=None) -> list[RecommendedModel]:
+    from .flux3_components import component_sha256, find_components, resolve_components
+    from .flux3_downloads import available_bundle
+
     assets = context.db.fetchall("SELECT * FROM models ORDER BY is_default DESC, created_at DESC")
+    candidates = list(assets)
+    for asset in assets:
+        if asset["family"] != "flux3" or asset["kind"] != "dit":
+            continue
+        components = resolve_components(context, Path(asset["path"])) or {}
+        for kind in ("vae", "text_encoder"):
+            if components.get(kind) and not any(row["path"] == components[kind] and row["kind"] == kind for row in candidates):
+                candidates.append({"id": None, "family": "flux3", "kind": kind, "path": components[kind],
+                                   "is_default": False, "processor_path": components.get("tokenizer")})
+    shared = find_components(context)
+    tasks = tasks if tasks is not None else context.db.get_kv("model_downloads", [])
     result = []
     for entry in RECOMMENDATIONS:
-        if entry.bundle:
-            from .flux3_downloads import available_bundle
-
+        own = None
+        available = None
+        verified_paths = set()
+        processor = None
+        if entry.id in {"flux3-text", "krea2-qwen3vl"} and shared.get("text_encoder"):
+            path = shared["text_encoder"]
+            processor = shared.get("tokenizer")
+            if entry.family != "flux3" or processor:
+                own = next((asset for asset in assets if asset["family"] == entry.family
+                            and asset["kind"] == entry.kind and asset["path"] == path), None)
+                available = own or {"path": path}
+                verified_paths.add(path)
+        if available is None and entry.bundle:
             specs = tuple(_bundle_manifests(entry))
             own = next((asset for asset in assets if asset["family"] == entry.family and asset["kind"] == entry.kind
                         and any(available_bundle(context, Path(asset["path"]), spec) for spec in specs)), None)
-            result.append(entry.model_copy(update={"model_id": own["id"] if own else None,
-                                                   "available_path": own["path"] if own else None,
-                                                   "is_default": bool(own and own["is_default"])}))
-            continue
-        # Unknown local files are only candidates until /use verifies their contents.
-        # Completed downloads already have hash proof, so list refreshes remain inexpensive.
-        filenames = {Path(source.filename).name for source in entry.sources}
-        matches = []
-        verified_paths = set()
-        for asset in assets:
-            if asset["kind"] != entry.kind or (entry.kind != "vae" and asset["family"] != entry.family):
-                continue
-            path = Path(asset["path"])
-            try:
-                if (
-                    path.name in filenames
-                    and context.is_allowed(path)
-                    and path.is_file()
-                    and path.stat().st_size == entry.size
-                ):
-                    digest = cached_sha256(context, path)
-                    if digest in (None, entry.sha256):
+            available = own
+            if own:
+                verified_paths.add(own["path"])
+                if entry.kind == "text_encoder":
+                    processor = component_metadata(context, Path(own["path"])).get("processor_path") or own["path"]
+        elif available is None:
+            filenames = {Path(source.filename).name for source in entry.sources}
+            matches = []
+            for asset in candidates:
+                if asset["kind"] != entry.kind or (entry.kind != "vae" and asset["family"] != entry.family):
+                    continue
+                path = Path(asset["path"])
+                try:
+                    if not context.is_allowed(path) or not path.is_file() or path.stat().st_size != entry.size:
+                        continue
+                    digest = component_sha256(context, path)
+                    if digest == entry.sha256 or digest is None and path.name in filenames:
                         matches.append(asset)
                         if digest == entry.sha256:
                             verified_paths.add(asset["path"])
-            except OSError:
-                continue
-        own = next((asset for asset in matches if asset["family"] == entry.family), None)
-        available = own or next(iter(matches), None)
-        result.append(
-            entry.model_copy(
-                update={
-                    "model_id": own["id"] if own else None,
-                    "available_path": available["path"] if available else None,
-                    "is_default": bool(
-                        entry.purpose == "training"
-                        and own
-                        and own["is_default"]
-                        and own["path"] in verified_paths
-                    ),
-                }
-            )
-        )
+                except OSError:
+                    continue
+            own = next((asset for asset in matches if asset.get("id") and asset["family"] == entry.family), None)
+            available = own or next(iter(matches), None)
+        task = related_download(entry, tasks)
+        result.append(entry.model_copy(update={
+            "model_id": own["id"] if own else None,
+            "available_path": available["path"] if available else None,
+            "processor_path": processor,
+            "active_download_id": task["id"] if task else None,
+            "is_default": bool(entry.purpose == "training" and own and own["is_default"]
+                               and own["path"] in verified_paths),
+        }))
     return result

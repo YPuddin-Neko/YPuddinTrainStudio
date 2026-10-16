@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -32,9 +33,27 @@ def component_paths(cfg):
     root = Path(cfg.dit_path or ".").expanduser()
     directory = root if root.is_dir() else root.parent
     dit = root / "model.safetensors" if root.is_dir() else root
-    vae = Path(cfg.vae_path).expanduser() if cfg.vae_path else directory / "ae.safetensors"
-    text = Path(cfg.text_encoder_path).expanduser() if cfg.text_encoder_path else directory / "text_encoder"
-    processor = Path(cfg.tokenizer_path).expanduser() if cfg.tokenizer_path else text
+    references = {}
+    manifest = directory / ".ypuddin-flux3-components.json"
+    if manifest.exists():
+        if not manifest.is_file() or manifest.stat().st_size > 2 * 1024 * 1024:
+            raise ValueError("FLUX.3 组件引用文件无效。")
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        references = data.get("components") if isinstance(data, dict) else None
+        if (
+            not isinstance(data, dict) or data.get("format") != "ypuddin-flux3-components"
+            or type(data.get("version")) is not int or data["version"] != 1
+            or not isinstance(references, dict) or set(references) != {"text_encoder", "vae", "tokenizer"}
+            or any(not isinstance(value, str) or not Path(value).is_absolute() for value in references.values())
+        ):
+            raise ValueError("FLUX.3 组件引用需要 version=1 及文本编码器、VAE、processor 的绝对路径。")
+        references = {name: Path(value) for name, value in references.items()}
+    vae = Path(cfg.vae_path).expanduser() if cfg.vae_path else references.get("vae", directory / "ae.safetensors")
+    text = Path(cfg.text_encoder_path).expanduser() if cfg.text_encoder_path else references.get("text_encoder", directory / "text_encoder")
+    default_processor = text.parent if text.is_file() else text
+    if not cfg.text_encoder_path:
+        default_processor = references.get("tokenizer", default_processor)
+    processor = Path(cfg.tokenizer_path).expanduser() if cfg.tokenizer_path else default_processor
     return root, dit, text, vae, processor
 
 

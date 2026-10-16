@@ -85,12 +85,12 @@ class Flux3Family(ModelFamily):
         activation_units=26.0,
         weights=(
             ("dit_path", "Klein Base DiT", "FLUX.3 Image Klein Base 完整本地目录或原始 model.safetensors"),
-            ("text_encoder_path", "文本编码器", "完整模型目录可留空；否则选择 Qwen3-VL-4B-Instruct 完整本地目录"),
+            ("text_encoder_path", "文本编码器", "完整模型目录可留空；也可选择 Qwen3-VL-4B-Instruct 本地目录或配有 processor 的 BF16 单文件"),
             ("vae_path", "FLUX.3 VAE", "完整模型目录可留空；否则选择配套 ae.safetensors"),
             ("tokenizer_path", "文本处理器", "文本编码器目录内含时可留空；自定义时选择匹配的完整 processor 目录"),
         ),
         optional_weights=("text_encoder_path", "vae_path", "tokenizer_path"),
-        directory_only_weights=("text_encoder_path", "tokenizer_path"),
+        directory_only_weights=("tokenizer_path",),
     )
 
     _paths = staticmethod(loading.component_paths)

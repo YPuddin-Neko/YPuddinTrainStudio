@@ -414,6 +414,9 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
           : text(`同时训练 ${name} 的文本编码器。`, `Also trains the ${name} text encoder.`),
         text('LoRA 只更新其线性层的附加权重，全量微调更新其原始参数。每步都要重新编码标签，不使用文本缓存，显存需求增加。', 'LoRA updates only the added weights of its linear layers; full fine-tuning updates its original parameters. Captions are encoded at every step without the text cache, which needs more memory.'),
       ]);
+    case 'model.text_encoder_path':
+      if (family.name === 'flux3') return text('选择 Qwen3-VL-4B-Instruct 完整目录，或 BF16 单文件。\n使用单文件时，需在“文本处理器”中填写配套分词器与处理器目录；从已登记模型选择时会自动填入配套路径。\n使用包含文本编码器的完整模型包时，此项可留空。', 'Select a complete Qwen3-VL-4B-Instruct folder or a BF16 single file.\nFor a single file, set Text processor to its matching tokenizer and processor folder. Selecting a registered encoder fills this path automatically.\nLeave this field blank when using a full model package that includes the text encoder.');
+      return undefined;
     case 'model.tokenizer_path':
       if (family.name === 'flux3') return text('留空使用所选 Qwen3-VL 文本编码器目录中的分词器与处理器；也可指定与该编码器匹配的处理器目录。', 'Blank uses the tokenizer and processor in the selected Qwen3-VL text encoder folder. You can also select a matching processor folder.');
       return family.name === 'anima'

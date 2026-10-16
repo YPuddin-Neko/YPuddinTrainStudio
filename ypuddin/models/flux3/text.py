@@ -20,24 +20,35 @@ class Flux3Text(TextPipeline):
     encoder_hidden_size = 2560
 
     def __init__(self, path: str | Path, processor_path: str | Path | None = None, *, device="cpu"):
-        self.path = Path(path).expanduser()
-        self.processor_path = Path(processor_path).expanduser() if processor_path is not None else self.path
+        self.path, self.processor_path, self.config_path = self._local_paths(path, processor_path)
         self.config, self.weight_elements = self.validate_paths(self.path, self.processor_path)
         self.dtype, self.device = torch.bfloat16, torch.device(device)
         self.hidden_size = self.encoder_hidden_size * len(self.layers)
         self.model, self.processor = None, None
+        assets = [self.path, self.processor_path]
+        if self.path.is_file():
+            assets.append(self.config_path)
         self.fingerprint = content_fingerprint(
-            [self.path, self.processor_path],
+            assets,
             namespace=f"flux3-qwen3vl-layers{self.layers}-len{self.max_len}-pad{self.pad_multiple}-positions4-bf16-v1",
         )
 
+    @staticmethod
+    def _local_paths(path: str | Path, processor_path: str | Path | None = None):
+        path = Path(path).expanduser()
+        directory = path if path.is_dir() else path.parent
+        processor_path = Path(processor_path).expanduser() if processor_path is not None else directory
+        config_path = directory / "config.json"
+        if path.is_file() and not config_path.is_file():
+            config_path = processor_path / "config.json"
+        return path, processor_path, config_path
+
     @classmethod
     def validate_paths(cls, path: str | Path, processor_path: str | Path | None = None):
-        path = Path(path).expanduser()
-        processor_path = Path(processor_path).expanduser() if processor_path is not None else path
-        if not path.is_dir() or not (path / "config.json").is_file():
-            raise ValueError("FLUX.3 requires a complete local Qwen3-VL-4B-Instruct directory")
-        config = json.loads((path / "config.json").read_text(encoding="utf-8"))
+        path, processor_path, config_path = cls._local_paths(path, processor_path)
+        if not config_path.is_file():
+            raise ValueError("FLUX.3 文本编码器需要本地 Qwen3-VL config.json。")
+        config = json.loads(config_path.read_text(encoding="utf-8"))
         if not isinstance(config, dict):
             raise ValueError("FLUX.3 text encoder config must be an object")
         text = config.get("text_config", {})
@@ -85,6 +96,8 @@ class Flux3Text(TextPipeline):
                     tensor = tensors.get_slice(key)
                     if tensor.get_dtype() not in {"F32", "F16", "BF16", "F64"}:
                         raise ValueError("FLUX.3 requires unquantized Qwen3-VL text encoder weights")
+                    if path.is_file() and tensor.get_dtype() != "BF16":
+                        raise ValueError("FLUX.3 单文件文本编码器需要 BF16 权重。")
                     shapes[key] = tuple(tensor.get_shape())
                     weight_elements += math.prod(shapes[key])
         if weight_map is not None and set(weight_map) != set(shapes):
@@ -117,6 +130,10 @@ class Flux3Text(TextPipeline):
 
     @staticmethod
     def _weight_files(path):
+        if path.is_file():
+            if path.suffix.lower() != ".safetensors":
+                raise ValueError("FLUX.3 单文件文本编码器需要 safetensors 格式。")
+            return [path], None
         index = path / "model.safetensors.index.json"
         weight_map = None
         if (path / "model.safetensors").is_file():
@@ -148,11 +165,18 @@ class Flux3Text(TextPipeline):
             processor.tokenizer.padding_side = "right"
             self.processor = processor
         if self.model is None:
-            from transformers import Qwen3VLForConditionalGeneration
+            from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration
 
+            kwargs = {}
+            source = str(self.path)
+            if self.path.is_file():
+                from safetensors.torch import load_file
+
+                source = None
+                kwargs = {"config": Qwen3VLConfig.from_dict(self.config), "state_dict": load_file(str(self.path))}
             model, info = Qwen3VLForConditionalGeneration.from_pretrained(
-                str(self.path), local_files_only=True, use_safetensors=True, dtype=self.dtype,
-                low_cpu_mem_usage=True, output_loading_info=True,
+                source, local_files_only=True, use_safetensors=True, dtype=self.dtype,
+                low_cpu_mem_usage=True, output_loading_info=True, **kwargs,
             )
             if any(info.get(key) for key in ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")):
                 raise ValueError(f"FLUX.3 text encoder weights do not match config: {info}")

@@ -912,6 +912,7 @@ class ModelBody(BaseModel):
     family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "toy", "tagger"]
     kind: Literal["dit", "text_encoder", "text_encoder_2", "vae", "tokenizer", "tagger"]
     path: str
+    processor_path: str | None = None
     dtype: str | None = None
     is_default: bool = False
     purpose: Literal["training", "inference"] | None = None
@@ -927,7 +928,9 @@ class ModelBody(BaseModel):
         return values
 
 
-def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext, *, detected=None) -> None:
+def _check_model_admission(
+    path: Path, family: str, kind: str, c: ServiceContext, *, detected=None, processor_path=None
+) -> None:
     from .model_inspection import inspect_model, training_rejection
 
     if reason := training_rejection({}, family):
@@ -937,9 +940,19 @@ def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext
             raise ApiError("FLUX.3 不使用第二文本编码器。", code="model.component", status=422)
         if kind in {"text_encoder", "tokenizer"}:
             from .model_inspection import check_flux3_processor
+            from .model_recommendations import component_metadata
 
             try:
-                check_flux3_processor(path, c.is_allowed)
+                processor = Path(processor_path or component_metadata(c, path).get("processor_path")
+                                 or (path if path.is_dir() else path.parent)).resolve()
+                if not c.is_allowed(processor):
+                    raise ValueError("processor path is outside allowed storage roots")
+                check_flux3_processor(processor, c.is_allowed)
+                if kind == "text_encoder" and path.is_file():
+                    from ypuddin.models.flux3.text import Flux3Text
+
+                    Flux3Text.validate_paths(path, processor)
+                    return
             except (ValueError, OSError) as error:
                 raise ApiError(str(error), code="model.component", status=422) from error
     if family == "flux2" and kind == "text_encoder" and path.is_file():
@@ -989,11 +1002,40 @@ def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext
 
 def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
     # Header inspections are reused while the files are unchanged: the list is polled.
-    from .model_status import remembered
+    from .model_recommendations import component_metadata, component_source_download
+    from .model_status import remembered, signature
 
     p = Path(r["path"])
     scope = tuple(map(str, c.allowed_roots))
     projected = {**r, "exists": p.exists(), "is_default": bool(r["is_default"])}
+    metadata = component_metadata(c, p)
+    projected["processor_path"] = metadata.get("processor_path")
+    projected["source_download_id"] = component_source_download(c, p)
+    if r["kind"] == "text_encoder" and r["family"] in {"krea2", "flux3"}:
+        processor = Path(metadata.get("processor_path") or (p if p.is_dir() else p.parent))
+        scope += (str(processor), repr(signature(processor)))
+
+        def text_families() -> tuple[list[str], bool]:
+            try:
+                _check_model_admission(p, "flux3", "text_encoder", c, processor_path=processor)
+            except (ApiError, ValueError, OSError, RuntimeError):
+                return [r["family"]], True
+            return ["krea2", "flux3"], True
+
+        projected["compatible_families"] = remembered("qwen3vl", p, text_families, scope=scope)
+        if "flux3" in projected["compatible_families"] and processor.is_dir():
+            projected["processor_path"] = str(processor)
+    if r["family"] == "flux3" and r["kind"] == "dit" and p.is_dir():
+        from types import SimpleNamespace
+
+        from ypuddin.models.flux3.loading import component_paths
+
+        try:
+            parts = component_paths(SimpleNamespace(dit_path=str(p), text_encoder_path=None,
+                                                    vae_path=None, tokenizer_path=None))
+            scope += tuple((str(part), repr(signature(part))) for part in parts[2:])
+        except (ValueError, OSError, TypeError):
+            scope += ("invalid-components",)
     if r["kind"] == "vae" and p.is_file() and c.is_allowed(p.resolve()):
         from .model_inspection import inspect_model
 
@@ -1068,7 +1110,17 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         raise NotFound(f"model path not found: {p}", code="model.not_found")
     if not c.is_allowed(p):
         raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
-    _check_model_admission(p, body.family, body.kind, c)
+    if body.processor_path:
+        from .model_inspection import check_flux3_processor
+
+        processor = Path(body.processor_path).expanduser().resolve()
+        if body.kind != "text_encoder" or body.family not in {"krea2", "flux3"}:
+            raise ApiError("processor 关联仅用于 Qwen3-VL 文本编码器。", code="model.component", status=422)
+        try:
+            check_flux3_processor(processor, c.is_allowed)
+        except (ValueError, OSError) as error:
+            raise ApiError(str(error), code="model.component", status=422) from error
+    _check_model_admission(p, body.family, body.kind, c, processor_path=body.processor_path)
     if body.kind in {"dit", "vae"} and not p.is_file() and body.family not in {"sdxl", "flux", "flux2", "flux3"}:
         raise ApiError("DiT and VAE paths must point to a weight file", code="model.path")
     if body.kind == "tokenizer" and not p.is_dir():
@@ -1084,7 +1136,7 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         if p.is_dir()
         else 0
     )
-    with c.db.lock:
+    with c.db.transaction():
         existing = c.db.fetchone(
             "SELECT * FROM models WHERE family=? AND kind=? AND path=?", (body.family, body.kind, str(p))
         )
@@ -1138,7 +1190,44 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
                     "created_at": now(),
                 },
             )
+        if body.kind == "text_encoder" and body.processor_path:
+            from .model_recommendations import remember_component
+
+            remember_component(c, p, processor_path=body.processor_path)
+        if body.family == "flux3" and body.kind == "dit" and p.is_dir():
+            register_flux3_components(p, c, body.is_default)
     return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)), c)
+
+
+def register_flux3_components(root: Path, c: ServiceContext, is_default=False):
+    """Associate a complete installation with its real component paths."""
+    from types import SimpleNamespace
+
+    from ypuddin.models.flux3.loading import component_paths
+
+    from .flux3_components import resolve_components
+    from .model_recommendations import remember_component
+
+    components = resolve_components(c, root)
+    if components is None:
+        if not (root / "model.safetensors").is_file():
+            return []
+        _, _, text, vae, processor = component_paths(SimpleNamespace(
+            dit_path=str(root), text_encoder_path=None, vae_path=None, tokenizer_path=None,
+        ))
+        components = {"text_encoder": str(text), "vae": str(vae), "tokenizer": str(processor)}
+    assets = []
+    for kind in ("text_encoder", "vae"):
+        if kind not in components:
+            continue
+        path = Path(components[kind]).resolve()
+        processor = components.get("tokenizer") if kind == "text_encoder" else None
+        asset = add_model(ModelBody(family="flux3", kind=kind, path=str(path),
+                                   processor_path=processor, dtype="bf16" if kind == "text_encoder" else "fp32",
+                                   is_default=is_default), c)
+        remember_component(c, path, processor_path=processor)
+        assets.append(asset)
+    return assets
 
 
 class ModelInspectionBody(BaseModel):
@@ -1179,7 +1268,7 @@ class ModelDefaultPatch(BaseModel):
 
 @router.patch("/models/{model_id}", response_model=m.ModelAsset)
 def patch_model(model_id: str, body: ModelDefaultPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    with c.db.lock:
+    with c.db.transaction():
         row = c.db.fetchone("SELECT * FROM models WHERE id=?", (model_id,))
         if row is None:
             raise NotFound("model not found", code="model.not_found")
@@ -1197,6 +1286,8 @@ def patch_model(model_id: str, body: ModelDefaultPatch, c: ServiceContext = Depe
                 "UPDATE models SET is_default=0 WHERE family=? AND kind=?", (row["family"], row["kind"])
             )
         c.db.update("models", model_id, {"is_default": int(body.is_default)})
+        if body.is_default and row["family"] == "flux3" and row["kind"] == "dit" and Path(row["path"]).is_dir():
+            register_flux3_components(Path(row["path"]), c, True)
         return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (model_id,)), c)
 
 
@@ -1241,6 +1332,8 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
         if visible(file) and (file.parent / "ae.safetensors").is_file()
         and (file.parent / "text_encoder").is_dir()
     )
+    directories.update(file.parent for file in root.rglob(".ypuddin-flux3-components.json")
+                       if visible(file.parent))
     grouped = {
         folder
         for folder in directories
@@ -1264,6 +1357,13 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
         if candidate.is_file() and candidate.parent in recognized_components:
             continue
         if str(candidate.resolve()) in known:
+            if candidate.is_dir() and (candidate / "model.safetensors").is_file():
+                existing = c.db.fetchone("SELECT * FROM models WHERE family='flux3' AND kind='dit' AND path=?",
+                                        (str(candidate.resolve()),))
+                if existing:
+                    with c.db.transaction():
+                        components = register_flux3_components(candidate.resolve(), c, bool(existing["is_default"]))
+                    known.update(asset["path"] for asset in components)
             if candidate in configured:
                 recognized_components.add(candidate)
             continue
@@ -1303,21 +1403,29 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             )
         )
         mid = new_id("m")
-        c.db.insert(
-            "models",
-            {
-                "id": mid,
-                "family": family,
-                "kind": kind,
-                "path": str(path),
-                "size": size,
-                "dtype": detected["dtype"],
-                "is_default": 0,
-                "purpose": detected.get("purpose") or "training",
-                "variant": detected.get("variant"),
-                "created_at": now(),
-            },
-        )
+        with c.db.transaction():
+            if c.db.fetchone("SELECT id FROM models WHERE family=? AND kind=? AND path=?",
+                             (family, kind, str(path))):
+                known.add(str(path))
+                continue
+            c.db.insert(
+                "models",
+                {
+                    "id": mid,
+                    "family": family,
+                    "kind": kind,
+                    "path": str(path),
+                    "size": size,
+                    "dtype": detected["dtype"],
+                    "is_default": 0,
+                    "purpose": detected.get("purpose") or "training",
+                    "variant": detected.get("variant"),
+                    "created_at": now(),
+                },
+            )
+            if family == "flux3" and kind == "dit" and path.is_dir():
+                components = register_flux3_components(path, c, False)
+                known.update(asset["path"] for asset in components)
         known.add(str(path))
         found.append(_model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)), c))
     return found

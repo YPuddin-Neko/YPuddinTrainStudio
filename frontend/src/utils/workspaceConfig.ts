@@ -23,9 +23,17 @@ export const MODEL_PATH_FIELDS = {
 export function fillDefaultModels<T extends Record<string, any>>(config: T, assets: ModelAsset[]) {
   if (inactiveTrainingReason(config)) return { ...config, model: { ...config.model } };
   const model = { ...(config.model || {}), family: config.model?.family || 'anima' };
+  let defaultTextProcessor: string | null = null;
   for (const [field, kind] of Object.entries(MODEL_PATH_FIELDS)) {
-    if (!model[field]) model[field] = assets.find((asset) => asset.family === model.family && asset.kind === kind && asset.is_default && asset.exists && !modelAssetUnsupportedReason(asset))?.path ?? null;
+    if (!model[field]) {
+      const asset = assets.find((asset) => asset.family === model.family && asset.kind === kind && asset.is_default && asset.exists && !modelAssetUnsupportedReason(asset));
+      model[field] = asset?.path ?? null;
+      if (field === 'text_encoder_path' && asset && 'processor_path' in asset && typeof asset.processor_path === 'string' && asset.processor_path.trim()) {
+        defaultTextProcessor = asset.processor_path;
+      }
+    }
   }
+  if (!model.tokenizer_path && defaultTextProcessor) model.tokenizer_path = defaultTextProcessor;
   const selected = assets.find(asset => asset.path === model.dit_path && asset.family === model.family && asset.kind === 'dit');
   if (model.family === 'krea2' && selected?.variant) model.krea2_variant = selected.variant;
   return { ...config, model };

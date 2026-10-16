@@ -53,6 +53,7 @@ class ModelDownloadRequest(BaseModel):
     purpose: Literal["training", "inference"] = "training"
     variant: Literal["raw", "turbo"] | None = None
     bundle: BundleId | None = None
+    layout_version: Literal[1, 2] = 2
 
     @model_validator(mode="before")
     @classmethod
@@ -110,6 +111,9 @@ class ModelDownload(BaseModel):
     expected_size: int | None = None
     sha256: str | None = None
     bundle: BundleId | None = None
+    layout_version: int = 1
+    components: dict[str, str] | None = None
+    component_plan: dict | None = None
     manifest: BundleManifest | None = None
     verification_source: Literal["pinned_revision_and_sizes", "pinned_revision_and_sha256"] | None = None
 
@@ -311,6 +315,7 @@ class ModelDownloads:
         # Guards the in-memory tasks only. Saving takes ``_saving`` after letting go of it, so the
         # polled list never waits for the database (which other work may hold for a while).
         self.lock = threading.RLock()
+        self._starting = threading.RLock()
         self._saving = threading.Lock()
         self._revision = 0
         self._saved = 0
@@ -389,6 +394,34 @@ class ModelDownloads:
         self.context.bus.publish("model.download", row)
 
     def start(self, body: ModelDownloadRequest, *, recommendation=None) -> dict[str, Any]:
+        with self._starting:
+            from .model_recommendations import RECOMMENDATIONS, available_models, related_download
+
+            entry = next((item for item in RECOMMENDATIONS
+                          if recommendation is not None and item.id == recommendation.id), None)
+            if entry is None and recommendation is None:
+                entry = next((item for item in RECOMMENDATIONS if item.family == body.family and item.kind == body.kind
+                              and (body.bundle and item.bundle == body.bundle or any(
+                                  not body.url and source.provider == body.provider and source.repo_id == body.repo_id
+                                  and source.filename == body.filename
+                                  and source.revision == (body.revision or ("master" if body.provider == "modelscope" else "main"))
+                                  for source in item.sources))), None)
+                recommendation = entry
+            if entry is not None:
+                active = related_download(entry, self.list())
+                if active:
+                    if (active.get("recommendation_id") or active.get("bundle")) == entry.id:
+                        raise Conflict("this model file is already downloading", code="download.active",
+                                       details={"download_id": active["id"]})
+                    return dict(active)
+                local = next(item for item in available_models(self.context, tasks=[]) if item.id == entry.id)
+                if local.available_path:
+                    raise Conflict("model components are already available; select the existing model",
+                                   code="download.exists", details={"path": local.available_path,
+                                                                     "model_id": local.model_id})
+            return self._start(body, recommendation=recommendation)
+
+    def _start(self, body: ModelDownloadRequest, *, recommendation=None) -> dict[str, Any]:
         if body.bundle:
             from .flux3_downloads import start_bundle
 
@@ -487,9 +520,12 @@ class ModelDownloads:
                 raise Conflict("only failed or cancelled downloads can be retried", code="download.retry")
             selected = provider or saved["provider"]
             body = ModelDownloadRequest(family="flux3", kind=saved["kind"], bundle=saved["bundle"],
+                                        layout_version=saved.get("layout_version", 1),
                                         provider=selected, dtype=saved["dtype"], is_default=saved["is_default"])
-            result = start_bundle(self, body, frozen=saved["manifest"] if selected == saved["provider"] else None)
-            if saved.get("recommendation_id"):
+            result = start_bundle(self, body, frozen=saved["manifest"] if selected == saved["provider"] else None,
+                                  layout_version=saved.get("layout_version", 1),
+                                  plan=saved.get("component_plan") if selected == saved["provider"] else None)
+            if saved.get("recommendation_id") and result.get("bundle") == saved["bundle"]:
                 self._update(result["id"], recommendation_id=saved["recommendation_id"])
                 result["recommendation_id"] = saved["recommendation_id"]
             return result
@@ -738,18 +774,23 @@ class ModelDownloads:
                 remember_verified_file(self.context, target, row["sha256"])
             from .routes_core import ModelBody, add_model
 
-            asset = add_model(
-                ModelBody(
-                    family=row["family"],
-                    kind=row["kind"],
-                    path=str(target.parent if bundle else target),
-                    dtype=row["dtype"],
-                    is_default=row["is_default"],
-                    purpose=row.get("purpose", "training"),
-                    variant=row.get("variant"),
-                ),
-                self.context,
-            )
+            with self.context.db.transaction():
+                asset = add_model(
+                    ModelBody(
+                        family=row["family"],
+                        kind=row["kind"],
+                        path=str(target.parent if bundle else target),
+                        dtype=row["dtype"],
+                        is_default=row["is_default"],
+                        purpose=row.get("purpose", "training"),
+                        variant=row.get("variant"),
+                    ),
+                    self.context,
+                )
+                if not bundle:
+                    from .model_recommendations import remember_component
+
+                    remember_component(self.context, target, source_download_id=id_)
             self._update(id_, status="completed", model_id=asset["id"], finished_at=now())
         except _Cancelled:
             self._update(id_, status="cancelled", finished_at=now())

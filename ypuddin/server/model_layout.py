@@ -13,8 +13,12 @@ def model_category(kind: str) -> str:
 
 
 def model_folder(root: Path, family: str, kind: str) -> Path:
-    # Both families use the Qwen Image VAE architecture.
-    owner = 'shared' if kind == 'vae' and family in {'anima', 'krea2'} else family
+    owner = 'shared' if (kind == 'vae' and family in {'anima', 'krea2', 'flux2', 'flux3'}
+                         or kind == 'text_encoder' and family == 'krea2') else family
     if owner not in {'anima', 'krea2', 'sdxl', 'flux2', 'flux3', 'shared'}:
         raise ValueError(f'Unknown model family: {family}')
     return root / model_category(kind) / owner
+
+
+def shared_component_folder(root: Path, kind: str) -> Path:
+    return root / model_category(kind) / 'shared'

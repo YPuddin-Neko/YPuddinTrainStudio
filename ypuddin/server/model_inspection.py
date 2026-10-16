@@ -402,11 +402,22 @@ def check_flux3_processor(path: Path, allowed=None) -> None:
     config = _json(_contained(root, model_config, allowed, "FLUX.3 processor config"), CONFIG_LIMIT) if model_config.is_file() else {}
     if "Qwen3VLProcessor" not in classes and config.get("model_type") != "qwen3_vl":
         raise ValueError("FLUX.3 需要 Qwen3-VL processor 配置。")
-    for name in ("preprocessor_config.json", "video_preprocessor_config.json"):
-        config = _contained(root, root / name, allowed, f"FLUX.3 {name}")
-        if not config.is_file():
-            raise ValueError(f"FLUX.3 processor 缺少 {name}。")
-        value = _json(config, CONFIG_LIMIT)
+    combined_path = root / "processor_config.json"
+    combined = _json(_contained(root, combined_path, allowed, "FLUX.3 processor config"), CONFIG_LIMIT) if combined_path.is_file() else {}
+    for name, nested, type_key, types in (
+        ("preprocessor_config.json", "image_processor", "image_processor_type", {"Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"}),
+        ("video_preprocessor_config.json", "video_processor", "video_processor_type", {"Qwen3VLVideoProcessor"}),
+    ):
+        if nested in combined:
+            value = combined[nested]
+            if (combined.get("processor_class") != "Qwen3VLProcessor" or not isinstance(value, dict)
+                    or not isinstance(value.get(type_key), str) or value[type_key] not in types):
+                raise ValueError(f"FLUX.3 processor 的 {nested} 配置无效。")
+        else:
+            config = _contained(root, root / name, allowed, f"FLUX.3 {name}")
+            if not config.is_file():
+                raise ValueError(f"FLUX.3 processor 缺少 {name}。")
+            value = _json(config, CONFIG_LIMIT)
         if not value:
             raise ValueError(f"FLUX.3 {name} 不能为空。")
         _local_references(value, root, allowed, f"FLUX.3 {name}")
@@ -414,22 +425,51 @@ def check_flux3_processor(path: Path, allowed=None) -> None:
 
 def _flux3_directory(root: Path, allowed, budget: dict[str, int]) -> dict[str, Any] | None:
     model = root / "model.safetensors"
-    if not model.is_file() or not ((root / "ae.safetensors").exists() or (root / "text_encoder").exists()):
+    manifest = root / ".ypuddin-flux3-components.json"
+    if not model.is_file() or not (manifest.exists() or (root / "ae.safetensors").exists() or (root / "text_encoder").exists()):
         return None
     model = _contained(root, model, allowed, "FLUX.3 model")
     dit = inspect_model(model, allowed=allowed, _budget=budget)
     if dit["family"] != "flux3":
         return None
-    vae = _contained(root, root / "ae.safetensors", allowed, "FLUX.3 VAE")
-    text = _contained(root, root / "text_encoder", allowed, "FLUX.3 text encoder")
-    if not vae.is_file() or not text.is_dir():
-        raise ValueError("FLUX.3 完整目录需要 model.safetensors、ae.safetensors 和 text_encoder/。")
-    components = [dit, inspect_model(vae, allowed=allowed, _budget=budget), inspect_model(text, allowed=allowed, _budget=budget)]
+    config_override = None
+    if manifest.exists():
+        manifest = _contained(root, manifest, allowed, "FLUX.3 components")
+        if not manifest.is_file():
+            raise ValueError("FLUX.3 组件引用文件无效。")
+        data = _json(manifest, CONFIG_LIMIT)
+        references = data.get("components")
+        if (
+            data.get("format") != "ypuddin-flux3-components"
+            or type(data.get("version")) is not int or data["version"] != 1
+            or not isinstance(references, dict) or set(references) != {"text_encoder", "vae", "tokenizer"}
+            or any(not isinstance(value, str) or not Path(value).is_absolute() for value in references.values())
+        ):
+            raise ValueError("FLUX.3 组件引用需要 version=1 及文本编码器、VAE、processor 的绝对路径。")
+        paths = {name: Path(value).resolve() for name, value in references.items()}
+        if any(not path.exists() or allowed and not allowed(path) for path in paths.values()):
+            raise ValueError("FLUX.3 组件引用不存在或位于允许的存储目录之外。")
+        vae, text, processor = paths["vae"], paths["text_encoder"], paths["tokenizer"]
+        if (
+            text == root.resolve() or (text / ".ypuddin-flux3-components.json").exists()
+            or not vae.is_file() or not (text.is_file() or text.is_dir())
+        ):
+            raise ValueError("FLUX.3 组件引用需要独立的文本编码器和 VAE 权重。")
+        if text.is_file() and not (text.parent / "config.json").is_file():
+            config_override = processor / "config.json"
+    else:
+        vae = _contained(root, root / "ae.safetensors", allowed, "FLUX.3 VAE")
+        text = _contained(root, root / "text_encoder", allowed, "FLUX.3 text encoder")
+        processor = text
+        if not vae.is_file() or not text.is_dir():
+            raise ValueError("FLUX.3 完整目录需要 model.safetensors、ae.safetensors 和 text_encoder/。")
+    check_flux3_processor(processor, allowed)
+    components = [dit, inspect_model(vae, allowed=allowed, _budget=budget),
+                  inspect_model(text, allowed=allowed, _budget=budget, _config_path=config_override)]
     if components[1]["kind"] != "vae" or "flux3" not in components[1]["family_candidates"]:
         raise ValueError("FLUX.3 VAE 几何不匹配。")
     if components[2]["kind"] != "text_encoder" or "flux3" not in components[2]["family_candidates"]:
-        raise ValueError("FLUX.3 需要完整的 Qwen3-VL-4B 文本编码器目录。")
-    check_flux3_processor(text, allowed)
+        raise ValueError("FLUX.3 需要完整的 Qwen3-VL-4B 文本编码器和 processor。")
     dtypes = Counter()
     for component in components:
         dtypes.update(component["dtypes"])
@@ -659,7 +699,8 @@ def _sdxl_directory(root: Path, allowed, budget: dict[str, int]) -> dict[str, An
     }
 
 
-def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = None) -> dict[str, Any]:
+def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = None,
+                  _config_path: Path | None = None) -> dict[str, Any]:
     path = path.expanduser().resolve()
     if allowed and not allowed(path):
         raise ValueError("model path is outside allowed storage roots")
@@ -677,13 +718,14 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         if directory is not None:
             return directory
     root = path if path.is_dir() else path.parent
-    config_path = root / "config.json"
+    config_path = _config_path if _config_path is not None else root / "config.json"
+    config_root = config_path.parent
     config = (
-        _json(_contained(root, config_path, allowed, "model config"), CONFIG_LIMIT)
+        _json(_contained(config_root, config_path, allowed, "model config"), CONFIG_LIMIT)
         if config_path.is_file()
         else {}
     )
-    _local_references(config, root, allowed, "model config")
+    _local_references(config, config_root, allowed, "model config")
     files = []
     mapping = {}
     if path.is_file():
