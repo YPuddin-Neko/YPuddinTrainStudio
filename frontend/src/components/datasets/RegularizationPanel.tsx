@@ -45,8 +45,8 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
   const [count, setCount] = useState(20);
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(1024);
-  const [steps, setSteps] = useState(25);
-  const [cfg, setCfg] = useState(4);
+  const [stepsOverride, setSteps] = useState<number | null>(null);
+  const [cfgOverride, setCfg] = useState<number | null>(null);
   const [seed, setSeed] = useState(0);
   const [negative, setNegative] = useState('');
   const [weight, setWeight] = useState(1);
@@ -80,6 +80,8 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
   });
   const generationModel = modelDraft?.scope === endpoint ? modelDraft.value : modelQuery.data?.model;
   const generationFamily = modelQuery.data?.families.find(item => item.name === generationModel?.family);
+  const steps = stepsOverride ?? (generationModel?.family === 'flux3' ? generationFamily?.sampling.steps ?? 50 : 25);
+  const cfg = cfgOverride ?? (generationModel?.family === 'flux3' ? generationFamily?.sampling.cfg ?? 3.5 : 4);
   const modelReady = !!generationModel && !!generationFamily && !modelQuery.error && trainingFamilyOptions(modelQuery.data?.families || [], false, generationModel.family).some(item => item.value === generationModel.family)
     && modelFamilyWeights(generationFamily).every(weight => !weight.required || !!generationModel[weight.field as keyof GenerationModel]?.toString().trim());
   const credentials = useQuery({ queryKey: ['credentials'], enabled: source !== 'ai',

@@ -70,7 +70,7 @@ def backbone_memory_layout(backbone, family, cfg, dtype, compute_dtype, device_t
     The result owns no modules, tensors, traces or autograd objects.
     """
     spec = family.spec
-    if spec.retired_reason or spec.name not in {"anima", "krea2", "flux2", "sdxl", "toy"}:
+    if spec.retired_reason or spec.name not in {"anima", "krea2", "flux2", "flux3", "sdxl", "toy"}:
         raise ValueError("unsupported memory-estimate family")
     config = getattr(backbone, "config", None)
     hidden = (getattr(backbone, "dim", None) or getattr(backbone, "model_channels", None)
@@ -102,6 +102,13 @@ def backbone_memory_layout(backbone, family, cfg, dtype, compute_dtype, device_t
         condition_dtype = torch.bfloat16
     elif spec.name == "flux2":
         condition_width = config.joint_attention_dim
+    elif spec.name == "flux3":
+        hidden = backbone.config.hidden_size
+        heads = backbone.config.num_heads
+        # Early image/text blocks cover disjoint tokens; shared blocks cover their concatenation.
+        count = max(1, backbone.config.depth + backbone.config.depth_single)
+        groups = ((1, heads, count),)
+        condition_width, condition_dtype = backbone.config.text_dim, torch.bfloat16
     bridge_blocks = tuple(getattr(getattr(backbone, "llm_adapter", None), "blocks", ()))
     bridge_width = bridge_heads = bridge_active = 0
     bridge_self = False
@@ -117,7 +124,7 @@ def backbone_memory_layout(backbone, family, cfg, dtype, compute_dtype, device_t
     auxiliary = family.auxiliary_activation_bytes_for_plan(backbone, 1, compute_dtype)
     return BackboneMemoryLayout(
         spec.name, spec.latent.channels, spec.latent.stride, spec.latent.patch, int(hidden), count,
-        float(units), 22.0 if spec.name == "anima" else float(units),
+        float(units), 22.0 if spec.name == "anima" else 32.0 if spec.name == "flux3" else float(units),
         tuple(spec.backbone_activation_units), tuple(spec.checkpointing_modes),
         _element(compute_dtype), _element(dtype), _element(condition_dtype), int(condition_width),
         int(condition_layers), math_attention, groups, int(auxiliary), int(bridge_width),
@@ -156,7 +163,7 @@ def estimate_backbone_memory(layout, *, width, height, batch_size, checkpointing
     tokens = image_tokens
     if layout.family == "krea2":
         tokens = ((image_tokens + text_tokens + 255) // 256) * 256
-    elif layout.family == "flux2":
+    elif layout.family in {"flux2", "flux3"}:
         tokens += text_tokens
     whole = dict(layout.whole_units)
     unit = b * tokens * element * (1 if whole else layout.hidden)

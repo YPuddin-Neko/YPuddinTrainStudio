@@ -51,9 +51,20 @@ const capabilityFields = {
   'objective.weighting': 'objective_weighting',
 } as const;
 
+const trainingCapabilityFields = {
+  'training.mode': 'modes',
+  'adapter.algo': 'adapter_algorithms',
+  'model.dtype': 'model_dtypes',
+  'memory.base_precision': 'base_precisions',
+  'loop.mixed_precision': 'mixed_precisions',
+  'loop.distributed_strategy': 'distributed_strategies',
+  'loop.gpu_count': 'gpu_counts',
+} as const;
+
 /** Missing capabilities preserve the schema choices for older services. */
 export function familyParameterOptions(family: FamilyInfo | undefined, path: string): string[] | undefined {
   const key = capabilityFields[path as keyof typeof capabilityFields];
-  const options = key && family?.[key];
-  return Array.isArray(options) ? options.filter((option): option is string => typeof option === 'string') : undefined;
+  const trainingKey = trainingCapabilityFields[path as keyof typeof trainingCapabilityFields];
+  const options = key ? family?.[key] : trainingKey ? family?.training_capabilities?.[trainingKey] : undefined;
+  return Array.isArray(options) ? options.filter(option => typeof option === 'string' || typeof option === 'number').map(String) : undefined;
 }

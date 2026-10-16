@@ -83,7 +83,9 @@ const kleinEncoders: Record<string, string> = { 'flux2-klein-base-4b': 'flux2-qw
 const matchingAsset = (entry: Recommendation, asset: ModelAsset) => asset.family === entry.family && asset.kind === entry.kind
   && (asset.id === entry.model_id || asset.path === entry.available_path);
 function modelBundle(catalog: Recommendation[], family: string, main: string) {
+  const completeBundle = catalog.some(entry => entry.family === family && entry.id === main && entry.bundle === 'flux3-base');
   return catalog.filter(entry => entry.family === family && entry.recommended && entry.purpose !== 'inference'
+    && (!completeBundle || entry.id === main)
     && (entry.kind !== 'dit' || entry.id === main)
     && (family !== 'flux2' || entry.kind !== 'text_encoder' || entry.id === kleinEncoders[main]));
 }

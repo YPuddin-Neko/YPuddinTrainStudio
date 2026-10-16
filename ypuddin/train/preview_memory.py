@@ -195,7 +195,7 @@ def preview_working_memory(
         cfg_scale = cfg.sampling.cfg if cfg_scale is None else cfg_scale
         cfg_scale = defaults.cfg if cfg_scale is None else cfg_scale
         steps = item.get("prompt_steps") or cfg.sampling.steps or defaults.steps
-        conditional = not math.isclose(cfg_scale, 1.0)
+        conditional = cfg_scale != 1.0 if cfg.model.family == "flux3" else not math.isclose(cfg_scale, 1.0)
         prepared = cfg.model.family == "anima" and cfg.sampling.noise == "comfyui" and conditional
         lengths = []
         for condition in (item["positive"], item["negative"]):
@@ -206,7 +206,8 @@ def preview_working_memory(
                 lengths.append(int(min(prompt.get("chunks", (1, 1))) * prompt.get("context_length", cfg.model.sdxl_max_token_length + 2)))
             else:
                 lengths.append(family.spec.text.max_len)
-        batch = 2 if prepared and lengths[0] == lengths[1] else 1
+        flux3_pair = cfg.model.family == "flux3" and conditional
+        batch = 2 if flux3_pair or prepared and lengths[0] == lengths[1] else 1
         key = (width, height, batch, max(lengths))
         if key not in workspace_cache:
             workspace_cache[key] = max(0, int(backbone_workspace(*key)))
@@ -217,6 +218,9 @@ def preview_working_memory(
         prepared_bytes = (sum(lengths) * int(getattr(backbone, "model_channels", 2048)) * compute_dtype.itemsize
                           if prepared else 0)
         joined_context = prepared_bytes if batch == 2 else 0
+        if flux3_pair:
+            # Ragged CFG retains its joined BF16 condition, with padding and concatenation temporaries.
+            joined_context = 4 * max(lengths) * backbone.config.text_dim * 2 + 2 * 8
         # Named latent-sized terms: x, prediction, denoised/direction, update
         # temporaries, CFG pair/combination, and the sampler's bounded history.
         latent_buffers = 6 + (3 if conditional else 0) + (2 if batch == 2 else 0)

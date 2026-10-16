@@ -590,9 +590,9 @@ def torch_runtime() -> dict:
     )
 
 
-def model_runtime() -> dict:
+def model_runtime(*, flux3: bool = False) -> dict:
     return venv_json("""
-import ast, importlib.metadata as metadata, json
+import ast, importlib.metadata as metadata, json, sys
 out = {'ok': False, 'stage': 'torchvision'}
 for name in ('torch', 'torchvision', 'transformers'):
     try: out[name] = metadata.version(name)
@@ -616,17 +616,20 @@ try:
             raise RuntimeError(f'Torch CUDA {torch.version.cuda} / TorchVision CUDA {vision_cuda} do not match')
     out['stage'] = 'qwen3'
     from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM
+    if sys.argv[1] == 'flux3':
+        out['stage'] = 'qwen3_vl'
+        from transformers import Qwen3VLForConditionalGeneration, Qwen3VLProcessor
     out['ok'] = True
 except Exception as exc:
     out['error'] = f'{type(exc).__name__}: {exc}'
 print(json.dumps(out))
-""")
+""", "flux3" if flux3 else "models")
 
 
 def ensure_model_runtime(extras: str, index_mode: str) -> None:
     if "models" not in extras.split(","):
         return
-    report = model_runtime()
+    report = model_runtime(flux3="flux3" in extras.split(","))
     if report.get("ok"):
         return
     # A PyPI TorchVision can satisfy metadata requirements while carrying different
@@ -660,7 +663,7 @@ def ensure_model_runtime(extras: str, index_mode: str) -> None:
                 ]
                 if changed:
                     die("TorchVision 修复改变了其他依赖，停止启动：" + ", ".join(changed))
-                report = model_runtime()
+                report = model_runtime(flux3="flux3" in extras.split(","))
                 if report.get("ok"):
                     return
     display = report | {"torchvision": report.get("torchvision_build") or report.get("torchvision")}
@@ -1417,6 +1420,8 @@ def choose_extras(torch_tag: str) -> str:
     extras = EXTRAS_BASE
     if PROFILE == "linux-dtk":
         extras += ",dtk"
+    else:
+        extras += ",flux3"
     if (
         not PROFILE.endswith("-cpu")
         and PROFILE != "linux-dtk"
@@ -1921,13 +1926,14 @@ def doctor() -> int:
             optional = ()
         for name in optional:
             print(f"  {name:<28}: {versions.get(name, '未安装（可选）')}")
-        issues = dependency_issues(choose_extras(pick_torch_tag("auto")))
+        doctor_extras = choose_extras(pick_torch_tag("auto"))
+        issues = dependency_issues(doctor_extras)
         print("依赖完整性 : " + ("通过" if not issues else "; ".join(issues[:12])))
         try:
-            native = model_runtime()
+            native = model_runtime(flux3="flux3" in doctor_extras.split(","))
             print(
                 "模型依赖   : "
-                + ("TorchVision 原生算子、Qwen3 导入通过" if native.get("ok") else str(native))
+                + ("TorchVision 原生算子、模型编码器导入通过" if native.get("ok") else str(native))
             )
         except Exception as exc:
             print(f"模型依赖   : {exc}")

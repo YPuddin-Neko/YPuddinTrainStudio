@@ -1197,7 +1197,7 @@ def plan(
                     text_mode = "online" if "online_text" in family.spec.capabilities else "cached"
                 text_inputs = (
                     text_plan_inputs(cfg, family.spec.latent, data_layouts[0] if data_layouts else None)
-                    if cfg.model.family in {"anima", "krea2", "sdxl", "flux2"} else {}
+                    if cfg.model.family in {"anima", "krea2", "sdxl", "flux2", "flux3"} else {}
                 )
                 out["errors"].extend(issue for issue in text_inputs.get("errors", []) if issue not in out["errors"])
                 text_preview_unknown = (
@@ -1279,7 +1279,7 @@ def plan(
                     or optimizer_estimate["step_workspace_bytes"] is None
                     or gradient_workspace_unknown
                 )
-                vae_unknown = vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2"}
+                vae_unknown = vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2", "flux3"}
                 training_base = (
                     weights_mb
                     - swapped_mb
@@ -1462,6 +1462,8 @@ def plan(
                         return text_inputs.get("anima_lengths", {}).get(phase, {}).get("t5_tokens", 512)
                     if cfg.model.family == "sdxl":
                         return cfg.model.sdxl_max_token_length + 2
+                    if cfg.model.family == "flux3":
+                        return family.spec.text.max_len
                     return 512
 
                 def evaluate_sizing(counts, image_shapes, ds):
@@ -1776,7 +1778,7 @@ def plan(
                             selection_error = "无法估算当前检查点保存的内存占用，请使用自定义面积上限。"
                         elif fusion["unsupported"]:
                             selection_error = "当前适配器无法估算完整显存占用；请改用自动分辨率优先或自定义。"
-                        elif vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2"}:
+                        elif vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2", "flux3"}:
                             selection_error = "无法估算当前 VAE 的显存占用，请检查模型文件或使用自定义面积上限。"
                         elif not data_layouts or native_out["auto_max_pixels"] is None:
                             selection_error = "无法读取训练图片尺寸，请检查数据集。"

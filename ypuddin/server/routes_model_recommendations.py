@@ -50,6 +50,7 @@ def download_recommendation(
             is_default=body.is_default,
             purpose=entry.purpose,
             variant=entry.variant,
+            bundle=entry.bundle,
         ),
         recommendation=entry,
     )

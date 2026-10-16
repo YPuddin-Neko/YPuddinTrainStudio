@@ -50,7 +50,7 @@ class _IntervalConfig(_Strict):
 
 # --------------------------------------------------------------------------- model
 class ModelConfig(_Strict):
-    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "toy"] = F(
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "flux3", "toy"] = F(
         "anima",
         help="模型系列决定主模型、文本编码器和训练方式。",
         ui_=ui("model", order=0, control="select"),
@@ -634,17 +634,17 @@ class ObjectiveConfig(_Strict):
     noise_offset: float = F(
         0.0, ge=0, allow_inf_nan=False,
         help="为每张图的各潜空间通道加入共享噪声，影响输入及训练目标。0 关闭；不与多分辨率噪声同时启用。",
-        ui_=ui("objective", order=130, advanced=True, show_when="model.family in ['anima', 'krea2', 'sdxl', 'flux2']"),
+        ui_=ui("objective", order=130, advanced=True, show_when="model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3']"),
     )
     multires_noise_iterations: int = F(
         0, ge=0, le=10,
         help="叠加低分辨率噪声的层数。0 关闭；不与噪声偏移同时启用。",
-        ui_=ui("objective", order=131, advanced=True, show_when="model.family in ['anima', 'krea2', 'sdxl', 'flux2']"),
+        ui_=ui("objective", order=131, advanced=True, show_when="model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3']"),
     )
     multires_noise_discount: float = F(
         0.3, ge=0, le=1,
         help="每层低分辨率噪声的衰减系数，越小则后续层影响越弱。",
-        ui_=ui("objective", order=132, advanced=True, show_when="model.family in ['anima', 'krea2', 'sdxl', 'flux2'] && objective.multires_noise_iterations > 0"),
+        ui_=ui("objective", order=132, advanced=True, show_when="model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3'] && objective.multires_noise_iterations > 0"),
     )
     ip_noise_gamma: float = F(
         0.0,

@@ -200,6 +200,64 @@ def _cached_condition_phase(condition: int, entries: int, *, device_type: str | 
     }
 
 
+def _flux3_text_phase(cfg, *, batch, device_type, token_length, backend, include_condition):
+    from safetensors import SafetensorError
+
+    from ypuddin.models.flux3.loading import component_paths
+    from ypuddin.models.flux3.text import Flux3Text
+
+    tokens = Flux3Text.max_len if token_length is None else token_length
+    if (isinstance(tokens, bool) or not isinstance(tokens, int) or not 0 < tokens <= Flux3Text.max_len
+            or (tokens != Flux3Text.max_len and tokens % Flux3Text.pad_multiple)):
+        raise ValueError("FLUX.3 text length must be a padded multiple of 80 or the 4096-token limit")
+    try:
+        _, _, text, _, processor = component_paths(cfg.model)
+        full_config, elements = Flux3Text.validate_paths(text, processor)
+        config = full_config["text_config"]
+        if any(not isinstance(config[key], int) or config[key] <= 0 for key in (
+            "hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads",
+            "num_key_value_heads", "vocab_size",
+        )):
+            return None
+        # The complete VL model stays resident, but captions run sequentially with B=1.
+        part = _qwen_tensors(config, "qwen3_causal_lm", len(Flux3Text.layers), 1, tokens, 2, backend)
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, SafetensorError):
+        return None
+    part.update(kind="qwen3_vl_causal_lm", parameter_elements=elements)
+    entry = tokens * int(config["hidden_size"]) * len(Flux3Text.layers) * 2
+    entries = batch * entry
+    condition = entries + batch * 8  # Padded BF16 embeddings and int64 per-caption lengths.
+    call_workspace = part["workspace_bytes_estimate"]
+    previous = (batch - 1) * entry if include_condition or device_type == "cpu" else 0
+    workspace = previous + call_workspace
+    if include_condition:
+        workspace = max(workspace, entries + condition)
+    else:
+        workspace = max(workspace, entries if device_type == "cpu" else entry)
+    # Cache creation copies each completed caption to CPU before encoding the next.
+    host = entries if not include_condition and device_type != "cpu" else 0
+    host_device = call_workspace if host else 0
+    # Cached entries are read on CPU; cond_from_cache builds the destination directly.
+    cached_workspace = entries + condition if device_type == "cpu" else condition + entry
+    basis = "token_limit_upper_bound" if token_length is None else "batch_maximum_padded_length"
+    weights = elements * 2 + part["buffer_bytes"]
+    return {
+        "weights_mb": weights / _MIB,
+        "retained_outputs_mb": (previous + part["hidden_output_bytes"] + part["logits_bytes"]) / _MIB,
+        "condition_outputs_mb": condition / _MIB, "cached_condition_outputs_mb": condition / _MIB,
+        "condition_outputs_basis": basis,
+        "host_staging_mb": host / _MIB, "host_staging_device_mb": host_device / _MIB,
+        "cached_condition_workspace_mb_estimate": cached_workspace / _MIB,
+        "cached_host_staging_mb": 0.0 if device_type == "cpu" else entries / _MIB,
+        "cached_host_staging_device_mb": 0.0 if device_type == "cpu" else cached_workspace / _MIB,
+        "cached_condition_assembly_basis": basis,
+        "workspace_mb_estimate": workspace / _MIB, "peak_mb_estimate": (weights + workspace) / _MIB,
+        "batch_size": batch, "dtype": "bfloat16", "attention_backend": backend,
+        "length_basis": "caller_padded_length" if token_length is not None else "runtime_truncation_limit",
+        "components": [part],
+    }
+
+
 def frozen_text_phase(
     cfg: TrainConfig,
     dtype: torch.dtype,
@@ -224,7 +282,7 @@ def frozen_text_phase(
     fields exclude encoder weights and are selected by ``cached_condition_kind``.
     """
     family = cfg.model.family
-    if family not in {"anima", "krea2", "sdxl", "flux2"}:
+    if family not in {"anima", "krea2", "sdxl", "flux2", "flux3"}:
         return None
     batch = max(1, int(batch_size))
     element = torch.empty((), dtype=dtype).element_size()
@@ -233,6 +291,9 @@ def frozen_text_phase(
         raise ValueError("text attention backend must be fused or math")
     if cached_condition_kind not in {"training", "preview"}:
         raise ValueError("cached condition kind must be training or preview")
+    if family == "flux3":
+        return _flux3_text_phase(cfg, batch=batch, device_type=device_type, token_length=token_length,
+                                 backend=backend, include_condition=include_condition)
     host_staging = host_staging_device = 0
     if family != "sdxl":
         config, kind, selected = _qwen_geometry(cfg)

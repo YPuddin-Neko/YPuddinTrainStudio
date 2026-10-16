@@ -45,7 +45,7 @@ export interface ProjectOverviewProps {
 const LIVE = ['queued', 'scheduled', 'running', 'pausing', 'cancelling'];
 const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const fileName = (value: unknown) => typeof value === 'string' ? value.trim().replace(/\\/g, '/').split('/').filter(Boolean).pop() || '' : '';
-const FAMILY_NAMES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2 Klein', toy: 'Toy' };
+const FAMILY_NAMES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2 Klein', flux3: 'FLUX.3 Klein 5.5B', toy: 'Toy' };
 
 /** Missing, failed and in-progress indexes must never look like an empty dataset. */
 function overviewDatasetStats(datasets: OverviewDataset[]) {

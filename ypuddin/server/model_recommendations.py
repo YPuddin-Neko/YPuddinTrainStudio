@@ -13,9 +13,10 @@ import hashlib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .errors import ApiError
+from .flux3_downloads import BundleId, BundleManifest, bundle_manifest
 from .model_credentials import Provider
 
 
@@ -25,16 +26,19 @@ class RecommendedSource(BaseModel):
     filename: str
     revision: str
     url: str
+    manifest: BundleManifest | None = None
 
 
 class RecommendedModel(BaseModel):
     id: str
-    family: Literal["anima", "krea2", "sdxl", "flux", "flux2"]
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "flux3"]
     kind: Literal["dit", "text_encoder", "text_encoder_2", "vae"]
     name: str
     dtype: Literal["bf16", "fp16", "fp32", "fp8"]
     size: int = Field(gt=0)
-    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sha256: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
+    bundle: BundleId | None = None
+    manifest: BundleManifest | None = None
     recommended: bool = True
     purpose: Literal["training", "inference"] = "training"
     variant: Literal["raw", "turbo"] | None = None
@@ -42,6 +46,22 @@ class RecommendedModel(BaseModel):
     model_id: str | None = None
     available_path: str | None = None
     is_default: bool = False
+
+    @model_validator(mode="after")
+    def integrity(self):
+        if self.bundle is None:
+            if self.sha256 is None or self.manifest is not None:
+                raise ValueError("single-file recommendations require a pinned SHA-256")
+        elif (self.family != "flux3" or self.manifest is None or self.manifest.id != self.bundle
+              or self.size != self.manifest.size or self.sha256 is not None):
+            raise ValueError("directory recommendations require their matching file manifest")
+        for source in self.sources:
+            if source.manifest is not None and (
+                self.bundle is None or source.manifest.id != self.bundle or source.manifest.size != self.size
+                or source.manifest.repo_id != source.repo_id or source.manifest.revision != source.revision
+            ):
+                raise ValueError("source manifest must match its directory recommendation and source")
+        return self
 
 
 def _entry(
@@ -93,7 +113,28 @@ def _entry(
 
 ANIMA = "circlestone-labs/Anima"
 KREA = "Comfy-Org/Krea-2"
+
+
+def _flux3_entry(id_):
+    manifest = bundle_manifest(id_)
+    sources = []
+    for provider in ("huggingface", "modelscope"):
+        spec = bundle_manifest(id_, provider)
+        sources.append(RecommendedSource(
+            provider=provider, repo_id=spec.repo_id, filename="" if id_ == "flux3-base" else "text_encoder",
+            revision=spec.revision, manifest=spec,
+            url=f"https://huggingface.co/{spec.repo_id}/tree/{spec.revision}" if provider == "huggingface"
+                else f"https://modelscope.cn/models/{spec.repo_id}/files",
+        ))
+    return RecommendedModel(
+        id=id_, family="flux3", kind="dit" if id_ == "flux3-base" else "text_encoder",
+        name="FLUX.3 Image Klein Base" if id_ == "flux3-base" else "FLUX.3 Qwen3-VL-4B",
+        dtype="bf16", size=manifest.size, bundle=id_, manifest=manifest, sources=sources,
+    )
+
+
 RECOMMENDATIONS = [
+    *[_flux3_entry(id_) for id_ in ("flux3-base", "flux3-text")],
     RecommendedModel(
         id="flux2-klein-base-4b",
         family="flux2",
@@ -148,7 +189,7 @@ RECOMMENDATIONS = [
         id="flux2-qwen3-4b",
         family="flux2",
         kind="text_encoder",
-        name="Qwen3 4B · Klein 4B 文本编码器",
+        name="Qwen3 4B",
         dtype="bf16",
         size=8044982048,
         sha256="6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a",
@@ -173,7 +214,7 @@ RECOMMENDATIONS = [
         id="flux2-qwen3-8b",
         family="flux2",
         kind="text_encoder",
-        name="Qwen3 8B · Klein 9B 文本编码器",
+        name="Qwen3 8B",
         dtype="bf16",
         size=16381517176,
         sha256="f0ff9239d56269ca1d05e5f86da6a79fac111af464955681f11c7ab0ec5ef6c1",
@@ -262,7 +303,7 @@ RECOMMENDATIONS = [
         id="sdxl-illustrious-v01",
         family="sdxl",
         kind="dit",
-        name="Illustrious-XL（光辉）v0.1 · 完整模型",
+        name="Illustrious-XL（光辉）v0.1",
         dtype="fp16",
         size=6938040760,
         sha256="3e15ba00387db678ab4a099f75771c4f5ac67fda9e7100a01d263eaf30145aa9",
@@ -287,7 +328,7 @@ RECOMMENDATIONS = [
         id="sdxl-noobai-vpred-10",
         family="sdxl",
         kind="dit",
-        name="NoobAI-XL V 预测 1.0 · 完整模型",
+        name="NoobAI-XL V 预测 1.0",
         dtype="bf16",
         recommended=False,
         size=7105350110,
@@ -313,7 +354,7 @@ RECOMMENDATIONS = [
         id="sdxl-noobai-eps-11",
         family="sdxl",
         kind="dit",
-        name="NoobAI-XL E 预测 1.1 · 完整模型",
+        name="NoobAI-XL E 预测 1.1",
         dtype="bf16",
         recommended=False,
         size=7105349958,
@@ -444,8 +485,22 @@ def remember_verified_file(context, path: Path, sha256: str) -> None:
     record_verified_variant(path, sha256)
 
 
+def _bundle_manifests(entry):
+    for source in entry.sources:
+        if source.manifest is not None:
+            yield source.manifest
+        elif entry.manifest is not None and (source.repo_id, source.revision) == (entry.manifest.repo_id, entry.manifest.revision):
+            yield entry.manifest
+
+
 def verify_local_model(context, entry: RecommendedModel, path: Path) -> None:
     """Verify a local candidate once before choosing it as this exact recommendation."""
+    if entry.bundle:
+        from .flux3_downloads import available_bundle
+
+        if not any(available_bundle(context, path, spec) for spec in _bundle_manifests(entry)):
+            raise ApiError("FLUX.3 目录包的文件已变化或缺少完整下载记录。", code="model.integrity")
+        return
     if not context.is_allowed(path):
         raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
     try:
@@ -480,6 +535,16 @@ def available_models(context) -> list[RecommendedModel]:
     assets = context.db.fetchall("SELECT * FROM models ORDER BY is_default DESC, created_at DESC")
     result = []
     for entry in RECOMMENDATIONS:
+        if entry.bundle:
+            from .flux3_downloads import available_bundle
+
+            specs = tuple(_bundle_manifests(entry))
+            own = next((asset for asset in assets if asset["family"] == entry.family and asset["kind"] == entry.kind
+                        and any(available_bundle(context, Path(asset["path"]), spec) for spec in specs)), None)
+            result.append(entry.model_copy(update={"model_id": own["id"] if own else None,
+                                                   "available_path": own["path"] if own else None,
+                                                   "is_default": bool(own and own["is_default"])}))
+            continue
         # Unknown local files are only candidates until /use verifies their contents.
         # Completed downloads already have hash proof, so list refreshes remain inexpensive.
         filenames = {Path(source.filename).name for source in entry.sources}

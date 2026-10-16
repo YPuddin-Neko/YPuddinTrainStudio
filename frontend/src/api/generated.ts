@@ -3872,6 +3872,35 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** BundleFile */
+        BundleFile: {
+            /** Path */
+            path: string;
+            /** Size */
+            size: number;
+            /** Sha256 */
+            sha256?: string | null;
+            /** Git Blob Sha1 */
+            git_blob_sha1?: string | null;
+        };
+        /** BundleManifest */
+        BundleManifest: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "flux3-base" | "flux3-text";
+            /**
+             * Repo Id
+             * @default black-forest-labs/flux-3-image-klein-base
+             * @constant
+             */
+            repo_id: "black-forest-labs/flux-3-image-klein-base";
+            /** Revision */
+            revision: string;
+            /** Files */
+            files: components["schemas"]["BundleFile"][];
+        };
         /** Caption */
         Caption: {
             /** Caption */
@@ -6737,7 +6766,7 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux2" | "toy" | "tagger";
+            family: "anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "toy" | "tagger";
             /**
              * Kind
              * @enum {string}
@@ -6802,7 +6831,7 @@ export interface components {
              * @default anima
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "toy";
+            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "flux3" | "toy";
             /**
              * Dit Path
              * @description DiT 主干权重（safetensors；支持官方 bf16 与 ComfyUI fp8_scaled 文件）
@@ -6964,6 +6993,11 @@ export interface components {
             expected_size?: number | null;
             /** Sha256 */
             sha256?: string | null;
+            /** Bundle */
+            bundle?: ("flux3-base" | "flux3-text") | null;
+            manifest?: components["schemas"]["BundleManifest"] | null;
+            /** Verification Source */
+            verification_source?: ("pinned_revision_and_sizes" | "pinned_revision_and_sha256") | null;
         };
         /** ModelDownloadRequest */
         ModelDownloadRequest: {
@@ -6971,7 +7005,7 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux2";
+            family: "anima" | "krea2" | "sdxl" | "flux2" | "flux3";
             /**
              * Kind
              * @enum {string}
@@ -7012,6 +7046,8 @@ export interface components {
             purpose: "training" | "inference";
             /** Variant */
             variant?: ("raw" | "turbo") | null;
+            /** Bundle */
+            bundle?: ("flux3-base" | "flux3-text") | null;
         };
         /** ModelInspection */
         ModelInspection: {
@@ -8422,7 +8458,7 @@ export interface components {
              * @default anima
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux2" | "toy";
+            family: "anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "toy";
         };
         /** ProjectCategories */
         ProjectCategories: {
@@ -8707,7 +8743,7 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2";
+            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "flux3";
             /**
              * Kind
              * @enum {string}
@@ -8723,7 +8759,10 @@ export interface components {
             /** Size */
             size: number;
             /** Sha256 */
-            sha256: string;
+            sha256?: string | null;
+            /** Bundle */
+            bundle?: ("flux3-base" | "flux3-text") | null;
+            manifest?: components["schemas"]["BundleManifest"] | null;
             /**
              * Recommended
              * @default true
@@ -8764,6 +8803,7 @@ export interface components {
             revision: string;
             /** Url */
             url: string;
+            manifest?: components["schemas"]["BundleManifest"] | null;
         };
         /** RegularizationEstimate */
         RegularizationEstimate: {
@@ -12507,7 +12547,7 @@ export interface components {
              */
             copy_config: boolean;
             /** Family */
-            family?: ("anima" | "krea2" | "sdxl" | "flux2" | "toy") | null;
+            family?: ("anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "toy") | null;
             /** Engine */
             engine?: ("voxcpm1.5" | "gpt-sovits-v5") | null;
             /** Variant */
@@ -12533,7 +12573,7 @@ export interface components {
             /** Archived */
             archived?: boolean | null;
             /** Display Family */
-            display_family?: ("anima" | "krea2" | "sdxl" | "flux2" | "toy") | null;
+            display_family?: ("anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "toy") | null;
         };
         /** VersionPaths */
         VersionPaths: {
@@ -13566,7 +13606,7 @@ export interface operations {
     config_defaults_api_config_defaults_get: {
         parameters: {
             query?: {
-                family?: ("anima" | "krea2" | "sdxl" | "flux2" | "toy") | null;
+                family?: ("anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "toy") | null;
             };
             header?: never;
             path?: never;

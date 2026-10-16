@@ -1027,7 +1027,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       return { value: option, label: `${label} (${note})`, disabled: true };
     };
     // A model that offers a single choice (SDXL's preview scheduler) has nothing to pick.
-    if (familyOptions && offeredOptions?.length === 1 && !managedReason && [offeredOptions[0], 'auto', undefined, null, ''].includes(fieldValue)) return null;
+    if (familyOptions && offeredOptions?.length === 1 && !managedReason && [offeredOptions[0], 'auto', ''].includes(fieldValue == null ? '' : String(fieldValue))) return null;
 
     let control = null;
 
@@ -1211,9 +1211,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={['raw', 'turbo'].map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
     } else if (fullPathKey === 'model.dtype') {
-      control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'}
+      control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english)}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
-        options={['auto', 'bf16', 'fp16', 'fp32'].map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
+        options={(supportedOptions ?? ['auto', 'bf16', 'fp16', 'fp32']).map(choice)}/>;
     } else if (fullPathKey === 'adapter.dora_merge_dtype') {
       control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
@@ -1224,8 +1224,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={attentionOptions.map(choice)}/>;
     } else if (supportedOptions) {
-      control = <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)}
-        onValueChange={next => onChange(setNestedValue(value, path, next))}
+      control = <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english)}
+        onValueChange={next => {
+          const updated = setNestedValue(value, path, prop.type === 'integer' || prop.type === 'number' ? Number(next) : next);
+          onChange(fullPathKey === 'adapter.algo' && next !== 'lokr' && value.adapter?.rank === 'full'
+            ? setNestedValue(updated, ['adapter', 'rank'], lastLowRank.current ?? 16) : updated);
+        }}
         options={supportedOptions.map(choice)}/>;
     } else if (ui.options?.length) {
       control = <div className="space-y-2"><StudioSelect aria-label={fieldLabel} value={ui.options.includes(fieldValue) || !ui.allow_custom ? fieldValue || '' : '__custom__'} fallbackLabel={String(fieldValue || '')}
@@ -1372,6 +1376,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       showAdvanced && selectedPreset?.include?.length && `${english ? 'Included layers' : '包含层'}：${selectedPreset.include.join(', ')}`,
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
     ].filter(Boolean).join('\n\n') : fullPathKey === 'model.tokenizer_path' && family?.name === 'sdxl' ? (english ? 'Optional root containing tokenizer/ and tokenizer_2/. Leave blank to use the model directory’s tokenizers, or the built-in CLIP-L / CLIP-G tokenizers when absent.' : '可选根目录，需同时包含 tokenizer/ 和 tokenizer_2/。留空自动读取模型目录；没有时使用内置 CLIP-L / CLIP-G 双分词器。')
+      : fullPathKey === 'model.tokenizer_path' && family?.name === 'flux3' ? contextHelp(fullPathKey, fieldContext, offeredOptions)
       : [weightMeta?.hint ? [configFieldHelp(fullPathKey, undefined, english), weightMeta.hint].filter(Boolean).join('\n') : contextHelp(fullPathKey, fieldContext, offeredOptions) || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree), dtkReproducibility].filter(Boolean).join('\n\n');
     // Switches carry no standing description; a status or warning still shows beneath them.
     const statusHint = (fullPathKey === 'model.dit_path' && selectedModel ? [selectedModel.variant?.toUpperCase(), selectedModel.dtype?.toUpperCase()].filter(Boolean).join(' · ') : undefined)

@@ -69,7 +69,7 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
     }
     next.training.text_encoder_2_lr = null;
   }
-  if (!['anima', 'krea2', 'sdxl', 'flux2'].includes(family.name)) {
+  if (!['anima', 'krea2', 'sdxl', 'flux2', 'flux3'].includes(family.name)) {
     next.objective.noise_offset = 0;
     next.objective.multires_noise_iterations = 0;
   }
@@ -81,12 +81,31 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
   if (family.name === 'flux2') {
     next.sampling.steps = null; next.sampling.cfg = null; next.sampling.guidance = null;
   }
+  if (family.name === 'flux3') {
+    next.training = { ...next.training, mode: 'adapter', train_backbone: true, train_text_encoder: false, resume_weights: null, backbone_lr: null, text_encoder_lr: null };
+    next.optimizer = { ...next.optimizer, cpu_offload: false, exclude_bias_norm_from_weight_decay: false };
+    next.adapter = { ...next.adapter, layer_types: 'linear', resume_weights: null };
+    const algorithms = familyParameterOptions(family, 'adapter.algo');
+    if (algorithms?.length && !algorithms.includes(next.adapter.algo)) next.adapter.algo = algorithms[0];
+    if (algorithms?.length && Array.isArray(next.adapter.rules)) next.adapter.rules = next.adapter.rules.map((rule: Record<string, any>) =>
+      rule.algo && rule.algo !== 'none' && !algorithms.includes(rule.algo) ? { ...rule, algo: null } : rule);
+    if (next.adapter.algo !== 'lokr' && next.adapter.rank === 'full') next.adapter.rank = 16;
+    const basePrecisions = familyParameterOptions(family, 'memory.base_precision');
+    if (basePrecisions?.length && !basePrecisions.includes(next.memory.base_precision)) next.memory.base_precision = 'auto';
+    const mixedPrecisions = familyParameterOptions(family, 'loop.mixed_precision');
+    next.loop = { ...next.loop, gpu_count: 1, distributed_strategy: 'ddp' };
+    if (mixedPrecisions?.length && !mixedPrecisions.includes(next.loop.mixed_precision)) next.loop.mixed_precision = mixedPrecisions.includes('bf16') ? 'bf16' : mixedPrecisions[0];
+  }
   if (family.objective !== 'ddpm') {
     next.objective.scale_v_pred_loss_like_noise_pred = false;
     next.objective.v_pred_like_loss = 0;
     next.objective.debiased_estimation_loss = false;
-    next.objective.timestep_sampling = family.sampling.shift == null ? 'resolution_shift' : 'shift';
-    next.objective.shift = family.sampling.shift ?? 3;
+    if (family.name === 'flux3') {
+      next.objective = { ...next.objective, timestep_sampling: 'logit_normal', weighting: 'none', logit_mean: 0, logit_std: 1, shift: 3 };
+    } else {
+      next.objective.timestep_sampling = family.sampling.shift == null ? 'resolution_shift' : 'shift';
+      next.objective.shift = family.sampling.shift ?? 3;
+    }
     next.objective.res_shift_tokens = [256, family.name === 'krea2' ? 6400 : 4096];
   }
   if (family.objective === 'ddpm') {

@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Literal
 
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field
 
 from ypuddin.package_sources import pypi_sources, run_sources, torch_sources
@@ -31,6 +32,7 @@ from .environment import TASK_KEEP_SECONDS, EnvironmentError, Installer, protect
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 OPTIONAL_EXTENSIONS = {"xformers", "flash-attn", "sageattention", "bitsandbytes", "mtlattn"}
+MODEL_RUNTIME_PACKAGES = {"transformers", "tokenizers", "huggingface-hub"}
 VERSIONS = {
     "2.13.0": ("0.28.0", ("cu126", "cu130", "cpu", "mps")),
     "2.11.0": ("0.26.0", ("cu126", "cu128", "cu130", "cpu", "mps")),
@@ -115,6 +117,16 @@ class TorchSnapshot(BaseModel):
 
 def python_in(root: Path) -> Path:
     return root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def model_runtime_updates(versions: dict[str, str]) -> set[str]:
+    """Release old HF stack pins only when the new environment needs FLUX.3 dependencies."""
+    try:
+        if Version(versions.get("transformers", "0")) >= Version("5.8.1"):
+            return set()
+    except InvalidVersion:
+        pass
+    return MODEL_RUNTIME_PACKAGES
 
 
 def same_interpreter(left: str | None, right: str | None) -> bool:
@@ -226,7 +238,10 @@ VERIFY = r"""
 import json, sys, torch, torchvision
 from pathlib import Path
 from ypuddin.server.app import create_app
+from ypuddin.models.flux3.loading import runtime_error
+from transformers import Qwen3VLForConditionalGeneration, Qwen3VLProcessor
 expected, backend, report = sys.argv[1:]
+assert runtime_error() is None, runtime_error()
 assert torch.__version__.split('+')[0] == expected, f'安装的 PyTorch 版本 {torch.__version__} 与所选版本 {expected} 不符。'
 device = 'cuda' if backend.startswith('cu') else ('mps' if backend == 'mps' else 'cpu')
 if device == 'cuda':
@@ -479,12 +494,14 @@ class TorchEnvironments:
             torch_version = build.torch + (f"+{build.backend}" if build.backend.startswith("cu") else "")
             constraints = work / "constraints.txt"
             versions = self.environment.versions()
+            runtime_updates = model_runtime_updates(versions)
             constraints.write_text(
                 "".join(
                     f"{name}==={version}\n"
                     for name, version in sorted(versions.items())
                     if (not protected(name) or name == "numpy")
                     and name not in OPTIONAL_EXTENSIONS
+                    and name not in runtime_updates
                     and name != "ypuddin"
                 )
                 + f"torch=={torch_version}\ntorchvision=={build.torchvision}\n",
@@ -530,7 +547,7 @@ class TorchEnvironments:
             except ImportError:
                 import tomli as tomllib
             project = tomllib.loads((SOURCE_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-            extras = ["models", "server", "optim", "logging"] + (
+            extras = ["models", "flux3", "server", "optim", "logging"] + (
                 ["nvidia"] if build.backend.startswith("cu") else []
             )
             requirements = project["dependencies"] + [

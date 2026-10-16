@@ -1851,6 +1851,7 @@
             "sdxl",
             "flux",
             "flux2",
+            "flux3",
             "toy"
           ],
           "title": "Family",
@@ -2339,7 +2340,7 @@
             "advanced": true,
             "group": "objective",
             "order": 130,
-            "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2']"
+            "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3']"
           }
         },
         "multires_noise_iterations": {
@@ -2353,7 +2354,7 @@
             "advanced": true,
             "group": "objective",
             "order": 131,
-            "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2']"
+            "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3']"
           }
         },
         "multires_noise_discount": {
@@ -2367,7 +2368,7 @@
             "advanced": true,
             "group": "objective",
             "order": 132,
-            "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2'] && objective.multires_noise_iterations > 0"
+            "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3'] && objective.multires_noise_iterations > 0"
           }
         },
         "ip_noise_gamma": {

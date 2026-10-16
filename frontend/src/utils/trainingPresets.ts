@@ -64,7 +64,7 @@ export function applyTrainingPreset(current: Record<string, any>, preset: Record
       delete reusable.objective.timestep_sampling;
     }
     if (current.objective?.timestep_sampling === 'resolution_sqrt' && (!Object.prototype.hasOwnProperty.call(preset.objective || {}, 'timestep_sampling') || preset.objective?.timestep_sampling === 'resolution_sqrt')) {
-      reusable.objective.timestep_sampling = current.model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(current.model.family) ? 'resolution_shift' : 'shift';
+      reusable.objective.timestep_sampling = current.model.family === 'flux3' ? 'logit_normal' : current.model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(current.model.family) ? 'resolution_shift' : 'shift';
     }
   }
   // Model files only fit the family they were chosen for.

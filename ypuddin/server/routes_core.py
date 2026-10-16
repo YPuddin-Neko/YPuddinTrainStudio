@@ -498,7 +498,7 @@ def schema_train() -> dict[str, Any]:
 
 @router.get("/config/defaults", response_model=TrainConfig)
 def config_defaults(
-    family: Literal["anima", "krea2", "sdxl", "flux2", "toy"] | None = None,
+    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "toy"] | None = None,
     c: ServiceContext = Depends(ctx),
 ) -> dict[str, Any]:
     from .environment import environment_attention_default
@@ -909,7 +909,7 @@ def import_toml(body: dict[str, str]) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------- models
 class ModelBody(BaseModel):
-    family: Literal["anima", "krea2", "sdxl", "flux2", "toy", "tagger"]
+    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "toy", "tagger"]
     kind: Literal["dit", "text_encoder", "text_encoder_2", "vae", "tokenizer", "tagger"]
     path: str
     dtype: str | None = None
@@ -932,6 +932,16 @@ def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext
 
     if reason := training_rejection({}, family):
         raise ApiError(reason, code="model.unsupported", status=422)
+    if family == "flux3":
+        if kind not in {"dit", "vae", "text_encoder", "tokenizer"}:
+            raise ApiError("FLUX.3 不使用第二文本编码器。", code="model.component", status=422)
+        if kind in {"text_encoder", "tokenizer"}:
+            from .model_inspection import check_flux3_processor
+
+            try:
+                check_flux3_processor(path, c.is_allowed)
+            except (ValueError, OSError) as error:
+                raise ApiError(str(error), code="model.component", status=422) from error
     if family == "flux2" and kind == "text_encoder" and path.is_file():
         from ypuddin.models.flux2.single_text import text_config
 
@@ -939,13 +949,13 @@ def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext
             text_config(path)
         except (ValueError, OSError) as error:
             raise ApiError(str(error), code="model.component", status=422) from error
-    if family == "flux2" and not (path.is_dir() or path.suffix.lower() == ".safetensors"):
+    if family in {"flux2", "flux3"} and not (path.is_dir() or path.suffix.lower() == ".safetensors"):
         raise ApiError(
             "Klein 组件仅支持 safetensors 权重或完整本地 HF 目录。", code="model.component", status=422
         )
     if family == "tagger" or not (path.is_dir() or path.suffix.lower() == ".safetensors"):
         return
-    if family != "flux2" and path.is_file():
+    if family not in {"flux2", "flux3"} and path.is_file():
         from .model_recommendations import RECOMMENDATIONS, cached_sha256
 
         # A stat-valid SHA-256 proof already identifies the exact catalog weights.
@@ -960,18 +970,18 @@ def _check_model_admission(path: Path, family: str, kind: str, c: ServiceContext
         try:
             detected = inspect_model(path, allowed=c.is_allowed)
         except (ValueError, OSError, OverflowError) as error:
-            if family == "flux2":
+            if family in {"flux2", "flux3"}:
                 raise ApiError(
                     f"Cannot inspect Klein component: {error}", code="model.inspect", status=422
                 ) from error
             return  # Preserve manual registration for existing non-FLUX formats.
     if reason := training_rejection(detected, family):
         raise ApiError(reason, code="model.unsupported", status=422)
-    if family == "flux2" and (
-        detected["kind"] != kind or kind != "tokenizer" and "flux2" not in detected["family_candidates"]
+    if family in {"flux2", "flux3"} and (
+        detected["kind"] != kind or kind != "tokenizer" and family not in detected["family_candidates"]
     ):
         raise ApiError(
-            "未识别到与 FLUX.2 Klein 兼容的组件，请保留完整配置并选择对应组件。",
+            f"未识别到与 {'FLUX.3 Image Klein Base' if family == 'flux3' else 'FLUX.2 Klein'} 兼容的组件，请保留完整配置并选择对应组件。",
             code="model.component",
             status=422,
         )
@@ -1008,7 +1018,7 @@ def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
         )
         if projected["purpose"] == "inference":
             projected["is_default"] = False
-    if r["family"] in {"flux", "flux2"}:
+    if r["family"] in {"flux", "flux2", "flux3"}:
         resolved = p.expanduser().resolve()
 
         def admission() -> tuple[str | None, bool]:
@@ -1059,7 +1069,7 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
     if not c.is_allowed(p):
         raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
     _check_model_admission(p, body.family, body.kind, c)
-    if body.kind in {"dit", "vae"} and not p.is_file() and body.family not in {"sdxl", "flux", "flux2"}:
+    if body.kind in {"dit", "vae"} and not p.is_file() and body.family not in {"sdxl", "flux", "flux2", "flux3"}:
         raise ApiError("DiT and VAE paths must point to a weight file", code="model.path")
     if body.kind == "tokenizer" and not p.is_dir():
         raise ApiError("tokenizer path must point to a complete tokenizer directory", code="model.path")
@@ -1226,6 +1236,11 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
         "diffusion_pytorch_model.safetensors.index.json",
     )
     directories = {file.parent for name in directory_markers for file in root.rglob(name) if visible(file)}
+    directories.update(
+        file.parent for file in root.rglob("model.safetensors")
+        if visible(file) and (file.parent / "ae.safetensors").is_file()
+        and (file.parent / "text_encoder").is_dir()
+    )
     grouped = {
         folder
         for folder in directories
@@ -1258,7 +1273,9 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             continue
         kind = detected["kind"]
         family = detected["family"]
-        if family is None and body.family in detected["family_candidates"]:
+        if body.family in detected["family_candidates"] and (
+            family is None or body.family == "flux3"
+        ):
             family = body.family  # Explicit target for recognized shared components.
         if not kind or not family:
             continue  # Unknown assets need an explicit review in the local-file dialog.
@@ -1266,7 +1283,7 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             continue
         if family == "krea2" and kind == "dit" and not detected.get("variant"):
             continue  # Raw/Turbo have identical shapes; local registration asks the user.
-        if family == "flux2":
+        if family in {"flux2", "flux3"}:
             try:
                 _check_model_admission(Path(detected["path"]), family, kind, c, detected=detected)
             except ApiError:

@@ -16,6 +16,7 @@ FLUX1_RETIRED_REASON = "当前 FLUX 训练仅支持 FLUX.2 Klein base 4B/9B，�
 FLUX2_DEV_UNSUPPORTED_REASON = (
     "检测到 FLUX.2 dev；当前仅支持 FLUX.2 Klein base 4B/9B，dev 及其 Mistral 编码器不能登记为 Klein。"
 )
+FLUX3_DIT_PRECISION_REASON = "FLUX.3 DiT 权重仅支持 BF16 或 FP32。"
 
 
 def training_rejection(detected: dict[str, Any], family: str | None = None) -> str | None:
@@ -111,6 +112,49 @@ def _contained(root: Path, path: Path, allowed, label: str) -> Path:
     return resolved
 
 
+def flux3_component(shapes: dict[str, list[int]]) -> dict[str, Any] | None:
+    """Recognize the Image Klein geometry independently of the checkpoint's file name."""
+    shapes = {_key(key): shape for key, shape in shapes.items()}
+    signature = {
+        "emb_in.image.weight": [3072, 128],
+        "emb_in.image_cond.weight": [3072, 128],
+        "txt_in.weight": [3072, 20480],
+        "time_in.in_layer.weight": [3072, 256],
+        "time_in.out_layer.weight": [3072, 3072],
+        "final_layer.image.linear.weight": [128, 3072],
+    }
+    signature.update({
+        f"{stream}_stream_modulations.{mode}.lin.weight": [9216, 3072]
+        for stream in ("early", "single") for mode in ("image", "image_cond", "txt")
+    })
+    groups = {
+        "content_mode_blocks.image.": 5, "content_mode_blocks.image_cond.": 5,
+        "txt_mode_blocks.": 5, "single_blocks.": 28,
+    }
+    for prefix, count in groups.items():
+        indices = {key[len(prefix):].split(".")[0] for key in shapes if key.startswith(prefix)}
+        if indices != {str(i) for i in range(count)}:
+            return None
+        signature.update({f"{prefix}{i}.q_proj.weight": [3072, 3072] for i in range(count)})
+    # Quantized variants retain the architecture keys but cannot train through this loader.
+    quantized = any(key.endswith((".weight_scale", ".weight_scale_2", ".input_scale", ".scale_weight")) for key in shapes)
+    if any(shapes.get(key) != shape for key, shape in signature.items()):
+        if not quantized or any(
+            shapes.get(key) not in (shape, [shape[0], shape[1] // 2]) for key, shape in signature.items()
+        ):
+            return None
+    reason = None
+    if any(key.startswith("ref_time_in.") for key in shapes):
+        reason = "FLUX.3 flow-map 蒸馏权重不支持训练，请选择 Image Klein Base。"
+    elif quantized:
+        reason = "FLUX.3 训练不支持 FP8／NVFP4 量化权重，请选择未量化权重。"
+    return {
+        "family": "flux3", "kind": "dit", "candidates": ["flux3"],
+        "evidence": ["FLUX.3 Image Klein: three five-block mode streams, 28 shared blocks and 20480-wide text input"],
+        "warnings": [], "unsupported_reason": reason,
+    }
+
+
 def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> dict[str, Any] | None:
     """Architecture evidence shared by inspection and single-file download validation.
 
@@ -119,6 +163,8 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
     """
     shapes = {_key(key): shape for key, shape in shapes.items()}
     config = config or {}
+    if detected := flux3_component(shapes):
+        return detected
 
     def result(family, kind, candidates, evidence, warnings=(), unsupported_reason=None):
         return dict(
@@ -178,8 +224,8 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
             return result(
                 "flux2",
                 "vae",
-                ["flux2"],
-                "FLUX.2 32-channel spatial VAE with 128-channel patchified batchnorm statistics",
+                ["flux2", "flux3"],
+                "32-channel spatial VAE with 128-channel patchified batchnorm statistics; FLUX.2/3 geometry",
             )
         if (
             encoder[0] == 32
@@ -328,8 +374,73 @@ def _tokenizer_assets(folder: Path, allowed, label: str, *, chat=False, limit=TO
             if len(templates) > MAX_FILES:
                 raise ValueError(f"{label}: too many chat templates")
     if chat and not config.get("chat_template") and not templates:
-        raise ValueError(f"{label}: FLUX.2 requires its local chat template")
+        raise ValueError(f"{label}: local chat template is required")
     return classes
+
+
+def _flux3_text_geometry(config: dict, shapes: dict[str, list[int]]) -> bool:
+    text = config.get("text_config", {})
+    if not isinstance(text, dict):
+        return False
+    return (
+        config.get("model_type") == "qwen3_vl"
+        and text.get("hidden_size") == 2560
+        and isinstance(text.get("num_hidden_layers"), int)
+        and text["num_hidden_layers"] >= 32
+        and any(key.endswith("embed_tokens.weight") and shape == [151936, 2560] for key, shape in shapes.items())
+        and any(".self_attn.q_proj.weight" in key for key in shapes)
+    )
+
+
+def check_flux3_processor(path: Path, allowed=None) -> None:
+    """A tokenizer override is a complete local Qwen3-VL processor directory."""
+    root = path.resolve()
+    if not root.is_dir():
+        raise ValueError("FLUX.3 需要完整的本地 Qwen3-VL processor 目录。")
+    classes = _tokenizer_assets(root, allowed, "FLUX.3 processor", chat=True)
+    model_config = root / "config.json"
+    config = _json(_contained(root, model_config, allowed, "FLUX.3 processor config"), CONFIG_LIMIT) if model_config.is_file() else {}
+    if "Qwen3VLProcessor" not in classes and config.get("model_type") != "qwen3_vl":
+        raise ValueError("FLUX.3 需要 Qwen3-VL processor 配置。")
+    for name in ("preprocessor_config.json", "video_preprocessor_config.json"):
+        config = _contained(root, root / name, allowed, f"FLUX.3 {name}")
+        if not config.is_file():
+            raise ValueError(f"FLUX.3 processor 缺少 {name}。")
+        value = _json(config, CONFIG_LIMIT)
+        if not value:
+            raise ValueError(f"FLUX.3 {name} 不能为空。")
+        _local_references(value, root, allowed, f"FLUX.3 {name}")
+
+
+def _flux3_directory(root: Path, allowed, budget: dict[str, int]) -> dict[str, Any] | None:
+    model = root / "model.safetensors"
+    if not model.is_file() or not ((root / "ae.safetensors").exists() or (root / "text_encoder").exists()):
+        return None
+    model = _contained(root, model, allowed, "FLUX.3 model")
+    dit = inspect_model(model, allowed=allowed, _budget=budget)
+    if dit["family"] != "flux3":
+        return None
+    vae = _contained(root, root / "ae.safetensors", allowed, "FLUX.3 VAE")
+    text = _contained(root, root / "text_encoder", allowed, "FLUX.3 text encoder")
+    if not vae.is_file() or not text.is_dir():
+        raise ValueError("FLUX.3 完整目录需要 model.safetensors、ae.safetensors 和 text_encoder/。")
+    components = [dit, inspect_model(vae, allowed=allowed, _budget=budget), inspect_model(text, allowed=allowed, _budget=budget)]
+    if components[1]["kind"] != "vae" or "flux3" not in components[1]["family_candidates"]:
+        raise ValueError("FLUX.3 VAE 几何不匹配。")
+    if components[2]["kind"] != "text_encoder" or "flux3" not in components[2]["family_candidates"]:
+        raise ValueError("FLUX.3 需要完整的 Qwen3-VL-4B 文本编码器目录。")
+    check_flux3_processor(text, allowed)
+    dtypes = Counter()
+    for component in components:
+        dtypes.update(component["dtypes"])
+    precisions = {component["dtype"] for component in components if component["dtype"] is not None}
+    reason = next((component["unsupported_reason"] for component in components if component.get("unsupported_reason")), None)
+    return {
+        **dit, "path": str(root), "dtype": next(iter(precisions)) if len(precisions) == 1 else "mixed",
+        "dtypes": dict(dtypes), "files_inspected": sum(component["files_inspected"] for component in components),
+        "evidence": [*dit["evidence"], "Complete local FLUX.3 Image Klein directory with VAE and Qwen3-VL processor"],
+        "unsupported_reason": reason,
+    }
 
 
 def _flux_directory(root: Path, allowed, budget: dict[str, int]) -> dict[str, Any] | None:
@@ -556,6 +667,9 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
         raise ValueError("model path does not exist")
     budget = _budget if _budget is not None else {"files": 0, "headers": 0}
     if path.is_dir():
+        directory = _flux3_directory(path, allowed, budget)
+        if directory is not None:
+            return directory
         directory = _sdxl_directory(path, allowed, budget)
         if directory is not None:
             return directory
@@ -737,6 +851,8 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
             if model_type in ("qwen3_vl", "qwen3_vl_text") or text_cfg.get("model_type") == "qwen3_vl_text":
                 family = "krea2"
                 evidence.append("Qwen3-VL config and decoder tensor keys")
+                if _flux3_text_geometry(config, shapes):
+                    candidates = ["krea2", "flux3"]
             elif embed == [151936, 2560] and any("q_norm.weight" in key for key in shapes):
                 family = "krea2"
                 evidence.append("Qwen3-VL-4B decoder embedding and query-normalization geometry")
@@ -762,8 +878,16 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
                 evidence.append(
                     "Pixtral processor assets belong to the dev Mistral conditioning path, not Klein Qwen3"
                 )
-    if family:
+    if family and not candidates:
         candidates = [family]
+    if "flux3" in candidates and (
+        any(name.startswith("F8") or name in {"U8", "I8"} for name in dtypes)
+        or config.get("quantization_config")
+        or any(key.endswith((".weight_scale", ".weight_scale_2", ".input_scale", ".scale_weight")) for key in shapes)
+    ):
+        unsupported_reason = "FLUX.3 训练不支持 FP8／NVFP4 量化权重，请选择未量化权重。"
+    if family == "flux3" and kind == "dit" and any(name not in {"BF16", "F32"} for name in dtypes):
+        unsupported_reason = unsupported_reason or FLUX3_DIT_PRECISION_REASON
     if not family:
         warnings.append(
             "模型系列尚不能唯一确定，请确认兼容系列。"
@@ -793,7 +917,7 @@ def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = 
             if path.is_dir()
             and kind in ("dit", "vae")
             and len(files) == 1
-            and not {"sdxl", "flux", "flux2"}.intersection(candidates)
+            and not {"sdxl", "flux", "flux2", "flux3"}.intersection(candidates)
             else path
         ),
         "family": family,

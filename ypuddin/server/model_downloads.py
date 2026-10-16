@@ -21,6 +21,7 @@ from .context import ServiceContext
 from .db import new_id, now
 from .download_errors import download_auth_error, download_http_error
 from .errors import ApiError, Conflict, NotFound
+from .flux3_downloads import BundleId, BundleManifest
 from .model_catalog import TAGGER_FILES
 from .model_credentials import ModelCredentials, Provider
 
@@ -39,7 +40,7 @@ class DownloadVerification(BaseModel):
 
 class ModelDownloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    family: Literal["anima", "krea2", "sdxl", "flux2"]
+    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3"]
     kind: Literal["dit", "text_encoder", "text_encoder_2", "vae"]
     provider: Provider = "huggingface"
     mirror: Literal["official"] = "official"
@@ -51,6 +52,7 @@ class ModelDownloadRequest(BaseModel):
     is_default: bool = True
     purpose: Literal["training", "inference"] = "training"
     variant: Literal["raw", "turbo"] | None = None
+    bundle: BundleId | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -63,6 +65,13 @@ class ModelDownloadRequest(BaseModel):
 
     @model_validator(mode="after")
     def source(self):
+        if self.bundle:
+            from .flux3_downloads import validate_request
+
+            validate_request(self)
+            return self
+        if self.family == "flux3" and self.kind not in {"dit", "vae"}:
+            raise ValueError("FLUX.3 文本编码器需要完整本地 HF 目录及 processor 资源，不能下载单个权重文件。")
         if self.variant is not None and (self.family != "krea2" or self.kind != "dit"):
             raise ValueError("Raw/Turbo variant only applies to Krea 2 DiT")
         if self.family == "krea2" and self.kind == "dit" and self.variant is None:
@@ -100,6 +109,9 @@ class ModelDownload(BaseModel):
     recommendation_id: str | None = None
     expected_size: int | None = None
     sha256: str | None = None
+    bundle: BundleId | None = None
+    manifest: BundleManifest | None = None
+    verification_source: Literal["pinned_revision_and_sizes", "pinned_revision_and_sha256"] | None = None
 
 
 def resolve_source(body: ModelDownloadRequest) -> tuple[str, str]:
@@ -198,7 +210,12 @@ class _Cancelled(Exception):
 
 def check_component(weights: Any, family: str, kind: str) -> None:
     """Reject recognisable mismatches; complete architectural validation belongs to the loader."""
-    from .model_inspection import flux_component, sdxl_component, training_rejection
+    from .model_inspection import (
+        FLUX3_DIT_PRECISION_REASON,
+        flux_component,
+        sdxl_component,
+        training_rejection,
+    )
 
     if reason := training_rejection({}, family):
         raise ValueError(reason)
@@ -211,6 +228,15 @@ def check_component(weights: Any, family: str, kind: str) -> None:
                 break
         names[clean] = key
     shapes = {key: weights.get_slice(original).get_shape() for key, original in names.items()}
+    if family == "flux3" and any(
+        weights.get_slice(original).get_dtype() not in {"BF16", "F16", "F32", "F64", "I64", "I32"}
+        for original in names.values()
+    ):
+        raise ValueError("FLUX.3 训练不支持 FP8／NVFP4 量化权重，请选择未量化权重。")
+    if family == "flux3" and kind == "dit" and any(
+        weights.get_slice(original).get_dtype() not in {"BF16", "F32"} for original in names.values()
+    ):
+        raise ValueError(FLUX3_DIT_PRECISION_REASON)
     if family == "flux2" and kind in {"text_encoder", "text_encoder_2"}:
         from ypuddin.models.flux2.single_text import infer_text_config
 
@@ -240,15 +266,18 @@ def check_component(weights: Any, family: str, kind: str) -> None:
         shape = weights.get_slice(names[key]).get_shape()
         if len(shape) == 2:
             found_family = {1024: "anima", 2560: "krea2"}.get(shape[1])
+    if family == "flux3" and (found_kind != kind or "flux3" not in candidates):
+        raise ValueError("未识别到与 FLUX.3 Image Klein Base 兼容的组件。")
     if found_kind is not None and (
-        found_kind != kind or found_family not in (None, family) or candidates and family not in candidates
+        found_kind != kind or found_family not in (None, family) and family not in candidates
+        or candidates and family not in candidates
     ):
         raise ValueError(f"file looks like {found_family or 'shared'} {found_kind}, not {family} {kind}")
 
 
 def _check_download_header(header: bytes, family: str) -> None:
     """Reject retired architectures as soon as their bounded header arrives."""
-    from .model_inspection import flux_component, training_rejection
+    from .model_inspection import FLUX3_DIT_PRECISION_REASON, flux_component, training_rejection
 
     metadata = json.loads(header)
     if not isinstance(metadata, dict):
@@ -260,8 +289,19 @@ def _check_download_header(header: bytes, family: str) -> None:
         and isinstance(value.get("shape"), list)
         and all(isinstance(size, int) and size >= 0 for size in value["shape"])
     }
-    if reason := training_rejection(flux_component(shapes) or {}, family):
+    detected = flux_component(shapes) or {}
+    if reason := training_rejection(detected, family):
         raise ValueError(reason)
+    if family == "flux3" and any(
+        isinstance(value, dict) and str(value.get("dtype", "")).startswith(("F8", "U8", "I8"))
+        for value in metadata.values()
+    ):
+        raise ValueError("FLUX.3 训练不支持 FP8／NVFP4 量化权重，请选择未量化权重。")
+    if family == "flux3" and detected.get("family") == "flux3" and detected.get("kind") == "dit" and any(
+        value.get("dtype") not in {"BF16", "F32"} for value in metadata.values()
+        if isinstance(value, dict) and "shape" in value
+    ):
+        raise ValueError(FLUX3_DIT_PRECISION_REASON)
 
 
 class ModelDownloads:
@@ -292,6 +332,18 @@ class ModelDownloads:
                 )
                 # Only this task's own staging file is removed; registered/user files are untouched.
                 target = Path(row["target_path"])
+                if row.get("bundle"):
+                    from .flux3_downloads import cleanup_stage, recover_publication
+
+                    try:
+                        recover_publication(self, row)
+                    except (OSError, ValueError, KeyError, TypeError):
+                        pass
+                    try:
+                        cleanup_stage(Path(row["storage_root"]), row["id"])
+                    except (OSError, ValueError, KeyError, TypeError):
+                        pass
+                    continue
                 if len(target.parents) >= 4 and re.fullmatch(r"dl_[0-9a-f]{12}", row["id"]):
                     root = target.parents[3]
                     stage = root / ".downloads" / row["id"]
@@ -337,6 +389,10 @@ class ModelDownloads:
         self.context.bus.publish("model.download", row)
 
     def start(self, body: ModelDownloadRequest, *, recommendation=None) -> dict[str, Any]:
+        if body.bundle:
+            from .flux3_downloads import start_bundle
+
+            return start_bundle(self, body, recommendation)
         if recommendation is not None:
             recommendation = DownloadVerification(
                 id=recommendation.id,
@@ -422,6 +478,21 @@ class ModelDownloads:
             return dict(self.tasks[id_])
 
     def retry(self, id_: str, *, provider: Provider | None = None) -> dict[str, Any]:
+        with self.lock:
+            saved = dict(self.tasks.get(id_, {}))
+        if saved.get("bundle"):
+            from .flux3_downloads import start_bundle
+
+            if saved["status"] not in {"failed", "cancelled"}:
+                raise Conflict("only failed or cancelled downloads can be retried", code="download.retry")
+            selected = provider or saved["provider"]
+            body = ModelDownloadRequest(family="flux3", kind=saved["kind"], bundle=saved["bundle"],
+                                        provider=selected, dtype=saved["dtype"], is_default=saved["is_default"])
+            result = start_bundle(self, body, frozen=saved["manifest"] if selected == saved["provider"] else None)
+            if saved.get("recommendation_id"):
+                self._update(result["id"], recommendation_id=saved["recommendation_id"])
+                result["recommendation_id"] = saved["recommendation_id"]
+            return result
         # The new attempt starts outside the lock, where it is saved; start() refuses a duplicate.
         body, recommendation = self._retry_request(id_, provider)
         return self.start(body, recommendation=recommendation)
@@ -527,6 +598,11 @@ class ModelDownloads:
             return body, recommendation
 
     def _run(self, id_: str, root: Path) -> None:
+        if self.tasks[id_].get("bundle"):
+            from .flux3_downloads import run_bundle
+
+            run_bundle(self, id_, root)
+            return
         from .network import ProxyPolicy
 
         row = self.tasks[id_]

@@ -304,6 +304,12 @@ const MODEL_PATH_HINTS: Record<string, Record<string, Copy>> = {
     vae_path: ['完整模型目录可留空。', 'Optional with a full model folder.'],
     tokenizer_path: ['模型目录内含分词器时可留空。', 'Optional when the model folder includes one.'],
   },
+  flux3: {
+    dit_path: ['FLUX.3 Image Klein Base 完整目录或 BF16／FP32 主模型文件。', 'FLUX.3 Image Klein Base folder or BF16/FP32 transformer file.'],
+    text_encoder_path: ['Qwen3-VL-4B-Instruct 完整目录，使用完整模型包时可留空。', 'Full Qwen3-VL-4B-Instruct folder; optional with the full model package.'],
+    vae_path: ['FLUX.3 配套 VAE，使用完整模型包时可留空。', 'FLUX.3 autoencoder; optional with the full model package.'],
+    tokenizer_path: ['留空使用文本编码器内含的分词器与处理器。', 'Blank uses the tokenizer and processor bundled with the text encoder.'],
+  },
   krea2: {
     dit_path: ['Krea 2 Raw 主模型，BF16 或 FP8 文件。', 'Krea 2 Raw main model, BF16 or FP8.'],
     text_encoder_path: ['Qwen3-VL-4B 文本编码器。', 'Qwen3-VL-4B text encoder.'],

@@ -4,14 +4,14 @@ from .optimizer_rules import optimizer_key, optimizer_policy
 
 FULL_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "toy"})
 TEXT_ADAPTER_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2"})
-NOISE_SHAPE_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2"})
+NOISE_SHAPE_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "flux3"})
 _ANIMA_LR_FIELDS = frozenset({"llm_adapter_lr", "self_attn_lr", "cross_attn_lr", "mlp_lr", "modulation_lr"})
 _FULL_LR_FIELDS = ("backbone_lr", "text_encoder_lr", "text_encoder_2_lr", *sorted(_ANIMA_LR_FIELDS))
 
 
 def training_capabilities(family: str) -> dict:
     supported = family in FULL_FAMILIES
-    return {
+    result = {
         "modes": ["adapter", "full"] if supported else ["adapter"],
         "full_backbone": supported,
         "full_text_encoder": supported,
@@ -20,6 +20,16 @@ def training_capabilities(family: str) -> dict:
         "full_block_swap": False,
         "full_fp8": False,
     }
+    if family == "flux3":
+        result.update(
+            adapter_algorithms=["lora", "lokr", "loha", "full", "ortho"],
+            model_dtypes=["auto", "bf16", "fp32"],
+            base_precisions=["auto", "bf16", "fp32"],
+            mixed_precisions=["no", "bf16"],
+            distributed_strategies=["ddp"],
+            gpu_counts=[1],
+        )
+    return result
 
 
 def trains_conv_adapters(cfg) -> bool:

@@ -14,6 +14,7 @@ import time
 import uuid
 from collections.abc import Callable
 from typing import Any, Literal
+from urllib.parse import urlencode
 
 from pydantic import BaseModel, ConfigDict
 
@@ -284,6 +285,10 @@ def model_download_source(downloads: Any, since: float) -> Callable[[], list[dic
         now, found = time.time(), []
         for row in downloads.list():
             active = row["status"] in ("queued", "downloading")
+            family = row.get("family")
+            query = {"tab": "models"}
+            if family in ("anima", "krea2", "sdxl", "flux", "flux2", "flux3"):
+                query["family"] = family
             task = {
                 "id": row["id"],
                 "kind": "model_download",
@@ -294,7 +299,7 @@ def model_download_source(downloads: Any, since: float) -> Callable[[], list[dic
                 "unit": "bytes",
                 "rate": (row.get("bytes_per_second") or None) if row["status"] == "downloading" else None,
                 "detail": "queued" if row["status"] == "queued" else None,
-                "link": "/settings/environment?tab=models",
+                "link": "/settings/environment?" + urlencode(query),
                 "cancellable": active,
                 "started_at": row["created_at"],
                 "finished_at": row.get("finished_at"),

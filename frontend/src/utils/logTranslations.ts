@@ -5,7 +5,7 @@
 
 type Rule = [RegExp, (match: RegExpMatchArray) => string];
 
-const FAMILIES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', flux: 'FLUX.1', flux2: 'FLUX.2', sdxl: 'SDXL', toy: '测试模型' };
+const FAMILIES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', flux: 'FLUX.1', flux2: 'FLUX.2', flux3: 'FLUX.3 Klein 5.5B', sdxl: 'SDXL', toy: '测试模型' };
 const SAVED: Record<string, string> = { weights: '权重', 'training state': '训练状态', model: '模型', file: '文件' };
 const OUTCOMES: Record<string, string> = { finished: '完成', paused: '已暂停', stopped: '已停止', failed: '失败' };
 

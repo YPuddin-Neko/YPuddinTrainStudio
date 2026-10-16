@@ -13,7 +13,7 @@ from ypuddin.models import get_family
 from .environment import environment_attention_default
 from .errors import ApiError
 
-SUPPORTED_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "toy"})
+SUPPORTED_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "flux3", "toy"})
 MODEL_PATHS = {
     "dit": "dit_path",
     "text_encoder": "text_encoder_path",
@@ -43,7 +43,7 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
             path = Path(row["path"]).expanduser().resolve()
             valid = (
                 path.is_file()
-                if kind in {"dit", "vae"} and family not in {"sdxl", "flux", "flux2"}
+                if kind in {"dit", "vae"} and family not in {"sdxl", "flux", "flux2", "flux3"}
                 else path.is_dir()
                 if kind == "tokenizer"
                 else path.is_file() or path.is_dir()
@@ -54,10 +54,10 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
 
                     if verified_variant(path) == "turbo":
                         continue
-                if family == "flux2":
+                if family in {"flux2", "flux3"}:
                     from .model_inspection import inspect_model, training_rejection
 
-                    if kind == "text_encoder" and path.is_file():
+                    if family == "flux2" and kind == "text_encoder" and path.is_file():
                         from ypuddin.models.flux2.single_text import text_config
 
                         text_config(path)
@@ -99,13 +99,15 @@ def initial_family_config(c: Any, family: str) -> dict[str, Any]:
         config["sampling"].update(shift=1.0, scheduler="uniform")
         config["dataset"]["text_encoding"] = "cached"
         config["memory"]["activation_checkpointing"] = "block"
+    elif family == "flux3":
+        config["objective"].update(timestep_sampling="logit_normal", weighting="none", logit_mean=0.0, logit_std=1.0)
     elif spec.sampling.shift is None:
         config["objective"].update(
             timestep_sampling="resolution_shift", res_shift_tokens=[256, 6400 if family == "krea2" else 4096]
         )
     else:
         config["objective"].update(timestep_sampling="shift", shift=spec.sampling.shift)
-    if family in {"krea2", "flux2"}:
+    if family in {"krea2", "flux2", "flux3"}:
         config["memory"]["activation_checkpointing"] = "block"
     if family == "flux2":
         # Resolve Klein sampling defaults from the selected checkpoint.

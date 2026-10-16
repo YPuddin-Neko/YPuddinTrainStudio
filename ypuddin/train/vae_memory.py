@@ -142,6 +142,17 @@ def _autoencoder_kl_geometry(family: str, config_json: str) -> tuple[int, int]:
     return storage, int(vae.config.block_out_channels[-1])
 
 
+@lru_cache(maxsize=1)
+def _flux3_autoencoder_geometry() -> tuple[int, int]:
+    from ypuddin.models.flux3.autoencoder import AutoEncoder
+
+    with torch.device("meta"):
+        model = AutoEncoder()
+    tensors = {id(t): t for t in (*model.parameters(), *model.buffers())}
+    storage = sum(t.numel() * (4 if t.is_floating_point() else t.element_size()) for t in tensors.values())
+    return storage, 512
+
+
 def _autoencoder_kl_config(cfg: TrainConfig) -> dict[str, Any]:
     """The configured VAE's geometry; an unreadable draft path uses the family's standard VAE."""
     from ypuddin.models.sdxl.loading import ASSETS
@@ -205,6 +216,10 @@ def vae_memory(
             family, json.dumps(_autoencoder_kl_config(cfg), sort_keys=True, default=str)
         )
         weights_mb = storage / 2**20
+    elif family == "flux3":
+        storage, channels = _flux3_autoencoder_geometry()
+        weights_mb = storage / 2**20
+        vae_dtype, kind = torch.float32, "kl"
     else:
         return None
     if device_type == "mps":
@@ -230,7 +245,7 @@ def vae_memory(
         cache_tiling=qwen and cfg.memory.cache_encode_tiled,
         chunking_available=qwen and hip,
         math_score_bytes=_SCORE_BYTES if hip or device_type == "mps" else _CUDA_SCORE_BYTES,
-        latent_channels=16 if qwen else 32 if family == "flux2" else 4,
+        latent_channels=16 if qwen else 32 if family in {"flux2", "flux3"} else 4,
     )
 
 

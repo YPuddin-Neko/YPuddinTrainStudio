@@ -42,6 +42,7 @@ export function familyHasConvolutions(family: FamilyInfo | undefined): boolean {
 
 /** The noise-level sampling a new configuration of this model starts with. */
 export function defaultTimestepSampling(family: FamilyInfo): string {
+  if (family.name === 'flux3') return 'logit_normal';
   return family.objective === 'ddpm' ? 'uniform' : family.sampling?.shift == null ? 'resolution_shift' : 'shift';
 }
 
@@ -63,6 +64,14 @@ export function unusedSettingReason(path: string, { family, config, english }: F
   const text = (zh: string, en: string) => english ? en : zh;
   const name = modelName(family);
   switch (path) {
+    case 'training.mode':
+      return family.name === 'flux3' && config.training?.mode === 'full' ? text('FLUX.3 仅支持适配器训练，请切换训练方式。', 'FLUX.3 supports adapter training only. Change the training mode.') : undefined;
+    case 'loop.gpu_count':
+      return family.name === 'flux3' && Number(config.loop?.gpu_count ?? 1) !== 1 ? text('FLUX.3 使用单卡训练，请将显卡数设为 1。', 'FLUX.3 trains on one GPU. Set the GPU count to 1.') : undefined;
+    case 'loop.distributed_strategy':
+      return family.name === 'flux3' && config.loop?.distributed_strategy === 'fsdp' ? text('FLUX.3 不支持显存分片，请切换为数据并行并将显卡数设为 1。', 'FLUX.3 does not support memory sharding. Select data parallelism and set the GPU count to 1.') : undefined;
+    case 'training.train_text_encoder':
+      return family.name === 'flux3' ? text('FLUX.3 使用冻结的文本编码器，请关闭文本编码器训练。', 'FLUX.3 uses a frozen text encoder. Turn off text encoder training.') : undefined;
     case 'optimizer.cpu_offload':
       if (runtime === 'mps' || runtime === 'cpu') return text('当前设备没有独立显存，CPU 卸载会增加内存占用。', 'This device has no dedicated VRAM; CPU offload increases memory use.');
       if (config.loop?.distributed_strategy === 'fsdp' || config.optimizer?.kahan) return text('CPU 卸载需使用数据并行并关闭低精度更新补偿。', 'CPU offload requires data parallelism with Kahan updates disabled.');
@@ -84,6 +93,7 @@ export function unusedSettingReason(path: string, { family, config, english }: F
       if (runtime === 'cpu') return text('CPU 训练时文本编码器本来就在内存里。', 'On a CPU the text encoder is already in system memory.');
       return effectiveTextEncoding(family, config) === 'cached' ? text('标签在训练前已编码，训练时不加载文本编码器。', 'Captions are encoded before training, so the text encoder is not loaded while training.') : undefined;
     case 'loop.mixed_precision':
+      if (family.name === 'flux3' && config.loop?.mixed_precision === 'fp16') return text('FLUX.3 不支持 FP16 混合精度，请选择 BF16 或关闭混合精度。', 'FLUX.3 does not support FP16 mixed precision. Choose BF16 or turn mixed precision off.');
       return runtime === 'mps' ? text('Apple 芯片训练统一使用 FP32，不使用混合精度。', 'Apple chips train in FP32 without mixed precision.') : undefined;
     case 'adapter.layer_types':
       return familyHasConvolutions(family) ? undefined : text(`${name} 没有卷积层，只训练线性层。`, `${name} has no convolution layers; only linear layers are trained.`);
@@ -96,9 +106,10 @@ export function unusedSettingReason(path: string, { family, config, english }: F
 }
 
 /** An unused setting is hidden unless it is still switched on or set (or would stop training), so it can be reset. */
-export function hideUnusedSetting(path: string, value: unknown, { config }: FieldContext): boolean {
+export function hideUnusedSetting(path: string, value: unknown, { config, family }: FieldContext): boolean {
   if (path === 'memory.offload_text_encoder') return !(value && config.training?.train_text_encoder);
   if (path === 'adapter.layer_types') return value !== 'linear_conv';
+  if (path === 'loop.mixed_precision' && family?.name === 'flux3' && value === 'fp16') return false;
   if (path === 'memory.allow_tf32' || path === 'loop.mixed_precision') return true;
   return !value;
 }
@@ -391,10 +402,12 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       return join([general, text(`留空使用 ${name} 的默认值：${fallback}。`, `Leave blank for the ${name} default: ${fallback}.`)]);
     }
     case 'training.train_backbone':
+      if (family.name === 'flux3') return text('训练 FLUX.3 图像主模型的适配器。底模权重保持冻结，只更新所选线性层的适配器参数。', 'Trains adapters for the FLUX.3 image model. Base weights stay frozen; only adapter parameters in the selected linear layers are updated.');
       return family.name === 'sdxl'
         ? text('训练生成图像的主模型，SDXL 为 UNet。全量微调时包括卷积、归一化、嵌入与偏置，不局限于线性层。', 'Trains the model that generates images, the UNet for SDXL. Full fine-tuning includes convolutions, norms, embeddings and biases, not only linear layers.')
         : text(`训练生成图像的主模型，${name} 为 DiT。全量微调时包括归一化、嵌入与偏置，不局限于线性层。`, `Trains the model that generates images, the DiT for ${name}. Full fine-tuning includes norms, embeddings and biases, not only linear layers.`);
     case 'training.train_text_encoder':
+      if (family.name === 'flux3') return unusedSettingReason(path, context);
       return join([
         family.name === 'sdxl'
           ? text('同时训练 SDXL 的两个文本编码器 CLIP-L 和 CLIP-G。', 'Also trains both SDXL text encoders, CLIP-L and CLIP-G.')
@@ -402,6 +415,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         text('LoRA 只更新其线性层的附加权重，全量微调更新其原始参数。每步都要重新编码标签，不使用文本缓存，显存需求增加。', 'LoRA updates only the added weights of its linear layers; full fine-tuning updates its original parameters. Captions are encoded at every step without the text cache, which needs more memory.'),
       ]);
     case 'model.tokenizer_path':
+      if (family.name === 'flux3') return text('留空使用所选 Qwen3-VL 文本编码器目录中的分词器与处理器；也可指定与该编码器匹配的处理器目录。', 'Blank uses the tokenizer and processor in the selected Qwen3-VL text encoder folder. You can also select a matching processor folder.');
       return family.name === 'anima'
         ? text('可选：指定旧版 T5 spiece 分词器目录。留空使用模型目录或内置分词器。', 'Optional: a legacy T5 spiece tokenizer directory. Leave blank to use the model directory or the built-in tokenizer.')
         : family.name === 'sdxl' ? undefined

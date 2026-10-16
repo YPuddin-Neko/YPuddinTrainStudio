@@ -541,6 +541,7 @@
                     "krea2",
                     "sdxl",
                     "flux2",
+                    "flux3",
                     "toy"
                   ],
                   "type": "string"
@@ -15767,6 +15768,90 @@
         ],
         "title": "BrowseRoot"
       },
+      "BundleFile": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "size": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Size"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "git_blob_sha1": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Blob Sha1"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "size"
+        ],
+        "title": "BundleFile"
+      },
+      "BundleManifest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "flux3-base",
+              "flux3-text"
+            ],
+            "title": "Id"
+          },
+          "repo_id": {
+            "type": "string",
+            "const": "black-forest-labs/flux-3-image-klein-base",
+            "title": "Repo Id",
+            "default": "black-forest-labs/flux-3-image-klein-base"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Revision"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/BundleFile"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Files"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "files"
+        ],
+        "title": "BundleManifest"
+      },
       "Caption": {
         "properties": {
           "caption": {
@@ -23520,6 +23605,7 @@
               "krea2",
               "sdxl",
               "flux2",
+              "flux3",
               "toy",
               "tagger"
             ],
@@ -23699,6 +23785,7 @@
               "sdxl",
               "flux",
               "flux2",
+              "flux3",
               "toy"
             ],
             "title": "Family",
@@ -24156,6 +24243,46 @@
               }
             ],
             "title": "Sha256"
+          },
+          "bundle": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "flux3-base",
+                  "flux3-text"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BundleManifest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pinned_revision_and_sizes",
+                  "pinned_revision_and_sha256"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Source"
           }
         },
         "type": "object",
@@ -24179,7 +24306,8 @@
               "anima",
               "krea2",
               "sdxl",
-              "flux2"
+              "flux2",
+              "flux3"
             ],
             "title": "Family"
           },
@@ -24297,6 +24425,21 @@
               }
             ],
             "title": "Variant"
+          },
+          "bundle": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "flux3-base",
+                  "flux3-text"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle"
           }
         },
         "additionalProperties": false,
@@ -24827,7 +24970,7 @@
               "advanced": true,
               "group": "objective",
               "order": 130,
-              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2']"
+              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3']"
             }
           },
           "multires_noise_iterations": {
@@ -24841,7 +24984,7 @@
               "advanced": true,
               "group": "objective",
               "order": 131,
-              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2']"
+              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3']"
             }
           },
           "multires_noise_discount": {
@@ -24855,7 +24998,7 @@
               "advanced": true,
               "group": "objective",
               "order": 132,
-              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2'] && objective.multires_noise_iterations > 0"
+              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3'] && objective.multires_noise_iterations > 0"
             }
           },
           "ip_noise_gamma": {
@@ -27835,6 +27978,7 @@
               "krea2",
               "sdxl",
               "flux2",
+              "flux3",
               "toy"
             ],
             "title": "Family",
@@ -28687,7 +28831,8 @@
               "krea2",
               "sdxl",
               "flux",
-              "flux2"
+              "flux2",
+              "flux3"
             ],
             "title": "Family"
           },
@@ -28721,9 +28866,41 @@
             "title": "Size"
           },
           "sha256": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Sha256"
+          },
+          "bundle": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "flux3-base",
+                  "flux3-text"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BundleManifest"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "recommended": {
             "type": "boolean",
@@ -28797,7 +28974,6 @@
           "name",
           "dtype",
           "size",
-          "sha256",
           "sources"
         ],
         "title": "RecommendedModel"
@@ -28827,6 +29003,16 @@
           "url": {
             "type": "string",
             "title": "Url"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BundleManifest"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -38922,6 +39108,7 @@
                   "krea2",
                   "sdxl",
                   "flux2",
+                  "flux3",
                   "toy"
                 ]
               },
@@ -39055,6 +39242,7 @@
                   "krea2",
                   "sdxl",
                   "flux2",
+                  "flux3",
                   "toy"
                 ]
               },
