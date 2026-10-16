@@ -12,6 +12,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
 import { modelAssetUnsupportedReason, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import SetupTtsModels from './SetupTtsModels';
+import { modelRecommendationName } from '../../utils/modelRecommendations';
 import TtsEnvironmentPanel from '../../components/TtsEnvironmentPanel';
 
 const AttentionSetup = React.lazy(() => import('../../components/EnvironmentManagerPanel').then(module => ({ default: module.EnvironmentManagerPanel })));
@@ -207,7 +208,7 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
       label={!loaded.catalog ? text('正在读取推荐模型…', 'Loading recommended models…') : text('正在读取模型系列…', 'Loading model families…')}/></>;
   return <><div className="setup-model-selects"><label>{text('模型类型', 'Model family')}<StudioSelect aria-label={text('模型类型', 'Model family')} disabled={busy} value={currentFamily} onValueChange={value => { setFamily(value); setMain(''); setSelected(null); setError(''); }} options={availableFamilies}/></label>
     <label>{text('模型下载来源', 'Model source')}<StudioSelect aria-label={text('模型下载来源', 'Model source')} value={provider} disabled={busy} onValueChange={value => setProvider(value as typeof provider)} options={[{ value: 'huggingface', label: 'Hugging Face' }, { value: 'modelscope', label: 'ModelScope' }]}/></label>
-    {mains.length > 1 && <label>{text('主模型', 'Main model')}<StudioSelect aria-label={text('主模型', 'Main model')} value={currentMain} disabled={busy || familyDownloading} onValueChange={value => { setMain(value); setSelected(null); setError(''); }} options={mains.map(entry => ({ value: entry.id, label: entry.name }))}/></label>}</div>
+    {mains.length > 1 && <label>{text('主模型', 'Main model')}<StudioSelect aria-label={text('主模型', 'Main model')} value={currentMain} disabled={busy || familyDownloading} onValueChange={value => { setMain(value); setSelected(null); setError(''); }} options={mains.map(entry => ({ value: entry.id, label: modelRecommendationName(entry) }))}/></label>}</div>
     <div className="setup-model-list">{entries.map(entry => {
       const task = latest.get(entry.id); const active = task && activeDownload(task);
       const local = !!entry.available_path;
@@ -215,8 +216,8 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
       const supported = local || entry.sources.some(source => source.provider === provider);
       const failed = !local && task?.status === 'failed';
       const cancelled = !local && task?.status === 'cancelled';
-      return <div key={entry.id} className="setup-model-row"><input type="checkbox" aria-label={entry.name} checked={chosen.includes(entry.id)} disabled={busy || !listsReady || loadError || !needs || !supported} onChange={event => setSelected(event.target.checked ? [...chosen, entry.id] : chosen.filter(id => id !== entry.id))}/>
-        <span><strong>{entry.name}</strong><small>{entry.kind === 'dit' ? text('主模型', 'Main model') : entry.kind === 'vae' ? 'VAE' : text('文本编码器', 'Text encoder')}{entry.size > 0 ? ` · ${(entry.size / 1024 ** 3).toFixed(1)} GiB` : ''}</small>
+      return <div key={entry.id} className="setup-model-row"><input type="checkbox" aria-label={modelRecommendationName(entry)} checked={chosen.includes(entry.id)} disabled={busy || !listsReady || loadError || !needs || !supported} onChange={event => setSelected(event.target.checked ? [...chosen, entry.id] : chosen.filter(id => id !== entry.id))}/>
+        <span><strong>{modelRecommendationName(entry)}</strong><small>{entry.kind === 'dit' ? text('主模型', 'Main model') : entry.kind === 'vae' ? 'VAE' : text('文本编码器', 'Text encoder')}{entry.size > 0 ? ` · ${(entry.size / 1024 ** 3).toFixed(1)} GiB` : ''}</small>
           {failed && <span role="alert" className="setup-error">{text('下载失败：', 'Download failed: ')}{task.error || text('未返回详细错误，请重试。', 'No detailed error was returned. Retry the download.')}</span>}
         </span>
         <span className="setup-model-status">{active ? <><Loader2 size={14} className="animate-spin"/>{text('下载中', 'Downloading')}</> : local ? <><Check size={14}/>{entry.is_default ? text('当前默认', 'Current default') : needs ? text('本地文件待确认', 'Local file to verify') : text('已下载', 'Downloaded')}</> : failed || cancelled ? <><span>{cancelled ? text('已取消', 'Cancelled') : ''}</span><button className="ui-link" disabled={busy || !listsReady || !supported || loadError} onClick={() => void prepare([entry.id])}>{text('重试', 'Retry')}</button></> : !supported ? text('此来源不可用', 'Unavailable here') : ''}</span></div>;
