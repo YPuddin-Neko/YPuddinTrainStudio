@@ -494,6 +494,40 @@ def find_recommendation(id_: str) -> RecommendedModel | None:
     return next((item for item in RECOMMENDATIONS if item.id == id_), None)
 
 
+def model_display_name(context, row) -> str | None:
+    """Name verified MOSS component directories while retaining custom basenames."""
+    if row.get("family") != "moss_image":
+        return None
+    recommendation = {"dit": "moss-image-base", "text_encoder": "moss-image-text", "vae": "moss-image-vae"}
+    entry = find_recommendation(recommendation.get(row.get("kind"), ""))
+    if entry is None or entry.manifest is None:
+        return None
+    from .moss_image_components import proof_key
+    from .moss_image_downloads import available_bundle, bundle_manifest
+
+    try:
+        path = Path(row["path"]).expanduser().absolute()
+        if path.resolve() != path or not path.is_dir():
+            return None
+        kind = row["kind"]
+        if kind == "dit":
+            if path.name != "transformer" and not any(
+                path.name == bundle_manifest(bundle, provider).digest[:12]
+                for bundle in ("moss-image-base", "moss-image-dit")
+                for provider in ("huggingface", "modelscope")
+            ):
+                return None
+        else:
+            proof = context.db.get_kv(proof_key(path), {})
+            if path.name != kind or proof.get("records", {}).get(kind, {}).get("path") != str(path):
+                return None
+        if available_bundle(context, path, entry.manifest):
+            return entry.name
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
 def _signature(path: Path) -> list[int]:
     stat = path.stat()
     return [stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino, stat.st_dev]

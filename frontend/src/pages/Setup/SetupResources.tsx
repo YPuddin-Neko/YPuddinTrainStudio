@@ -1,4 +1,5 @@
 import React from 'react';
+import { modelDisplayName } from '../../utils/modelDisplayName';
 import { useQueryClient } from '@tanstack/react-query';
 import { invalidateResource, useResourceCacheEvents, useResourceQuery } from '../../api/resourcePolicy';
 import { readCredentialStatus } from '../../api/hooks/useCredentialsStatus';
@@ -211,7 +212,7 @@ function ImageModelsStep({ onContinueChange }: { onContinueChange?: (ready: bool
   const loadMessage = (Object.entries(loadErrors) as [ModelList, string][]).filter(([, message]) => message).map(([list, message]) => `${listNames[list]}：${message}`).join('；');
   const familiesMessage = families.error ? `${text('模型系列', 'Model families')}：${families.error}` : '';
   if (!snapshot || !loaded.catalog || !families.data) return <>
-    {loaded.assets && !!snapshot?.assets.length && <div className="setup-model-list" aria-label={text('本地模型', 'Local models')}>{snapshot.assets.map(asset => <div className="setup-model-row" key={asset.id}><span><strong>{asset.path.split(/[\\/]/).pop() || asset.id}</strong><small>{asset.family}</small></span><span className="setup-model-status">{asset.exists ? text('本地文件', 'Local file') : text('文件不存在', 'File missing')}</span></div>)}</div>}
+    {loaded.assets && !!snapshot?.assets.length && <div className="setup-model-list" aria-label={text('本地模型', 'Local models')}>{snapshot.assets.map(asset => <div className="setup-model-row" key={asset.id}><span><strong>{modelDisplayName(asset)}</strong><small>{asset.family}</small></span><span className="setup-model-status">{asset.exists ? text('本地文件', 'Local file') : text('文件不存在', 'File missing')}</span></div>)}</div>}
     <ResourceState error={loadMessage || familiesMessage} retry={() => { reload(); families.reload(); }}
       label={!loaded.catalog ? text('正在读取推荐模型…', 'Loading recommended models…') : text('正在读取模型系列…', 'Loading model families…')}/></>;
   return <><div className="setup-model-selects"><label>{text('模型类型', 'Model family')}<StudioSelect aria-label={text('模型类型', 'Model family')} disabled={busy} value={currentFamily} onValueChange={value => { setFamily(value); setMain(''); setSelected(null); setError(''); }} options={availableFamilies}/></label>

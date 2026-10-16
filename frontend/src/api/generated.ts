@@ -6727,6 +6727,8 @@ export interface components {
         };
         /** ModelAsset */
         ModelAsset: {
+            /** Display Name */
+            display_name?: string | null;
             /** Compatible Families */
             compatible_families?: string[];
             /** Processor Path */

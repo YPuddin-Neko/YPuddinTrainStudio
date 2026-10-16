@@ -10,6 +10,7 @@ import { apiClient } from '../../api/client';
 import { FamilyInfo, ModelAsset } from '../../api/types';
 import { configFieldHelp, configFieldHint, configFieldLabel, configOptionLabel, configPresetLabel, PERCENTAGE_FIELDS } from '../../utils/configPresentation';
 import { modelPathHint } from '../../utils/fieldCopy';
+import { modelDisplayName } from '../../utils/modelDisplayName';
 import { doraAutoLabel, type DoraPrecisionReport } from '../../utils/doraPrecision';
 import { parameterGroupLabel } from '../../utils/parameterWorkflow';
 import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
@@ -610,7 +611,7 @@ const ModelPathInput: React.FC<{
       <PathInput ariaLabel={label} value={value} defaultPath={defaultPath} resolveDefaultPath={resolveDefaultPath} directoryOnly={directoryOnly} allowMissingDirectory={allowMissingDirectory} onChange={onChange} />
       {matched.length > 0 && (
         <StudioSelect aria-label={`${label || kind} · ${t('models.fromRegistry')}`} value={matched.some(model => model.path === value) ? value : ''} onValueChange={next => onChange(next, matched.find(model => model.path === next && model.family === familyName) ?? matched.find(model => model.path === next))} data-testid="model-registry-select"
-          placeholder={t('models.fromRegistry')} options={matched.filter((model, index) => matched.findIndex(item => item.path === model.path) === index).map(model=>({value:model.path,label:model.path.split(/[\\/]/).pop() || model.path}))}/>
+          placeholder={t('models.fromRegistry')} options={matched.filter((model, index) => matched.findIndex(item => item.path === model.path) === index).map(model=>({value:model.path,label:modelDisplayName(model)}))}/>
 
       )}
     </div>

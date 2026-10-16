@@ -23513,6 +23513,17 @@
       },
       "ModelAsset": {
         "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
           "compatible_families": {
             "items": {
               "type": "string"

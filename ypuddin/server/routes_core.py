@@ -1028,12 +1028,13 @@ def _check_model_admission(
 
 def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
     # Header inspections are reused while the files are unchanged: the list is polled.
-    from .model_recommendations import component_metadata, component_source_download
+    from .model_recommendations import component_metadata, component_source_download, model_display_name
     from .model_status import remembered, signature
 
     p = Path(r["path"])
     scope = tuple(map(str, c.allowed_roots))
     projected = {**r, "exists": p.exists(), "is_default": bool(r["is_default"])}
+    projected["display_name"] = model_display_name(c, r)
     metadata = component_metadata(c, p)
     projected["processor_path"] = metadata.get("processor_path")
     projected["source_download_id"] = component_source_download(c, p)

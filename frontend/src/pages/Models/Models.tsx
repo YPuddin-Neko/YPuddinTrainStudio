@@ -14,6 +14,7 @@ import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { modelOrigin } from '../../utils/modelOrigin';
+import { modelDisplayName } from '../../utils/modelDisplayName';
 import { modelRecommendationName } from '../../utils/modelRecommendations';
 import { modelComponentLabel } from '../../utils/modelComponents';
 import './models.css';
@@ -27,7 +28,6 @@ import { ModelToolbar, ModelCatalogSection, ModelCatalogRow } from './ModelDownl
 type ModelDownload = BaseDownload & {bytes_per_second?: number; eta_seconds?: number | null; progress_at?: number | null};
 type Provider = 'huggingface' | 'modelscope';
 const isActive = (task: ModelDownload) => ['queued', 'downloading'].includes(task.status);
-const basename = (path: string) => path.split(/[\\/]/).pop() || path;
 // Each list arrives on its own, so one slow or failed read holds back only the part that shows it.
 type Resource = 'library' | 'downloads' | 'settings' | 'prepare';
 const primary = 'ui-btn ui-btn-primary';
@@ -187,7 +187,7 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
   // MOSS admission validates the encoder and its associated tokenizer together.
   const hasLinkedTokenizer = selected.some(model => model.family === 'moss_image' && model.kind === 'text_encoder'
     && model.exists && model.unsupported_reason === null && model.purpose === 'training' && model.processor_path?.trim());
-  const filteredModels = selected.filter(model => `${model.path} ${label(model.kind)}`.toLocaleLowerCase().includes(searchValue));
+  const filteredModels = selected.filter(model => `${modelDisplayName(model)} ${model.path} ${label(model.kind)}`.toLocaleLowerCase().includes(searchValue));
   const discovered = entries.filter((entry, index) => entry.available_path && !entry.model_id
     && !selected.some(model => model.path === entry.available_path && model.kind === entry.kind)
     && entries.findIndex(other => other.available_path === entry.available_path && other.kind === entry.kind) === index);
@@ -253,10 +253,10 @@ function ImageModels({ embedded, typeSelector }: { embedded: boolean; typeSelect
         {pageItems.filter(item => libraryKind(item) === component).map(item => {
           if (item.type === 'discovered') {
             const entry = item.entry;
-            return <ModelCatalogRow className="model-library-row" key={`discovered-${entry.id}`} name={basename(entry.available_path!)} nameTitle={entry.available_path!} metadata={<><span>{entry.dtype || '—'}</span><span>{text('待检查', 'Not checked')}</span></>} action={<button type="button" className={secondary} disabled={busy || !selectedFamily} onClick={() => void action(async () => { await startEntry(entry); })}>{text('检查并登记', 'Check and register')}</button>}/>;
+            return <ModelCatalogRow className="model-library-row" key={`discovered-${entry.id}`} name={modelDisplayName({ path: entry.available_path!, display_name: entry.family === 'moss_image' ? entry.name : null })} nameTitle={entry.available_path!} metadata={<><span>{entry.dtype || '—'}</span><span>{text('待检查', 'Not checked')}</span></>} action={<button type="button" className={secondary} disabled={busy || !selectedFamily} onClick={() => void action(async () => { await startEntry(entry); })}>{text('检查并登记', 'Check and register')}</button>}/>;
           }
           const model = item.model, unsupported = modelAssetUnsupportedReason(model), inference = (model as ModelAsset & { purpose?: string }).purpose === 'inference';
-          return <ModelCatalogRow className="model-library-row" key={model.id} name={basename(model.path)} nameTitle={model.path} metadata={<>{!selectedFamily && <span>{model.family}</span>}<span>{model.dtype || '—'}</span><span>{formatBytes(model.size)}</span><span className={model.exists && !unsupported ? 'model-ready' : undefined}>{unsupported ? text('已停用', 'Retired') : model.exists ? text('可用', 'Available') : text('文件缺失', 'Missing file')}</span>{inference && <span>{text('仅采样', 'Sampling only')}</span>}{model.is_default && <span className="model-tag">{text('默认', 'Default')}</span>}</>} action={<div className="model-actions"><button type="button" className={secondary} disabled={busy || !selectedFamily || inference || !model.is_default && (!model.exists || !!unsupported)} aria-label={`${model.is_default ? text('取消默认', 'Clear default') : text('设为默认', 'Set default')} ${basename(model.path)}`} onClick={() => void action(async () => { await setModelDefault(model.id, !model.is_default); })}><Star size={14} fill={model.is_default ? 'currentColor' : 'none'}/>{model.is_default ? text('取消默认', 'Clear default') : text('设为默认', 'Set default')}</button><button type="button" className={`${secondary} ui-btn-icon ui-btn-danger`} disabled={busy} onClick={() => setRemove(model)} aria-label={`${text('移除登记', 'Remove registration')} ${basename(model.path)}`}><Trash2 size={14}/></button></div>}>
+          return <ModelCatalogRow className="model-library-row" key={model.id} name={modelDisplayName(model)} nameTitle={model.path} metadata={<>{!selectedFamily && <span>{model.family}</span>}<span>{model.dtype || '—'}</span><span>{formatBytes(model.size)}</span><span className={model.exists && !unsupported ? 'model-ready' : undefined}>{unsupported ? text('已停用', 'Retired') : model.exists ? text('可用', 'Available') : text('文件缺失', 'Missing file')}</span>{inference && <span>{text('仅采样', 'Sampling only')}</span>}{model.is_default && <span className="model-tag">{text('默认', 'Default')}</span>}</>} action={<div className="model-actions"><button type="button" className={secondary} disabled={busy || !selectedFamily || inference || !model.is_default && (!model.exists || !!unsupported)} aria-label={`${model.is_default ? text('取消默认', 'Clear default') : text('设为默认', 'Set default')} ${modelDisplayName(model)}`} onClick={() => void action(async () => { await setModelDefault(model.id, !model.is_default); })}><Star size={14} fill={model.is_default ? 'currentColor' : 'none'}/>{model.is_default ? text('取消默认', 'Clear default') : text('设为默认', 'Set default')}</button><button type="button" className={`${secondary} ui-btn-icon ui-btn-danger`} disabled={busy} onClick={() => setRemove(model)} aria-label={`${text('移除登记', 'Remove registration')} ${modelDisplayName(model)}`}><Trash2 size={14}/></button></div>}>
             {unsupported && <p className="model-help-text">{unsupported}</p>}
           </ModelCatalogRow>;
         })}
