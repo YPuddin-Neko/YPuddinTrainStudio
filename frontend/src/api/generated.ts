@@ -7000,7 +7000,7 @@ export interface components {
             /** Sha256 */
             sha256?: string | null;
             /** Bundle */
-            bundle?: ("flux3-base" | "flux3-text") | ("moss-image-base" | "moss-image-text" | "moss-image-vae") | null;
+            bundle?: ("flux3-base" | "flux3-text") | ("moss-image-base" | "moss-image-dit" | "moss-image-text" | "moss-image-vae") | null;
             /**
              * Layout Version
              * @default 1
@@ -7067,7 +7067,7 @@ export interface components {
             /** Variant */
             variant?: ("raw" | "turbo") | null;
             /** Bundle */
-            bundle?: ("flux3-base" | "flux3-text") | ("moss-image-base" | "moss-image-text" | "moss-image-vae") | null;
+            bundle?: ("flux3-base" | "flux3-text") | ("moss-image-base" | "moss-image-dit" | "moss-image-text" | "moss-image-vae") | null;
             /**
              * Layout Version
              * @default 2
@@ -7118,7 +7118,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "moss-image-base" | "moss-image-text" | "moss-image-vae";
+            id: "moss-image-base" | "moss-image-dit" | "moss-image-text" | "moss-image-vae";
             /**
              * Repo Id
              * @enum {string}
@@ -8812,7 +8812,7 @@ export interface components {
             /** Sha256 */
             sha256?: string | null;
             /** Bundle */
-            bundle?: ("flux3-base" | "flux3-text") | ("moss-image-base" | "moss-image-text" | "moss-image-vae") | null;
+            bundle?: ("flux3-base" | "flux3-text") | ("moss-image-base" | "moss-image-dit" | "moss-image-text" | "moss-image-vae") | null;
             /** Manifest */
             manifest?: components["schemas"]["BundleManifest"] | components["schemas"]["MossBundleManifest"] | null;
             /**

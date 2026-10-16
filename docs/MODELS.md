@@ -9,7 +9,7 @@
 | Krea 2 | Krea 2 Raw DiT | Qwen3-VL-4B | Qwen-Image VAE |
 | FLUX.2 Klein 4B | Klein Base 4B DiT | Qwen3-4B | FLUX.2 VAE |
 | FLUX.2 Klein 9B | Klein Base 9B DiT | Qwen3-8B | FLUX.2 VAE |
-| MOSS-Image Base 5B | MOSS-Image Base DiT | 配套 Qwen3.5 | MOSS-Image 小解码器 AutoencoderKLFlux2 |
+| MOSS-Image 5B | MOSS-Image Base DiT | 配套 Qwen3.5 | MOSS-Image 小解码器 AutoencoderKLFlux2 |
 
 “设置 → 模型权重”支持本地登记和下载。扫描读取权重文件头及模型配置，识别组件、模型系列和存储精度。无法确认的信息需按模型发布说明补充。
 
@@ -61,13 +61,13 @@ Base 和蒸馏模型可能具有相同的权重形状。完整目录的元数据
 
 文本编码阶段需要容纳完整的 Qwen 编码器及其激活。缓存完成后卸载编码器再加载主模型。LoRA / LoKr 训练中的梯度检查点、分块换出和精度限制由配置检查处理。
 
-## MOSS-Image Base
+## MOSS-Image 5B
 
-在模型系列中选择 `MOSS-Image Base 5B`。可在“设置 → 模型权重”下载完整 Base 包，也可分别准备其文本编码器和 VAE，再在训练配置中选择对应组件。
+在模型系列中选择 `MOSS-Image 5B`，DiT 条目为 `MOSS-Image Base 5B`。各条目只下载对应组件；顶部“下载缺失组件”补齐 DiT、文本编码器和 VAE。
 
 主模型接受官方完整目录、其中的 `transformer/` 目录，或带有匹配 `config.json` 的原始 safetensors 单文件。分片目录必须保留索引和全部分片。独立文本编码器需要配套 `config.json`、完整权重及本地 `tokenizer/`；程序优先从 `text_encoder/` 的同级目录发现分词器，也可明确填写“分词器”路径。独立 VAE 同样需要匹配的配置和权重。
 
-使用 MOSS-Image 发布的 Qwen3.5 文本编码器及小解码器 VAE；Krea 2 / FLUX.3 的 Qwen3-VL 和其他 FLUX.2 VAE 不能仅按名称替换。文本编码器固定 BF16，VAE 固定 FP32。DiT 支持未量化 BF16 / FP32，训练时文本编码器与 VAE 保持冻结。
+使用 MOSS-Image 发布的 Qwen3.5 文本编码器；Krea 2 / FLUX.3 的 Qwen3-VL 不能替代。配套小解码器 VAE 与现有 FLUX 系列 AE 权重不同，需独立准备。文本编码器固定 BF16，VAE 固定 FP32。DiT 支持未量化 BF16 / FP32，训练时文本编码器与 VAE 保持冻结。
 
 运行环境需要 PyTorch 2.9 或更新版本、Transformers 5.8.1 或更新版本，以及 Diffusers 0.40 或更新版本。当前支持单卡适配器训练、SDPA 和普通梯度检查点；不提供全量微调、文本编码器训练、T-LoRA、FP8 底模、编译、块换出或多卡训练。训练时间步与预览设置见 [训练配置](TRAINING.md#moss-image-时间步)。
 
@@ -90,4 +90,4 @@ models/
 
 系列目录为 `anima`、`sdxl`、`krea2`、`flux2`、`moss_image`。文本编码器按系列存放；Anima 和 Krea 2 共用的 Qwen-Image VAE 放在 `vae/shared/`。每个下载放在单独的子目录中：推荐文件以文件 SHA-256 的前 12 位命名，自定义下载以来源地址 SHA-256 的前 12 位命名。`tagger/` 和 `mask/` 存放打标模型与遮罩检测模型，见 [数据集管理](DATASETS.md#模型与运行环境)。已登记路径保持不变。
 
-MOSS-Image 的完整 Base 包关联独立保存的配套文本编码器和 VAE；单独准备组件或之后准备完整包时，复用已校验的相同组件。保留下载器建立的目录结构和组件关联。
+已下载的 MOSS-Image 完整 Base 包仍可识别、登记和使用。准备缺失组件时复用已校验的相同组件，保留下载器建立的目录结构和共享关联。

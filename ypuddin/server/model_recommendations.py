@@ -140,7 +140,8 @@ def _flux3_entry(id_):
 def _moss_entry(id_):
     from .moss_image_downloads import bundle_manifest
 
-    manifest = bundle_manifest(id_)
+    bundle = "moss-image-dit" if id_ == "moss-image-base" else id_
+    manifest = bundle_manifest(bundle)
     kind, name, dtype = {
         "moss-image-base": ("dit", "MOSS-Image Base 5B", "bf16"),
         "moss-image-text": ("text_encoder", "MOSS-Image Qwen3.5-9B", "bf16"),
@@ -148,13 +149,13 @@ def _moss_entry(id_):
     }[id_]
     sources = []
     for provider in ("huggingface", "modelscope"):
-        spec = bundle_manifest(id_, provider)
+        spec = bundle_manifest(bundle, provider)
         sources.append(RecommendedSource(provider=provider, repo_id=spec.repo_id,
-                       filename="" if kind == "dit" else kind, revision=spec.revision, manifest=spec,
+                       filename="transformer" if kind == "dit" else kind, revision=spec.revision, manifest=spec,
                        url=f"https://huggingface.co/{spec.repo_id}/tree/{spec.revision}" if provider == "huggingface"
                        else f"https://modelscope.cn/models/{spec.repo_id}/files"))
     return RecommendedModel(id=id_, family="moss_image", kind=kind, name=name, dtype=dtype,
-                            size=manifest.size, bundle=id_, manifest=manifest, sources=sources)
+                            size=manifest.size, bundle=bundle, manifest=manifest, sources=sources)
 
 
 RECOMMENDATIONS = [
@@ -672,7 +673,7 @@ def component_metadata(context, path: Path) -> dict:
     return value
 
 
-def related_download(entry, tasks):
+def related_download(entry, tasks, *, bundle=None):
     """A shared component reports the task that owns its actual preparation."""
     shared_text = {"krea2-qwen3vl", "flux3-text"}
     shared_vae = {"flux2-vae", "flux3-vae"}
@@ -683,7 +684,8 @@ def related_download(entry, tasks):
         if owner == entry.id:
             return row
         moss = {"moss-image-base", "moss-image-text", "moss-image-vae"}
-        if entry.id in moss and owner in moss and (entry.id == "moss-image-base" or owner == "moss-image-base"):
+        if entry.id in moss and owner in moss and (
+                (bundle or entry.bundle) == "moss-image-base" or row.get("bundle") == "moss-image-base"):
             return row
         if entry.sha256 and row.get("sha256") == entry.sha256 and row.get("kind") == entry.kind:
             return row

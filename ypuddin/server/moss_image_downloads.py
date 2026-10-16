@@ -15,7 +15,7 @@ from .db import new_id, now
 from .errors import ApiError, Conflict
 from .flux3_downloads import BundleFile, _inside, bundle_source_url, cleanup_stage
 
-MossBundleId = Literal["moss-image-base", "moss-image-text", "moss-image-vae"]
+MossBundleId = Literal["moss-image-base", "moss-image-dit", "moss-image-text", "moss-image-vae"]
 REPO = "OpenMOSS-Team/MOSS-Image-Base"
 REVISION = "5f40f07a304541840b6019d2d34d30f966756787"
 MS_REPO = "openmoss/MOSS-Image-Base"
@@ -75,7 +75,8 @@ _FILES = (
 
 
 def bundle_manifest(id_: MossBundleId, provider="huggingface"):
-    prefixes = {"moss-image-base": ("",), "moss-image-text": ("text_encoder/", "tokenizer/"), "moss-image-vae": ("vae/",)}[id_]
+    prefixes = {"moss-image-base": ("",), "moss-image-dit": ("transformer/",),
+                "moss-image-text": ("text_encoder/", "tokenizer/"), "moss-image-vae": ("vae/",)}[id_]
     return MossBundleManifest(id=id_, repo_id=MS_REPO if provider == "modelscope" else REPO,
                               revision=MS_REVISION if provider == "modelscope" else REVISION,
                               files=[BundleFile(path=name, size=size, sha256=sha) for name, size, sha in _FILES
@@ -83,13 +84,14 @@ def bundle_manifest(id_: MossBundleId, provider="huggingface"):
 
 
 def validate_request(body):
-    if body.bundle not in {"moss-image-base", "moss-image-text", "moss-image-vae"}:
+    if body.bundle not in {"moss-image-base", "moss-image-dit", "moss-image-text", "moss-image-vae"}:
         raise ValueError("请选择对应的 MOSS-Image 目录包。")
     spec = bundle_manifest(body.bundle, body.provider)
-    kind = {"moss-image-base": "dit", "moss-image-text": "text_encoder", "moss-image-vae": "vae"}[spec.id]
+    kind = {"moss-image-base": "dit", "moss-image-dit": "dit",
+            "moss-image-text": "text_encoder", "moss-image-vae": "vae"}[spec.id]
     if (body.family != "moss_image" or body.kind != kind or body.mirror != "official" or body.url
         or body.repo_id not in (None, spec.repo_id) or body.revision not in (None, spec.revision)
-        or body.filename not in (None, "", "text_encoder", "vae") or body.variant is not None
+        or body.filename not in (None, "", "transformer", "text_encoder", "vae") or body.variant is not None
         or body.purpose != "training" or body.dtype not in (None, "fp32" if kind == "vae" else "bf16")
         or body.layout_version != 2):
         raise ValueError("MOSS-Image 目录包仅使用固定官方仓库、版本和文件清单。")
@@ -104,7 +106,12 @@ def _group(storage, role):
 
 
 def _roles(spec):
-    return {"moss-image-base": ("text_encoder", "vae"), "moss-image-text": ("text_encoder",), "moss-image-vae": ("vae",)}[spec.id]
+    return {"moss-image-base": ("text_encoder", "vae"), "moss-image-dit": (),
+            "moss-image-text": ("text_encoder",), "moss-image-vae": ("vae",)}[spec.id]
+
+
+def _download_roles(spec):
+    return {"dit", *_roles(spec)} if spec.id in {"moss-image-base", "moss-image-dit"} else set(_roles(spec))
 
 
 def _group_files(spec, role):
@@ -113,8 +120,24 @@ def _group_files(spec, role):
 
 
 def available_bundle(context, path, spec):
-    from .moss_image_components import manifest_identity, proof_key, resolve_components, valid_component
+    from .moss_image_components import (
+        manifest_identity,
+        proof_key,
+        resolve_components,
+        valid_component,
+        valid_snapshot,
+    )
 
+    if spec.id == "moss-image-dit":
+        proof = context.db.get_kv(proof_key(path), {})
+        owned = proof.get("owned", {})
+        try:
+            root = Path(owned["path"])
+            return (Path(path).resolve() in {root, root / "transformer"} and valid_snapshot(context, owned)
+                    and all(owned["files"].get(item.path, {}).get("sha256") == item.sha256
+                            and owned["files"][item.path]["size"] == item.size for item in spec.files))
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
     if spec.id != "moss-image-base":
         role = _roles(spec)[0]
         proof = context.db.get_kv(proof_key(path), {})
@@ -157,7 +180,7 @@ def recover_publication(service, row):
     spec = MossBundleManifest.model_validate(row["manifest"])
     _recover_shared(service, row, spec)
     storage, target = Path(row["storage_root"]), Path(row["target_path"])
-    if spec.id != "moss-image-base":
+    if spec.id not in {"moss-image-base", "moss-image-dit"}:
         role = _roles(spec)[0]
         if target != _group(storage, role):
             return
@@ -167,21 +190,25 @@ def recover_publication(service, row):
     else:
         if target != model_folder(storage, "moss_image", "dit") / spec.digest[:12]:
             return
-        primary = str(target)
-        components = resolve_components(service.context, target)
-        valid = available_bundle(service.context, target, spec)
+        primary = str(target / "transformer" if spec.id == "moss-image-dit" else target)
+        components = {} if spec.id == "moss-image-dit" else resolve_components(service.context, target)
+        valid = available_bundle(service.context, Path(primary), spec)
     if valid:
-        from .routes_core import register_moss_components
+        from .routes_core import ModelBody, add_model, register_moss_components
 
         with service.context.db.transaction():
-            register_moss_components(target, service.context, row["is_default"], kind=row["kind"])
+            if spec.id == "moss-image-dit":
+                add_model(ModelBody(family="moss_image", kind="dit", path=primary, dtype="bf16",
+                                    is_default=row["is_default"]), service.context)
+            else:
+                register_moss_components(target, service.context, row["is_default"], kind=row["kind"])
         asset = service.context.db.fetchone("SELECT id FROM models WHERE family='moss_image' AND kind=? AND path=?",
                                            (row["kind"], primary))
         if asset:
             row.update(status="completed", model_id=asset["id"], components=components, error=None, bytes_per_second=0,
                        downloaded_bytes=row["total_bytes"], eta_seconds=0, finished_at=now())
             return
-    if spec.id != "moss-image-base":
+    if spec.id not in {"moss-image-base", "moss-image-dit"}:
         return
     marker = target / MARKER
     if not marker.is_file() or marker.is_symlink() or marker.stat().st_size > 1024 * 1024:
@@ -206,8 +233,8 @@ def start_bundle(service, body, recommendation=None, *, frozen=None, layout_vers
         spec = MossBundleManifest.model_validate(frozen) if frozen else validate_request(body)
         if frozen and spec != validate_request(body):
             raise ValueError("MOSS-Image 下载清单与固定版本不符。")
-        entry = recommendation or find_recommendation(spec.id)
-        if entry and (active := related_download(entry, service.list())):
+        entry = recommendation or find_recommendation("moss-image-base" if spec.id == "moss-image-dit" else spec.id)
+        if entry and (active := related_download(entry, service.list(), bundle=spec.id)):
             if (active.get("recommendation_id") or active.get("bundle")) == entry.id:
                 raise Conflict("this model file is already downloading", code="download.active", details={"download_id": active["id"]})
             return dict(active)
@@ -222,7 +249,7 @@ def start_bundle(service, body, recommendation=None, *, frozen=None, layout_vers
                         "status", "model_id", "components", "error", "bytes_per_second", "downloaded_bytes", "eta_seconds", "finished_at")})
                     if previous["bundle"] == spec.id:
                         return dict(service.tasks[previous["id"]])
-        components = find_components(service.context, candidates=True)
+        components = {} if spec.id == "moss-image-dit" else find_components(service.context, candidates=True)
         target = (model_folder(storage, "moss_image", "dit") / spec.digest[:12] if body.kind == "dit"
                   else _group(storage, body.kind))
         _inside(storage, target)
@@ -235,7 +262,7 @@ def start_bundle(service, body, recommendation=None, *, frozen=None, layout_vers
             if service.closed:
                 raise Conflict("download service is stopping")
             if any(row.get("family") == "moss_image" and row["status"] in ACTIVE
-                   and set(_roles(MossBundleManifest.model_validate(row["manifest"]))) & set(_roles(spec))
+                   and _download_roles(MossBundleManifest.model_validate(row["manifest"])) & _download_roles(spec)
                    for row in service.tasks.values()):
                 raise Conflict("a shared MOSS-Image component is downloading", code="download.active")
             id_ = new_id("dl")
@@ -321,8 +348,9 @@ def run_bundle(service, id_, storage):
             from ypuddin.models.moss_image.loading import transformer_config
 
             transformer_config(own / "transformer")
-            digests[DESCRIPTION] = _json(own / DESCRIPTION, {"format": "ypuddin-moss-image-components", "version": 1,
-                                                          "components": components})
+            if spec.id == "moss-image-base":
+                digests[DESCRIPTION] = _json(own / DESCRIPTION, {"format": "ypuddin-moss-image-components", "version": 1,
+                                                              "components": components})
             receipt = {"download_id": id_, "layout_version": 2, "manifest_digest": spec.digest,
                        "components": components, "references": references,
                        "owned_files": _record(context, own, digests)["files"]}
@@ -337,8 +365,9 @@ def run_bundle(service, id_, storage):
                 own.rename(target)
                 published = True
             with context.db.transaction():
-                context.db.set_kv(proof_key(target), {**receipt, "owned": _record(context, target, digests)})
-                asset = add_model(ModelBody(family="moss_image", kind="dit", path=str(target), dtype="bf16",
+                primary = target / "transformer" if spec.id == "moss-image-dit" else target
+                context.db.set_kv(proof_key(primary), {**receipt, "owned": _record(context, target, digests)})
+                asset = add_model(ModelBody(family="moss_image", kind="dit", path=str(primary), dtype="bf16",
                                             is_default=row["is_default"]), context)
         else:
             transfer.cancelled()

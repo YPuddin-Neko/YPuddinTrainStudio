@@ -41,7 +41,7 @@ def sampling_sigmas(steps, shift=5.0, *, device="cpu"):
 
 class MOSSImageFamily(ModelFamily):
     spec = ModelSpec(
-        name="moss_image", label="MOSS-Image Base 5B", architecture="moss-image-base",
+        name="moss_image", label="MOSS-Image 5B", architecture="moss-image-base",
         latent=LatentSpec(128, 16, 1, "moss-image-small-vae-mode-fp32-patch2-bn-v1"),
         text=TextSpec(4096, "moss-image-qwen35-last-thinking-unpadded-4096-bf16-v1", pad_floor=False),
         sampling=SamplingDefaults(steps=50, cfg=3.0, shift=5.0, sampler="euler"),
