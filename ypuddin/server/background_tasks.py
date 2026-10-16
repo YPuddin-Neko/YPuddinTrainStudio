@@ -287,7 +287,7 @@ def model_download_source(downloads: Any, since: float) -> Callable[[], list[dic
             active = row["status"] in ("queued", "downloading")
             family = row.get("family")
             query = {"tab": "models"}
-            if family in ("anima", "krea2", "sdxl", "flux", "flux2", "flux3"):
+            if family in ("anima", "krea2", "sdxl", "flux", "flux2", "flux3", "moss_image"):
                 query["family"] = family
             task = {
                 "id": row["id"],

@@ -43,6 +43,7 @@ export function familyHasConvolutions(family: FamilyInfo | undefined): boolean {
 /** The noise-level sampling a new configuration of this model starts with. */
 export function defaultTimestepSampling(family: FamilyInfo): string {
   if (family.name === 'flux3') return 'logit_normal';
+  if (family.name === 'moss_image') return 'moss_image';
   return family.objective === 'ddpm' ? 'uniform' : family.sampling?.shift == null ? 'resolution_shift' : 'shift';
 }
 
@@ -63,15 +64,16 @@ export function unusedSettingReason(path: string, { family, config, english }: F
   const runtime = runtimeOf(family);
   const text = (zh: string, en: string) => english ? en : zh;
   const name = modelName(family);
+  const adapterOnlyModel = family.name === 'flux3' ? 'FLUX.3' : family.name === 'moss_image' ? 'MOSS-Image' : null;
   switch (path) {
     case 'training.mode':
-      return family.name === 'flux3' && config.training?.mode === 'full' ? text('FLUX.3 仅支持适配器训练，请切换训练方式。', 'FLUX.3 supports adapter training only. Change the training mode.') : undefined;
+      return adapterOnlyModel && config.training?.mode === 'full' ? text(`${adapterOnlyModel} 仅支持适配器训练，请切换训练方式。`, `${adapterOnlyModel} supports adapter training only. Change the training mode.`) : undefined;
     case 'loop.gpu_count':
-      return family.name === 'flux3' && Number(config.loop?.gpu_count ?? 1) !== 1 ? text('FLUX.3 使用单卡训练，请将显卡数设为 1。', 'FLUX.3 trains on one GPU. Set the GPU count to 1.') : undefined;
+      return adapterOnlyModel && Number(config.loop?.gpu_count ?? 1) !== 1 ? text(`${adapterOnlyModel} 使用单卡训练，请将显卡数设为 1。`, `${adapterOnlyModel} trains on one GPU. Set the GPU count to 1.`) : undefined;
     case 'loop.distributed_strategy':
-      return family.name === 'flux3' && config.loop?.distributed_strategy === 'fsdp' ? text('FLUX.3 不支持显存分片，请切换为数据并行并将显卡数设为 1。', 'FLUX.3 does not support memory sharding. Select data parallelism and set the GPU count to 1.') : undefined;
+      return adapterOnlyModel && config.loop?.distributed_strategy === 'fsdp' ? text(`${adapterOnlyModel} 不支持显存分片，请切换为数据并行并将显卡数设为 1。`, `${adapterOnlyModel} does not support memory sharding. Select data parallelism and set the GPU count to 1.`) : undefined;
     case 'training.train_text_encoder':
-      return family.name === 'flux3' ? text('FLUX.3 使用冻结的文本编码器，请关闭文本编码器训练。', 'FLUX.3 uses a frozen text encoder. Turn off text encoder training.') : undefined;
+      return adapterOnlyModel ? text(`${adapterOnlyModel} 使用冻结的文本编码器，请关闭文本编码器训练。`, `${adapterOnlyModel} uses a frozen text encoder. Turn off text encoder training.`) : undefined;
     case 'optimizer.cpu_offload':
       if (runtime === 'mps' || runtime === 'cpu') return text('当前设备没有独立显存，CPU 卸载会增加内存占用。', 'This device has no dedicated VRAM; CPU offload increases memory use.');
       if (config.loop?.distributed_strategy === 'fsdp' || config.optimizer?.kahan) return text('CPU 卸载需使用数据并行并关闭低精度更新补偿。', 'CPU offload requires data parallelism with Kahan updates disabled.');
@@ -93,7 +95,7 @@ export function unusedSettingReason(path: string, { family, config, english }: F
       if (runtime === 'cpu') return text('CPU 训练时文本编码器本来就在内存里。', 'On a CPU the text encoder is already in system memory.');
       return effectiveTextEncoding(family, config) === 'cached' ? text('标签在训练前已编码，训练时不加载文本编码器。', 'Captions are encoded before training, so the text encoder is not loaded while training.') : undefined;
     case 'loop.mixed_precision':
-      if (family.name === 'flux3' && config.loop?.mixed_precision === 'fp16') return text('FLUX.3 不支持 FP16 混合精度，请选择 BF16 或关闭混合精度。', 'FLUX.3 does not support FP16 mixed precision. Choose BF16 or turn mixed precision off.');
+      if (adapterOnlyModel && config.loop?.mixed_precision === 'fp16') return text(`${adapterOnlyModel} 不支持 FP16 混合精度，请选择 BF16 或关闭混合精度。`, `${adapterOnlyModel} does not support FP16 mixed precision. Choose BF16 or turn mixed precision off.`);
       return runtime === 'mps' ? text('Apple 芯片训练统一使用 FP32，不使用混合精度。', 'Apple chips train in FP32 without mixed precision.') : undefined;
     case 'adapter.layer_types':
       return familyHasConvolutions(family) ? undefined : text(`${name} 没有卷积层，只训练线性层。`, `${name} has no convolution layers; only linear layers are trained.`);
@@ -109,7 +111,7 @@ export function unusedSettingReason(path: string, { family, config, english }: F
 export function hideUnusedSetting(path: string, value: unknown, { config, family }: FieldContext): boolean {
   if (path === 'memory.offload_text_encoder') return !(value && config.training?.train_text_encoder);
   if (path === 'adapter.layer_types') return value !== 'linear_conv';
-  if (path === 'loop.mixed_precision' && family?.name === 'flux3' && value === 'fp16') return false;
+  if (path === 'loop.mixed_precision' && ['flux3', 'moss_image'].includes(family?.name ?? '') && value === 'fp16') return false;
   if (path === 'memory.allow_tf32' || path === 'loop.mixed_precision') return true;
   return !value;
 }
@@ -120,7 +122,11 @@ const multiGpu = (config: Record<string, any>) => Number(config.loop?.gpu_count 
 /** Options this model and machine can run, keeping the current value visible; undefined keeps the list as it is. */
 export function contextOptions(path: string, { family, config }: FieldContext, options: string[] | undefined, current: unknown): string[] | undefined {
   if (!options) return undefined;
-  if (path === 'objective.timestep_sampling' && (family?.name ?? config.model?.family) !== 'anima') return options.filter(option => option !== 'resolution_sqrt');
+  if (path === 'objective.timestep_sampling') {
+    const selectedFamily = family?.name ?? config.model?.family;
+    return options.filter(option => (option !== 'resolution_sqrt' || selectedFamily === 'anima')
+      && (option !== 'moss_image' || selectedFamily === 'moss_image'));
+  }
   const runtime = runtimeOf(family);
   let usable: string[] | undefined;
   if (family && path === 'memory.base_precision' && !(has(family, 'fp8_base') && onGpu(runtime))) usable = options.filter(option => !option.startsWith('fp8'));
@@ -245,6 +251,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         ? text('CPU 上选 BF16 会用 BF16 计算。\n其他选项都按 FP32 计算。\n不改变权重本身的精度。', 'On a CPU, BF16 computes in BF16.\nThe other choices compute in FP32.\nWeight precision is unchanged.')
         : text('训练运算的自动混合精度，默认 BF16。\nFP16 需要显卡和模型支持。\n关闭只停用自动混合精度，不改变权重本身的精度；底模和导出文件的精度分别设置。\n可复现训练以参数检查显示的设置为准。', 'Automatic mixed precision for training, BF16 by default.\nFP16 needs GPU and model support.\nTurning it off disables only mixed precision, not weight precision; base-model and export precision are set separately.\nReproducible training uses the values the parameter check shows.');
     case 'loop.distributed_strategy':
+      if (family.name === 'moss_image') return text('MOSS-Image 使用单卡训练，显卡数设为 1。', 'MOSS-Image trains on one GPU; set the GPU count to 1.');
       return join([
         text('数据并行（DDP）：每张卡保留完整模型，并行处理不同数据，通常比单卡每秒处理更多图片；每卡仍需容纳完整模型，加速幅度取决于卡间通信和负载。', 'Data parallel (DDP): each GPU holds the whole model and processes different data in parallel, usually handling more images per second than one GPU. Each GPU must still fit the whole model; speedup depends on communication and workload.'),
         listed('fsdp') && text('显存分片（FSDP）：同样并行处理数据，将参数、梯度和优化器状态分摊到多卡以节省显存。相比 DDP 增加参数通信，同等卡数和批量下通常更慢，具体取决于模型和卡间带宽；显存够用时优先选 DDP。需要至少两张 Linux CUDA/DTK 显卡，并冻结文本编码器。', 'Sharded (FSDP): also processes data in parallel, while distributing parameters, gradients and optimizer states across GPUs to save memory. Extra parameter communication usually makes it slower than DDP with the same GPU count and batch size, depending on the model and interconnect bandwidth. Prefer DDP when memory is sufficient. Requires at least two Linux CUDA/DTK GPUs and frozen text encoders.'),
@@ -279,6 +286,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       ]);
     }
     case 'sampling.scheduler':
+      if (family.name === 'moss_image') return text('先按采样时间步偏移调整噪声目标，再映射到 MOSS-Image 训练噪声表中最近的离散时间步。只影响预览图。', 'Applies the sampling shift to the target noise levels, then maps them to the nearest discrete timesteps in the MOSS-Image training noise table. Affects previews only.');
       return join([
         text(`预览时各步噪声强度的取法，只影响预览图；都会按「${configFieldLabel('sampling.shift', '')}」调整：`, 'How the noise levels of the preview steps are chosen; previews only, and every choice applies the sampling shift:'),
         ...optionLines({
@@ -323,6 +331,10 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       return family.name === 'anima'
         ? text('固定 Shift 直接使用此值；按分辨率修正 Shift 时，再乘以 √(实际 token 数 / 参考 token 数)。最终偏移大于 1 时偏向高噪声，1 不偏移。\n只影响训练的基础分布；InfoNoise 学到的分布和均匀探索不再应用此偏移，预览图另设采样 Shift。', 'Fixed Shift uses this value directly. Resolution-corrected Shift multiplies it by √(actual tokens / reference tokens). A resulting shift above 1 favors high noise; 1 applies no shift.\nAffects the training baseline only. The learned InfoNoise distribution and uniform exploration receive no further shift; previews have a separate sampling shift.')
         : configFieldHelp(path, undefined, english);
+    case 'objective.t_min':
+    case 'objective.t_max':
+      if (family.name === 'moss_image' && context.config.objective?.timestep_sampling === 'moss_image') return text('只在时间步上下限之间的离散点抽样，按原分布重新归一化，不把越界样本裁到边界。默认范围包含 0.001–1 的 1000 个离散点；下限须小于上限，范围内至少保留一个点。', 'Samples only discrete timesteps within the lower and upper limits, renormalizing the original distribution instead of clipping samples to the boundaries. The default range includes 1000 points from 0.001 to 1. The lower limit must be below the upper limit, with at least one point remaining.');
+      return undefined;
     case 'objective.timestep_sampling': {
       const describe: Record<string, [string, string]> = ddpm ? {
         uniform: ['0–999 的每个时间步出现机会相同。', 'every timestep from 0 to 999 is equally likely.'],
@@ -337,10 +349,13 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         cosmap: ['中间多、两端少，比逻辑正态平缓。', 'more in the middle, fewer at the ends, flatter than logit-normal.'],
       };
       if (family.name !== 'anima') delete describe.resolution_sqrt;
+      if (family.name === 'moss_image') describe.moss_image = ['按 MOSS-Image 的 1000 个离散时间步抽样，混合截断逻辑正态分布和 1% 均匀采样。', 'draws from MOSS-Image’s 1000 discrete timesteps, mixing a truncated logit-normal distribution with 1% uniform sampling.'];
       return join([
         text('训练时每一步随机抽一个噪声强度（t 越大噪声越多），这里决定怎么抽：', 'Each training step draws a noise level (higher t means more noise). This sets how it is drawn:'),
         ...optionLines(describe),
-        text(`${name} 默认使用 ${label(defaultTimestepSampling(family))}，一般不用修改。预览图使用下方单独的采样设置。`, `${name} defaults to ${label(defaultTimestepSampling(family))}; there is usually no need to change it. Previews use their own sampling settings below.`),
+        family.name === 'moss_image'
+          ? text(`${name} 默认使用 ${label(defaultTimestepSampling(family))}。预览图使用下方单独的采样设置。`, `${name} defaults to ${label(defaultTimestepSampling(family))}. Previews use their own sampling settings below.`)
+          : text(`${name} 默认使用 ${label(defaultTimestepSampling(family))}，一般不用修改。预览图使用下方单独的采样设置。`, `${name} defaults to ${label(defaultTimestepSampling(family))}; there is usually no need to change it. Previews use their own sampling settings below.`),
       ]);
     }
     case 'objective.weighting': {
@@ -403,11 +418,12 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
     }
     case 'training.train_backbone':
       if (family.name === 'flux3') return text('训练 FLUX.3 图像主模型的适配器。底模权重保持冻结，只更新所选线性层的适配器参数。', 'Trains adapters for the FLUX.3 image model. Base weights stay frozen; only adapter parameters in the selected linear layers are updated.');
+      if (family.name === 'moss_image') return text('训练 MOSS-Image 主模型所选线性层的适配器，底模和文本编码器保持冻结。', 'Trains adapters in the selected MOSS-Image linear layers while keeping the base model and text encoder frozen.');
       return family.name === 'sdxl'
         ? text('训练生成图像的主模型，SDXL 为 UNet。全量微调时包括卷积、归一化、嵌入与偏置，不局限于线性层。', 'Trains the model that generates images, the UNet for SDXL. Full fine-tuning includes convolutions, norms, embeddings and biases, not only linear layers.')
         : text(`训练生成图像的主模型，${name} 为 DiT。全量微调时包括归一化、嵌入与偏置，不局限于线性层。`, `Trains the model that generates images, the DiT for ${name}. Full fine-tuning includes norms, embeddings and biases, not only linear layers.`);
     case 'training.train_text_encoder':
-      if (family.name === 'flux3') return unusedSettingReason(path, context);
+      if (family.name === 'flux3' || family.name === 'moss_image') return unusedSettingReason(path, context);
       return join([
         family.name === 'sdxl'
           ? text('同时训练 SDXL 的两个文本编码器 CLIP-L 和 CLIP-G。', 'Also trains both SDXL text encoders, CLIP-L and CLIP-G.')

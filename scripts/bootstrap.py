@@ -619,6 +619,9 @@ try:
     if sys.argv[1] == 'flux3':
         out['stage'] = 'qwen3_vl'
         from transformers import Qwen3VLForConditionalGeneration, Qwen3VLProcessor
+        out['stage'] = 'moss_image'
+        from transformers import Qwen3_5Model
+        from diffusers import AutoencoderKLFlux2
     out['ok'] = True
 except Exception as exc:
     out['error'] = f'{type(exc).__name__}: {exc}'

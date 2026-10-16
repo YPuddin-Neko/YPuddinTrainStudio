@@ -16,7 +16,7 @@ export default function RegularizationModelFields({ model, families, assets, dis
 }) {
   const text = useWorkspaceText();
   const family = families.find(item => item.name === model.family);
-  const weights = modelFamilyWeights(family);
+  const weights = modelFamilyWeights(family, text('zh', 'en') === 'en');
   const setPath = (field: string, value: string, selectedAsset?: ModelAsset) => {
     const next: GenerationModel = { ...model, [field]: value || null };
     if (field === 'text_encoder_path' && selectedAsset && 'processor_path' in selectedAsset && typeof selectedAsset.processor_path === 'string' && selectedAsset.processor_path.trim()) {

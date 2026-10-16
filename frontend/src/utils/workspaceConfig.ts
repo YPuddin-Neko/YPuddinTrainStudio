@@ -89,7 +89,7 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
   if (family.name === 'flux2') {
     next.sampling.steps = null; next.sampling.cfg = null; next.sampling.guidance = null;
   }
-  if (family.name === 'flux3') {
+  if (family.name === 'flux3' || family.name === 'moss_image') {
     next.training = { ...next.training, mode: 'adapter', train_backbone: true, train_text_encoder: false, resume_weights: null, backbone_lr: null, text_encoder_lr: null };
     next.optimizer = { ...next.optimizer, cpu_offload: false, exclude_bias_norm_from_weight_decay: false };
     next.adapter = { ...next.adapter, layer_types: 'linear', resume_weights: null };
@@ -110,6 +110,8 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
     next.objective.debiased_estimation_loss = false;
     if (family.name === 'flux3') {
       next.objective = { ...next.objective, timestep_sampling: 'logit_normal', weighting: 'none', logit_mean: 0, logit_std: 1, shift: 3 };
+    } else if (family.name === 'moss_image') {
+      next.objective = { ...next.objective, timestep_sampling: 'moss_image', weighting: 'none', shift: 1 };
     } else {
       next.objective.timestep_sampling = family.sampling.shift == null ? 'resolution_shift' : 'shift';
       next.objective.shift = family.sampling.shift ?? 3;

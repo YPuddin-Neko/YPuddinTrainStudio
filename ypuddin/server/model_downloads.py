@@ -24,8 +24,19 @@ from .errors import ApiError, Conflict, NotFound
 from .flux3_downloads import BundleId, BundleManifest
 from .model_catalog import TAGGER_FILES
 from .model_credentials import ModelCredentials, Provider
+from .moss_image_downloads import MossBundleId, MossBundleManifest
 
 ACTIVE = {"queued", "downloading"}
+
+
+def _bundle_module(family):
+    if family == "moss_image":
+        from . import moss_image_downloads
+
+        return moss_image_downloads
+    from . import flux3_downloads
+
+    return flux3_downloads
 
 
 class DownloadVerification(BaseModel):
@@ -40,7 +51,7 @@ class DownloadVerification(BaseModel):
 
 class ModelDownloadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3"]
+    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "moss_image"]
     kind: Literal["dit", "text_encoder", "text_encoder_2", "vae"]
     provider: Provider = "huggingface"
     mirror: Literal["official"] = "official"
@@ -52,7 +63,7 @@ class ModelDownloadRequest(BaseModel):
     is_default: bool = True
     purpose: Literal["training", "inference"] = "training"
     variant: Literal["raw", "turbo"] | None = None
-    bundle: BundleId | None = None
+    bundle: BundleId | MossBundleId | None = None
     layout_version: Literal[1, 2] = 2
 
     @model_validator(mode="before")
@@ -67,10 +78,10 @@ class ModelDownloadRequest(BaseModel):
     @model_validator(mode="after")
     def source(self):
         if self.bundle:
-            from .flux3_downloads import validate_request
-
-            validate_request(self)
+            _bundle_module(self.family).validate_request(self)
             return self
+        if self.family == "moss_image":
+            raise ValueError("MOSS-Image 下载需要完整组件目录包。")
         if self.family == "flux3" and self.kind not in {"dit", "vae"}:
             raise ValueError("FLUX.3 文本编码器需要完整本地 HF 目录及 processor 资源，不能下载单个权重文件。")
         if self.variant is not None and (self.family != "krea2" or self.kind != "dit"):
@@ -110,11 +121,11 @@ class ModelDownload(BaseModel):
     recommendation_id: str | None = None
     expected_size: int | None = None
     sha256: str | None = None
-    bundle: BundleId | None = None
+    bundle: BundleId | MossBundleId | None = None
     layout_version: int = 1
     components: dict[str, str] | None = None
     component_plan: dict | None = None
-    manifest: BundleManifest | None = None
+    manifest: BundleManifest | MossBundleManifest | None = None
     verification_source: Literal["pinned_revision_and_sizes", "pinned_revision_and_sha256"] | None = None
 
 
@@ -210,6 +221,76 @@ class _Redirect(urllib.request.HTTPRedirectHandler):
 
 class _Cancelled(Exception):
     pass
+
+
+class BundleTransfer:
+    """Stream fixed bundle members through the existing credential and redirect policy."""
+
+    def __init__(self, service, id_, spec):
+        from .network import ProxyPolicy
+
+        self.service, self.id, self.spec = service, id_, spec
+        self.row, self.event = service.tasks[id_], service.cancelled[id_]
+        self.policy, self.token = ProxyPolicy(), None
+        self.done, self.last, self.previous = 0, time.monotonic(), 0
+
+    def cancelled(self):
+        if self.event.is_set() or self.service.closed:
+            raise _Cancelled()
+
+    def transfer(self, item, destination):
+        from .flux3_downloads import bundle_source_url
+        from .model_inspection import HEADER_LIMIT
+        from .network import ProxyPolicy
+
+        self.cancelled()
+        self.policy = ProxyPolicy.from_context(self.service.context)
+        if self.token is None:
+            self.token = self.service.credentials.token(self.row["provider"], policy=self.policy) or ""
+        headers = {"User-Agent": "YPuddinTrainStudio", "Accept-Encoding": "identity"}
+        if self.token:
+            headers["Cookie" if self.row["provider"] == "modelscope" else "Authorization"] = (
+                f"m_session_id={self.token}" if self.row["provider"] == "modelscope" else f"Bearer {self.token}")
+        request = urllib.request.Request(bundle_source_url(self.spec, self.row["provider"], item.path), headers=headers)
+        opener = self.service.opener or self.policy.opener(_Redirect())
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        count, hasher = 0, hashlib.sha256()
+        git = hashlib.sha1(f"blob {item.size}\0".encode()) if item.git_blob_sha1 else None
+        probe = bytearray() if item.path.endswith(".safetensors") else None
+        with opener.open(request, timeout=15) as response, destination.open("xb") as output:
+            if response.status != 200 or (response.headers.get("Content-Length")
+                                         and int(response.headers["Content-Length"]) != item.size):
+                raise ValueError(f"file size differs: {item.path}")
+            while block := response.read(256 * 1024):
+                self.cancelled()
+                count += len(block)
+                if count > item.size:
+                    raise ValueError(f"file exceeds its pinned size: {item.path}")
+                if probe is not None:
+                    probe.extend(block[:HEADER_LIMIT + 8 - len(probe)])
+                    if len(probe) >= 8:
+                        length = int.from_bytes(probe[:8], "little")
+                        if not 2 <= length <= HEADER_LIMIT:
+                            raise ValueError("invalid safetensors header")
+                        if len(probe) >= length + 8:
+                            _check_download_header(probe[8:length + 8], self.row["family"])
+                            probe = None
+                hasher.update(block)
+                if git is not None:
+                    git.update(block)
+                output.write(block)
+                self.done += len(block)
+                current = time.monotonic()
+                if current - self.last >= .4:
+                    rate = (self.done - self.previous) / (current - self.last)
+                    self.service._update(self.id, downloaded_bytes=self.done, bytes_per_second=rate,
+                                         eta_seconds=max(0, self.row["total_bytes"] - self.done) / rate, progress_at=now())
+                    self.last, self.previous = current, self.done
+            if count != item.size or item.sha256 and hasher.hexdigest() != item.sha256 or git and git.hexdigest() != item.git_blob_sha1:
+                raise ValueError(f"file integrity check failed: {item.path}")
+            output.flush()
+            os.fsync(output.fileno())
+        return hasher.hexdigest()
 
 
 def check_component(weights: Any, family: str, kind: str) -> None:
@@ -338,10 +419,10 @@ class ModelDownloads:
                 # Only this task's own staging file is removed; registered/user files are untouched.
                 target = Path(row["target_path"])
                 if row.get("bundle"):
-                    from .flux3_downloads import cleanup_stage, recover_publication
+                    from .flux3_downloads import cleanup_stage
 
                     try:
-                        recover_publication(self, row)
+                        _bundle_module(row["family"]).recover_publication(self, row)
                     except (OSError, ValueError, KeyError, TypeError):
                         pass
                     try:
@@ -423,9 +504,7 @@ class ModelDownloads:
 
     def _start(self, body: ModelDownloadRequest, *, recommendation=None) -> dict[str, Any]:
         if body.bundle:
-            from .flux3_downloads import start_bundle
-
-            return start_bundle(self, body, recommendation)
+            return _bundle_module(body.family).start_bundle(self, body, recommendation)
         if recommendation is not None:
             recommendation = DownloadVerification(
                 id=recommendation.id,
@@ -514,12 +593,12 @@ class ModelDownloads:
         with self.lock:
             saved = dict(self.tasks.get(id_, {}))
         if saved.get("bundle"):
-            from .flux3_downloads import start_bundle
+            start_bundle = _bundle_module(saved["family"]).start_bundle
 
             if saved["status"] not in {"failed", "cancelled"}:
                 raise Conflict("only failed or cancelled downloads can be retried", code="download.retry")
             selected = provider or saved["provider"]
-            body = ModelDownloadRequest(family="flux3", kind=saved["kind"], bundle=saved["bundle"],
+            body = ModelDownloadRequest(family=saved["family"], kind=saved["kind"], bundle=saved["bundle"],
                                         layout_version=saved.get("layout_version", 1),
                                         provider=selected, dtype=saved["dtype"], is_default=saved["is_default"])
             result = start_bundle(self, body, frozen=saved["manifest"] if selected == saved["provider"] else None,
@@ -635,9 +714,7 @@ class ModelDownloads:
 
     def _run(self, id_: str, root: Path) -> None:
         if self.tasks[id_].get("bundle"):
-            from .flux3_downloads import run_bundle
-
-            run_bundle(self, id_, root)
+            _bundle_module(self.tasks[id_]["family"]).run_bundle(self, id_, root)
             return
         from .network import ProxyPolicy
 

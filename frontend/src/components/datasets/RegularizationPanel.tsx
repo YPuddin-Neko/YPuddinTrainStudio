@@ -80,8 +80,9 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
   });
   const generationModel = modelDraft?.scope === endpoint ? modelDraft.value : modelQuery.data?.model;
   const generationFamily = modelQuery.data?.families.find(item => item.name === generationModel?.family);
-  const steps = stepsOverride ?? (generationModel?.family === 'flux3' ? generationFamily?.sampling.steps ?? 50 : 25);
-  const cfg = cfgOverride ?? (generationModel?.family === 'flux3' ? generationFamily?.sampling.cfg ?? 3.5 : 4);
+  const familySamplingDefaults = ['flux3', 'moss_image'].includes(generationModel?.family ?? '');
+  const steps = stepsOverride ?? (familySamplingDefaults ? generationFamily?.sampling.steps ?? 50 : 25);
+  const cfg = cfgOverride ?? (familySamplingDefaults ? generationFamily?.sampling.cfg ?? (generationModel?.family === 'moss_image' ? 3 : 3.5) : 4);
   const modelReady = !!generationModel && !!generationFamily && !modelQuery.error && trainingFamilyOptions(modelQuery.data?.families || [], false, generationModel.family).some(item => item.value === generationModel.family)
     && modelFamilyWeights(generationFamily).every(weight => !weight.required || !!generationModel[weight.field as keyof GenerationModel]?.toString().trim());
   const credentials = useQuery({ queryKey: ['credentials'], enabled: source !== 'ai',

@@ -1852,6 +1852,7 @@
             "flux",
             "flux2",
             "flux3",
+            "moss_image",
             "toy"
           ],
           "title": "Family",
@@ -2105,7 +2106,8 @@
             "resolution_shift",
             "resolution_sqrt",
             "mode",
-            "cosmap"
+            "cosmap",
+            "moss_image"
           ],
           "title": "Timestep Sampling",
           "type": "string",

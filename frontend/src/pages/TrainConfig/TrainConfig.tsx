@@ -409,8 +409,15 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
                 restored = { ...restored, adapter: { ...restored.adapter, preset: familyByName(familiesRef.current, model.family)?.default_preset ?? restored.adapter?.preset }, dataset: { ...restored.dataset, text_encoding: 'auto' } };
                 if (model.family !== 'anima') {
                   const objective = { ...restored.objective, infonoise_enabled: false };
-                  if (objective.timestep_sampling === 'resolution_sqrt') objective.timestep_sampling = model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(model.family) ? 'resolution_shift' : 'shift';
+                  if (objective.timestep_sampling === 'resolution_sqrt') {
+                    objective.timestep_sampling = model.family === 'moss_image' ? 'moss_image' : model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(model.family) ? 'resolution_shift' : 'shift';
+                    if (model.family === 'moss_image') objective.shift = 1;
+                  }
                   restored = { ...restored, objective };
+                }
+                if (model.family !== 'moss_image' && restored.objective?.timestep_sampling === 'moss_image') {
+                  const timestepSampling = model.family === 'flux3' ? 'logit_normal' : model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(model.family) ? 'resolution_shift' : 'shift';
+                  restored = { ...restored, objective: { ...restored.objective, timestep_sampling: timestepSampling } };
                 }
               }
             }

@@ -70,7 +70,7 @@ def backbone_memory_layout(backbone, family, cfg, dtype, compute_dtype, device_t
     The result owns no modules, tensors, traces or autograd objects.
     """
     spec = family.spec
-    if spec.retired_reason or spec.name not in {"anima", "krea2", "flux2", "flux3", "sdxl", "toy"}:
+    if spec.retired_reason or spec.name not in {"anima", "krea2", "flux2", "flux3", "moss_image", "sdxl", "toy"}:
         raise ValueError("unsupported memory-estimate family")
     config = getattr(backbone, "config", None)
     hidden = (getattr(backbone, "dim", None) or getattr(backbone, "model_channels", None)
@@ -109,6 +109,11 @@ def backbone_memory_layout(backbone, family, cfg, dtype, compute_dtype, device_t
         count = max(1, backbone.config.depth + backbone.config.depth_single)
         groups = ((1, heads, count),)
         condition_width, condition_dtype = backbone.config.text_dim, torch.bfloat16
+    elif spec.name == "moss_image":
+        hidden, heads = config.dim, config.num_heads
+        count = max(1, config.num_layers + 2)
+        groups = ((1, heads, count),)
+        condition_width, condition_dtype = config.text_dim, torch.bfloat16
     bridge_blocks = tuple(getattr(getattr(backbone, "llm_adapter", None), "blocks", ()))
     bridge_width = bridge_heads = bridge_active = 0
     bridge_self = False
@@ -134,6 +139,8 @@ def backbone_memory_layout(backbone, family, cfg, dtype, compute_dtype, device_t
                         and getattr(cfg.loop, "mixed_precision", "no") != "no"),
         block_output_element=(4 if spec.name == "anima" and compute_dtype == torch.float16
                               else _element(compute_dtype)),
+        method=("moss_image_geometry_estimate" if spec.name == "moss_image"
+                else "family_geometry_offline_activation_units"),
     )
 
 
@@ -163,7 +170,7 @@ def estimate_backbone_memory(layout, *, width, height, batch_size, checkpointing
     tokens = image_tokens
     if layout.family == "krea2":
         tokens = ((image_tokens + text_tokens + 255) // 256) * 256
-    elif layout.family in {"flux2", "flux3"}:
+    elif layout.family in {"flux2", "flux3", "moss_image"}:
         tokens += text_tokens
     whole = dict(layout.whole_units)
     unit = b * tokens * element * (1 if whole else layout.hidden)

@@ -86,7 +86,7 @@ class ProjectFields(BaseModel):
 
 class ProjectBody(ProjectFields):
     project_type: Literal["image"] = "image"
-    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "toy"] = "anima"
+    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "moss_image", "toy"] = "anima"
 
 
 class TtsProjectBody(ProjectFields):
@@ -687,7 +687,7 @@ class VersionBody(BaseModel):
     source_version_id: str | None = None
     data_mode: Literal["copy", "empty"] = "copy"
     copy_config: bool = True
-    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "toy"] | None = None
+    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "moss_image", "toy"] | None = None
     engine: Literal["voxcpm1.5", "gpt-sovits-v5"] | None = None
     variant: Literal["v5dev", "v5turbo"] | None = None
 
@@ -697,7 +697,7 @@ class VersionPatch(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=100, pattern=r".*\S.*")
     note: str | None = Field(None, max_length=4000)
     archived: bool | None = None
-    display_family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "toy"] | None = None
+    display_family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "moss_image", "toy"] | None = None
 
 
 @router.get("/projects/{pid}/versions", response_model=list[m.ProjectVersion])

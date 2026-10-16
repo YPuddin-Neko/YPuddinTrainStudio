@@ -258,6 +258,79 @@ def _flux3_text_phase(cfg, *, batch, device_type, token_length, backend, include
     }
 
 
+def _moss_image_text_phase(cfg, *, batch, device_type, token_length, backend, include_condition):
+    from safetensors import SafetensorError
+
+    from ypuddin.models.moss_image.loading import component_paths
+    from ypuddin.models.moss_image.text import MOSSImageText
+
+    tokens = MOSSImageText.max_len if token_length is None else token_length
+    if isinstance(tokens, bool) or not isinstance(tokens, int) or not 0 < tokens <= MOSSImageText.max_len:
+        raise ValueError("MOSS-Image text length must be between 1 and 4096")
+    try:
+        _, _, text, _, tokenizer = component_paths(cfg.model)
+        full_config, elements = MOSSImageText.validate_paths(text, tokenizer)
+        config = full_config["text_config"]
+        fields = ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads",
+                  "num_key_value_heads", "head_dim", "linear_num_value_heads", "linear_key_head_dim",
+                  "linear_value_head_dim", "linear_num_key_heads", "linear_conv_kernel_dim")
+        if any(type(config[key]) is not int or config[key] <= 0 for key in fields):
+            return None
+        if not set(config["layer_types"]) <= {"linear_attention", "full_attention"}:
+            return None
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, SafetensorError):
+        return None
+    element = 2
+    hidden, intermediate = config["hidden_size"], config["intermediate_size"]
+    heads, head = config["num_attention_heads"], config["head_dim"]
+    q, kv = heads * head, config["num_key_value_heads"] * head
+    state = tokens * hidden * element
+    mlp = tokens * (2 * hidden + 3 * intermediate) * element
+    attention = tokens * (3 * hidden + 3 * q + 2 * kv) * element
+    attention += _attention_workspace(1, tokens, heads, element, backend)
+    value_heads = config["linear_num_value_heads"]
+    key_dim, value_dim = config["linear_key_head_dim"], config["linear_value_head_dim"]
+    padded = ((tokens + 63) // 64) * 64
+    # The torch GDN fallback keeps FP32 chunk transforms, Q/K/V and recurrent state.
+    gdn = value_heads * padded * (7 * key_dim + 5 * value_dim + 4 * 64 + 8) * 4
+    gdn += value_heads * key_dim * value_dim * 4 * 3
+    gdn += tokens * (2 * config["linear_num_key_heads"] * key_dim + 2 * value_heads * value_dim) * element
+    call_workspace = state + max(mlp, attention, gdn) + tokens * 16
+    entry = state
+    entries = batch * entry
+    condition = entries + batch * tokens  # Bool padding mask and final hidden state only.
+    previous = (batch - 1) * entry if include_condition or device_type == "cpu" else 0
+    workspace = max(previous + call_workspace,
+                    entries + condition if include_condition else entries if device_type == "cpu" else entry)
+    host = entries if not include_condition and device_type != "cpu" else 0
+    cached_workspace = entries + condition if device_type == "cpu" else condition + entry
+    basis = "token_limit_upper_bound" if token_length is None else "batch_maximum_token_lengths"
+    weights = elements * element + head * 4
+    part = {
+        "parameter_elements": elements, "buffer_bytes": head * 4,
+        "kind": "qwen3_5_decoder", "batch_size": 1, "tokens": tokens,
+        "hidden_size": hidden, "layers": config["num_hidden_layers"],
+        "hidden_output_bytes": state, "logits_bytes": 0,
+        "block_workspace_bytes_estimate": max(mlp, attention, gdn),
+        "workspace_bytes_estimate": call_workspace,
+        "linear_attention_workspace_bytes_estimate": gdn,
+    }
+    return {
+        "weights_mb": weights / _MIB, "retained_outputs_mb": (previous + state) / _MIB,
+        "condition_outputs_mb": condition / _MIB, "cached_condition_outputs_mb": condition / _MIB,
+        "condition_outputs_basis": basis,
+        "host_staging_mb": host / _MIB, "host_staging_device_mb": call_workspace / _MIB if host else 0.0,
+        "cached_condition_workspace_mb_estimate": cached_workspace / _MIB,
+        "cached_host_staging_mb": 0.0 if device_type == "cpu" else entries / _MIB,
+        "cached_host_staging_device_mb": 0.0 if device_type == "cpu" else cached_workspace / _MIB,
+        "cached_condition_assembly_basis": basis,
+        "workspace_mb_estimate": workspace / _MIB, "peak_mb_estimate": (weights + workspace) / _MIB,
+        "batch_size": batch, "dtype": "bfloat16", "attention_backend": backend,
+        "length_basis": "caller_token_length" if token_length is not None else "runtime_truncation_limit",
+        "components": [part],
+    }
+
+
 def frozen_text_phase(
     cfg: TrainConfig,
     dtype: torch.dtype,
@@ -282,7 +355,7 @@ def frozen_text_phase(
     fields exclude encoder weights and are selected by ``cached_condition_kind``.
     """
     family = cfg.model.family
-    if family not in {"anima", "krea2", "sdxl", "flux2", "flux3"}:
+    if family not in {"anima", "krea2", "sdxl", "flux2", "flux3", "moss_image"}:
         return None
     batch = max(1, int(batch_size))
     element = torch.empty((), dtype=dtype).element_size()
@@ -291,6 +364,9 @@ def frozen_text_phase(
         raise ValueError("text attention backend must be fused or math")
     if cached_condition_kind not in {"training", "preview"}:
         raise ValueError("cached condition kind must be training or preview")
+    if family == "moss_image":
+        return _moss_image_text_phase(cfg, batch=batch, device_type=device_type, token_length=token_length,
+                                     backend=backend, include_condition=include_condition)
     if family == "flux3":
         return _flux3_text_phase(cfg, batch=batch, device_type=device_type, token_length=token_length,
                                  backend=backend, include_condition=include_condition)

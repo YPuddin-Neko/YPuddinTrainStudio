@@ -542,6 +542,7 @@
                     "sdxl",
                     "flux2",
                     "flux3",
+                    "moss_image",
                     "toy"
                   ],
                   "type": "string"
@@ -23645,6 +23646,7 @@
               "sdxl",
               "flux2",
               "flux3",
+              "moss_image",
               "toy",
               "tagger"
             ],
@@ -23836,6 +23838,7 @@
               "flux",
               "flux2",
               "flux3",
+              "moss_image",
               "toy"
             ],
             "title": "Family",
@@ -24304,6 +24307,14 @@
                 ]
               },
               {
+                "type": "string",
+                "enum": [
+                  "moss-image-base",
+                  "moss-image-text",
+                  "moss-image-vae"
+                ]
+              },
+              {
                 "type": "null"
               }
             ],
@@ -24346,9 +24357,13 @@
                 "$ref": "#/components/schemas/BundleManifest"
               },
               {
+                "$ref": "#/components/schemas/MossBundleManifest"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Manifest"
           },
           "verification_source": {
             "anyOf": [
@@ -24388,7 +24403,8 @@
               "krea2",
               "sdxl",
               "flux2",
-              "flux3"
+              "flux3",
+              "moss_image"
             ],
             "title": "Family"
           },
@@ -24514,6 +24530,14 @@
                 "enum": [
                   "flux3-base",
                   "flux3-text"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "moss-image-base",
+                  "moss-image-text",
+                  "moss-image-vae"
                 ]
               },
               {
@@ -24679,6 +24703,50 @@
         ],
         "title": "ModelInspectionBody"
       },
+      "MossBundleManifest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "moss-image-base",
+              "moss-image-text",
+              "moss-image-vae"
+            ],
+            "title": "Id"
+          },
+          "repo_id": {
+            "type": "string",
+            "enum": [
+              "OpenMOSS-Team/MOSS-Image-Base",
+              "openmoss/MOSS-Image-Base"
+            ],
+            "title": "Repo Id"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Revision"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/BundleFile"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Files"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "repo_id",
+          "revision",
+          "files"
+        ],
+        "title": "MossBundleManifest"
+      },
       "NativePlan": {
         "properties": {
           "batching_version": {
@@ -24824,7 +24892,8 @@
               "resolution_shift",
               "resolution_sqrt",
               "mode",
-              "cosmap"
+              "cosmap",
+              "moss_image"
             ],
             "title": "Timestep Sampling",
             "description": "训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；Anima 的 resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。",
@@ -28069,6 +28138,7 @@
               "sdxl",
               "flux2",
               "flux3",
+              "moss_image",
               "toy"
             ],
             "title": "Family",
@@ -28934,7 +29004,8 @@
               "sdxl",
               "flux",
               "flux2",
-              "flux3"
+              "flux3",
+              "moss_image"
             ],
             "title": "Family"
           },
@@ -28989,6 +29060,14 @@
                 ]
               },
               {
+                "type": "string",
+                "enum": [
+                  "moss-image-base",
+                  "moss-image-text",
+                  "moss-image-vae"
+                ]
+              },
+              {
                 "type": "null"
               }
             ],
@@ -29000,9 +29079,13 @@
                 "$ref": "#/components/schemas/BundleManifest"
               },
               {
+                "$ref": "#/components/schemas/MossBundleManifest"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Manifest"
           },
           "recommended": {
             "type": "boolean",
@@ -29134,9 +29217,13 @@
                 "$ref": "#/components/schemas/BundleManifest"
               },
               {
+                "$ref": "#/components/schemas/MossBundleManifest"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Manifest"
           }
         },
         "type": "object",
@@ -39233,6 +39320,7 @@
                   "sdxl",
                   "flux2",
                   "flux3",
+                  "moss_image",
                   "toy"
                 ]
               },
@@ -39367,6 +39455,7 @@
                   "sdxl",
                   "flux2",
                   "flux3",
+                  "moss_image",
                   "toy"
                 ]
               },

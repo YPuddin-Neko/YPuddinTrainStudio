@@ -239,9 +239,12 @@ import json, sys, torch, torchvision
 from pathlib import Path
 from ypuddin.server.app import create_app
 from ypuddin.models.flux3.loading import runtime_error
-from transformers import Qwen3VLForConditionalGeneration, Qwen3VLProcessor
+from ypuddin.models.moss_image.loading import runtime_error as moss_runtime_error
+from transformers import Qwen3VLForConditionalGeneration, Qwen3VLProcessor, Qwen3_5Model
+from diffusers import AutoencoderKLFlux2
 expected, backend, report = sys.argv[1:]
 assert runtime_error() is None, runtime_error()
+assert moss_runtime_error() is None, moss_runtime_error()
 assert torch.__version__.split('+')[0] == expected, f'安装的 PyTorch 版本 {torch.__version__} 与所选版本 {expected} 不符。'
 device = 'cuda' if backend.startswith('cu') else ('mps' if backend == 'mps' else 'cpu')
 if device == 'cuda':

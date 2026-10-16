@@ -1,5 +1,6 @@
 import type { FamilyInfo } from '../api/types';
 import type { StudioSelectOption } from '../components/StudioSelect';
+import { MOSS_WEIGHT_COPY } from './fieldCopy';
 
 /** Keep retired engines out of entry points even when connected to an older service. */
 export function availableTrainingFamilies(families: FamilyInfo[]): FamilyInfo[] {
@@ -30,16 +31,19 @@ export function trainingFamilyOptions(families: FamilyInfo[], _english = false, 
 }
 
 /** Older services omit kind/required; their existing weight fields remain required. */
-export function modelFamilyWeights(family?: FamilyInfo) {
+export function modelFamilyWeights(family?: FamilyInfo, english = false) {
   return (family?.name === 'flux' ? [] : family?.weights || []).filter(weight =>
-    weight.field !== 'text_encoder_2_path' || family?.name === 'sdxl').map(weight => ({
+    weight.field !== 'text_encoder_2_path' || family?.name === 'sdxl').map(weight => {
+    const copy = family?.name === 'moss_image' ? MOSS_WEIGHT_COPY[weight.field] : undefined;
+    return {
     field: weight.field,
     kind: typeof weight.kind === 'string' ? weight.kind : weight.field.replace(/_path$/, ''),
-    label: weight.label,
-    hint: weight.hint,
+    label: copy?.label[english ? 1 : 0] || weight.label,
+    hint: copy?.help[english ? 1 : 0] || weight.hint,
     required: weight.required !== false,
     downloadable: weight.downloadable !== false,
-  }));
+    };
+  });
 }
 
 const capabilityFields = {

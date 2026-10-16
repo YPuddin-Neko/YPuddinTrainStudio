@@ -25,7 +25,7 @@ import PageLocation from '../../components/PageLocation';
 const PAGE_SIZE = 24;
 const ACTIVE = ['running', 'pausing', 'cancelling'];
 // Shown until the registered family labels arrive.
-const FAMILY_NAMES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2 Klein', flux3: 'FLUX.3 Klein 5.5B', toy: 'Toy' };
+const FAMILY_NAMES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2 Klein', flux3: 'FLUX.3 Klein 5.5B', moss_image: 'MOSS-Image Base 5B', toy: 'Toy' };
 
 export default function Projects() {
   const { t, i18n } = useTranslation();

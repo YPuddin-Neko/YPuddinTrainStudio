@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, model_validator
 from .errors import ApiError
 from .flux3_downloads import BundleId, BundleManifest, bundle_manifest
 from .model_credentials import Provider
+from .moss_image_downloads import MossBundleId, MossBundleManifest
 
 
 class RecommendedSource(BaseModel):
@@ -27,19 +28,19 @@ class RecommendedSource(BaseModel):
     filename: str
     revision: str
     url: str
-    manifest: BundleManifest | None = None
+    manifest: BundleManifest | MossBundleManifest | None = None
 
 
 class RecommendedModel(BaseModel):
     id: str
-    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "flux3"]
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "flux3", "moss_image"]
     kind: Literal["dit", "text_encoder", "text_encoder_2", "vae"]
     name: str
     dtype: Literal["bf16", "fp16", "fp32", "fp8"]
     size: int = Field(gt=0)
     sha256: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
-    bundle: BundleId | None = None
-    manifest: BundleManifest | None = None
+    bundle: BundleId | MossBundleId | None = None
+    manifest: BundleManifest | MossBundleManifest | None = None
     recommended: bool = True
     purpose: Literal["training", "inference"] = "training"
     variant: Literal["raw", "turbo"] | None = None
@@ -55,7 +56,7 @@ class RecommendedModel(BaseModel):
         if self.bundle is None:
             if self.sha256 is None or self.manifest is not None:
                 raise ValueError("single-file recommendations require a pinned SHA-256")
-        elif (self.family != "flux3" or self.manifest is None or self.manifest.id != self.bundle
+        elif (self.family not in {"flux3", "moss_image"} or self.manifest is None or self.manifest.id != self.bundle
               or self.size != self.manifest.size or self.sha256 is not None):
             raise ValueError("directory recommendations require their matching file manifest")
         for source in self.sources:
@@ -136,7 +137,28 @@ def _flux3_entry(id_):
     )
 
 
+def _moss_entry(id_):
+    from .moss_image_downloads import bundle_manifest
+
+    manifest = bundle_manifest(id_)
+    kind, name, dtype = {
+        "moss-image-base": ("dit", "MOSS-Image Base 5B", "bf16"),
+        "moss-image-text": ("text_encoder", "MOSS-Image Qwen3.5-9B", "bf16"),
+        "moss-image-vae": ("vae", "MOSS-Image FLUX.2 Small Decoder", "fp32"),
+    }[id_]
+    sources = []
+    for provider in ("huggingface", "modelscope"):
+        spec = bundle_manifest(id_, provider)
+        sources.append(RecommendedSource(provider=provider, repo_id=spec.repo_id,
+                       filename="" if kind == "dit" else kind, revision=spec.revision, manifest=spec,
+                       url=f"https://huggingface.co/{spec.repo_id}/tree/{spec.revision}" if provider == "huggingface"
+                       else f"https://modelscope.cn/models/{spec.repo_id}/files"))
+    return RecommendedModel(id=id_, family="moss_image", kind=kind, name=name, dtype=dtype,
+                            size=manifest.size, bundle=id_, manifest=manifest, sources=sources)
+
+
 RECOMMENDATIONS = [
+    *[_moss_entry(id_) for id_ in ("moss-image-base", "moss-image-text", "moss-image-vae")],
     *[_flux3_entry(id_) for id_ in ("flux3-base", "flux3-text")],
     RecommendedModel(
         id="flux2-klein-base-4b",
@@ -520,10 +542,11 @@ def verify_local_model(context, entry: RecommendedModel, path: Path) -> None:
                     raise ApiError(str(error), code="model.component", status=422) from error
             return
     if entry.bundle:
-        from .flux3_downloads import available_bundle
+        from .model_downloads import _bundle_module
 
+        available_bundle = _bundle_module(entry.family).available_bundle
         if not any(available_bundle(context, path, spec) for spec in _bundle_manifests(entry)):
-            raise ApiError("FLUX.3 目录包的文件已变化或缺少完整下载记录。", code="model.integrity")
+            raise ApiError("模型目录包的文件已变化或缺少完整下载记录。", code="model.integrity")
         return
     if not context.is_allowed(path):
         raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
@@ -587,6 +610,10 @@ def component_source_download(context, path: Path) -> str | None:
         path = path.resolve()
         if not context.is_allowed(path) or not path.exists():
             return None
+        from .moss_image_components import component_source
+
+        if source := component_source(context, path):
+            return source
         current = _weight_signature(path)
         if current is None:
             return None
@@ -655,6 +682,9 @@ def related_download(entry, tasks):
         owner = row.get("recommendation_id") or row.get("bundle")
         if owner == entry.id:
             return row
+        moss = {"moss-image-base", "moss-image-text", "moss-image-vae"}
+        if entry.id in moss and owner in moss and (entry.id == "moss-image-base" or owner == "moss-image-base"):
+            return row
         if entry.sha256 and row.get("sha256") == entry.sha256 and row.get("kind") == entry.kind:
             return row
         if entry.id in shared_text and (owner in shared_text or row.get("bundle") == "flux3-base"):
@@ -682,6 +712,10 @@ def available_models(context, *, tasks=None) -> list[RecommendedModel]:
                                    "is_default": False, "processor_path": components.get("tokenizer")})
     shared = find_components(context)
     tasks = tasks if tasks is not None else context.db.get_kv("model_downloads", [])
+    from .moss_image_components import find_components as find_moss_components
+    from .moss_image_downloads import available_bundle as available_moss_bundle
+
+    moss_shared = find_moss_components(context)
     result = []
     for entry in RECOMMENDATIONS:
         own = None
@@ -696,10 +730,17 @@ def available_models(context, *, tasks=None) -> list[RecommendedModel]:
                             and asset["kind"] == entry.kind and asset["path"] == path), None)
                 available = own or {"path": path}
                 verified_paths.add(path)
+        if entry.family == "moss_image" and entry.kind in moss_shared:
+            path = moss_shared[entry.kind]
+            processor = moss_shared.get("tokenizer") if entry.kind == "text_encoder" else None
+            own = next((asset for asset in assets if asset["family"] == entry.family
+                        and asset["kind"] == entry.kind and asset["path"] == path), None)
+            available = own or {"path": path}
+            verified_paths.add(path)
         if available is None and entry.bundle:
             specs = tuple(_bundle_manifests(entry))
             own = next((asset for asset in assets if asset["family"] == entry.family and asset["kind"] == entry.kind
-                        and any(available_bundle(context, Path(asset["path"]), spec) for spec in specs)), None)
+                        and any((available_moss_bundle if entry.family == "moss_image" else available_bundle)(context, Path(asset["path"]), spec) for spec in specs)), None)
             available = own
             if own:
                 verified_paths.add(own["path"])

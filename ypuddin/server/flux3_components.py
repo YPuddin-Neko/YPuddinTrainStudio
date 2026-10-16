@@ -441,80 +441,22 @@ def recover_installation(service, row):
 
 def run_installation(service, id_, storage):
     import shutil
-    import time
     import urllib.error
-    import urllib.request
 
     from .db import now
     from .download_errors import download_auth_error, download_http_error
-    from .flux3_downloads import BundleFile, BundleManifest, _inside, bundle_source_url, cleanup_stage
-    from .model_downloads import _Cancelled, _check_download_header, _Redirect
-    from .network import ProxyPolicy
+    from .flux3_downloads import BundleFile, BundleManifest, _inside, cleanup_stage
+    from .model_downloads import BundleTransfer, _Cancelled
     from .routes_core import ModelBody, add_model, register_flux3_components
 
     row, event = service.tasks[id_], service.cancelled[id_]
     context, plan = service.context, row["component_plan"]
     spec = BundleManifest.model_validate(row["manifest"])
     stage, target = storage / ".downloads" / id_, Path(row["target_path"])
-    policy, token, published, registered = ProxyPolicy(), None, False, False
-    done, last, previous = 0, time.monotonic(), 0
 
-    def cancelled():
-        if event.is_set() or service.closed:
-            raise _Cancelled()
-
-    def transfer(item, destination):
-        nonlocal token, policy, done, last, previous
-        cancelled()
-        policy = ProxyPolicy.from_context(context)
-        if token is None:
-            token = service.credentials.token(row["provider"], policy=policy) or ""
-        headers = {"User-Agent": "YPuddinTrainStudio", "Accept-Encoding": "identity"}
-        if token:
-            headers["Cookie" if row["provider"] == "modelscope" else "Authorization"] = (
-                f"m_session_id={token}" if row["provider"] == "modelscope" else f"Bearer {token}")
-        request = urllib.request.Request(bundle_source_url(spec, row["provider"], item.path), headers=headers)
-        opener = service.opener or policy.opener(_Redirect())
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        count, hasher = 0, hashlib.sha256()
-        git = hashlib.sha1(f"blob {item.size}\0".encode()) if item.git_blob_sha1 else None
-        probe = bytearray() if item.path.endswith(".safetensors") else None
-        with opener.open(request, timeout=15) as response, destination.open("xb") as output:
-            if response.status != 200 or (response.headers.get("Content-Length")
-                                         and int(response.headers["Content-Length"]) != item.size):
-                raise ValueError(f"FLUX.3 file size differs: {item.path}")
-            while block := response.read(256 * 1024):
-                cancelled()
-                count += len(block)
-                if count > item.size:
-                    raise ValueError(f"FLUX.3 file exceeds its pinned size: {item.path}")
-                if probe is not None:
-                    from .model_inspection import HEADER_LIMIT
-
-                    probe.extend(block[:HEADER_LIMIT + 8 - len(probe)])
-                    if len(probe) >= 8:
-                        length = int.from_bytes(probe[:8], "little")
-                        if not 2 <= length <= HEADER_LIMIT:
-                            raise ValueError("invalid safetensors header")
-                        if len(probe) >= length + 8:
-                            _check_download_header(probe[8:length + 8], "flux3")
-                            probe = None
-                hasher.update(block)
-                if git is not None:
-                    git.update(block)
-                output.write(block)
-                done += len(block)
-                current = time.monotonic()
-                if current - last >= .4:
-                    rate = (done - previous) / (current - last)
-                    service._update(id_, downloaded_bytes=done, bytes_per_second=rate,
-                                    eta_seconds=max(0, row["total_bytes"] - done) / rate, progress_at=now())
-                    last, previous = current, done
-            if count != item.size or item.sha256 and hasher.hexdigest() != item.sha256 or git and git.hexdigest() != item.git_blob_sha1:
-                raise ValueError(f"FLUX.3 file integrity check failed: {item.path}")
-            output.flush()
-            os.fsync(output.fileno())
-        return hasher.hexdigest()
+    transfer_state = BundleTransfer(service, id_, spec)
+    transfer, cancelled = transfer_state.transfer, transfer_state.cancelled
+    published, registered = False, False
 
     try:
         cancelled()
@@ -611,7 +553,7 @@ def run_installation(service, id_, storage):
                 if asset is None:
                     raise ValueError("FLUX.3 component registration was not completed")
         registered = True
-        service._update(id_, status="completed", model_id=asset["id"], components=components, downloaded_bytes=done,
+        service._update(id_, status="completed", model_id=asset["id"], components=components, downloaded_bytes=transfer_state.done,
                         bytes_per_second=0, eta_seconds=0, finished_at=now())
     except _Cancelled:
         service._update(id_, status="cancelled", finished_at=now())
@@ -621,11 +563,11 @@ def run_installation(service, id_, storage):
             with context.db.transaction():
                 if not registered_under(context, target):
                     shutil.rmtree(_inside(storage, target))
-        message = policy.redact(error)
-        if token:
-            message = message.replace(token, "[redacted]")
+        message = transfer_state.policy.redact(error)
+        if transfer_state.token:
+            message = message.replace(transfer_state.token, "[redacted]")
         if isinstance(error, urllib.error.HTTPError):
-            message = download_auth_error(error, provider=row["provider"], authenticated=bool(token), mirror=False) or download_http_error(error.code)
+            message = download_auth_error(error, provider=row["provider"], authenticated=bool(transfer_state.token), mirror=False) or download_http_error(error.code)
         service._update(id_, status="cancelled" if event.is_set() else "failed", error=None if event.is_set() else message, finished_at=now())
     finally:
         try:

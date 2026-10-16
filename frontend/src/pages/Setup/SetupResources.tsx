@@ -2,7 +2,7 @@ import React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { invalidateResource, useResourceCacheEvents, useResourceQuery } from '../../api/resourcePolicy';
 import { readCredentialStatus } from '../../api/hooks/useCredentialsStatus';
-import { imageRecommendationOwnerPending, imageRecommendationTask, imageRecommendationWaitingForComponent, useImageModelResources } from '../../api/hooks/useImageModelResources';
+import { imageRecommendationIsCompleteBundle, imageRecommendationOwnerPending, imageRecommendationTask, imageRecommendationWaitingForComponent, useImageModelResources } from '../../api/hooks/useImageModelResources';
 import { Check, Download, ExternalLink, Loader2 } from 'lucide-react';
 import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { Settings } from '../../api/types';
@@ -85,7 +85,7 @@ const kleinEncoders: Record<string, string> = { 'flux2-klein-base-4b': 'flux2-qw
 const matchingAsset = (entry: Recommendation, asset: ModelAsset) => asset.family === entry.family && asset.kind === entry.kind
   && (asset.id === entry.model_id || asset.path === entry.available_path);
 function modelBundle(catalog: Recommendation[], family: string, main: string) {
-  const completeBundle = catalog.some(entry => entry.family === family && entry.id === main && entry.bundle === 'flux3-base');
+  const completeBundle = catalog.some(entry => entry.family === family && entry.id === main && imageRecommendationIsCompleteBundle(entry));
   return catalog.filter(entry => entry.family === family && entry.recommended && entry.purpose !== 'inference'
     && (!completeBundle || entry.id === main)
     && (entry.kind !== 'dit' || entry.id === main)

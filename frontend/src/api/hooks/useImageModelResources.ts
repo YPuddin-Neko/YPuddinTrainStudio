@@ -13,8 +13,10 @@ export const imageModelKeys = {
   catalog: ['image-models', 'catalog'], assets: ['image-models', 'assets'], tasks: ['image-models', 'tasks'],
 } as const;
 export const imageDownloadActive = (task: ModelDownload) => ['queued', 'downloading'].includes(task.status);
+export const imageRecommendationIsCompleteBundle = (entry: Pick<ImageRecommendation, 'bundle'>) =>
+  ['flux3-base', 'moss-image-base'].includes(entry.bundle ?? '');
 export const imageRecommendationWaitingForComponent = (entry: ImageRecommendation, task: ModelDownload) =>
-  entry.bundle === 'flux3-base' && task.recommendation_id !== entry.id && task.bundle !== 'flux3-base';
+  imageRecommendationIsCompleteBundle(entry) && task.recommendation_id !== entry.id && task.bundle !== entry.bundle;
 
 export const imageRecommendationOwnerPending = (entry: ImageRecommendation, tasks: ModelDownload[]) =>
   !!entry.active_download_id && !tasks.some(task => task.id === entry.active_download_id);

@@ -323,7 +323,7 @@ export function configPresetLabel(name: string, description: string, defaultPres
 export function configOptionLabel(path: string, option: string, english = false) {
   const options: Record<string, Record<string, [string, string]>> = {
     'objective.weighting': { none: ['不加权', 'None'], sigma_sqrt: ['噪声尺度平方根', 'Sigma square root'], cosmap: ['余弦映射', 'CosMap'], snr_like: ['类信噪比加权', 'SNR-like'], cosmos: ['Cosmos', 'Cosmos'], min_snr: ['最小信噪比加权', 'Min-SNR'] },
-    'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['逻辑正态分布', 'Logit-Normal'], shift: ['偏移采样', 'Shift'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], resolution_sqrt: ['按分辨率修正 Shift', 'Resolution-corrected Shift'], mode: ['模式分布', 'Mode'], cosmap: ['余弦映射', 'CosMap'] },
+    'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['逻辑正态分布', 'Logit-Normal'], shift: ['偏移采样', 'Shift'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], resolution_sqrt: ['按分辨率修正 Shift', 'Resolution-corrected Shift'], mode: ['模式分布', 'Mode'], cosmap: ['余弦映射', 'CosMap'], moss_image: ['MOSS-Image 分布', 'MOSS-Image distribution'] },
     'objective.loss': { mse: ['均方误差', 'MSE'], huber: ['平滑绝对误差', 'Huber'], pseudo_huber: ['伪 Huber 损失', 'Pseudo-Huber'] },
     'adapter.algo': { lora: ['LoRA', 'LoRA'], lokr: ['LoKr', 'LoKr'], loha: ['LoHa', 'LoHa'], ortho: ['OrthoLoRA', 'OrthoLoRA'], tlora: ['T-LoRA', 'T-LoRA'], full: ['LyCORIS Full', 'LyCORIS Full'] },
     'adapter.param_dtype': { fp32: ['FP32', 'FP32'], bf16: ['BF16', 'BF16'] },

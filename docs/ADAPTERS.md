@@ -60,7 +60,7 @@ LoRA、LoKr、LoHa 和 Full 使用对应的 Kohya / LyCORIS 键布局，Full 在
 
 “保存训练元数据”默认关闭：文件头只保留出图软件识别底模所需的键和网络结构；无法从权重形状还原的逐层结构按需保留，例如卷积核尺寸。兼容模式另保留简短的 DoRA 模式、方向与精度记录，用于检查能否继续训练。开启后再附加标题、步数、轮数及学习率、优化器、训练尺寸等训练配方，普通和 EMA 权重均使用此设置。不写入本机目录、图片标签、提示词或访问密钥。
 
-识别底模的键始终写入，取值与 kohya sd-scripts、musubi-tuner 相同。A1111 按 `ss_base_model_version` 归类 SDXL LoRA，Forge 读取 `modelspec.architecture` 与 `modelspec.implementation`，LoKr、LoHa 等算法同样标为 `/lora`，算法记录在 `ss_network_args` 中。
+下表中已有外部识别约定的模型始终写入对应的底模键，取值与 kohya sd-scripts、musubi-tuner 相同。A1111 按 `ss_base_model_version` 归类 SDXL LoRA，Forge 读取 `modelspec.architecture` 与 `modelspec.implementation`，LoKr、LoHa 等算法同样标为 `/lora`，算法记录在 `ss_network_args` 中。
 
 | 模型 | `ss_base_model_version` | `modelspec.architecture` |
 | --- | --- | --- |
@@ -68,6 +68,10 @@ LoRA、LoKr、LoHa 和 Full 使用对应的 Kohya / LyCORIS 键布局，Full 在
 | FLUX.2 Klein 4B / 9B | `flux_2_klein_4b` / `flux_2_klein_9b` | `Flux.2-klein-4b/lora` / `Flux.2-klein-9b/lora` |
 | Krea 2 | `krea2` | `Krea-2/lora` |
 | Anima | `anima` | `anima-preview/lora` |
+
+MOSS-Image 始终记录 `ypuddin.family=moss_image`。关闭“保存训练元数据”时保留该系列标识和网络结构；开启后另写 `ss_base_model_version=moss_image`、`modelspec.implementation=ypuddin`，`modelspec.architecture` 记录主模型与算法，例如 LoRA 为 `moss-image-base/lora`。这些值是训练器记录的模型身份，不是通用出图软件的自动识别约定。
+
+MOSS-Image 的导出键使用 `lora_unet_` 加下划线分隔的原生模块路径，例如 `lora_unet_layers_0_proj_q`，保留融合的 `ffn_up_gate` 和文本细化层 `qkv`。在 ComfyUI 中加载时，需要官方 MOSS-Image 节点、匹配的 Base 与配套组件，以及能够将这些原生键映射到模型层的适配器加载器；可使用官方节点输出的 MODEL 接入内置 LoRA 加载器。各算法和 DoRA 的融合方向仍须由所用加载器支持。MOSS-Image 不导出文本编码器适配器，也不支持 T-LoRA。
 
 “权重保存精度”控制导出权重及 DoRA 幅度的精度，默认 BF16；缩放用的 `alpha` 标量保留 FP32。该设置不改变训练参数、完整恢复点或外部工具的融合精度。
 

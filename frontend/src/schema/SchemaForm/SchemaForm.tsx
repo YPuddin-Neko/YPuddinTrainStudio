@@ -920,7 +920,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const lokrModeLabel = english ? 'LoKr parameter mode' : 'LoKr 参数形式';
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
   const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', image_fit: 'crop', ...value.dataset } };
-  const weights = modelFamilyWeights(family);
+  const weights = modelFamilyWeights(family, english);
   const fieldContext: FieldContext = { family, config: value, english, nativeBatchingVersion: nativeBatchingVersion === undefined && preset ? value.dataset?.native_batch_mode === 'area' ? 3 : 2 : nativeBatchingVersion };
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {

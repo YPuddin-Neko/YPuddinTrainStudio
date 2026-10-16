@@ -29,6 +29,15 @@ def training_capabilities(family: str) -> dict:
             distributed_strategies=["ddp"],
             gpu_counts=[1],
         )
+    elif family == "moss_image":
+        result.update(
+            adapter_algorithms=["lora", "lokr", "loha", "full", "ortho"],
+            model_dtypes=["auto", "bf16", "fp32"],
+            base_precisions=["auto", "bf16", "fp32"],
+            mixed_precisions=["no", "bf16"],
+            distributed_strategies=["ddp"],
+            gpu_counts=[1],
+        )
     return result
 
 

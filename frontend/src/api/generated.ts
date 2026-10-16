@@ -6770,7 +6770,7 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "toy" | "tagger";
+            family: "anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "moss_image" | "toy" | "tagger";
             /**
              * Kind
              * @enum {string}
@@ -6837,7 +6837,7 @@ export interface components {
              * @default anima
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "flux3" | "toy";
+            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "flux3" | "moss_image" | "toy";
             /**
              * Dit Path
              * @description DiT 主干权重（safetensors；支持官方 bf16 与 ComfyUI fp8_scaled 文件）
@@ -7000,7 +7000,7 @@ export interface components {
             /** Sha256 */
             sha256?: string | null;
             /** Bundle */
-            bundle?: ("flux3-base" | "flux3-text") | null;
+            bundle?: ("flux3-base" | "flux3-text") | ("moss-image-base" | "moss-image-text" | "moss-image-vae") | null;
             /**
              * Layout Version
              * @default 1
@@ -7014,7 +7014,8 @@ export interface components {
             component_plan?: {
                 [key: string]: unknown;
             } | null;
-            manifest?: components["schemas"]["BundleManifest"] | null;
+            /** Manifest */
+            manifest?: components["schemas"]["BundleManifest"] | components["schemas"]["MossBundleManifest"] | null;
             /** Verification Source */
             verification_source?: ("pinned_revision_and_sizes" | "pinned_revision_and_sha256") | null;
         };
@@ -7024,7 +7025,7 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux2" | "flux3";
+            family: "anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "moss_image";
             /**
              * Kind
              * @enum {string}
@@ -7066,7 +7067,7 @@ export interface components {
             /** Variant */
             variant?: ("raw" | "turbo") | null;
             /** Bundle */
-            bundle?: ("flux3-base" | "flux3-text") | null;
+            bundle?: ("flux3-base" | "flux3-text") | ("moss-image-base" | "moss-image-text" | "moss-image-vae") | null;
             /**
              * Layout Version
              * @default 2
@@ -7110,6 +7111,23 @@ export interface components {
         ModelInspectionBody: {
             /** Path */
             path: string;
+        };
+        /** MossBundleManifest */
+        MossBundleManifest: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "moss-image-base" | "moss-image-text" | "moss-image-vae";
+            /**
+             * Repo Id
+             * @enum {string}
+             */
+            repo_id: "OpenMOSS-Team/MOSS-Image-Base" | "openmoss/MOSS-Image-Base";
+            /** Revision */
+            revision: string;
+            /** Files */
+            files: components["schemas"]["BundleFile"][];
         };
         /** NativePlan */
         NativePlan: {
@@ -7170,7 +7188,7 @@ export interface components {
              * @default shift
              * @enum {string}
              */
-            timestep_sampling: "uniform" | "logit_normal" | "shift" | "resolution_shift" | "resolution_sqrt" | "mode" | "cosmap";
+            timestep_sampling: "uniform" | "logit_normal" | "shift" | "resolution_shift" | "resolution_sqrt" | "mode" | "cosmap" | "moss_image";
             /**
              * Logit Mean
              * @description logit-normal 在 sigmoid 变换前的均值，默认 0；提高会偏向较高噪声，降低会偏向较低噪声。仅对应训练时间步分布，通常先保持默认。
@@ -8483,7 +8501,7 @@ export interface components {
              * @default anima
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "toy";
+            family: "anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "moss_image" | "toy";
         };
         /** ProjectCategories */
         ProjectCategories: {
@@ -8776,7 +8794,7 @@ export interface components {
              * Family
              * @enum {string}
              */
-            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "flux3";
+            family: "anima" | "krea2" | "sdxl" | "flux" | "flux2" | "flux3" | "moss_image";
             /**
              * Kind
              * @enum {string}
@@ -8794,8 +8812,9 @@ export interface components {
             /** Sha256 */
             sha256?: string | null;
             /** Bundle */
-            bundle?: ("flux3-base" | "flux3-text") | null;
-            manifest?: components["schemas"]["BundleManifest"] | null;
+            bundle?: ("flux3-base" | "flux3-text") | ("moss-image-base" | "moss-image-text" | "moss-image-vae") | null;
+            /** Manifest */
+            manifest?: components["schemas"]["BundleManifest"] | components["schemas"]["MossBundleManifest"] | null;
             /**
              * Recommended
              * @default true
@@ -8840,7 +8859,8 @@ export interface components {
             revision: string;
             /** Url */
             url: string;
-            manifest?: components["schemas"]["BundleManifest"] | null;
+            /** Manifest */
+            manifest?: components["schemas"]["BundleManifest"] | components["schemas"]["MossBundleManifest"] | null;
         };
         /** RegularizationEstimate */
         RegularizationEstimate: {
@@ -12584,7 +12604,7 @@ export interface components {
              */
             copy_config: boolean;
             /** Family */
-            family?: ("anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "toy") | null;
+            family?: ("anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "moss_image" | "toy") | null;
             /** Engine */
             engine?: ("voxcpm1.5" | "gpt-sovits-v5") | null;
             /** Variant */
@@ -12610,7 +12630,7 @@ export interface components {
             /** Archived */
             archived?: boolean | null;
             /** Display Family */
-            display_family?: ("anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "toy") | null;
+            display_family?: ("anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "moss_image" | "toy") | null;
         };
         /** VersionPaths */
         VersionPaths: {
@@ -13643,7 +13663,7 @@ export interface operations {
     config_defaults_api_config_defaults_get: {
         parameters: {
             query?: {
-                family?: ("anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "toy") | null;
+                family?: ("anima" | "krea2" | "sdxl" | "flux2" | "flux3" | "moss_image" | "toy") | null;
             };
             header?: never;
             path?: never;

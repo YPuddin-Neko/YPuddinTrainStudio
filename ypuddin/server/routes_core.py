@@ -498,7 +498,7 @@ def schema_train() -> dict[str, Any]:
 
 @router.get("/config/defaults", response_model=TrainConfig)
 def config_defaults(
-    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "toy"] | None = None,
+    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "moss_image", "toy"] | None = None,
     c: ServiceContext = Depends(ctx),
 ) -> dict[str, Any]:
     from .environment import environment_attention_default
@@ -909,7 +909,7 @@ def import_toml(body: dict[str, str]) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------- models
 class ModelBody(BaseModel):
-    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "toy", "tagger"]
+    family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "moss_image", "toy", "tagger"]
     kind: Literal["dit", "text_encoder", "text_encoder_2", "vae", "tokenizer", "tagger"]
     path: str
     processor_path: str | None = None
@@ -935,6 +935,32 @@ def _check_model_admission(
 
     if reason := training_rejection({}, family):
         raise ApiError(reason, code="model.unsupported", status=422)
+    if family == "moss_image":
+        from ypuddin.models.moss_image.latent import MOSSImageLatent
+        from ypuddin.models.moss_image.loading import transformer_config
+        from ypuddin.models.moss_image.text import MOSSImageText
+
+        from .model_inspection import check_moss_paths
+        from .model_recommendations import component_metadata
+
+        try:
+            processor = (processor_path or component_metadata(c, path).get("processor_path")
+                         if kind == "text_encoder" else None)
+            complete = kind == "dit" and path.is_dir() and (path / "transformer").is_dir()
+            parts = check_moss_paths(path, kind, c.is_allowed, tokenizer_path=processor, complete=complete)
+            if kind == "text_encoder":
+                MOSSImageText.validate_paths(parts[kind], parts["tokenizer"])
+                return
+            if kind == "tokenizer":
+                return
+            if kind == "vae":
+                MOSSImageLatent.validate_path(parts[kind])
+                return
+            if not complete:
+                transformer_config(parts[kind])
+                return
+        except (ValueError, OSError) as error:
+            raise ApiError(str(error), code="model.component", status=422) from error
     if family == "flux3":
         if kind not in {"dit", "vae", "text_encoder", "tokenizer"}:
             raise ApiError("FLUX.3 不使用第二文本编码器。", code="model.component", status=422)
@@ -962,13 +988,13 @@ def _check_model_admission(
             text_config(path)
         except (ValueError, OSError) as error:
             raise ApiError(str(error), code="model.component", status=422) from error
-    if family in {"flux2", "flux3"} and not (path.is_dir() or path.suffix.lower() == ".safetensors"):
+    if family in {"flux2", "flux3", "moss_image"} and not (path.is_dir() or path.suffix.lower() == ".safetensors"):
         raise ApiError(
             "Klein 组件仅支持 safetensors 权重或完整本地 HF 目录。", code="model.component", status=422
         )
     if family == "tagger" or not (path.is_dir() or path.suffix.lower() == ".safetensors"):
         return
-    if family not in {"flux2", "flux3"} and path.is_file():
+    if family not in {"flux2", "flux3", "moss_image"} and path.is_file():
         from .model_recommendations import RECOMMENDATIONS, cached_sha256
 
         # A stat-valid SHA-256 proof already identifies the exact catalog weights.
@@ -983,18 +1009,18 @@ def _check_model_admission(
         try:
             detected = inspect_model(path, allowed=c.is_allowed)
         except (ValueError, OSError, OverflowError) as error:
-            if family in {"flux2", "flux3"}:
+            if family in {"flux2", "flux3", "moss_image"}:
                 raise ApiError(
-                    f"Cannot inspect Klein component: {error}", code="model.inspect", status=422
+                    f"Cannot inspect model component: {error}", code="model.inspect", status=422
                 ) from error
             return  # Preserve manual registration for existing non-FLUX formats.
     if reason := training_rejection(detected, family):
         raise ApiError(reason, code="model.unsupported", status=422)
-    if family in {"flux2", "flux3"} and (
+    if family in {"flux2", "flux3", "moss_image"} and (
         detected["kind"] != kind or kind != "tokenizer" and family not in detected["family_candidates"]
     ):
         raise ApiError(
-            f"未识别到与 {'FLUX.3 Image Klein Base' if family == 'flux3' else 'FLUX.2 Klein'} 兼容的组件，请保留完整配置并选择对应组件。",
+            f"未识别到与 {'MOSS-Image Base' if family == 'moss_image' else 'FLUX.3 Image Klein Base' if family == 'flux3' else 'FLUX.2 Klein'} 兼容的组件，请保留完整配置并选择对应组件。",
             code="model.component",
             status=422,
         )
@@ -1025,10 +1051,18 @@ def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
         projected["compatible_families"] = remembered("qwen3vl", p, text_families, scope=scope)
         if "flux3" in projected["compatible_families"] and processor.is_dir():
             projected["processor_path"] = str(processor)
-    if r["family"] == "flux3" and r["kind"] == "dit" and p.is_dir():
+    if r["family"] == "moss_image" and r["kind"] == "text_encoder":
+        from ypuddin.models.moss_image.loading import tokenizer_directory
+
+        tokenizer = Path(metadata.get("processor_path") or tokenizer_directory(p))
+        scope += (str(tokenizer), repr(signature(tokenizer)))
+    if r["family"] in {"flux3", "moss_image"} and r["kind"] == "dit" and p.is_dir():
         from types import SimpleNamespace
 
-        from ypuddin.models.flux3.loading import component_paths
+        if r["family"] == "moss_image":
+            from ypuddin.models.moss_image.loading import component_paths
+        else:
+            from ypuddin.models.flux3.loading import component_paths
 
         try:
             parts = component_paths(SimpleNamespace(dit_path=str(p), text_encoder_path=None,
@@ -1060,7 +1094,7 @@ def _model_row(r: dict[str, Any], c: ServiceContext) -> dict[str, Any]:
         )
         if projected["purpose"] == "inference":
             projected["is_default"] = False
-    if r["family"] in {"flux", "flux2", "flux3"}:
+    if r["family"] in {"flux", "flux2", "flux3", "moss_image"}:
         resolved = p.expanduser().resolve()
 
         def admission() -> tuple[str | None, bool]:
@@ -1105,7 +1139,15 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         raise ApiError(
             "tagger assets have their own family/role and cannot be training defaults", code="model.role"
         )
-    p = Path(body.path).expanduser().resolve()
+    p = Path(body.path).expanduser()
+    if body.family == "moss_image":
+        from .model_inspection import _moss_path
+
+        try:
+            p = _moss_path(p, None)
+        except (ValueError, OSError) as error:
+            raise ApiError(str(error), code="model.path", status=422) from error
+    p = p.resolve()
     if not p.exists():
         raise NotFound(f"model path not found: {p}", code="model.not_found")
     if not c.is_allowed(p):
@@ -1114,14 +1156,15 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         from .model_inspection import check_flux3_processor
 
         processor = Path(body.processor_path).expanduser().resolve()
-        if body.kind != "text_encoder" or body.family not in {"krea2", "flux3"}:
-            raise ApiError("processor 关联仅用于 Qwen3-VL 文本编码器。", code="model.component", status=422)
+        if body.kind != "text_encoder" or body.family not in {"krea2", "flux3", "moss_image"}:
+            raise ApiError("processor／tokenizer 关联仅用于对应文本编码器。", code="model.component", status=422)
         try:
-            check_flux3_processor(processor, c.is_allowed)
+            if body.family != "moss_image":
+                check_flux3_processor(processor, c.is_allowed)
         except (ValueError, OSError) as error:
             raise ApiError(str(error), code="model.component", status=422) from error
     _check_model_admission(p, body.family, body.kind, c, processor_path=body.processor_path)
-    if body.kind in {"dit", "vae"} and not p.is_file() and body.family not in {"sdxl", "flux", "flux2", "flux3"}:
+    if body.kind in {"dit", "vae"} and not p.is_file() and body.family not in {"sdxl", "flux", "flux2", "flux3", "moss_image"}:
         raise ApiError("DiT and VAE paths must point to a weight file", code="model.path")
     if body.kind == "tokenizer" and not p.is_dir():
         raise ApiError("tokenizer path must point to a complete tokenizer directory", code="model.path")
@@ -1129,6 +1172,12 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         p.is_dir() and (p / "model.onnx").is_file() and (p / "selected_tags.csv").is_file()
     ):
         raise ApiError("tagger directory needs model.onnx and selected_tags.csv together", code="model.path")
+    pending_proofs = {}
+    if body.family == "moss_image":
+        try:
+            pending_proofs = _authenticate_moss_import(c, p, body.kind, body.processor_path)
+        except (ValueError, OSError) as error:
+            raise ApiError(str(error), code="model.integrity", status=422) from error
     size = (
         p.stat().st_size
         if p.is_file()
@@ -1137,6 +1186,8 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
         else 0
     )
     with c.db.transaction():
+        for key, value in pending_proofs.items():
+            c.db.set_kv(key, value)
         existing = c.db.fetchone(
             "SELECT * FROM models WHERE family=? AND kind=? AND path=?", (body.family, body.kind, str(p))
         )
@@ -1196,6 +1247,9 @@ def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, An
             remember_component(c, p, processor_path=body.processor_path)
         if body.family == "flux3" and body.kind == "dit" and p.is_dir():
             register_flux3_components(p, c, body.is_default)
+        if body.family == "moss_image":
+            if body.kind == "dit" and p.is_dir() and (p / "transformer").is_dir():
+                register_moss_components(p, c, body.is_default)
     return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)), c)
 
 
@@ -1226,6 +1280,75 @@ def register_flux3_components(root: Path, c: ServiceContext, is_default=False):
                                    processor_path=processor, dtype="bf16" if kind == "text_encoder" else "fp32",
                                    is_default=is_default), c)
         remember_component(c, path, processor_path=processor)
+        assets.append(asset)
+    return assets
+
+
+def _authenticate_moss_import(c, path, kind, tokenizer=None):
+    """Authenticate outside the database lock; return proofs for the registration transaction."""
+    from types import SimpleNamespace
+
+    from ypuddin.models.moss_image.loading import component_paths, tokenizer_directory
+
+    from .moss_image_components import authenticate, authenticate_root, candidate, proof_key, valid_component
+
+    pending = {}
+
+    class Proofs:
+        def get_kv(self, key, default=None):
+            return pending[key] if key in pending else c.db.get_kv(key, default)
+
+        def set_kv(self, key, value):
+            pending[key] = value
+
+    verification = SimpleNamespace(db=Proofs(), is_allowed=c.is_allowed)
+    if kind == "dit" and path.is_dir() and (path / "transformer").is_dir():
+        _, _, text, vae, tok = component_paths(SimpleNamespace(
+            dit_path=str(path), text_encoder_path=None, vae_path=None, tokenizer_path=None))
+        components = {"text_encoder": str(text), "vae": str(vae), "tokenizer": str(tok)}
+        roles = ("text_encoder", "vae")
+    elif kind in {"text_encoder", "vae"}:
+        components, roles = {kind: str(path)}, (kind,)
+        if kind == "text_encoder":
+            components["tokenizer"] = tokenizer or str(tokenizer_directory(path))
+    else:
+        return pending
+    for role in roles:
+        proof = verification.db.get_kv(proof_key(components[role]), {})
+        if not valid_component(verification, proof, role) and candidate(verification, components, role):
+            authenticate(verification, components, role)
+    if kind == "dit" and path.is_dir() and (path / "transformer").is_dir():
+        authenticate_root(verification, path)
+    return pending
+
+
+def register_moss_components(root: Path, c: ServiceContext, is_default=False, *, kind="dit", components=None):
+    from types import SimpleNamespace
+
+    from ypuddin.models.moss_image.loading import component_paths
+
+    from .model_recommendations import remember_component
+    from .moss_image_components import component_paths as shared_paths
+    from .moss_image_components import resolve_components
+
+    if components is None:
+        components = resolve_components(c, root)
+    if components is None:
+        if kind == "dit":
+            _, _, text, vae, tokenizer = component_paths(SimpleNamespace(
+                dit_path=str(root), text_encoder_path=None, vae_path=None, tokenizer_path=None))
+            components = {"text_encoder": str(text), "vae": str(vae), "tokenizer": str(tokenizer)}
+        else:
+            components = shared_paths(root, kind)
+    assets = []
+    for role in ("text_encoder", "vae"):
+        if role not in components or kind != "dit" and role != kind:
+            continue
+        path = Path(components[role]).resolve()
+        tokenizer = components.get("tokenizer") if role == "text_encoder" else None
+        asset = add_model(ModelBody(family="moss_image", kind=role, path=str(path), processor_path=tokenizer,
+                                   dtype="bf16" if role == "text_encoder" else "fp32", is_default=is_default), c)
+        remember_component(c, path, processor_path=tokenizer)
         assets.append(asset)
     return assets
 
@@ -1288,6 +1411,8 @@ def patch_model(model_id: str, body: ModelDefaultPatch, c: ServiceContext = Depe
         c.db.update("models", model_id, {"is_default": int(body.is_default)})
         if body.is_default and row["family"] == "flux3" and row["kind"] == "dit" and Path(row["path"]).is_dir():
             register_flux3_components(Path(row["path"]), c, True)
+        if body.is_default and row["family"] == "moss_image" and row["kind"] == "dit" and (Path(row["path"]) / "transformer").is_dir():
+            register_moss_components(Path(row["path"]), c, True)
         return _model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (model_id,)), c)
 
 
@@ -1334,6 +1459,8 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
     )
     directories.update(file.parent for file in root.rglob(".ypuddin-flux3-components.json")
                        if visible(file.parent))
+    directories.update(file.parent for file in root.rglob(".ypuddin-moss-image-components.json")
+                       if visible(file.parent))
     grouped = {
         folder
         for folder in directories
@@ -1364,6 +1491,20 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
                     with c.db.transaction():
                         components = register_flux3_components(candidate.resolve(), c, bool(existing["is_default"]))
                     known.update(asset["path"] for asset in components)
+            if candidate.is_dir() and (candidate / "transformer").is_dir():
+                existing = c.db.fetchone("SELECT * FROM models WHERE family='moss_image' AND kind='dit' AND path=?",
+                                        (str(candidate.resolve()),))
+                if existing:
+                    try:
+                        _check_model_admission(candidate, "moss_image", "dit", c)
+                        pending_proofs = _authenticate_moss_import(c, candidate.resolve(), "dit")
+                        with c.db.transaction():
+                            for key, value in pending_proofs.items():
+                                c.db.set_kv(key, value)
+                            parts = register_moss_components(candidate.resolve(), c, bool(existing["is_default"]))
+                    except (ApiError, ValueError, OSError):
+                        continue
+                    known.update(asset["path"] for asset in parts)
             if candidate in configured:
                 recognized_components.add(candidate)
             continue
@@ -1383,7 +1524,7 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             continue
         if family == "krea2" and kind == "dit" and not detected.get("variant"):
             continue  # Raw/Turbo have identical shapes; local registration asks the user.
-        if family in {"flux2", "flux3"}:
+        if family in {"flux2", "flux3", "moss_image"}:
             try:
                 _check_model_admission(Path(detected["path"]), family, kind, c, detected=detected)
             except ApiError:
@@ -1403,11 +1544,19 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             )
         )
         mid = new_id("m")
+        pending_proofs = {}
+        if family == "moss_image":
+            try:
+                pending_proofs = _authenticate_moss_import(c, path, kind)
+            except (ValueError, OSError):
+                continue
         with c.db.transaction():
             if c.db.fetchone("SELECT id FROM models WHERE family=? AND kind=? AND path=?",
                              (family, kind, str(path))):
                 known.add(str(path))
                 continue
+            for key, value in pending_proofs.items():
+                c.db.set_kv(key, value)
             c.db.insert(
                 "models",
                 {
@@ -1426,6 +1575,9 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
             if family == "flux3" and kind == "dit" and path.is_dir():
                 components = register_flux3_components(path, c, False)
                 known.update(asset["path"] for asset in components)
+            if family == "moss_image" and kind == "dit" and (path / "transformer").is_dir():
+                parts = register_moss_components(path, c, False)
+                known.update(asset["path"] for asset in parts)
         known.add(str(path))
         found.append(_model_row(c.db.fetchone("SELECT * FROM models WHERE id=?", (mid,)), c))
     return found

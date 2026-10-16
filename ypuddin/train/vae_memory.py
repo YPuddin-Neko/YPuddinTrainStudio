@@ -220,6 +220,20 @@ def vae_memory(
         storage, channels = _flux3_autoencoder_geometry()
         weights_mb = storage / 2**20
         vae_dtype, kind = torch.float32, "kl"
+    elif family == "moss_image":
+        from ypuddin.models.moss_image.latent import MOSSImageLatent
+        from ypuddin.models.moss_image.loading import component_paths
+
+        try:
+            _, _, _, path, _ = component_paths(cfg.model)
+            path = MOSSImageLatent.validate_path(path)
+            config_path = (path if path.is_dir() else path.parent) / "config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            storage, channels = _autoencoder_kl_geometry("flux2", json.dumps(config, sort_keys=True))
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+            return None
+        weights_mb = storage / 2**20
+        vae_dtype, kind = torch.float32, "kl"
     else:
         return None
     if device_type == "mps":
@@ -245,7 +259,7 @@ def vae_memory(
         cache_tiling=qwen and cfg.memory.cache_encode_tiled,
         chunking_available=qwen and hip,
         math_score_bytes=_SCORE_BYTES if hip or device_type == "mps" else _CUDA_SCORE_BYTES,
-        latent_channels=16 if qwen else 32 if family in {"flux2", "flux3"} else 4,
+        latent_channels=16 if qwen else 32 if family in {"flux2", "flux3", "moss_image"} else 4,
     )
 
 

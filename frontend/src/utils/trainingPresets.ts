@@ -64,8 +64,13 @@ export function applyTrainingPreset(current: Record<string, any>, preset: Record
       delete reusable.objective.timestep_sampling;
     }
     if (current.objective?.timestep_sampling === 'resolution_sqrt' && (!Object.prototype.hasOwnProperty.call(preset.objective || {}, 'timestep_sampling') || preset.objective?.timestep_sampling === 'resolution_sqrt')) {
-      reusable.objective.timestep_sampling = current.model.family === 'flux3' ? 'logit_normal' : current.model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(current.model.family) ? 'resolution_shift' : 'shift';
+      reusable.objective.timestep_sampling = current.model.family === 'moss_image' ? 'moss_image' : current.model.family === 'flux3' ? 'logit_normal' : current.model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(current.model.family) ? 'resolution_shift' : 'shift';
     }
+  }
+  if (current.model?.family !== 'moss_image' && reusable.objective.timestep_sampling === 'moss_image') delete reusable.objective.timestep_sampling;
+  if (current.model?.family && current.model.family !== 'moss_image' && current.objective?.timestep_sampling === 'moss_image'
+    && !Object.prototype.hasOwnProperty.call(reusable.objective, 'timestep_sampling')) {
+    reusable.objective.timestep_sampling = current.model.family === 'flux3' ? 'logit_normal' : current.model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(current.model.family) ? 'resolution_shift' : 'shift';
   }
   // Model files only fit the family they were chosen for.
   if (reusable.model && (!current.model?.family || reusable.model.family !== current.model.family)) {

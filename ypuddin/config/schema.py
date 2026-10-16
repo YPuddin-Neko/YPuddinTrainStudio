@@ -50,7 +50,7 @@ class _IntervalConfig(_Strict):
 
 # --------------------------------------------------------------------------- model
 class ModelConfig(_Strict):
-    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "flux3", "toy"] = F(
+    family: Literal["anima", "krea2", "sdxl", "flux", "flux2", "flux3", "moss_image", "toy"] = F(
         "anima",
         help="模型系列决定主模型、文本编码器和训练方式。",
         ui_=ui("model", order=0, control="select"),
@@ -523,7 +523,7 @@ class AdapterConfig(_Strict):
 # --------------------------------------------------------------------------- objective
 class ObjectiveConfig(_Strict):
     timestep_sampling: Literal[
-        "uniform", "logit_normal", "shift", "resolution_shift", "resolution_sqrt", "mode", "cosmap"
+        "uniform", "logit_normal", "shift", "resolution_shift", "resolution_sqrt", "mode", "cosmap", "moss_image"
     ] = F(
         "shift",
         help="训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；Anima 的 resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。",

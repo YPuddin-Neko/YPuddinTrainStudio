@@ -296,7 +296,7 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
     return None
 
 
-def _local_references(config: dict, root: Path, allowed, label: str) -> None:
+def _local_references(config: dict, root: Path, allowed, label: str, *, reject_symlinks=False) -> None:
     # `_name_or_path`/`name_or_path` record model provenance, not runtime file references.
     for key in (
         "tokenizer_file",
@@ -316,6 +316,8 @@ def _local_references(config: dict, root: Path, allowed, label: str) -> None:
             or "\\" in value
         ):
             raise ValueError(f"{label} {key} must reference a local relative asset")
+        if reject_symlinks:
+            _moss_path(root / value, allowed)
         file = _contained(root, root / value, allowed, f"{label} {key}")
         if not file.is_file():
             raise ValueError(f"{label} {key} references a missing local asset")
@@ -699,14 +701,136 @@ def _sdxl_directory(root: Path, allowed, budget: dict[str, int]) -> dict[str, An
     }
 
 
+def _moss_path(path: Path, allowed) -> Path:
+    path = Path(path).expanduser().absolute()
+    if any(part.is_symlink() for part in (path, *path.parents)):
+        raise ValueError("MOSS-Image component contains a symlink")
+    resolved = path.resolve()
+    if allowed and not allowed(resolved):
+        raise ValueError("MOSS-Image component is outside allowed storage roots")
+    return resolved
+
+
+def check_moss_paths(path: Path, kind: str, allowed, *, tokenizer_path=None, complete=False) -> dict[str, Path]:
+    """Check the actual local files selected by the MOSS loader before it opens them."""
+    from types import SimpleNamespace
+
+    from ypuddin.models.moss_image.loading import component_paths, tokenizer_directory, weight_files
+
+    path = _moss_path(path, allowed)
+    if complete:
+        directory = path if path.is_dir() else path.parent
+        if directory.name == "transformer":
+            directory = directory.parent
+        for manifest in (path / "model_index.json", directory / ".ypuddin-moss-image-components.json"):
+            if manifest.exists() or manifest.is_symlink():
+                _moss_path(manifest, allowed)
+        _, dit, text, vae, tokenizer = component_paths(SimpleNamespace(
+            dit_path=str(path), text_encoder_path=None, vae_path=None, tokenizer_path=None))
+        return {
+            **check_moss_paths(dit, "dit", allowed),
+            **check_moss_paths(text, "text_encoder", allowed, tokenizer_path=tokenizer),
+            **check_moss_paths(vae, "vae", allowed),
+        }
+    if kind == "tokenizer":
+        if not path.is_dir():
+            raise ValueError("MOSS-Image tokenizer requires a local directory")
+        for count, member in enumerate(path.rglob("*"), 1):
+            if count > MAX_FILES:
+                raise ValueError("too many tokenizer files")
+            _moss_path(member, allowed)
+            if not (member.is_file() or member.is_dir()):
+                raise ValueError("MOSS-Image tokenizer contains an invalid local asset")
+        _tokenizer_assets(path, allowed, "MOSS-Image tokenizer", chat=True)
+        return {kind: path}
+    if kind not in {"dit", "text_encoder", "vae"}:
+        raise ValueError("MOSS-Image 不使用第二文本编码器。")
+    root = path if path.is_dir() else path.parent
+    config = _moss_path(root / "config.json", allowed)
+    if not config.is_file():
+        raise ValueError("MOSS-Image component requires a local config.json file")
+    _local_references(_json(config, CONFIG_LIMIT), root, allowed, "MOSS-Image config", reject_symlinks=True)
+    basename = "model" if kind == "text_encoder" else "diffusion_pytorch_model"
+    index = root / f"{basename}.safetensors.index.json"
+    if path.is_dir() and (index.exists() or index.is_symlink()):
+        _moss_path(index, allowed)
+    files, _ = weight_files(path, basename)
+    if len(files) > MAX_FILES:
+        raise ValueError("too many model shards")
+    for member in files:
+        _moss_path(member, allowed)
+    parts = {kind: path}
+    if kind == "text_encoder":
+        tokenizer = Path(tokenizer_path) if tokenizer_path else tokenizer_directory(path)
+        parts.update(check_moss_paths(tokenizer, "tokenizer", allowed))
+    return parts
+
+
+def _moss_component(path, allowed, budget, *, original=None):
+    root = path if path.is_dir() else path.parent
+    index = (_json(_contained(root, root / "model_index.json", allowed, "model index"), CONFIG_LIMIT)
+             if (root / "model_index.json").is_file() else {})
+    config = (_json(_contained(root, root / "config.json", allowed, "model config"), CONFIG_LIMIT)
+              if (root / "config.json").is_file() else {})
+    complete = path.is_dir() and (
+        index.get("_class_name") == "MOSSImagePipeline" or (root / ".ypuddin-moss-image-components.json").is_file()
+    )
+    kind = ("dit" if complete or config.get("_class_name") == "MOSSImageTransformer" else
+            "text_encoder" if config.get("model_type") == "qwen3_5" else
+            "vae" if config.get("_class_name") == "AutoencoderKLFlux2"
+            and config.get("decoder_block_out_channels") == [96, 192, 384, 384] else None)
+    if kind is None:
+        return None
+    from ypuddin.models.moss_image.latent import MOSSImageLatent
+    from ypuddin.models.moss_image.loading import transformer_config, weight_files
+    from ypuddin.models.moss_image.text import MOSSImageText
+
+    parts = check_moss_paths(original or path, kind, allowed, complete=complete)
+    if complete:
+        dit, text, vae, tokenizer = (parts[key] for key in ("dit", "text_encoder", "vae", "tokenizer"))
+        transformer_config(dit)
+        MOSSImageText.validate_paths(text, tokenizer)
+        MOSSImageLatent.validate_path(vae)
+        components = [(dit, "diffusion_pytorch_model"), (text, "model"), (vae, "diffusion_pytorch_model")]
+    elif kind == "dit":
+        transformer_config(path)
+        components = [(path, "diffusion_pytorch_model")]
+    elif kind == "text_encoder":
+        MOSSImageText.validate_paths(path, parts["tokenizer"])
+        components = [(path, "model")]
+    else:
+        MOSSImageLatent.validate_path(path)
+        components = [(path, "diffusion_pytorch_model")]
+    dtypes = Counter()
+    inspected = 0
+    for component, basename in components:
+        for member in weight_files(component, basename)[0]:
+            inspected += 1
+            budget["files"] += 1
+            if budget["files"] > MAX_FILES:
+                raise ValueError("too many model shards")
+            for item in _header(member).values():
+                dtypes[item["dtype"]] += math.prod(item["shape"])
+    floats = {name for name in dtypes if name in {"BF16", "F32"}}
+    dtype = "bf16" if floats == {"BF16"} else "fp32" if floats == {"F32"} else "mixed"
+    return {"path": str(path), "family": "moss_image", "family_candidates": ["moss_image"], "kind": kind,
+            "dtype": dtype, "dtypes": dict(dtypes), "confidence": "high",
+            "evidence": ["MOSS-Image Base local configuration and complete tensor geometry"],
+            "warnings": [], "files_inspected": inspected}
+
+
 def inspect_model(path: Path, *, allowed=None, _budget: dict[str, int] | None = None,
                   _config_path: Path | None = None) -> dict[str, Any]:
+    original = path
     path = path.expanduser().resolve()
     if allowed and not allowed(path):
         raise ValueError("model path is outside allowed storage roots")
     if not path.exists():
         raise ValueError("model path does not exist")
     budget = _budget if _budget is not None else {"files": 0, "headers": 0}
+    moss = _moss_component(path, allowed, budget, original=original)
+    if moss is not None:
+        return moss
     if path.is_dir():
         directory = _flux3_directory(path, allowed, budget)
         if directory is not None:

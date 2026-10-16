@@ -5,6 +5,25 @@
  */
 type Copy = [string, string];
 
+export const MOSS_WEIGHT_COPY: Record<string, { label: Copy; help: Copy }> = {
+  dit_path: {
+    label: ['MOSS-Image Base DiT', 'MOSS-Image Base DiT'],
+    help: ['选择 MOSS-Image Base 完整模型目录、transformer 目录，或原始未量化的 safetensors 文件；单文件旁需有配套 config.json。\n完整模型包可自动读取内含或已登记共用的文本编码器、VAE 和分词器。单独填写的组件路径优先。', 'Select a MOSS-Image Base package folder, transformer folder, or original unquantized safetensors file with its matching config.json alongside it.\nA full package resolves its bundled or registered shared text encoder, VAE and tokenizer. Explicit component paths take priority.'],
+  },
+  text_encoder_path: {
+    label: ['Qwen3.5-9B 文本编码器', 'Qwen3.5-9B text encoder'],
+    help: ['选择 MOSS-Image 配套的 Qwen3.5-9B text_encoder 目录，或原始未量化的 safetensors 文件；单文件旁需有配套 config.json，并提供本地分词器。\n使用完整模型包时可留空。填写此项后优先使用所选编码器及其配套分词器。', 'Select the matching MOSS-Image Qwen3.5-9B text_encoder folder, or an original unquantized safetensors file with its matching config.json alongside it and a local tokenizer.\nLeave blank with a full model package. Setting this field takes priority and uses the selected encoder with its matching tokenizer.'],
+  },
+  vae_path: {
+    label: ['MOSS-Image VAE', 'MOSS-Image VAE'],
+    help: ['选择 MOSS-Image 配套的小型解码器 VAE 目录，或原始 Diffusers safetensors 文件；单文件旁需有配套 config.json。\n使用完整模型包时可留空；填写此项后优先使用所选 VAE。', 'Select the matching MOSS-Image small-decoder VAE folder, or its original Diffusers safetensors file with the matching config.json alongside it.\nLeave blank with a full model package; an explicit VAE path takes priority.'],
+  },
+  tokenizer_path: {
+    label: ['分词器', 'Tokenizer'],
+    help: ['选择与 Qwen3.5-9B 配套的本地分词器目录，不接受单文件。\n留空时，未单独指定文本编码器会先读取完整模型包的分词器；否则依次查找文本编码器目录旁的 tokenizer 目录、文本编码器目录本身。填写此项后优先使用所选目录。', 'Select a local tokenizer folder matching Qwen3.5-9B; a single file is not supported.\nWhen blank, the full package tokenizer is used first if no explicit text encoder is set. Otherwise, the search checks a tokenizer folder alongside the text encoder folder, then the text encoder folder itself. An explicit tokenizer path takes priority.'],
+  },
+};
+
 export const FIELD_HINTS: Record<string, Copy> = {
   'model.family': ['选择要训练的模型，B 表示十亿参数。', 'The model to train; B means billion parameters.'],
   'training.backbone_lr': ['主模型；留空跟随学习率，0 冻结。', 'Blank inherits the learning rate; 0 freezes these parameters.'],
@@ -292,6 +311,12 @@ export const FIELD_HELP: Record<string, Copy> = {
 };
 
 const MODEL_PATH_HINTS: Record<string, Record<string, Copy>> = {
+  moss_image: {
+    dit_path: ['MOSS-Image Base 完整目录、transformer 目录或原始权重文件。', 'MOSS-Image Base package, transformer folder or original weights file.'],
+    text_encoder_path: ['配套 Qwen3.5-9B 文本编码器，使用完整模型包时可留空。', 'Matching Qwen3.5-9B text encoder; optional with the full package.'],
+    vae_path: ['MOSS-Image 配套 VAE，使用完整模型包时可留空。', 'Matching MOSS-Image VAE; optional with the full package.'],
+    tokenizer_path: ['留空自动查找配套的本地分词器目录。', 'Blank finds the matching local tokenizer folder.'],
+  },
   anima: {
     dit_path: ['Anima 主模型权重文件。', 'Anima main model weights.'],
     text_encoder_path: ['Qwen3-0.6B 文本编码器。', 'Qwen3-0.6B text encoder.'],

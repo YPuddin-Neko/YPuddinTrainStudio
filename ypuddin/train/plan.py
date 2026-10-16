@@ -1197,7 +1197,7 @@ def plan(
                     text_mode = "online" if "online_text" in family.spec.capabilities else "cached"
                 text_inputs = (
                     text_plan_inputs(cfg, family.spec.latent, data_layouts[0] if data_layouts else None)
-                    if cfg.model.family in {"anima", "krea2", "sdxl", "flux2", "flux3"} else {}
+                    if cfg.model.family in {"anima", "krea2", "sdxl", "flux2", "flux3", "moss_image"} else {}
                 )
                 out["errors"].extend(issue for issue in text_inputs.get("errors", []) if issue not in out["errors"])
                 text_preview_unknown = (
@@ -1218,6 +1218,7 @@ def plan(
                 def text_profile(batch_size: int, *, phase: str = "online", token_length: int | None = None,
                                  t5_token_length: int | None = None, prompt_spec: dict | None = None,
                                  include_condition: bool = True, cached_condition_kind: str = "training"):
+                    nonlocal text_capacity_unknown
                     if token_length is None:
                         token_length = text_inputs.get("anima_lengths", {}).get(phase, {}).get("qwen_tokens")
                     if t5_token_length is None:
@@ -1239,6 +1240,8 @@ def plan(
                                 torch.float32 if (compute_policy or {}).get("frozen_text_implementation") else None
                             ),
                         )
+                    if text_profiles[key] is None and cfg.model.family == "moss_image":
+                        text_capacity_unknown = True
                     return text_profiles[key]
 
                 if (
@@ -1279,7 +1282,7 @@ def plan(
                     or optimizer_estimate["step_workspace_bytes"] is None
                     or gradient_workspace_unknown
                 )
-                vae_unknown = vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2", "flux3"}
+                vae_unknown = vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2", "flux3", "moss_image"}
                 training_base = (
                     weights_mb
                     - swapped_mb
@@ -1462,7 +1465,7 @@ def plan(
                         return text_inputs.get("anima_lengths", {}).get(phase, {}).get("t5_tokens", 512)
                     if cfg.model.family == "sdxl":
                         return cfg.model.sdxl_max_token_length + 2
-                    if cfg.model.family == "flux3":
+                    if cfg.model.family in {"flux3", "moss_image"}:
                         return family.spec.text.max_len
                     return 512
 
@@ -1778,7 +1781,7 @@ def plan(
                             selection_error = "无法估算当前检查点保存的内存占用，请使用自定义面积上限。"
                         elif fusion["unsupported"]:
                             selection_error = "当前适配器无法估算完整显存占用；请改用自动分辨率优先或自定义。"
-                        elif vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2", "flux3"}:
+                        elif vae is None and cfg.model.family in {"anima", "krea2", "sdxl", "flux2", "flux3", "moss_image"}:
                             selection_error = "无法估算当前 VAE 的显存占用，请检查模型文件或使用自定义面积上限。"
                         elif not data_layouts or native_out["auto_max_pixels"] is None:
                             selection_error = "无法读取训练图片尺寸，请检查数据集。"
@@ -1863,26 +1866,29 @@ def plan(
                 host_memory_mb += sized["caller_host_mb"]
                 host_memory_mb = max(host_memory_mb, evaluation_host_resident_mb + evaluation_host_mb
                                      + sized["adaptive_host_mb"] + sized["validation_caller_host_mb"])
+                moss_text_unknown = cfg.model.family == "moss_image" and any(
+                    profile is None for profile in text_profiles.values()
+                )
                 total_unknown = bool(
                     cfg.training.train_text_encoder or preview_issue or text_preview_unknown
-                    or optimizer_unknown or vae_unknown
+                    or optimizer_unknown or vae_unknown or moss_text_unknown
                     or evaluation_allocated_unknown
                     or (preview_profile and preview_profile["export_layout_unknowns"])
                 )
                 training_unknown = (
-                    cfg.training.train_text_encoder or optimizer_unknown
+                    cfg.training.train_text_encoder or optimizer_unknown or moss_text_unknown
                     or (vae_unknown and not ds.cache_latents)
                     or evaluation_allocated_unknown
                     or (preview_profile and preview_profile["export_layout_unknowns"])
                 )
-                validation_unknown = bool(cfg.training.train_text_encoder
+                validation_unknown = bool(cfg.training.train_text_encoder or moss_text_unknown
                                           or (vae_unknown and not ds.cache_latents)
                                           or mode_projection["allocated_unknowns"])
 
                 def phase_estimates(values, *, capacity=False):
                     result = {
                         key: None if key == "text_cache" and (
-                            text_preview_unknown or (capacity and cache_text_capacity_unknown)
+                            text_preview_unknown or moss_text_unknown or (capacity and cache_text_capacity_unknown)
                         ) else round(value)
                         for key, value in values.items()
                     }
@@ -1948,6 +1954,7 @@ def plan(
                         + ["text_" + issue["reason"] for issue in text_inputs.get("unknowns", [])]
                         + (["preview_shapes"] if preview_issue is not None else [])
                         + (["image_vae"] if vae_unknown else [])
+                        + (["text_encoder"] if moss_text_unknown else [])
                         + (["text_condition_host_staging"] if text_capacity_unknown or cache_text_capacity_unknown else [])
                         + sorted(set(mode_projection["allocated_unknowns"] + mode_projection["capacity_unknowns"]
                                      + mode_projection["host_unknowns"] + export_projection["allocated_unknowns"]

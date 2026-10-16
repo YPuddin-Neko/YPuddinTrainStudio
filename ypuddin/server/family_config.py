@@ -13,7 +13,7 @@ from ypuddin.models import get_family
 from .environment import environment_attention_default
 from .errors import ApiError
 
-SUPPORTED_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "flux3", "toy"})
+SUPPORTED_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "flux3", "moss_image", "toy"})
 MODEL_PATHS = {
     "dit": "dit_path",
     "text_encoder": "text_encoder_path",
@@ -44,7 +44,7 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
             path = Path(row["path"]).expanduser().resolve()
             valid = (
                 path.is_file()
-                if kind in {"dit", "vae"} and family not in {"sdxl", "flux", "flux2", "flux3"}
+                if kind in {"dit", "vae"} and family not in {"sdxl", "flux", "flux2", "flux3", "moss_image"}
                 else path.is_dir()
                 if kind == "tokenizer"
                 else path.is_file() or path.is_dir()
@@ -56,18 +56,23 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
                     if verified_variant(path) == "turbo":
                         continue
                 associated = None
-                if family in {"flux3", "krea2"} and kind == "text_encoder":
+                if family in {"flux3", "krea2", "moss_image"} and kind == "text_encoder":
                     from .model_recommendations import component_metadata
 
                     associated = component_metadata(c, path).get("processor_path")
-                if family == "flux3" and kind in {"text_encoder", "tokenizer"}:
+                if family in {"flux3", "moss_image"} and kind in {"text_encoder", "tokenizer"}:
                     from .routes_core import _check_model_admission
 
-                    processor = Path(associated or (path if path.is_dir() else path.parent)).resolve()
+                    if family == "moss_image":
+                        from ypuddin.models.moss_image.loading import tokenizer_directory
+
+                        processor = Path(associated or tokenizer_directory(path)).resolve()
+                    else:
+                        processor = Path(associated or (path if path.is_dir() else path.parent)).resolve()
                     _check_model_admission(path, family, kind, c, processor_path=processor)
                     if kind == "text_encoder":
                         text_processor = str(processor)
-                elif family in {"flux2", "flux3"}:
+                elif family in {"flux2", "flux3", "moss_image"}:
                     from .model_inspection import inspect_model, training_rejection
 
                     if family == "flux2" and kind == "text_encoder" and path.is_file():
@@ -116,6 +121,8 @@ def initial_family_config(c: Any, family: str) -> dict[str, Any]:
         config["sampling"].update(shift=1.0, scheduler="uniform")
         config["dataset"]["text_encoding"] = "cached"
         config["memory"]["activation_checkpointing"] = "block"
+    elif family == "moss_image":
+        config["objective"].update(timestep_sampling="moss_image", weighting="none", shift=1.0)
     elif family == "flux3":
         config["objective"].update(timestep_sampling="logit_normal", weighting="none", logit_mean=0.0, logit_std=1.0)
     elif spec.sampling.shift is None:
@@ -124,7 +131,7 @@ def initial_family_config(c: Any, family: str) -> dict[str, Any]:
         )
     else:
         config["objective"].update(timestep_sampling="shift", shift=spec.sampling.shift)
-    if family in {"krea2", "flux2", "flux3"}:
+    if family in {"krea2", "flux2", "flux3", "moss_image"}:
         config["memory"]["activation_checkpointing"] = "block"
     if family == "flux2":
         # Resolve Klein sampling defaults from the selected checkpoint.

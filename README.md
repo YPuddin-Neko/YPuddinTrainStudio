@@ -4,7 +4,7 @@
 
 # YPuddin Train Studio
 
-一个本地运行的训练工作台，支持 Anima、SDXL、Krea 2、FLUX.2 Klein 图像训练，以及 VoxCPM 1.5、GPT-SoVITS v5 语音微调
+一个本地运行的训练工作台，支持 Anima、SDXL、Krea 2、FLUX.2 Klein、MOSS-Image Base 图像训练，以及 VoxCPM 1.5、GPT-SoVITS v5 语音微调
 
 [![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#支持的模型与平台) [![Version](https://img.shields.io/badge/Version-v0.8.0-orange)](CHANGELOG.md) [![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB)](#快速开始) [![PyTorch](https://img.shields.io/badge/PyTorch-2.4%2B-EE4C2C)](docs/RUNTIME.md) [![React](https://img.shields.io/badge/React-18-61DAFB)](frontend/package.json)
 
@@ -29,6 +29,7 @@
 | SDXL | 完整 checkpoint 或独立组件 | CLIP-L、CLIP-G |
 | Krea 2 | Raw；支持 BF16 和受支持的 FP8 scaled 格式 | Qwen3-VL-4B |
 | FLUX.2 Klein | Base 4B / 9B | 对应 Qwen3-4B / Qwen3-8B |
+| MOSS-Image | Base 5B，原始 BF16 / FP32 权重，单卡适配器训练 | 配套 Qwen3.5，保持冻结 |
 
 Krea 2 Turbo 用于采样。Klein 蒸馏版、KV 版及 FLUX.2 dev 不用于训练。各模型所需的 VAE、文件格式和加载限制见 [模型配置](docs/MODELS.md)。
 
