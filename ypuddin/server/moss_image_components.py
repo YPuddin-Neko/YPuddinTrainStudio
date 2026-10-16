@@ -20,6 +20,84 @@ def proof_key(path):
     return "model.moss_image." + hashlib.sha256(str(Path(path).resolve()).encode()).hexdigest()
 
 
+def admission_key(path):
+    return proof_key(path).replace("model.moss_image.", "model.moss_image_admission.", 1)
+
+
+def admission_snapshot(context, path, kind, processor_path=None):
+    """Capture files before an explicit import performs its full structural validation."""
+    from types import SimpleNamespace
+
+    from ypuddin.models.moss_image.loading import component_paths, tokenizer_directory
+
+    path = _safe(context, path)
+
+    def capture(part):
+        part = _safe(context, part)
+        return {"path": str(part), "files": {name: {"stat": signature(member)}
+                for name, member in _files(context, part).items()}}
+
+    records = {"asset": capture(path)}
+    paths = {"asset": path}
+    if kind == "dit" and (path / "transformer").is_dir():
+        parts = component_paths(SimpleNamespace(dit_path=str(path), text_encoder_path=None,
+                                               vae_path=None, tokenizer_path=None))
+        paths.update(zip(("text_encoder", "vae", "tokenizer"), parts[2:], strict=True))
+    elif kind == "text_encoder":
+        from .model_recommendations import component_metadata
+
+        processor_path = processor_path or component_metadata(context, path).get("processor_path")
+        paths["tokenizer"] = Path(processor_path) if processor_path else tokenizer_directory(path)
+    records.update({key: capture(part) for key, part in paths.items() if key != "asset"})
+    for key, part in paths.items():
+        config = part.parent / "config.json"
+        if part.is_file() and config.is_file():
+            records[key]["sidecars"] = [capture(config)]
+    return {"kind": kind, "path": str(path), "records": records}
+
+
+def remember_admission(context, snapshot):
+    if not all(valid_snapshot(context, record) for record in snapshot["records"].values()):
+        raise ValueError("MOSS-Image 文件在校验期间发生变化，请重新导入。")
+    context.db.set_kv(admission_key(snapshot["path"]), snapshot)
+
+
+def admission_error(context, path, kind, processor_path=None):
+    """Project existing validation receipts without importing model implementations."""
+    from .moss_image_downloads import available_bundle, bundle_manifest
+
+    try:
+        path = _safe(context, path)
+        if not path.exists():
+            return "MOSS-Image 本地模型文件不存在。"
+        if kind == "text_encoder":
+            directory = path if path.is_dir() else path.parent
+            sibling = directory.parent / "tokenizer"
+            processor_path = Path(processor_path) if processor_path else sibling if sibling.is_dir() else directory
+            processor_path = _safe(context, processor_path)
+        proof = context.db.get_kv(proof_key(path), {})
+        if kind in {"text_encoder", "vae"} and valid_component(context, proof, kind):
+            records = proof["records"]
+            if (records[kind]["path"] == str(path) and
+                    (not processor_path or records.get("tokenizer", {}).get("path") == str(Path(processor_path).resolve()))):
+                return None
+        if kind == "dit":
+            bundle = "moss-image-base" if (path / "transformer").is_dir() else "moss-image-dit"
+            if any(available_bundle(context, path, bundle_manifest(bundle, provider))
+                   for provider in ("huggingface", "modelscope")):
+                return None
+        receipt = context.db.get_kv(admission_key(path), {})
+        records = receipt.get("records", {})
+        if (receipt.get("path") == str(path) and receipt.get("kind") == kind
+                and records.get("asset", {}).get("path") == str(path)
+                and (not processor_path or records.get("tokenizer", {}).get("path") == str(Path(processor_path).resolve()))
+                and all(valid_snapshot(context, record) for record in records.values())):
+            return None
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return "MOSS-Image 缺少可用校验记录，需重新导入校验。"
+
+
 def component_files(role):
     from .moss_image_downloads import bundle_manifest
 

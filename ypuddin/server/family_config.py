@@ -41,7 +41,8 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
         if field is None or field in paths:
             continue
         try:
-            path = Path(row["path"]).expanduser().resolve()
+            path = Path(row["path"]).expanduser()
+            path = path.absolute() if family == "moss_image" else path.resolve()
             valid = (
                 path.is_file()
                 if kind in {"dit", "vae"} and family not in {"sdxl", "flux", "flux2", "flux3", "moss_image"}
@@ -60,19 +61,23 @@ def _default_model_paths(c: Any, family: str) -> dict[str, str]:
                     from .model_recommendations import component_metadata
 
                     associated = component_metadata(c, path).get("processor_path")
-                if family in {"flux3", "moss_image"} and kind in {"text_encoder", "tokenizer"}:
+                if family == "moss_image":
+                    from .moss_image_components import admission_error
+
+                    if admission_error(c, path, kind, associated):
+                        continue
+                    if kind == "text_encoder":
+                        directory = path if path.is_dir() else path.parent
+                        sibling = directory.parent / "tokenizer"
+                        text_processor = str(Path(associated) if associated else sibling if sibling.is_dir() else directory)
+                elif family == "flux3" and kind in {"text_encoder", "tokenizer"}:
                     from .routes_core import _check_model_admission
 
-                    if family == "moss_image":
-                        from ypuddin.models.moss_image.loading import tokenizer_directory
-
-                        processor = Path(associated or tokenizer_directory(path)).resolve()
-                    else:
-                        processor = Path(associated or (path if path.is_dir() else path.parent)).resolve()
+                    processor = Path(associated or (path if path.is_dir() else path.parent)).resolve()
                     _check_model_admission(path, family, kind, c, processor_path=processor)
                     if kind == "text_encoder":
                         text_processor = str(processor)
-                elif family in {"flux2", "flux3", "moss_image"}:
+                elif family in {"flux2", "flux3"}:
                     from .model_inspection import inspect_model, training_rejection
 
                     if family == "flux2" and kind == "text_encoder" and path.is_file():
