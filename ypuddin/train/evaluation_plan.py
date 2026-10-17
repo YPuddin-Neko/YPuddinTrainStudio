@@ -12,8 +12,10 @@ def evaluation_operations(training_state, cfg, optimizer, *, device_type):
                None if records is None else [record["bytes"] for record in records
                                             if record["placement"] == "device"])
     operations = ["save_state"]
-    if (cfg.checkpoint.save_on_finish or cfg.checkpoint.save_every_steps_enabled
-            or cfg.checkpoint.save_every_epochs_enabled):
+    checkpoint = cfg.checkpoint
+    # A plan draft with an invalid checkpoint section has no export settings to size; it is left unestimated.
+    if checkpoint is not None and (checkpoint.save_on_finish or checkpoint.save_every_steps_enabled
+                                   or checkpoint.save_every_epochs_enabled):
         operations.append("save_weights")
     if cfg.loop.ema:
         # Existing EMA + one update transfer dominates the per-key initialization
@@ -37,7 +39,8 @@ def evaluation_operations(training_state, cfg, optimizer, *, device_type):
         "export_layout": export_layout,
         "mode": optimizer_evaluation_memory(training_state, cfg.optimizer, meta_device_type=device_type),
         "stages": [dict(stage, operation=result["operation"]) for result in results for stage in result["stages"]],
-        "non_tensor_unknowns": sorted({reason for result in results for reason in result["non_tensor_unknowns"]}),
+        "non_tensor_unknowns": sorted({reason for result in results for reason in result["non_tensor_unknowns"]}
+                                      | ({"checkpoint_settings"} if checkpoint is None else set())),
     }
 
 

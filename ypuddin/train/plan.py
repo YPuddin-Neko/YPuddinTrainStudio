@@ -1472,9 +1472,12 @@ def plan(
                 def evaluate_sizing(counts, image_shapes, ds):
                     adaptive_device_mb = adaptive_host_mb = adaptive_host_peak_mb = 0.0
                     adaptive_update_live = adaptive_update_capacity = 0.0
-                    if cfg.objective.infonoise_enabled:
-                        bins = cfg.objective.infonoise_bins
-                        keys = len(counts) if cfg.objective.timestep_sampling == "resolution_sqrt" else 1
+                    objective = cfg.objective
+                    # A draft with an invalid objective section leaves out InfoNoise's few kilobytes
+                    # (at most 128 bins) rather than guess them.
+                    if objective is not None and objective.infonoise_enabled:
+                        bins = objective.infonoise_bins
+                        keys = len(counts) if objective.timestep_sampling == "resolution_sqrt" else 1
                         # Constructor arrays, cached baselines, and a bounded set of update vectors.
                         target_bytes = 4 if device_type == "mps" else 8
                         device_bytes = (4 * bins + 8) * target_bytes + ds.batch_size * 12
