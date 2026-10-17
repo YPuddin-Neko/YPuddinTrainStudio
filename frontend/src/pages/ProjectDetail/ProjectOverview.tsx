@@ -18,7 +18,7 @@ import { artifactKindLabel, focusJob, mergeJobEvent, shortTime } from '../../uti
 import { modelConfigUrl, projectUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { LoadingNote } from '../../components/Loading';
-import { inactiveTrainingReason } from '../../utils/trainingFamilies';
+import { familyDisplayName, inactiveTrainingReason } from '../../utils/trainingFamilies';
 import { JobProgressSummary, JobStatus } from '../Queue/jobPresentation';
 import { formatRateValue } from '../JobDetail/metricPresentation';
 import { ProjectArtwork } from '../Projects/ProjectCardParts';
@@ -45,7 +45,6 @@ export interface ProjectOverviewProps {
 const LIVE = ['queued', 'scheduled', 'running', 'pausing', 'cancelling'];
 const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const fileName = (value: unknown) => typeof value === 'string' ? value.trim().replace(/\\/g, '/').split('/').filter(Boolean).pop() || '' : '';
-const FAMILY_NAMES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2 Klein', flux3: 'FLUX.3 Klein 5.5B', moss_image: 'MOSS-Image 5B', toy: 'Toy' };
 
 /** Missing, failed and in-progress indexes must never look like an empty dataset. */
 function overviewDatasetStats(datasets: OverviewDataset[]) {
@@ -109,7 +108,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
   const focusArtifact = focus && artifacts.filter(item => item.job_id === focus.id).sort((a, b) => (b.step ?? -1) - (a.step ?? -1) || b.created_at - a.created_at)[0];
 
   const family = config.model?.family || version?.family || project.active_family || '';
-  const familyLabel = families.data?.find(item => item.name === family)?.label || FAMILY_NAMES[family] || family;
+  const familyLabel = familyDisplayName(families.data, family);
   const inactiveReason = inactiveTrainingReason(config, english);
   const baseModel = fileName(config.model?.dit_path);
   const hasTrainingImages = stats.training !== null && stats.training > 0;

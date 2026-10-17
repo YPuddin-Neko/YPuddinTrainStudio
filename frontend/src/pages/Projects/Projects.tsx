@@ -7,6 +7,7 @@ import { apiClient } from '../../api/client';
 import type { FamilyInfo } from '../../api/types';
 import StudioSelect from '../../components/StudioSelect';
 import { formatApiError } from '../../utils/errors';
+import { familyDisplayName } from '../../utils/trainingFamilies';
 import { ttsEngineLabel } from '../../utils/ttsEngines';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import ProjectEditor from './ProjectEditor';
@@ -24,8 +25,6 @@ import PageLocation from '../../components/PageLocation';
 
 const PAGE_SIZE = 24;
 const ACTIVE = ['running', 'pausing', 'cancelling'];
-// Shown until the registered family labels arrive.
-const FAMILY_NAMES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', sdxl: 'SDXL', flux: 'FLUX.1', flux2: 'FLUX.2 Klein', flux3: 'FLUX.3 Klein 5.5B', moss_image: 'MOSS-Image 5B', toy: 'Toy' };
 
 export default function Projects() {
   const { t, i18n } = useTranslation();
@@ -107,7 +106,7 @@ export default function Projects() {
     setParams(next, { replace: true });
   }, [loading, error, requestedPage, pageCount, params, setParams]);
 
-  const familyLabel = (name?: string | null) => name ? (Array.isArray(families.data) && families.data.find(family => family.name === name)?.label) || FAMILY_NAMES[name] || name : '';
+  const familyLabel = (name?: string | null) => name ? familyDisplayName(Array.isArray(families.data) ? families.data : undefined, name) : '';
   const versionLabel = (project: GalleryProject) => {
     const number = project.active_version_number ? `v${project.active_version_number}` : '';
     const name = project.active_version_name?.trim() || '';
