@@ -43,7 +43,8 @@ export default function LocalModelRegistration({ initialFamily, initialKind = ''
         if(controller.signal.aborted)return;
         setDetected(result);setKind(result.kind||'');setDtype(result.dtype||'');setVariant(result.variant||'');if(result.variant==='turbo')setIsDefault(false);
         const available = familyNames.split('\0').filter(name => name && (!result.family_candidates.length || result.family_candidates.includes(name)));
-        setFamily(current=>available.length > 1 && available.includes(current) ? current : result.family ? available.includes(result.family) ? result.family : '' : available.includes(current) ? current : available[0] || '');
+        // Keep the current family only among several the inspection names for a shared component; an empty list is not a match.
+        setFamily(current=>result.family_candidates.length > 1 && available.includes(current) ? current : result.family ? available.includes(result.family) ? result.family : '' : available.includes(current) ? current : available[0] || '');
         inspectedPath.current=path.trim();setDetecting(false);
       }).catch(error=>{if(!controller.signal.aborted){setError(formatApiError(error));setDetecting(false);}});
     },300);
