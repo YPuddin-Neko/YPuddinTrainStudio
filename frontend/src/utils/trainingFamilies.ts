@@ -19,6 +19,11 @@ export function familyDisplayName(families: FamilyInfo[] | undefined, name: stri
   return families?.find(family => family.name === name)?.label || FAMILY_NAMES[name] || name;
 }
 
+/** The series alone, without parameter size or a note: "Anima 2B" → "Anima", "FLUX.2 Klein 4B / 9B" → "FLUX.2 Klein", "Toy DiT（CPU 自检）" → "Toy DiT". */
+export function familySeriesName(label: string): string {
+  return label.replace(/\s*[（(][^（()）]*[）)]$/, '').replace(/\s+\d+(?:\.\d+)?B(?:\s*\/\s*\d+(?:\.\d+)?B)*$/, '') || label;
+}
+
 export function inactiveTrainingReason(config: Record<string, any> | null | undefined, english = false): string | undefined {
   const name = config?.model?.family;
   const variant = config?.model?.flux2_variant;

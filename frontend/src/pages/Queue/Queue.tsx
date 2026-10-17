@@ -17,7 +17,7 @@ import { EVENT_TYPES } from '../../events/eventTypes';
 import { formatApiError } from '../../utils/errors';
 import { jobModelTypeLabel, jobTypeLabel, mergeJobEvent, shortTime } from '../../utils/jobs';
 import { useFamilies } from '../../api/hooks/useFamilies';
-import { familyDisplayName, trainingFamilyOptions } from '../../utils/trainingFamilies';
+import { familyDisplayName, familySeriesName, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { TTS_ENGINES, ttsEngineLabel } from '../../utils/ttsEngines';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { JobActions, JobContext, JobProgressSummary, JobStatus, type ContextJob } from './jobPresentation';
@@ -146,11 +146,12 @@ export default function Queue() {
   const filtered = !!(query || project || type || modelType || status);
   const families = useFamilies();
   const modelLabel = (job: Job) => jobModelTypeLabel(job, families.data);
-  const familyChoices = trainingFamilyOptions(families.data || [], text('zh', 'en') === 'en', modelType);
+  // Named by series, as on each row.
+  const familyChoices = trainingFamilyOptions(families.data || [], text('zh', 'en') === 'en', modelType).map(option => ({ ...option, label: familySeriesName(option.label) }));
   const modelTypeOptions = [{ value: '', label: text('所有模型类型', 'All model types') }, ...familyChoices,
     ...TTS_ENGINES.map(engine => ({ value: engine, label: ttsEngineLabel(engine) }))];
   // A link may name a type the lists leave out, such as retired FLUX.1; it stays readable as the selection.
-  if (modelType && !modelTypeOptions.some(option => option.value === modelType)) modelTypeOptions.push({ value: modelType, label: familyDisplayName(families.data, modelType) });
+  if (modelType && !modelTypeOptions.some(option => option.value === modelType)) modelTypeOptions.push({ value: modelType, label: familySeriesName(familyDisplayName(families.data, modelType)) });
   const groupLabels = { active: text('运行与暂停', 'Active & paused'), waiting: text('等待调度', 'Waiting'), history: text('训练历史', 'History'), archive: text('归档', 'Archive') };
   const statusLabels: Record<string, string> = { running: text('运行中', 'Running'), pausing: text('暂停中', 'Pausing'), cancelling: text('取消中', 'Cancelling'), paused: text('已暂停', 'Paused'), queued: text('排队中', 'Queued'), scheduled: text('已排期', 'Scheduled'), completed: text('已完成', 'Completed'), failed: text('失败', 'Failed'), cancelled: text('已取消', 'Cancelled') };
   const devices = gpuStatus.snapshot?.devices || [];

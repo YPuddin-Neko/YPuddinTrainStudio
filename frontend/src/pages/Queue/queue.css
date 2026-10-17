@@ -93,9 +93,9 @@
 .queue-job-name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--studio-text); font-weight:600; }
 .queue-job-name:hover { color:var(--studio-accent); }
 .queue-job-cell small { overflow-wrap:anywhere; white-space:normal; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:11px; }
-/* The model type sits above the job type, level with the job name and its ID. */
-.queue-kind { flex:none; display:flex; flex-direction:column; align-items:center; gap:2px; max-width:120px; }
-.queue-model { max-width:100%; overflow:hidden; text-overflow:ellipsis; color:var(--studio-text); font-size:11px; font-weight:600; line-height:16px; white-space:nowrap; }
+/* The model type sits centered above the job type, level with the job name and its ID; one width for every row keeps the names in a column. */
+.queue-kind { flex:none; width:96px; display:flex; flex-direction:column; align-items:center; gap:3px; }
+.queue-model { max-width:100%; overflow:hidden; text-overflow:ellipsis; color:var(--studio-text); font-size:12px; font-weight:500; line-height:19.5px; white-space:nowrap; }
 .queue-type { flex:none; padding:0 5px; border-radius:4px; background:var(--studio-muted); color:var(--studio-dim); font-family:var(--studio-font, system-ui); font-size:11px; line-height:18px; white-space:nowrap; }
 .queue-table td:nth-child(2) { min-width:140px; max-width:220px; }
 .queue-status-cell { width:28%; min-width:200px; }
@@ -167,6 +167,9 @@
 }
 @container (max-width:460px) {
   .queue-filters { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  /* Too narrow for two columns: the model and job type share a line above the name. */
+  .queue-job-identity { flex-direction:column; align-items:stretch; gap:4px; }
+  .queue-kind { width:auto; flex-direction:row; align-items:center; gap:6px; }
   .queue-navigation .task-tabs > button { gap:4px; padding:6px 8px; font-size:12px; line-height:1.3; }
   .queue-navigation .task-tabs > button > svg { display:none; }
   .queue-board-head { padding:4px 12px 12px; }
