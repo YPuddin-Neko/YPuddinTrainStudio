@@ -75,7 +75,11 @@ export default function ConfigHelp({ label, children, tone }: { label: string; c
         close();
         return;
       }
-      const width = Math.max(1, Math.min(320, bounds.right - bounds.left - 2 * INSET));
+      const room = Math.max(1, Math.min(320, bounds.right - bounds.left - 2 * INSET));
+      // A short warning hugs its text; help keeps the full reading width.
+      if (tone === 'warning') popup.style.width = 'max-content';
+      const natural = tone === 'warning' ? Math.ceil(popup.getBoundingClientRect().width) : 0;
+      const width = natural > 0 ? Math.min(room, natural) : room;
       // Set the constrained width before measuring wrapped text, then publish both
       // coordinates together in layout effect so no unpositioned frame is painted.
       popup.style.width = `${width}px`;
@@ -137,7 +141,7 @@ export default function ConfigHelp({ label, children, tone }: { label: string; c
       window.visualViewport?.removeEventListener('resize', place);
       window.visualViewport?.removeEventListener('scroll', scrolled);
     };
-  }, [open, close, children]);
+  }, [open, close, children, tone]);
 
   return <>
     {inRouter && <RouteDismiss close={close} />}
