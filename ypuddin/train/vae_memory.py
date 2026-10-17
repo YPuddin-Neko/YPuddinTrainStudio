@@ -27,6 +27,7 @@ import torch
 
 from ypuddin.config import TrainConfig
 from ypuddin.models.vae_tiling import CACHE_TILE_PIXELS, CACHE_TILE_THRESHOLD, VAE_TILE_PIXELS
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 log = logging.getLogger(__name__)
 
@@ -132,7 +133,8 @@ def _qwen_vae_parameter_count() -> int:
 @lru_cache(maxsize=16)
 def _autoencoder_kl_geometry(family: str, config_json: str) -> tuple[int, int]:
     """FP32 storage bytes and mid-block attention width of a Diffusers AutoencoderKL, built on meta."""
-    from diffusers import AutoencoderKL, AutoencoderKLFlux2
+    with LIBRARY_IMPORTS:
+        from diffusers import AutoencoderKL, AutoencoderKLFlux2
 
     model_type = AutoencoderKLFlux2 if family == "flux2" else AutoencoderKL
     with torch.device("meta"):

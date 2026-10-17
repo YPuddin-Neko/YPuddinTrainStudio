@@ -23,6 +23,7 @@ from ypuddin.models.anima.text import ASSETS as ANIMA_ASSETS
 from ypuddin.models.anima.text import tokenizer_assets
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.memory import release_model_memory
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 log = logging.getLogger(__name__)
 
@@ -91,7 +92,8 @@ def _dequant_fp8_scaled(sd: dict[str, Tensor], dtype: torch.dtype) -> dict[str, 
 def text_config_for(path: str | Path):
     """Decoder config of the checkpoint at ``path``: an HF directory, or a single file with the model's ``config.json``
     next to it; a lone single file is assumed to be Qwen3-VL-4B-Instruct (the only encoder Krea 2 ships with)."""
-    from transformers import Qwen3VLConfig, Qwen3VLTextConfig
+    with LIBRARY_IMPORTS:
+        from transformers import Qwen3VLConfig, Qwen3VLTextConfig
 
     p = Path(path)
     cfg_dir = p if p.is_dir() else p.parent
@@ -124,7 +126,8 @@ def select_layers_for(num_hidden_layers: int, txtlayers: int) -> tuple[int, ...]
 
 def _load_language_model(path: str | Path, dtype: torch.dtype, device: torch.device | str) -> nn.Module:
     """The Qwen3-VL text decoder only (the vision tower is never used for conditioning)."""
-    from transformers import Qwen3VLForConditionalGeneration, Qwen3VLTextModel
+    with LIBRARY_IMPORTS:
+        from transformers import Qwen3VLForConditionalGeneration, Qwen3VLTextModel
 
     p = Path(path)
     if p.is_dir():
@@ -184,7 +187,8 @@ class Krea2Text(TextPipeline):
         select_layers: tuple[int, ...] | None = None,
         txtlayers: int = len(SELECT_LAYERS),
     ):
-        from transformers import AutoTokenizer
+        with LIBRARY_IMPORTS:
+            from transformers import AutoTokenizer
 
         p = Path(text_encoder_path)
         tok_dir = (

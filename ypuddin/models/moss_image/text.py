@@ -7,6 +7,7 @@ from torch import Tensor
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.fingerprints import content_fingerprint
 from ypuddin.models.memory import release_model_memory
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 from .loading import read_json, tokenizer_directory, validate_weights
 
@@ -43,7 +44,8 @@ class MOSSImageText(TextPipeline):
         if not tok.get("chat_template") and not (tokenizer_path / "chat_template.jinja").is_file():
             raise ValueError("MOSS-Image 分词器缺少 chat template。")
         try:
-            from transformers import Qwen3_5Config, Qwen3_5Model
+            with LIBRARY_IMPORTS:
+                from transformers import Qwen3_5Config, Qwen3_5Model
         except ImportError as error:
             raise ValueError("当前 Transformers 缺少 Qwen3.5 模型支持。") from error
         with torch.random.fork_rng(devices=[]), torch.device("meta"):
@@ -53,14 +55,16 @@ class MOSSImageText(TextPipeline):
 
     def _ensure(self):
         if self.tokenizer is None:
-            from transformers import AutoTokenizer
+            with LIBRARY_IMPORTS:
+                from transformers import AutoTokenizer
 
             self.tokenizer = AutoTokenizer.from_pretrained(str(self.tokenizer_path), local_files_only=True, trust_remote_code=False)
             if not self.tokenizer.chat_template:
                 raise ValueError("MOSS-Image 分词器缺少 chat template。")
         if self.model is None:
             from safetensors.torch import load_file
-            from transformers import Qwen3_5Config, Qwen3_5Model
+            with LIBRARY_IMPORTS:
+                from transformers import Qwen3_5Config, Qwen3_5Model
 
             kwargs = {}
             source = str(self.path)

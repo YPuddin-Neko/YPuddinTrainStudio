@@ -18,6 +18,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
+
 from .core import (
     MODEL_REQUIRED_MESSAGE,
     SAMPLE_RATE,
@@ -314,8 +316,9 @@ def _child_probe(request: dict) -> dict:
         except Exception as exc:
             checks["model"] = _check("model", "unavailable", str(exc))
         try:
-            from transformers import LlamaTokenizerFast
-            from voxcpm.model.utils import mask_multichar_chinese_tokens
+            with LIBRARY_IMPORTS:
+                from transformers import LlamaTokenizerFast
+                from voxcpm.model.utils import mask_multichar_chinese_tokens
 
             tokenizer = mask_multichar_chinese_tokens(LlamaTokenizerFast.from_pretrained(config.model_path, local_files_only=True))
             tokenizer("语音 text")

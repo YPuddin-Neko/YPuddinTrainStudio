@@ -9,6 +9,8 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import load_file
 
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
+
 from .dit import MOSSImageTransformer
 
 BASE_CONFIG = dict(dim=3072, ffn_dim=8192, num_heads=24, num_layers=42, text_dim=4096,
@@ -25,8 +27,9 @@ def runtime_error() -> str | None:
         except (PackageNotFoundError, ValueError):
             return f"MOSS-Image 需要安装 {package} {minimum} 或更新版本。"
     try:
-        from diffusers import AutoencoderKLFlux2  # noqa: F401
-        from transformers import Qwen3_5Model  # noqa: F401
+        with LIBRARY_IMPORTS:
+            from diffusers import AutoencoderKLFlux2  # noqa: F401
+            from transformers import Qwen3_5Model  # noqa: F401
     except (ImportError, RuntimeError) as error:
         return f"当前模型运行环境缺少 MOSS-Image 所需组件：{error}"
     return None

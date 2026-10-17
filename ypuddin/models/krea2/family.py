@@ -36,6 +36,7 @@ from ypuddin.models.base import (
 )
 from ypuddin.models.registry import register
 from ypuddin.objectives.flow import resolution_shift_value
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 from .text import Krea2Text
 
@@ -581,7 +582,8 @@ class Krea2Family(ModelFamily):
         _freeze_fp8_linears(backbone, scales)
 
     def cache_memory_estimate(self, cfg: TrainConfig, dtype: torch.dtype) -> dict[str, float]:
-        from transformers import Qwen3VLTextModel
+        with LIBRARY_IMPORTS:
+            from transformers import Qwen3VLTextModel
 
         from .text import text_config_for
 

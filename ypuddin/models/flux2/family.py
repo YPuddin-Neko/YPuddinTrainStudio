@@ -24,6 +24,7 @@ from ypuddin.models.base import (
     TextSpec,
 )
 from ypuddin.models.registry import register
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 from .latent import Flux2Latent, patchify, unpatchify
 from .loading import (
@@ -203,7 +204,8 @@ class Flux2Family(ModelFamily):
         text = Flux2Text(text_path, tokenizer, variant=variant, dtype=dtype, device=device)
         if text.hidden_size != config.get("joint_attention_dim", 7680):
             raise ValueError("FLUX.2 text encoder hidden width does not match the selected transformer")
-        from diffusers import Flux2Transformer2DModel
+        with LIBRARY_IMPORTS:
+            from diffusers import Flux2Transformer2DModel
 
         with torch.device("meta"):
             backbone = Flux2Transformer2DModel.from_config(config)
@@ -239,7 +241,8 @@ class Flux2Family(ModelFamily):
     def _sampling_shift(num_tokens, steps):
         import math
 
-        from diffusers.pipelines.flux2.pipeline_flux2_klein import compute_empirical_mu
+        with LIBRARY_IMPORTS:
+            from diffusers.pipelines.flux2.pipeline_flux2_klein import compute_empirical_mu
 
         return math.exp(compute_empirical_mu(num_tokens, steps))
 
@@ -265,7 +268,8 @@ class Flux2Family(ModelFamily):
 
     def prepare_attention(self, loaded, configured, *, device, dtype, training, pinned=None):
         """Check the selected backend on a one-block Klein with the real head dim, then apply it."""
-        from diffusers import Flux2Transformer2DModel
+        with LIBRARY_IMPORTS:
+            from diffusers import Flux2Transformer2DModel
 
         from ypuddin.models.attention_check import check_attention, grad_mode
 
@@ -383,7 +387,7 @@ class Flux2Family(ModelFamily):
     def meta_backbone(self, cfg):
         # Lazy library imports may initialize Dynamo with real scalar probes.
         # Keep imports on CPU even when a caller wraps construction in meta.
-        with torch.device("cpu"):
+        with torch.device("cpu"), LIBRARY_IMPORTS:
             from diffusers import Flux2Transformer2DModel
 
         requested = getattr(cfg, "flux2_variant", "auto")

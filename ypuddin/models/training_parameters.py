@@ -4,6 +4,8 @@ from pathlib import Path
 
 import torch
 
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
+
 
 def text_modules_for_plan(family, cfg):
     name = family.spec.name
@@ -20,7 +22,8 @@ def text_modules_for_plan(family, cfg):
                 module.register_parameter("pos", torch.nn.Parameter(torch.empty(MAX_LEN, DIM)))
             return {"text_encoder": module}
         if name == "anima":
-            from transformers import AutoConfig, Qwen3Model
+            with LIBRARY_IMPORTS:
+                from transformers import AutoConfig, Qwen3Model
 
             from .anima.text import ASSETS
 
@@ -31,13 +34,15 @@ def text_modules_for_plan(family, cfg):
             )
             constructors = [(Qwen3Model, config)]
         elif name == "krea2":
-            from transformers import Qwen3VLTextModel
+            with LIBRARY_IMPORTS:
+                from transformers import Qwen3VLTextModel
 
             from .krea2.text import text_config_for
 
             constructors = [(Qwen3VLTextModel, text_config_for(cfg.text_encoder_path or ""))]
         elif name == "sdxl":
-            from transformers import CLIPTextConfig, CLIPTextModel, CLIPTextModelWithProjection
+            with LIBRARY_IMPORTS:
+                from transformers import CLIPTextConfig, CLIPTextModel, CLIPTextModelWithProjection
 
             from .sdxl.loading import component_config, component_path
 
@@ -53,7 +58,8 @@ def text_modules_for_plan(family, cfg):
                 )
             ]
         elif name == "flux2":
-            from transformers import Qwen3Config, Qwen3ForCausalLM
+            with LIBRARY_IMPORTS:
+                from transformers import Qwen3Config, Qwen3ForCausalLM
 
             path = family._paths(cfg)[2]
             constructors = [(Qwen3ForCausalLM, Qwen3Config.from_pretrained(str(path), local_files_only=True))]

@@ -8,6 +8,7 @@ from torch import Tensor
 from ypuddin.models.base import LatentPipeline
 from ypuddin.models.fingerprints import content_fingerprint
 from ypuddin.models.memory import release_model_memory
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 from .loading import read_json, shapes
 
@@ -49,7 +50,8 @@ class Flux2Latent(LatentPipeline):
 
     def _ensure(self):
         if self.vae is None:
-            from diffusers import AutoencoderKLFlux2
+            with LIBRARY_IMPORTS:
+                from diffusers import AutoencoderKLFlux2
 
             if self.path.is_dir():
                 model, info = AutoencoderKLFlux2.from_pretrained(
@@ -65,7 +67,8 @@ class Flux2Latent(LatentPipeline):
                 ):
                     raise ValueError(f"FLUX.2 VAE weights do not match config: {info}")
             else:
-                from diffusers.loaders.single_file_utils import convert_ldm_vae_checkpoint
+                with LIBRARY_IMPORTS:
+                    from diffusers.loaders.single_file_utils import convert_ldm_vae_checkpoint
                 from safetensors.torch import load_file
 
                 state = load_file(str(self.path))

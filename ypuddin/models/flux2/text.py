@@ -8,6 +8,7 @@ import torch
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.fingerprints import content_fingerprint
 from ypuddin.models.memory import release_model_memory
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 from .loading import DEV_UNSUPPORTED, KLEIN_VARIANTS, read_json, shapes
 from .single_text import load_single_text, text_config
@@ -73,13 +74,15 @@ class Flux2Text(TextPipeline):
 
     def _ensure(self):
         if self.tokenizer is None:
-            from transformers import AutoTokenizer
+            with LIBRARY_IMPORTS:
+                from transformers import AutoTokenizer
 
             self.tokenizer = AutoTokenizer.from_pretrained(str(self.tokenizer_path), local_files_only=True)
             if self.tokenizer.pad_token_id is None:
                 raise ValueError("FLUX.2 Qwen3 tokenizer has no padding token")
         if self.model is None:
-            from transformers import Qwen3ForCausalLM
+            with LIBRARY_IMPORTS:
+                from transformers import Qwen3ForCausalLM
 
             if self.path.is_file():
                 self.model = load_single_text(self.path, self.config, self.dtype)
@@ -121,7 +124,8 @@ class Flux2Text(TextPipeline):
 
     def _encode(self, captions, device):
         self._ensure()
-        from diffusers import Flux2KleinPipeline
+        with LIBRARY_IMPORTS:
+            from diffusers import Flux2KleinPipeline
 
         from .text_compute import frozen_text_compute
 

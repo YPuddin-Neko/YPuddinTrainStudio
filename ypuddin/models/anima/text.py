@@ -18,6 +18,7 @@ from torch import Tensor, nn
 
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.memory import release_model_memory
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,8 @@ T5_EOS_ID = 1
 
 def require_qwen3_runtime() -> None:
     try:
-        from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM  # noqa: F401
+        with LIBRARY_IMPORTS:
+            from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM  # noqa: F401
     except Exception as exc:
         packages = []
         for name in ("torch", "torchvision", "transformers"):
@@ -70,7 +72,8 @@ def _load_qwen3(path: str | Path, dtype: torch.dtype, device: torch.device | str
     from .checkpoint import check_unquantized_checkpoint
 
     check_unquantized_checkpoint(path, "Anima 文字编码器")
-    from transformers import AutoConfig, AutoModelForCausalLM
+    with LIBRARY_IMPORTS:
+        from transformers import AutoConfig, AutoModelForCausalLM
 
     p = Path(path)
     if p.is_dir():
@@ -157,7 +160,8 @@ class AnimaText(TextPipeline):
         device: torch.device | str = "cpu",
         max_len: int = 1024,
     ):
-        from transformers import AutoTokenizer, T5TokenizerFast
+        with LIBRARY_IMPORTS:
+            from transformers import AutoTokenizer, T5TokenizerFast
 
         qwen_tok_dir = (
             Path(text_encoder_path)

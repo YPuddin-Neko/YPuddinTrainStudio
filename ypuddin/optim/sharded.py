@@ -14,6 +14,8 @@ from typing import Any
 import torch
 from torch.distributed.tensor import DTensor, Replicate, Shard
 
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
+
 
 def _parameters(optimizer):
     return [parameter for group in optimizer.param_groups for parameter in group["params"]]
@@ -114,7 +116,8 @@ def prepare_sharded_optimizer(optimizer):
     FP32 parameters smaller than the mesh may remain ordinary replicated tensors;
     the caller must synchronize their gradients before stepping the optimizer.
     """
-    from transformers.optimization import Adafactor
+    with LIBRARY_IMPORTS:
+        from transformers.optimization import Adafactor
 
     if type(optimizer) not in {Adafactor, torch.optim.SGD, torch.optim.AdamW}:
         raise ValueError("FSDP2 currently supports native SGD, AdamW and Transformers Adafactor")

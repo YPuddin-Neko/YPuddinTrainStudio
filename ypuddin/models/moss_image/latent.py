@@ -5,6 +5,7 @@ import torch
 
 from ypuddin.models.fingerprints import content_fingerprint
 from ypuddin.models.flux2.latent import Flux2Latent, patchify, unpatchify  # noqa: F401
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 from .loading import read_json, validate_weights
 
@@ -15,7 +16,8 @@ DECODER_CHANNELS = (96, 192, 384, 384)
 class MOSSImageLatent(Flux2Latent):
     @classmethod
     def validate_path(cls, path):
-        from diffusers import AutoencoderKLFlux2
+        with LIBRARY_IMPORTS:
+            from diffusers import AutoencoderKLFlux2
 
         path = Path(path)
         config = read_json((path if path.is_dir() else path.parent) / "config.json")

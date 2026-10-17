@@ -21,6 +21,7 @@ from ypuddin.models.base import (
     TextSpec,
 )
 from ypuddin.models.registry import register
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 from .latent import SDXLLatent
 from .loading import (
@@ -220,7 +221,12 @@ class SDXLFamily(ModelFamily):
         UNet's real attention dtype and head dims instead. A failed check leaves the
         loaded SDPA processors untouched.
         """
-        from diffusers.models.attention_processor import Attention, AttnProcessor2_0, XFormersAttnProcessor
+        with LIBRARY_IMPORTS:
+            from diffusers.models.attention_processor import (
+                Attention,
+                AttnProcessor2_0,
+                XFormersAttnProcessor,
+            )
 
         from ypuddin.models.attention_check import check_attention, grad_mode
 
@@ -354,14 +360,15 @@ class SDXLFamily(ModelFamily):
         return MemoryLayout()
 
     def adapter_checkpoint_blocks_for_plan(self, backbone: nn.Module) -> list[nn.Module]:
-        from diffusers.models.transformers.transformer_2d import Transformer2DModel
-        from diffusers.models.unets.unet_2d_blocks import (
-            CrossAttnDownBlock2D,
-            CrossAttnUpBlock2D,
-            DownBlock2D,
-            UNetMidBlock2DCrossAttn,
-            UpBlock2D,
-        )
+        with LIBRARY_IMPORTS:
+            from diffusers.models.transformers.transformer_2d import Transformer2DModel
+            from diffusers.models.unets.unet_2d_blocks import (
+                CrossAttnDownBlock2D,
+                CrossAttnUpBlock2D,
+                DownBlock2D,
+                UNetMidBlock2DCrossAttn,
+                UpBlock2D,
+            )
 
         blocks = []
         for block in (*backbone.down_blocks, *backbone.up_blocks):
@@ -386,7 +393,7 @@ class SDXLFamily(ModelFamily):
 
     def meta_backbone(self, cfg: ModelConfig) -> nn.Module:
         # Import-time library probes require real CPU scalars, not meta tensors.
-        with torch.device("cpu"):
+        with torch.device("cpu"), LIBRARY_IMPORTS:
             from diffusers import UNet2DConditionModel
 
         path = component_path(cfg.dit_path or ".", "unet")

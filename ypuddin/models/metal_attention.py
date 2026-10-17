@@ -17,6 +17,7 @@ from torch.nn import functional as F
 from torch.overrides import TorchFunctionMode
 
 from ypuddin.models import attention_check
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 from ypuddin.runtime_profiles import current_profile
 
 METAL_FLASH_IMPLEMENTATION_ID = "mtlattn-fp32-v1"
@@ -150,7 +151,8 @@ class _ScopedProcessor:
         self.original = original
         self.delegate = copy(original)
         if hasattr(self.delegate, "_attention_backend"):
-            from diffusers.models.attention_dispatch import AttentionBackendName
+            with LIBRARY_IMPORTS:
+                from diffusers.models.attention_dispatch import AttentionBackendName
 
             self.delegate._attention_backend = AttentionBackendName.NATIVE
 
@@ -180,14 +182,16 @@ class _Flux2ParallelMetalProcessor(_ScopedProcessor):
 
 def _processor_types(family):
     if family == "sdxl":
-        from diffusers.models.attention_processor import AttnProcessor2_0
+        with LIBRARY_IMPORTS:
+            from diffusers.models.attention_processor import AttnProcessor2_0
 
         return {AttnProcessor2_0: _SDXLMetalProcessor}
     if family == "flux2":
-        from diffusers.models.transformers.transformer_flux2 import (
-            Flux2AttnProcessor,
-            Flux2ParallelSelfAttnProcessor,
-        )
+        with LIBRARY_IMPORTS:
+            from diffusers.models.transformers.transformer_flux2 import (
+                Flux2AttnProcessor,
+                Flux2ParallelSelfAttnProcessor,
+            )
 
         return {
             Flux2AttnProcessor: _Flux2MetalProcessor,

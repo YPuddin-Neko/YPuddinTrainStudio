@@ -11,6 +11,7 @@ from torch import Tensor
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.fingerprints import content_fingerprint
 from ypuddin.models.memory import release_model_memory
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 
 class Flux3Text(TextPipeline):
@@ -104,7 +105,8 @@ class Flux3Text(TextPipeline):
             missing = sorted(set(weight_map) - set(shapes))
             raise ValueError(f"FLUX.3 文本编码器分片缺少索引中的权重：{missing[:3]}")
         try:
-            from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration
+            with LIBRARY_IMPORTS:
+                from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration
         except ImportError as error:
             raise ValueError("当前 Transformers 缺少 Qwen3-VL 模型支持，无法读取 FLUX.3 文本编码器。") from error
         try:
@@ -155,7 +157,8 @@ class Flux3Text(TextPipeline):
 
     def _ensure(self):
         if self.processor is None:
-            from transformers import AutoProcessor
+            with LIBRARY_IMPORTS:
+                from transformers import AutoProcessor
 
             processor = AutoProcessor.from_pretrained(str(self.processor_path), local_files_only=True)
             if processor.tokenizer.pad_token_id is None:
@@ -165,7 +168,8 @@ class Flux3Text(TextPipeline):
             processor.tokenizer.padding_side = "right"
             self.processor = processor
         if self.model is None:
-            from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration
+            with LIBRARY_IMPORTS:
+                from transformers import Qwen3VLConfig, Qwen3VLForConditionalGeneration
 
             kwargs = {}
             source = str(self.path)

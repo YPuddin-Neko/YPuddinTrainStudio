@@ -14,6 +14,8 @@ from typing import Any
 import torch
 from torch import Tensor, nn
 
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
+
 ASSETS = Path(__file__).parent / "assets"
 PREFIXES = {
     "unet": "model.diffusion_model.",
@@ -174,7 +176,8 @@ def _check_loading_info(info: dict[str, Any], component: str) -> None:
 def load_diffusers_component(
     path: Path, component: str, *, device: torch.device | str, dtype: torch.dtype
 ) -> nn.Module:
-    from diffusers import AutoencoderKL, UNet2DConditionModel
+    with LIBRARY_IMPORTS:
+        from diffusers import AutoencoderKL, UNet2DConditionModel
 
     cls = UNet2DConditionModel if component == "unet" else AutoencoderKL
     if path.is_dir():
@@ -200,7 +203,8 @@ def load_diffusers_component(
 
 
 def load_clip(path: Path, component: str, *, device: torch.device | str, dtype: torch.dtype) -> nn.Module:
-    from transformers import CLIPTextModel, CLIPTextModelWithProjection
+    with LIBRARY_IMPORTS:
+        from transformers import CLIPTextModel, CLIPTextModelWithProjection
 
     cls = CLIPTextModel if component == "text_encoder" else CLIPTextModelWithProjection
     if path.is_dir():
@@ -217,14 +221,16 @@ def load_clip(path: Path, component: str, *, device: torch.device | str, dtype: 
         state = read_component(path, component)
         root, subfolder = config_location(path, component)
         if any(key.startswith(PREFIXES[component]) for key in state):
-            from diffusers.loaders.single_file_utils import create_diffusers_clip_model_from_ldm
+            with LIBRARY_IMPORTS:
+                from diffusers.loaders.single_file_utils import create_diffusers_clip_model_from_ldm
 
             model = create_diffusers_clip_model_from_ldm(
                 cls, state, config=str(root), subfolder=subfolder, torch_dtype=dtype, local_files_only=True
             )
         else:
             config = cls.config_class.from_pretrained(str(root), subfolder=subfolder, local_files_only=True)
-            from accelerate import init_empty_weights
+            with LIBRARY_IMPORTS:
+                from accelerate import init_empty_weights
 
             with init_empty_weights():
                 model = cls(config)

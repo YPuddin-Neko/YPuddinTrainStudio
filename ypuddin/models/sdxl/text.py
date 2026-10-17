@@ -11,6 +11,7 @@ from torch import Tensor, nn
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.fingerprints import content_fingerprint
 from ypuddin.models.memory import release_model_memory
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 from .caption_weights import parse_caption_weights
 from .loading import ASSETS, component_config, config_asset, load_clip
@@ -145,7 +146,8 @@ class SDXLText(TextPipeline):
 
     def _ensure(self) -> None:
         if not self.tokenizers:
-            from transformers import CLIPTokenizerFast
+            with LIBRARY_IMPORTS:
+                from transformers import CLIPTokenizerFast
 
             self.tokenizers = [
                 CLIPTokenizerFast.from_pretrained(str(p), local_files_only=True) for p in self.tokenizer_paths

@@ -12,6 +12,8 @@ from pathlib import Path, PureWindowsPath
 import torch
 from safetensors import safe_open
 
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
+
 VARIANTS = {
     "dev": dict(
         num_layers=8,
@@ -197,7 +199,8 @@ def resolve_variant(root: Path, config: dict, requested: str = "auto") -> str:
 def load_transformer(path: Path, config: dict, *, dtype, device):
     reject_dev_config(config)
     reject_dev_weights(path)
-    from diffusers import Flux2Transformer2DModel
+    with LIBRARY_IMPORTS:
+        from diffusers import Flux2Transformer2DModel
 
     if path.is_dir():
         model, info = Flux2Transformer2DModel.from_pretrained(
@@ -211,7 +214,8 @@ def load_transformer(path: Path, config: dict, *, dtype, device):
         if any(info.get(key) for key in ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")):
             raise ValueError(f"FLUX.2 transformer weights do not match config: {info}")
     else:
-        from diffusers.loaders.single_file_utils import convert_flux2_transformer_checkpoint_to_diffusers
+        with LIBRARY_IMPORTS:
+            from diffusers.loaders.single_file_utils import convert_flux2_transformer_checkpoint_to_diffusers
         from safetensors.torch import load_file
 
         state = {k.removeprefix("model.diffusion_model."): v for k, v in load_file(str(path)).items()}

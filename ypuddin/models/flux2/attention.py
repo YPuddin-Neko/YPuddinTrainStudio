@@ -9,12 +9,16 @@ No Diffusers registry, package function or other model's processor is modified.
 import inspect
 
 import torch
-from diffusers.models.transformers.transformer_flux2 import (
-    Flux2AttnProcessor,
-    Flux2ParallelSelfAttnProcessor,
-    _get_qkv_projections,
-    apply_rotary_emb,
-)
+
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
+
+with LIBRARY_IMPORTS:
+    from diffusers.models.transformers.transformer_flux2 import (
+        Flux2AttnProcessor,
+        Flux2ParallelSelfAttnProcessor,
+        _get_qkv_projections,
+        apply_rotary_emb,
+    )
 
 
 def public_flash_function():

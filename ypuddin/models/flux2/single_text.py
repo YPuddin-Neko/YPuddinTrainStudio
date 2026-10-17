@@ -4,6 +4,8 @@ from pathlib import Path
 
 import torch
 
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
+
 from .loading import read_json, shapes
 
 ASSETS = Path(__file__).parent / "assets"
@@ -46,7 +48,8 @@ def default_tokenizer(path: Path) -> Path:
 
 def load_single_text(path: Path, config: dict, dtype):
     from safetensors.torch import load_file
-    from transformers import Qwen3Config, Qwen3ForCausalLM
+    with LIBRARY_IMPORTS:
+        from transformers import Qwen3Config, Qwen3ForCausalLM
 
     state = load_file(str(path))
     if config.get("tie_word_embeddings") and "lm_head.weight" not in state:

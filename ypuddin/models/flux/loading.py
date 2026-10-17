@@ -10,6 +10,8 @@ from safetensors import safe_open
 from safetensors.torch import load_file
 from torch import nn
 
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
+
 ASSETS = Path(__file__).resolve().parent.parent
 DEFAULTS = {
     "transformer": dict(
@@ -269,7 +271,7 @@ def convert_original(state: dict[str, torch.Tensor], config: dict) -> dict[str, 
 
 
 def create_meta(component: str, config: dict) -> nn.Module:
-    with torch.device("cpu"):
+    with torch.device("cpu"), LIBRARY_IMPORTS:
         from accelerate import init_empty_weights
         from diffusers import AutoencoderKL, FluxTransformer2DModel
         from transformers import CLIPTextConfig, CLIPTextModel, T5Config, T5EncoderModel
@@ -291,7 +293,8 @@ def load_component(path: Path, component: str, *, device, dtype, config: dict | 
     if component == "transformer" and "img_in.weight" in state:
         state = convert_original(state, config)
     elif component == "vae" and "encoder.down.0.block.0.norm1.weight" in state:
-        from diffusers.loaders.single_file_utils import convert_ldm_vae_checkpoint
+        with LIBRARY_IMPORTS:
+            from diffusers.loaders.single_file_utils import convert_ldm_vae_checkpoint
 
         state = convert_ldm_vae_checkpoint(state, config)
     elif component == "text_encoder":

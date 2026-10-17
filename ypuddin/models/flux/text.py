@@ -11,6 +11,7 @@ from torch import Tensor
 from ypuddin.models.base import TextCond, TextPipeline
 from ypuddin.models.fingerprints import content_fingerprint
 from ypuddin.models.memory import release_model_memory
+from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 from .loading import ASSETS, component_config, config_file, load_component
 
@@ -56,7 +57,8 @@ class FluxText(TextPipeline):
 
     def _ensure(self):
         if not self.tokenizers:
-            from transformers import CLIPTokenizerFast, T5TokenizerFast
+            with LIBRARY_IMPORTS:
+                from transformers import CLIPTokenizerFast, T5TokenizerFast
 
             self.tokenizers = [
                 cls.from_pretrained(str(path), local_files_only=True)
