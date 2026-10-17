@@ -52,3 +52,11 @@ export function formatPercent(p: number | null | undefined): string {
   if (p == null) return '--';
   return `${Math.round(p)}%`;
 }
+
+/** Training speed at two decimals, so at least 0.01; a slower reading keeps that floor and returns the actual value,
+ * cut to three significant digits so a reading just under the floor never reads as 0.01. */
+export function formatSpeed(speed: number): { shown: string; actual: number | null } {
+  if (!(speed > 0 && speed < 0.01)) return { shown: speed.toFixed(2), actual: null };
+  const scale = 10 ** (2 - Math.floor(Math.log10(speed)));
+  return { shown: '0.01', actual: Math.floor(speed * scale + 1e-9) / scale };
+}

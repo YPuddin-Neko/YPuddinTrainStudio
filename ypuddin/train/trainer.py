@@ -220,6 +220,10 @@ class Trainer:
     _hooks_pending = False
     _step_began: float | None = None
     _step_seconds: float | None = None
+    # The steps of this process, measured like the speed; "since_resume" when it began at a resume point.
+    _step_seconds_total = 0.0
+    _step_count = 0
+    _step_mean_scope = "run"
 
     def __init__(
         self, cfg: TrainConfig, *, device: str | torch.device | None = None, emitter: Emitter | None = None
@@ -2397,6 +2401,10 @@ class Trainer:
         if adaptive is not None:
             adaptive.commit_step(self._reduce_timestep_statistics)
         self._hooks_pending, self._step_seconds = True, elapsed
+        if not self._step_count:
+            self._step_mean_scope = "since_resume" if self.progress.step > 1 else "run"
+        self._step_seconds_total += elapsed
+        self._step_count += 1
         self._update_ema()
         self._loss_ema = group_loss if self._loss_ema is None else 0.98 * self._loss_ema + 0.02 * group_loss
         step = self.progress.step
@@ -2427,6 +2435,8 @@ class Trainer:
                 grad_norm=grad_norm,
                 it_s=it_s,
                 eta_s=(remaining * elapsed) if it_s else None,
+                mean_step_s=self._step_seconds_total / self._step_count,
+                mean_step_scope=self._step_mean_scope,
                 vram_mb=(torch.cuda.max_memory_allocated(self.device) / 2**20)
                 if self.device.type == "cuda"
                 else (torch.mps.current_allocated_memory() / 2**20 if self.device.type == "mps" else None),

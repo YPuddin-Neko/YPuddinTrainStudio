@@ -979,6 +979,9 @@ class JobProgress(_Out):
     epoch: int | float | None = None
     eta_s: float | None = None
     it_s: float | None = None
+    # Mean seconds per training step, measured like the speed, over the run or since its last resume.
+    mean_step_s: float | None = None
+    mean_step_scope: Literal["run", "since_resume"] | None = None
     vram_peak_mb: float | None = None
     vram_metric: str | None = None
     device: str | None = None

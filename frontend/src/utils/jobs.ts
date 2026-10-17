@@ -34,7 +34,7 @@ export function mergeJobEvent(job: Job, event: Record<string, any>, kind: 'step'
   }
   if (typeof event.step === 'number' && event.step >= currentStep) {
     progress.phase = event.phase ?? (samplingPhase ? progress.phase : 'training');
-    for (const key of ['step', 'epoch', 'eta_s', 'it_s', 'vram_metric']) {
+    for (const key of ['step', 'epoch', 'eta_s', 'it_s', 'mean_step_s', 'mean_step_scope', 'vram_metric']) {
       if (event[key] !== undefined) (progress as any)[key] = event[key];
     }
     if (event.vram_mb != null) {

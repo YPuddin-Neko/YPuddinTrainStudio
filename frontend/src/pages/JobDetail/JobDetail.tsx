@@ -8,7 +8,7 @@ import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { Activity, Archive, ArchiveRestore, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Minus, AudioLines } from 'lucide-react';
 import { mergeValidationPoint, appendMetricStep } from '../../utils/metrics';
-import { formatEta, formatTime } from '../../utils/format';
+import { formatEta, formatSpeed, formatTime } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
 import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -76,11 +76,14 @@ function mergeSamples(previous: JobSample[], incoming: JobSample[]): JobSample[]
   return [...samples.values()].sort((a, b) => a.step - b.step || a.created_at - b.created_at || a.prompt_index - b.prompt_index);
 }
 
-function StatCard({ label, value, hint, detail }: { label: string; value: React.ReactNode; hint?: string; detail?: React.ReactNode }) {
+function StatCard({ label, value, hint, warning, detail }: { label: string; value: React.ReactNode; hint?: string; warning?: string; detail?: React.ReactNode }) {
   const text = useWorkspaceText();
-  return <div className={`job-stat${hint ? ' has-help' : ''}`}>
+  return <div className={`job-stat${hint || warning ? ' has-help' : ''}`}>
     <div className="job-stat-label">{label}</div>
-    {hint && <span className="job-stat-help"><ConfigHelp label={text(`${label} · 说明`, `About ${label}`)}>{hint}</ConfigHelp></span>}
+    {(hint || warning) && <span className="job-stat-help">
+      {warning && <ConfigHelp tone="warning" label={text(`${label} · 警告`, `${label} warning`)}>{warning}</ConfigHelp>}
+      {hint && <ConfigHelp label={text(`${label} · 说明`, `About ${label}`)}>{hint}</ConfigHelp>}
+    </span>}
     <div className="job-stat-value" tabIndex={0} role="group" aria-label={label}>{value}</div>{detail}
   </div>;
 }
@@ -173,6 +176,19 @@ function StepComparison({ step, value, fallback, text, updateKey, active }: { st
   }, [value, updateKey, active, delta]);
   React.useEffect(() => () => animation.current?.cancel(), []);
   return <StepChange delta={delta} text={text} iconRef={icon} updateKey={updateKey} active={active}/>;
+}
+
+/** The mean of the step times behind the speed, which leave out validation, previews and saves. */
+function MeanStepTime({ seconds, scope, text, contextKey, updateKey, active }: { seconds: number | null | undefined; scope: string | null | undefined; text: (zh: string, en: string) => string; contextKey: string; updateKey: number; active: boolean }) {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return null;
+  // Four digits for steps under 10000 s, so the row fits the narrowest card; a step under 0.01 s keeps two significant digits rather than reading 0.00.
+  const amount = seconds >= 100 ? seconds.toFixed(0) : seconds >= 10 ? seconds.toFixed(1) : seconds >= 0.01 ? seconds.toFixed(2) : String(Number(seconds.toPrecision(2)));
+  const said = scope === 'since_resume'
+    ? text(`从此次恢复训练起，已完成训练步平均每步 ${amount} 秒。`, `Steps completed since this training was resumed took ${amount} s on average.`)
+    : text(`所有已完成训练步平均每步 ${amount} 秒。`, `Completed steps took ${amount} s on average.`);
+  return <div className="job-stat-change job-stat-mean" title={said}>
+    <span className="job-stat-change-value" tabIndex={0}><span aria-hidden="true"><MetricValue text={text(`平均每步 ${amount} 秒`, `Mean ${amount} s/step`)} value={seconds} contextKey={`${contextKey}:${scope || 'run'}`} updateKey={updateKey} active={active}/></span><span className="sr-only">{said}</span></span>
+  </div>;
 }
 
 /** 空态：lucide 图标 + 标题 + 一行提示 */
@@ -499,6 +515,9 @@ export default function JobDetail() {
   const lossCount = Number(job?.latest?.loss_count);
   const previousMean = typeof job?.latest?.loss_mean === 'number' && typeof currentLoss === 'number' && lossCount > 1 ? (job.latest.loss_mean * lossCount - currentLoss) / (lossCount - 1) : null;
   const meanScope = job?.latest?.loss_mean != null && job.latest.loss_mean_scope === 'since_resume' ? text('从此次恢复训练起，所有已完成训练步的损失平均值。','Mean loss over completed steps since this training was resumed.') : text('所有已完成训练步的损失平均值。','Mean loss over all completed training steps.');
+  const speed = job?.progress?.it_s;
+  const speedReading = speed != null ? formatSpeed(Number(speed)) : null;
+  const speedWarning = speedReading?.actual != null ? text(`实际速度 ${speedReading.actual} it/s`, `Actual speed ${speedReading.actual} it/s`) : undefined;
   const learningRates = Object.entries(job?.latest?.lr || {}).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]));
   // Two rows; groups are listed by name, so a DoRA rate sits alone above the w1 / w2 (or down / up) pair.
   const rateSplit = Math.floor(learningRates.length / 2);
@@ -551,7 +570,8 @@ export default function JobDetail() {
           <StatCard label={text('平均 Loss','Mean loss')} value={metricValue(lossNumber(meanLoss), meanLoss, { delta: true, scope: job?.latest?.loss_mean_scope || 'run' })} hint={meanScope} detail={job?.id === id && <StepComparison key={`${metricContext}:${job?.latest?.loss_mean_scope}`} step={job?.progress?.step} value={meanLoss} fallback={previousMean} text={text} updateKey={metricUpdate} active={metricActive}/>}/>
           <StatCard label={text('学习率','Learning rate')} hint={learningRates.length ? learningRateHelp(learningRates.map(([name]) => name), configSnapshot?.adapter?.algo, configSnapshot?.optimizer?.type, text) : undefined}
             value={learningRates.length > 1 ? <span className="job-learning-rates">{learningRateRows.map((row, index) => <span key={index}>{row.map(([name, rate]) => <span key={name}><small>{learningRateGroupName(name)}</small>{rate.toExponential(2)}</span>)}</span>)}</span> : learningRates.length ? learningRates[0][1].toExponential(2) : '—'}/>
-          <StatCard label={t('job.speed')} value={metricValue(job?.progress?.it_s != null ? `${Number(job.progress.it_s).toFixed(2)} it/s` : '—', job?.progress?.it_s)}/>
+          <StatCard label={t('job.speed')} value={metricValue(speedReading ? `${speedReading.shown} it/s` : '—', speed)} warning={speedWarning}
+            detail={job?.id === id && <MeanStepTime seconds={job?.progress?.mean_step_s} scope={job?.progress?.mean_step_scope} text={text} contextKey={`${metricContext}:mean-step`} updateKey={metricUpdate} active={metricActive}/>}/>
           <StatCard label={t('job.eta')} value={metricValue(job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s), job?.status === 'completed' ? 0 : job?.progress?.eta_s)}/>
         </OverflowStrip>
 

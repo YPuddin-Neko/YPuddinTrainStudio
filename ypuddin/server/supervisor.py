@@ -1038,6 +1038,8 @@ class JobSupervisor:
                     "epoch": ev["epoch"],
                     "eta_s": ev.get("eta_s"),
                     "it_s": ev.get("it_s"),
+                    "mean_step_s": ev.get("mean_step_s"),
+                    "mean_step_scope": ev.get("mean_step_scope"),
                     "vram_peak_mb": ev.get("vram_mb"),
                     "vram_metric": ev.get("vram_metric"),
                 }

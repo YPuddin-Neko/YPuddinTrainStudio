@@ -6298,6 +6298,10 @@ export interface components {
             eta_s?: number | null;
             /** It S */
             it_s?: number | null;
+            /** Mean Step S */
+            mean_step_s?: number | null;
+            /** Mean Step Scope */
+            mean_step_scope?: ("run" | "since_resume") | null;
             /** Vram Peak Mb */
             vram_peak_mb?: number | null;
             /** Vram Metric */

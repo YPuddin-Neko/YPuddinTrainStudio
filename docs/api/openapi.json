@@ -22348,6 +22348,32 @@
             ],
             "title": "It S"
           },
+          "mean_step_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Step S"
+          },
+          "mean_step_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "run",
+                  "since_resume"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Step Scope"
+          },
           "vram_peak_mb": {
             "anyOf": [
               {

@@ -26,6 +26,8 @@
 .overview-banner-metrics > div { min-width:0; }
 .overview-banner-metrics dt { color:var(--studio-dim); font-size:11px; }
 .overview-banner-metrics dd { margin:3px 0 0; font-size:14px; font-weight:600; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+/* A warning beside a value overlaps the line rather than making the row taller. */
+.overview-banner-metrics dd .config-help-trigger { margin:-5px 0 -5px 2px; vertical-align:middle; }
 .overview-banner-note { margin-top:0; margin-bottom:0; color:var(--studio-dim); font-size:12px; }
 .overview-banner-error { max-height:8.2em; overflow:auto; margin-top:0; margin-bottom:0; padding:10px 12px; border:1px solid color-mix(in srgb, var(--tone) 18%, var(--studio-line)); border-radius:8px; background:var(--studio-panel); color:color-mix(in srgb, var(--tone) 72%, var(--studio-text)); font:12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space:pre-wrap; overflow-wrap:anywhere; scrollbar-width:thin; }
 .overview-checklist { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:8px; margin-top:0; margin-bottom:0; padding:0; list-style:none; }

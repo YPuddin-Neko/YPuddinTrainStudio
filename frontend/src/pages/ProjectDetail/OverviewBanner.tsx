@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { Activity, AlertTriangle, ArrowRight, Ban, CheckCircle2, Circle, CircleAlert, Clock, Download, FlaskConical, ListChecks, Pause, Rocket } from 'lucide-react';
 import { apiUrl } from '../../api/client';
 import type { Artifact, Job } from '../../api/types';
+import ConfigHelp from '../../components/ConfigHelp';
 import ProgressBar from '../../components/ProgressBar';
 import { JobActions } from '../Queue/jobPresentation';
-import { formatBytes, formatEta } from '../../utils/format';
+import { formatBytes, formatEta, formatSpeed } from '../../utils/format';
 import { artifactKindLabel, shortTime } from '../../utils/jobs';
 import { samplingUrl } from '../../utils/samplingRoutes';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -55,13 +56,15 @@ export default function OverviewBanner({ versionName, job, artifact, checks, rea
     const loss = finite(job.latest?.loss);
     const mean = finite(job.latest?.loss_mean);
     const speed = finite(progress.it_s);
+    const speedReading = speed === null ? null : formatSpeed(speed);
     const perEpoch = finite(progress.steps_per_epoch);
     const epochs = total && perEpoch ? Math.ceil(total / perEpoch) : null;
-    const metrics = [
+    const metrics: Array<[string, React.ReactNode]> = [
       [text('轮数', 'Epoch'), progress.epoch != null ? `${progress.epoch}${epochs ? ` / ${epochs}` : ''}` : '—'],
       [text('当前损失', 'Loss'), loss === null ? '—' : loss.toFixed(4)],
       [job.latest?.loss_mean_scope === 'since_resume' ? text('恢复后平均损失', 'Mean loss since resume') : text('平均损失', 'Mean loss'), mean === null ? '—' : mean.toFixed(4)],
-      [text('速度', 'Speed'), speed === null ? '—' : `${speed.toFixed(2)} ${text('步/秒', 'steps/s')}`],
+      [text('速度', 'Speed'), speedReading === null ? '—' : <>{`${speedReading.shown} ${text('步/秒', 'steps/s')}`}{speedReading.actual != null
+        && <ConfigHelp tone="warning" label={text('速度 · 警告', 'Speed warning')}>{text(`实际速度 ${speedReading.actual} 步/秒`, `Actual speed ${speedReading.actual} steps/s`)}</ConfigHelp>}</>],
       [text('预计剩余', 'Remaining'), status === 'running' && progress.eta_s != null ? formatEta(progress.eta_s) : '—'],
     ];
     const label = status === 'pausing' ? text('正在暂停', 'Pausing') : status === 'cancelling' ? text('正在取消', 'Cancelling') : text('训练中', 'Training');

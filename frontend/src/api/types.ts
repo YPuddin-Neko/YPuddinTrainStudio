@@ -147,6 +147,8 @@ export interface JobStepEvent {
   lr: Record<string, number>;
   grad_norm: number;
   it_s: number;
+  mean_step_s?: number | null;
+  mean_step_scope?: 'run' | 'since_resume' | null;
   vram_mb: number | null;
   vram_metric?: string | null;
   eta_s: number | null;

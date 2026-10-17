@@ -1,7 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { useInRouterContext, useLocation } from 'react-router-dom';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, TriangleAlert } from 'lucide-react';
 import './config-help.css';
 
 const OPEN_EVENT = 'studio:config-help-open';
@@ -15,8 +15,8 @@ function RouteDismiss({ close }: { close: () => void }) {
   return null;
 }
 
-/** Readable within the page viewport, independent of a field's clipping ancestors. */
-export default function ConfigHelp({ label, children }: { label: string; children: string }) {
+/** Readable within the page viewport, independent of a field's clipping ancestors. A warning opens the same way. */
+export default function ConfigHelp({ label, children, tone }: { label: string; children: string; tone?: 'warning' }) {
   const id = React.useId();
   const trigger = React.useRef<HTMLButtonElement>(null);
   const panel = React.useRef<HTMLDivElement>(null);
@@ -141,7 +141,7 @@ export default function ConfigHelp({ label, children }: { label: string; childre
 
   return <>
     {inRouter && <RouteDismiss close={close} />}
-    <button ref={trigger} type="button" className="config-help-trigger" aria-label={label}
+    <button ref={trigger} type="button" className="config-help-trigger" aria-label={label} data-tone={tone}
       aria-expanded={open} aria-controls={open ? id : undefined} aria-describedby={open ? id : undefined}
       onClick={event => {
         event.currentTarget.focus({ preventScroll: true });
@@ -149,7 +149,7 @@ export default function ConfigHelp({ label, children }: { label: string; childre
         document.dispatchEvent(new Event(OPEN_EVENT));
         setOpen(true);
       }}>
-      <HelpCircle size={14} aria-hidden="true" />
+      {tone === 'warning' ? <TriangleAlert size={14} aria-hidden="true" /> : <HelpCircle size={14} aria-hidden="true" />}
     </button>
     {open && createPortal(<div ref={panel} id={id} role="tooltip" className="config-help-popover" style={position}
       data-scroll-above={scrollEdges.above || undefined} data-scroll-below={scrollEdges.below || undefined}>
