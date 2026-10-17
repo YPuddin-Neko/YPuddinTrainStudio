@@ -1398,10 +1398,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : fullPathKey === 'model.dtype' ? modelPrecisionHint
       : fullPathKey === 'adapter.dora_axis' ? fieldValue === 'input'
         ? (english ? 'One magnitude per input channel; loads in ComfyUI, Forge and A1111.' : '每个输入通道一个幅度；ComfyUI、Forge 和 A1111 都能加载。')
-        : (english ? 'One magnitude per output channel; loads in ComfyUI and Forge, not A1111.' : '每个输出通道一个幅度；ComfyUI 和 Forge 能加载，A1111 不支持。')
+        : (english ? 'One magnitude per output channel; not A1111, and Forge and ComfyUI render it differently, possibly badly distorted.' : '每个输出通道一个幅度；A1111 不支持，Forge 与 ComfyUI 出图不一致，可能严重失真。')
       : fullPathKey === 'adapter.dora_compute_mode' ? fieldValue === 'comfyui'
         ? (english ? 'Reduces computation differences before and after weight export.' : '减少权重导出前后的计算差异。')
-        : (english ? 'Computes DoRA in FP32.' : '使用 FP32 计算 DoRA。')
+        : (english ? 'Computes DoRA in FP32 without accounting for precision changes after export.' : '使用 FP32 计算 DoRA，不考虑导出后的精度变化。')
       : fullPathKey === 'dataset.native_batch_mode' && value.checkpoint?.resume && !preset ? fieldContext.nativeBatchingVersion === 1 || fieldContext.nativeBatchingVersion === 3
         ? (english ? 'Keeps the recovery point’s area microbatches to save GPU memory.' : '沿用恢复点的面积拆分方式，可节省显存。')
         : (english ? 'Continues with the batch mode saved in the recovery point.' : '继续训练沿用恢复点的批次方式。')

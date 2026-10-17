@@ -424,14 +424,19 @@ class AdapterConfig(_Strict):
         "input",
         help=(
             "input 每个输入通道一个幅度，是默认方向；ComfyUI、Forge 和 A1111 都能加载，LyCORIS 自带的工具不支持。"
-            "output 每个输出通道一个幅度，是 LyCORIS 的默认方向；ComfyUI 和 Forge 能加载，A1111 不支持。"
+            "output 每个输出通道一个幅度，是 LyCORIS 的默认方向；ComfyUI 和 Forge 能加载，A1111 不支持，"
+            "Forge 与 ComfyUI 的出图不一致，Anima 上可能严重失真。"
             "继续训练时须与原权重方向一致。"
         ),
         ui_=ui("adapter", advanced=True, order=61, control="select", show_when="adapter.dora == true"),
     )
     dora_compute_mode: Literal["standard", "comfyui"] = F(
         "standard",
-        help="标准模式：使用 FP32 计算 DoRA。兼容模式：训练时考虑权重保存和融合过程中的精度变化，减少导出前后的计算差异。",
+        help=(
+            "标准模式：使用 FP32 计算 DoRA，不考虑权重保存和融合时的精度变化；未写此项的旧配置按标准模式读取。"
+            "兼容模式：训练时考虑权重保存和融合过程中的精度变化，减少导出前后的计算差异，是新配置的默认值。"
+            "按输出通道时，兼容模式也不能让 Forge 与 ComfyUI 的出图一致。"
+        ),
         ui_=ui("adapter", advanced=True, order=62, control="select", show_when="adapter.dora == true"),
     )
     dora_merge_dtype: Literal["auto", "bf16", "fp16", "fp32"] = F(

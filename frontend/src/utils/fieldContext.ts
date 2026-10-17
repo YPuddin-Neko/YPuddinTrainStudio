@@ -279,10 +279,11 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       return join([
         text('幅度归一化使用的通道：', 'Channels used for magnitude normalization:'),
         ...optionLines({
-          input: ['每个输入通道一个幅度，默认方向。ComfyUI、Forge 和 A1111 都能加载；LyCORIS 自带的工具不支持。', 'one magnitude per input channel; the default. ComfyUI, Forge and A1111 load it; LyCORIS’s own tools do not support it.'],
-          output: ['每个输出通道一个幅度，LyCORIS 的默认方向。ComfyUI 和 Forge 能加载，A1111 不支持。', 'one magnitude per output channel; the LyCORIS default. ComfyUI and Forge load it; A1111 does not support it.'],
+          input: ['每个输入通道一个幅度。ComfyUI、Forge 和 A1111 都能加载；LyCORIS 自带的工具不支持。（默认）', 'one magnitude per input channel. ComfyUI, Forge and A1111 load it; LyCORIS’s own tools do not support it. (Default)'],
+          output: ['每个输出通道一个幅度，LyCORIS 的默认方向。ComfyUI 和 Forge 能加载，A1111 不支持；Forge 与 ComfyUI 的出图不一致，Anima 上可能严重失真。', 'one magnitude per output channel; the LyCORIS default. ComfyUI and Forge load it; A1111 does not support it. Forge and ComfyUI render it differently, and on Anima the result can be badly distorted.'],
         }),
         text('继续训练时须与原权重方向一致。', 'Keep the original axis when resuming.'),
+        text('通常保持默认。', 'Usually keep the default.'),
       ]);
     }
     case 'sampling.scheduler':
