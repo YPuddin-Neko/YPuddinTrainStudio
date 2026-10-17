@@ -80,7 +80,7 @@ Base 和蒸馏模型可能具有相同的权重形状。完整目录的元数据
 
 已有 Anima 的训练器 JSON 标签和 Danbooru TXT 标签可直接复用；最终文本由 MOSS-Image 的配套编码器处理，不自动转换成官方 JSON Layout，见 [JSON 标签](JSON_CAPTIONS.md#moss-image-标签复用)。
 
-运行环境需要 PyTorch 2.9 或更新版本、Transformers 5.8.1 或更新版本，以及 Diffusers 0.40 或更新版本。当前支持单卡适配器训练、SDPA 和普通梯度检查点；不提供全量微调、文本编码器训练、T-LoRA、FP8 底模、编译、块换出或多卡训练。训练时间步与预览设置见 [训练配置](TRAINING.md#moss-image-时间步)。
+运行环境需要 PyTorch 2.9 或更新版本、Transformers 5.8.1 或更新版本，以及 Diffusers 0.40 或更新版本。当前支持单卡适配器训练、SDPA 或 FlashAttention 2 注意力和普通梯度检查点；不提供全量微调、文本编码器训练、T-LoRA、FP8 底模、编译、块换出或多卡训练。FlashAttention 2 用于同一批次内文本长度相同的 BF16 计算（批量大小为 1 时总是如此），其余批次使用 SDPA。训练时间步与预览设置见 [训练配置](TRAINING.md#moss-image-时间步)。
 
 ## 精度
 

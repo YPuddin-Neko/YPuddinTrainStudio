@@ -46,7 +46,7 @@ class MOSSImageFamily(ModelFamily):
         text=TextSpec(4096, "moss-image-qwen35-last-thinking-unpadded-4096-bf16-v1", pad_floor=False),
         sampling=SamplingDefaults(steps=50, cfg=3.0, shift=5.0, sampler="euler"),
         capabilities=frozenset({"activation_checkpointing", "masked_loss", "online_text"}),
-        attention_backends=("auto", "sdpa"), adapter_prefix="lora_unet",
+        attention_backends=("auto", "sdpa", "flash_attn"), adapter_prefix="lora_unet",
         sampling_samplers=("euler",), sampling_schedulers=("uniform",),
         objective_timestep_sampling=("moss_image", "uniform", "logit_normal", "shift", "resolution_shift", "mode", "cosmap"),
         activation_units=42.0,
@@ -65,7 +65,7 @@ class MOSSImageFamily(ModelFamily):
         if cfg.dtype == "fp16":
             return ["MOSS-Image 主模型计算精度请选择 BF16 或 FP32。"]
         if cfg.attention not in self.spec.attention_backends:
-            return ["MOSS-Image 注意力请选择自动或 SDPA。"]
+            return ["MOSS-Image 注意力请选择自动、SDPA 或 FlashAttention 2。"]
         if error := loading.runtime_error():
             return [error]
         try:
@@ -126,12 +126,14 @@ class MOSSImageFamily(ModelFamily):
                                                    device=loaded.extra["backbone_device"], dtype=loaded.dtype,
                                                    checkpointing=loaded.extra["checkpointing"])
         loaded.extra["materialized"] = True
+        if loaded.extra.get("attention") == "flash_attn":
+            loaded.backbone.set_attention_mode("flash_attn")
 
     def prepare_attention(self, loaded, configured, *, device, dtype, training, pinned=None):
         from ypuddin.models.attention_check import check_attention, grad_mode
 
-        if configured not in {"auto", "sdpa"}:
-            raise ValueError("MOSS-Image 注意力请选择自动或 SDPA。")
+        if configured not in self.spec.attention_backends:
+            raise ValueError("MOSS-Image 注意力请选择自动、SDPA 或 FlashAttention 2。")
         config = loaded.extra["config"]
         head = config["dim"] // config["num_heads"]
 
@@ -139,13 +141,23 @@ class MOSSImageFamily(ModelFamily):
             with torch.autocast(torch.device(device).type, enabled=False), grad_mode(training):
                 dim = head * 2
                 block = _Block(dim, int(dim * config["ffn_dim"] / config["dim"]), 2).to(device=device, dtype=dtype)
-                x = torch.randn(2, 9, dim, device=device, dtype=dtype, requires_grad=training)
-                rope = _RoPE(head, config["rope_base"]).to(device)(2, 2, [5, 3], device).to(dtype)
-                mask = torch.arange(9, device=device)[None] < torch.tensor([9, 7], device=device)[:, None]
-                y = block(x, rope, torch.zeros(2, 6, dim, device=device, dtype=dtype).fill_(0.1), mask[:, None, None])
-                if training:
-                    y.float().square().mean().backward()
-        loaded.extra["attention"] = check_attention(selected="sdpa", run=run, device=device, dtype=dtype, pinned=pinned)
+                modulation = torch.zeros(2, 6, dim, device=device, dtype=dtype).fill_(0.1)
+                # Equal text lengths reach the selected backend; padded batches keep SDPA with their mask.
+                for mode, lengths, mask in (
+                    ("torch" if backend == "sdpa" else backend, [5, 5], None),
+                    ("torch", [5, 3], (torch.arange(9, device=device)[None] < torch.tensor([9, 7], device=device)[:, None])[:, None, None]),
+                ):
+                    block.attn_mode = mode
+                    x = torch.randn(2, 9, dim, device=device, dtype=dtype, requires_grad=training)
+                    rope = _RoPE(head, config["rope_base"]).to(device)(2, 2, lengths, device).to(dtype)
+                    y = block(x, rope, modulation, mask)
+                    if training:
+                        y.float().square().mean().backward()
+        actual = check_attention(selected="flash_attn" if configured == "flash_attn" else "sdpa",
+                                 run=run, device=device, dtype=dtype, pinned=pinned)
+        loaded.extra["attention"] = actual
+        if loaded.extra.get("materialized"):
+            loaded.backbone.set_attention_mode("torch" if actual == "sdpa" else actual)
 
     def build_objective(self, loaded, cfg):
         return MOSSImageObjective(cfg)

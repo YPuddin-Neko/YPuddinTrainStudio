@@ -1,7 +1,8 @@
 """MOSS-Image DiT, derived from OpenMOSS's Apache-2.0 pipeline_moss_image.py.
 
 Upstream HF revision 5f40f07a304541840b6019d2d34d30f966756787.
-Weight names and computation are retained; attention masks permit true image batches.
+Weight names and computation are retained; attention masks permit true image batches,
+and batches without text padding omit them so fused attention kernels apply.
 """
 from types import SimpleNamespace
 
@@ -40,8 +41,14 @@ def _rotate(x, rope):
     return x * cos + torch.cat((-b, a), -1) * sin
 
 
-def _attention(q, k, v, rope, heads, mask=None):
+def _attention(q, k, v, rope, heads, mask=None, mode="torch"):
     shape = (*q.shape[:2], heads, q.shape[-1] // heads)
+    if mode != "torch":
+        # The shared dispatcher runs the selected package on calls it supports and SDPA on the rest.
+        from ypuddin.models.anima.vendor.attention import AttentionParams, attention
+
+        q, k = (_rotate(t.reshape(shape), rope).to(v.dtype) for t in (q, k))
+        return attention([q, k, v.reshape(shape)], attn_params=AttentionParams(mode, attention_mask=mask))
     q = _rotate(q.reshape(shape), rope).transpose(1, 2)
     k = _rotate(k.reshape(shape), rope).transpose(1, 2)
     v = v.reshape(shape).transpose(1, 2)
@@ -52,6 +59,7 @@ class _TextBlock(nn.Module):
     def __init__(self, dim, ffn_dim, heads):
         super().__init__()
         self.heads = heads
+        self.attn_mode = "torch"
         self.norm1, self.norm2 = _RMSNorm(dim), _RMSNorm(dim)
         self.q_norm, self.k_norm = _RMSNorm(dim // heads), _RMSNorm(dim // heads)
         self.qkv = nn.Linear(dim, 3 * dim)
@@ -63,7 +71,7 @@ class _TextBlock(nn.Module):
         q, k, v = self.qkv(self.norm1(x)).chunk(3, -1)
         q = self.q_norm(q.unflatten(-1, (self.heads, -1))).flatten(2)
         k = self.k_norm(k.unflatten(-1, (self.heads, -1))).flatten(2)
-        x = x + self.proj(_attention(q, k, v, rope, self.heads, mask))
+        x = x + self.proj(_attention(q, k, v, rope, self.heads, mask, self.attn_mode))
         y = self.norm2(x)
         return x + self.ffn_down(_situ(self.ffn_up(y), self.ffn_gate(y)))
 
@@ -85,6 +93,7 @@ class _Block(nn.Module):
     def __init__(self, dim, ffn_dim, heads):
         super().__init__()
         self.heads = heads
+        self.attn_mode = "torch"
         self.norm1, self.norm2 = _RMSNorm(dim), _RMSNorm(dim)
         self.q_norm, self.k_norm = _RMSNorm(dim // heads), _RMSNorm(dim // heads)
         self.proj = nn.ModuleDict({
@@ -100,7 +109,7 @@ class _Block(nn.Module):
         y = y.to(dtype)
         q = self.q_norm(self.proj['q'](y).unflatten(-1, (self.heads, -1))).flatten(2)
         k = self.k_norm(self.proj['k'](y).unflatten(-1, (self.heads, -1))).flatten(2)
-        x = x + self.proj['o'](_attention(q, k, self.proj['v'](y), rope, self.heads, mask)) * gate_a[:, None]
+        x = x + self.proj['o'](_attention(q, k, self.proj['v'](y), rope, self.heads, mask, self.attn_mode)) * gate_a[:, None]
         y = self.norm2(x) * (1 + scale_f[:, None]) + shift_f[:, None]
         hidden, gate = self.proj['ffn_up_gate'](y.to(dtype)).chunk(2, -1)
         return x + self.proj['ffn_down'](_situ(hidden, gate)) * gate_f[:, None]
@@ -147,7 +156,7 @@ class _RoPE(nn.Module):
 
 
 class MOSSImageTransformer(nn.Module):
-    """MOSSImage DiT with training-compatible state-dict names and SDPA attention.
+    """MOSSImage DiT with training-compatible state-dict names and SDPA or FlashAttention 2.
 
     Each sample is evaluated at its true text length, including text refinement;
     padded tokens cannot influence either text or joint attention.
@@ -172,6 +181,12 @@ class MOSSImageTransformer(nn.Module):
         self.final_norm_video = _RMSNorm(dim)
         self.final_linear_video = nn.Linear(dim, latent_channels, bias=False)
         self.video_head_modulation = nn.Linear(dim, 2 * dim)
+
+    def set_attention_mode(self, mode):
+        """``torch`` is SDPA; ``flash_attn`` uses FlashAttention 2 where the shared dispatcher allows."""
+        for module in self.modules():
+            if isinstance(module, (_Block, _TextBlock)):
+                module.attn_mode = mode
 
     def load_training_state_dict(self, state_dict, *, prefix=''):
         """Load a consolidated raw/EMA model mapping, strictly; no silent key drops."""
@@ -211,9 +226,12 @@ class MOSSImageTransformer(nn.Module):
         for index in range(batch):
             context[index, :lengths[index]] = encoder_hidden_states[index, mask[index].bool()]
         valid = torch.arange(context.shape[1], device=hidden_states.device)[None] < lengths[:, None]
-        text_mask = valid[:, None, None, :]
-        joint_mask = torch.cat((torch.ones(batch, height * width, device=valid.device, dtype=torch.bool), valid), 1)
-        joint_mask = joint_mask[:, None, None, :]
+        text_mask = joint_mask = None
+        if not bool(valid.all()):
+            # An all-true mask selects the same keys as none, but keeps SDPA off its FlashAttention kernel.
+            text_mask = valid[:, None, None, :]
+            joint_mask = torch.cat((torch.ones(batch, height * width, device=valid.device, dtype=torch.bool), valid), 1)
+            joint_mask = joint_mask[:, None, None, :]
         video = self.video_embedder(hidden_states.flatten(2).transpose(1, 2).to(self.video_embedder.weight.dtype).contiguous())
         rope = self.rope(height, width, lengths, hidden_states.device).to(video.dtype)
         text = self.text_embedder.proj(context.to(self.text_embedder.proj.weight.dtype))
