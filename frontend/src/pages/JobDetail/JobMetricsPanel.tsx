@@ -22,7 +22,7 @@ const EMPTY_GPU_SOURCES: Record<string, string> = {};
 const FINISHED = ['completed', 'failed', 'cancelled'];
 const hasReadings = (values: Array<number | null | undefined> | undefined) => values?.some(value => typeof value === 'number' && Number.isFinite(value)) ?? false;
 
-type Line = { unit: string; name: string; color: string; data: Array<[number, number | null]>; rangeValues?: Array<number | null>; width?: number; symbols?: boolean };
+type Line = { metric: MetricKey; unit: string; name: string; color: string; data: Array<[number, number | null]>; rangeValues?: Array<number | null>; width?: number; symbols?: boolean };
 type SeriesRange = { name: string; color: string; unit: string; min: number; max: number; rate?: boolean };
 type Chart = { key: string; title: string; note?: string; option?: Record<string, unknown>; ranges?: SeriesRange[]; empty?: React.ReactNode; gpu?: { layoutId: string; value: string; options: StudioSelectOption[]; help: string } };
 
@@ -76,9 +76,8 @@ function useChartLayout(): MetricChartSetting[] | null {
 }
 
 /** Training curves and GPU readings in the configured charts, two per row. */
-export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, device, status, isSpeechTraining = false }: {
+export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, device, status }: {
   metrics: JobMetrics | null; stepsPerEpoch?: number | null; vramMetric?: string | null; device?: string | null; status?: string | null;
-  isSpeechTraining?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const text = useWorkspaceText();
@@ -149,7 +148,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
           const groups = Object.entries(metrics.lr || {});
           logRates = groupSpread(groups.map(([, values]) => values)) >= 100;
           groups.forEach(([group, values], index) => allLines.push({
-            unit: 'LR', name: `${labels.lr} · ${learningRateGroupName(group)}`, color: index ? EXTRA_COLORS[(index - 1) % EXTRA_COLORS.length] : item.color,
+            metric: 'lr', unit: 'LR', name: `${labels.lr} · ${learningRateGroupName(group)}`, color: index ? EXTRA_COLORS[(index - 1) % EXTRA_COLORS.length] : item.color,
             // A log axis has no zero: warmup's first steps are left out of the line.
             data: points(logRates ? values.map(value => typeof value === 'number' && value > 0 ? value : null) : values),
             rangeValues: values,
@@ -157,14 +156,14 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
         } else if (item.metric === 'validation') {
           if (!metrics.validation?.length) continue;
           shapeValidationSeries(metrics.validation).series.forEach((line, index) => allLines.push({
-            unit: 'Loss', name: line.name === 'mean' ? labels.mean : `${labels.timestep} ${line.name}`,
+            metric: 'validation', unit: 'Loss', name: line.name === 'mean' ? labels.mean : `${labels.timestep} ${line.name}`,
             color: line.name === 'mean' ? item.color : EXTRA_COLORS[index % EXTRA_COLORS.length], width: line.name === 'mean' ? 2.5 : 1.2, symbols: true,
             data: line.data.map(([step, loss]): [number, number | null] => [useEpoch && stepsPerEpoch ? step / stepsPerEpoch : step, loss]),
           }));
         } else {
           const values = chartPlain[item.metric];
           if (!values || !hasReadings(values.values)) continue;
-          allLines.push({ unit: METRICS[item.metric].unit, name: values.name, color: item.color, data: points(values.values, values.scale), width: item.metric === 'loss' ? 1.2 : item.metric === 'loss_ema' ? 2 : undefined });
+          allLines.push({ metric: item.metric, unit: METRICS[item.metric].unit, name: values.name, color: item.color, data: points(values.values, values.scale), width: item.metric === 'loss' ? 1.2 : item.metric === 'loss_ema' ? 2 : undefined });
         }
       }
       const title = chartTitle(chart, !chinese);
@@ -224,24 +223,29 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
         const missingNote = !missingSensors.length ? '' : live
           ? text(`此任务尚未记录：${missingNames(false)}。`, `Not recorded yet for this job: ${missingNames(true)}.`)
           : text(`此任务没有记录：${missingNames(false)}。`, `Not recorded for this job: ${missingNames(true)}.`);
+        // Validation is off unless a job turns it on, so a running job without it is not promised one later.
+        const validationMissing = keys.includes('validation') && !metrics.validation?.length
+          ? text(`此任务没有记录：${METRICS.validation.label[0]}。`, `Not recorded for this job: ${METRICS.validation.label[1]}.`) : '';
         const appleNote = [
           apple && readings && text('Apple 芯片的功率是系统能耗估算值，温度是 GPU 各温区的平均值，利用率是整块 GPU 的占用。', 'On Apple chips, power is the system’s energy estimate, temperature the mean of the GPU’s thermal zones and utilization the whole GPU’s load.'),
           apple && keys.includes('gpu_memory') && text('Apple 芯片使用统一内存，不单独记录设备显存。', 'Apple chips use unified memory, so device memory is not recorded separately.'),
-        ].filter(Boolean).join(' ');
+        ].filter(Boolean).join(chinese ? '' : ' ');
+        const notes: Partial<Record<MetricKey, string>> = {
+          grad_norm: text('每步梯度的大小，用于观察更新是否稳定。', 'Gradient magnitude per step, to inspect update stability.'),
+          validation: text('在验证集上计算的损失，用于判断是否过拟合。', 'Loss on the validation set, to judge overfitting.'),
+        };
+        // A chart split into parts describes what each part draws, in the order its title lists them.
+        const drawn = keys.filter(key => lines.some(line => line.metric === key));
+        // Image and speech runs share these notes: the metrics mean the same in both.
         const chartNote = keys.every(key => key === 'loss' || key === 'loss_ema')
-          ? text('每步 Loss 是每个训练步的训练损失；平滑曲线按上方 EMA 系数计算，只影响显示，不改变训练。', 'Loss per step is the training loss of each training step; the smoothed curve uses the EMA coefficient above and only changes the chart.')
-          : only === 'lr' ? (isSpeechTraining
-            ? (logRates
-              ? text('每条线表示一组学习率；纵轴使用对数刻度。', 'Each line shows one learning-rate group; the vertical axis uses a logarithmic scale.')
-              : text('每条线表示一组学习率。', 'Each line shows one learning-rate group.'))
-            : (logRates
-              ? text('每条线代表一个参数组。各组学习率相差 100 倍以上，纵轴用对数刻度，DoRA 这类很小的值也能看清。', 'Each line is one parameter group. The groups differ by 100× or more, so the axis is logarithmic and small rates such as DoRA stay visible.')
-              : text('每条线代表一个参数组；LoKr 的 w1 / w2 可设置不同学习率。', 'Each line is one parameter group; LoKr w1 / w2 can use different learning rates.')))
-            : only === 'grad_norm' ? text('每步梯度的大小，用于观察更新是否稳定。', 'Gradient magnitude per step, to inspect update stability.')
+          ? text('每步的训练损失，用于观察训练是否收敛。', 'Training loss per step, to watch whether training converges.')
+          : only === 'lr' ? text('各参数组每步实际使用的学习率。', 'The learning rate each parameter group actually used per step.')
+            : keys.every(key => key === 'grad_norm' || key === 'validation') ? drawn.map(key => notes[key]).join(chinese ? '' : ' ')
               : only === 'it_s' ? text('每秒完成的优化步数。', 'Optimizer steps completed per second.')
                 : only === 'vram' ? (chartVramMetric === 'current_allocated' ? text('训练进程当前占用的显存。', 'Memory currently allocated by the training process.') : text('训练进程到这一步为止的显存峰值。', 'Peak memory allocated by the training process so far.'))
-                  : units.length > 1 ? text('单位不同的指标各用一条纵轴，颜色与图例一致。', 'Metrics with different units each use their own axis, in the legend’s colors.') : undefined;
-        const note = [chartNote, missingNote, appleNote].filter(Boolean).join(' ') || undefined;
+                  : undefined;
+        // Chinese sentences end in a full-width stop and need no space between them.
+        const note = [chartNote, missingNote, validationMissing, appleNote].filter(Boolean).join(chinese ? '' : ' ') || undefined;
         const ranges = lines.flatMap(line => {
           const range = metricRange(line.rangeValues ?? line.data.map(([, value]) => value));
           return range ? [{ ...range, name: line.name, color: line.color, unit: ['Loss', 'LR', 'Norm'].includes(line.unit) ? '' : line.unit, rate: line.unit === 'LR' }] : [];
@@ -254,7 +258,7 @@ export default function JobMetricsPanel({ metrics, stepsPerEpoch, vramMetric, de
       }
     }
     return list;
-  }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, apple, cpu, live, useEpoch, stepsPerEpoch, layout, chinese, t, text, gpuSources, isSpeechTraining]);
+  }, [metrics, xs, xAxisName, labels, emaAlpha, chartVramMetric, apple, cpu, live, useEpoch, stepsPerEpoch, layout, chinese, t, text, gpuSources]);
 
   return <div className="job-metrics">
     <div className="job-metrics-toolbar">

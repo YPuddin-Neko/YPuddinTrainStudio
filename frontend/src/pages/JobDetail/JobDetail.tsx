@@ -619,7 +619,7 @@ export default function JobDetail() {
 
       {/* 3. 详细内容区域 */}
       <div ref={tabPanel} role="tabpanel" id={`job-panel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`}>
-      {activeTab === 'metrics' && <JobMetricsPanel metrics={metrics} stepsPerEpoch={stepsPerEpoch} vramMetric={job?.progress?.vram_metric} device={job?.progress?.device} status={job?.status} isSpeechTraining={job?.type === 'tts_train'}/>}
+      {activeTab === 'metrics' && <JobMetricsPanel metrics={metrics} stepsPerEpoch={stepsPerEpoch} vramMetric={job?.progress?.vram_metric} device={job?.progress?.device} status={job?.status}/>}
 
       {activeTab === 'audio' && job && <TtsJobOutputs key={job.id} jobId={job.id} engine={configSnapshot?.tts?.engine} training={job.type === 'tts_train'} live={['queued', 'scheduled', 'running', 'cancelling'].includes(job.status)}/>}
 
