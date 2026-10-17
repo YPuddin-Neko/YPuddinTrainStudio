@@ -2093,9 +2093,28 @@ _JOB_TRAINING_MODE_SQL = """CASE
 END"""
 
 
+def _job_model_type(job: dict[str, Any]) -> str | None:
+    """The model family an image job runs, or the engine of a speech job, as its config snapshot names it."""
+    try:
+        config = json.loads(job.get("config_json") or "null")
+    except (TypeError, ValueError):
+        return None
+    section, key = ("tts", "engine") if job.get("type") in {"tts_train", "tts_sample"} else ("model", "family")
+    value = config.get(section) if isinstance(config, dict) else None
+    value = value.get(key) if isinstance(value, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
+_JOB_MODEL_TYPE_SQL = """CASE WHEN json_valid(j.config_json) THEN CASE
+    WHEN j.type IN ('tts_train', 'tts_sample') THEN json_extract(j.config_json, '$.tts.engine')
+    ELSE json_extract(j.config_json, '$.model.family')
+END END"""
+
+
 def _job_row(r: dict[str, Any], c: ServiceContext | None = None) -> dict[str, Any]:
     out = dict(r)
     out["training_mode"] = _job_training_mode(r)
+    out["model_type"] = _job_model_type(r)
     out["progress"] = json.loads(r.get("progress_json") or "{}")
     out["latest"] = json.loads(r.get("latest_json") or "{}")
     out["gpu_devices"] = json.loads(out.pop("gpu_devices_json", None) or "[]")
@@ -2120,6 +2139,7 @@ def list_jobs(
     group: Literal["active", "waiting", "history", "archive"] | None = None,
     type: Literal["train", "cache", "xyz", "tts_train", "tts_sample"] | None = None,
     training_mode: Literal["adapter", "full"] | None = None,
+    model_type: str | None = None,
     q: str | None = None,
 ) -> dict[str, Any]:
     sql = " FROM jobs j LEFT JOIN projects p ON p.id=j.project_id LEFT JOIN project_versions v ON v.id=j.version_id"
@@ -2146,6 +2166,9 @@ def list_jobs(
     if training_mode:
         conds.append(f"({_JOB_TRAINING_MODE_SQL})=?")
         params.append(training_mode)
+    if model_type:
+        conds.append(f"({_JOB_MODEL_TYPE_SQL})=?")
+        params.append(model_type)
     if project_id:
         conds.append("j.project_id=?")
         params.append(project_id)

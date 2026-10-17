@@ -1051,6 +1051,8 @@ class Job(_Out):
     id: str
     type: str
     training_mode: Literal["adapter", "full"] | None = None
+    # The model family of an image job (train, cache, xyz) or the engine of a speech job, from its config.
+    model_type: str | None = None
     name: str
     project_id: str | None
     version_id: str | None = None

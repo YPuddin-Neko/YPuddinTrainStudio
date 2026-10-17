@@ -6050,6 +6050,8 @@ export interface components {
             type: string;
             /** Training Mode */
             training_mode?: ("adapter" | "full") | null;
+            /** Model Type */
+            model_type?: string | null;
             /** Name */
             name: string;
             /** Project Id */
@@ -16197,6 +16199,7 @@ export interface operations {
                 group?: ("active" | "waiting" | "history" | "archive") | null;
                 type?: ("train" | "cache" | "xyz" | "tts_train" | "tts_sample") | null;
                 training_mode?: ("adapter" | "full") | null;
+                model_type?: string | null;
                 q?: string | null;
             };
             header?: never;

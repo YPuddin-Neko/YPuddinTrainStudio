@@ -9,6 +9,16 @@ export function availableTrainingFamilies(families: FamilyInfo[]): FamilyInfo[] 
       : family.name === 'sdxl' && (!family.label || family.label === 'SDXL') ? {...family, label:'SDXL 2.6B'} : family);
 }
 
+/** The service's family labels, for a family /families leaves out (FLUX.1 is retired) or before it answers. */
+export const FAMILY_NAMES: Record<string, string> = {
+  anima: 'Anima 2B', krea2: 'Krea 2 Raw 12.9B', sdxl: 'SDXL 2.6B', flux: 'FLUX.1', flux2: 'FLUX.2 Klein 4B / 9B',
+  flux3: 'FLUX.3 Klein 5.5B', moss_image: 'MOSS-Image 5B', toy: 'Toy DiT（CPU 自检）',
+};
+
+export function familyDisplayName(families: FamilyInfo[] | undefined, name: string): string {
+  return families?.find(family => family.name === name)?.label || FAMILY_NAMES[name] || name;
+}
+
 export function inactiveTrainingReason(config: Record<string, any> | null | undefined, english = false): string | undefined {
   const name = config?.model?.family;
   const variant = config?.model?.flux2_variant;

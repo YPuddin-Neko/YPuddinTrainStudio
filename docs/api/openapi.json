@@ -4464,6 +4464,22 @@
             }
           },
           {
+            "name": "model_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Type"
+            }
+          },
+          {
             "name": "q",
             "in": "query",
             "required": false,
@@ -21304,6 +21320,17 @@
               }
             ],
             "title": "Training Mode"
+          },
+          "model_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Type"
           },
           "name": {
             "type": "string",

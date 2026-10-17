@@ -1,4 +1,6 @@
-import type { Job, TimestepSamplingStatus } from '../api/types';
+import type { FamilyInfo, Job, TimestepSamplingStatus } from '../api/types';
+import { familyDisplayName } from './trainingFamilies';
+import { ttsEngineLabel } from './ttsEngines';
 
 export const ACTIVE_JOB_STATUSES = 'running,pausing,cancelling';
 
@@ -64,6 +66,12 @@ export function focusJob<T extends Pick<Job, 'status'>>(jobs: T[]): T | undefine
 
 export function artifactKindLabel(kind: string, text: Text): string {
   return kind === 'model' ? text('完整模型', 'Full model') : kind === 'adapter' || kind === 'lora' ? text('适配器权重', 'Adapter weights') : kind === 'checkpoint' ? text('检查点', 'Checkpoint') : kind;
+}
+
+/** What a job trains or runs: the image model family, or the speech engine of a speech job. */
+export function jobModelTypeLabel(job: Pick<Job, 'type' | 'model_type'>, families?: FamilyInfo[]): string | undefined {
+  if (!job.model_type) return undefined;
+  return job.type === 'tts_train' || job.type === 'tts_sample' ? ttsEngineLabel(job.model_type) : familyDisplayName(families, job.model_type);
 }
 
 export function jobTypeLabel(job: Pick<Job, 'type' | 'training_mode'>, text: Text): string {

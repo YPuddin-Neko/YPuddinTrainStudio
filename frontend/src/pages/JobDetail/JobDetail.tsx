@@ -1,4 +1,4 @@
-import { jobTypeLabel, mergeJobEvent, timestepSamplingEvent, timestepSamplingStep } from '../../utils/jobs';
+import { jobModelTypeLabel, jobTypeLabel, mergeJobEvent, timestepSamplingEvent, timestepSamplingStep } from '../../utils/jobs';
 import React from 'react';
 import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -9,6 +9,7 @@ import { EVENT_TYPES } from '../../events/eventTypes';
 import { Activity, Archive, ArchiveRestore, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Minus, AudioLines } from 'lucide-react';
 import { mergeValidationPoint, appendMetricStep } from '../../utils/metrics';
 import { formatEta, formatSpeed, formatTime } from '../../utils/format';
+import { useFamilies } from '../../api/hooks/useFamilies';
 import { formatApiError } from '../../utils/errors';
 import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -254,6 +255,7 @@ export default function JobDetail() {
     catch (failure) { setActionError(isTtsJob(job) ? ttsJobError(failure) : formatApiError(failure)); }
     finally { setRestoring(false); }
   };
+  const families = useFamilies();
   const [clock, setClock] = React.useState(() => Date.now() / 1000);
   React.useEffect(() => {
     if (!job?.started_at || !['running','pausing','cancelling'].includes(job.status)) return;
@@ -549,6 +551,7 @@ export default function JobDetail() {
       </header>
       <dl className="job-run-metadata" aria-label={text('运行信息','Run information')}>
         <div><dt>{text('任务类型','Job type')}</dt><dd>{job ? jobTypeLabel(job, text) : '—'}</dd></div>
+        <div><dt>{text('模型类型','Model type')}</dt><dd>{(job && jobModelTypeLabel(job, families.data)) || '—'}</dd></div>
         <div><dt>{text('开始时间','Started')}</dt><dd>{formatTime(job?.started_at)}</dd></div>
         <div><dt>{job?.type === 'train' ? text('训练时长','Training elapsed') : text('运行时长','Elapsed')}</dt><dd>{formatEta(elapsed)}</dd></div>
         <div><dt>{job?.type === 'train' ? text('训练配置','Training configuration') : text('任务配置','Task configuration')}</dt><dd>{configurationName ? `${configurationName} · ${text('参数快照','snapshot')}` : '—'}</dd></div>
