@@ -113,6 +113,17 @@ _UNLABELLED_TQDM = re.compile(
     + r"(?:\d+:)?\d{2}:\d{2}<(?:\?|(?:\d+:)?\d{2}:\d{2}), +"
     r"(?:\?it/s|\d+(?:\.\d+)?(?:it/s|s/it))\]"
 )
+# transformers 5 labels the meter it redraws while loading a model's weights. tqdm pads a
+# redraw shorter than the previous one with trailing spaces.
+_TRANSFORMERS_WEIGHT_METER = re.compile("Loading weights: " + _UNLABELLED_TQDM.pattern + " *")
+_TRANSFORMERS_WEIGHT_METER_PREFIX = re.compile("Loading weights: " + _UNLABELLED_TQDM_PREFIX.pattern)
+# transformers 5 prints records as ``[transformers] message`` without their level. This notice
+# names an optional kernel package; the reference path it falls back to computes the same result.
+_TRANSFORMERS_KERNEL_FALLBACK = re.compile(
+    r"\[transformers\] `\w+` is falling back to its reference PyTorch implementation because "
+    r"`(?P<package>[\w.-]+)` is not installed\. This is correct but much slower; "
+    r"install `(?P=package)` for the optimized kernel\."
+)
 _SOVITS_TQDM_EPOCH = re.compile(
     r"(?P<meter>" + _UNLABELLED_TQDM.pattern + r")"
     + r" *(?P<record_time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})"
@@ -249,7 +260,7 @@ def _nccl_configuration(line: str) -> bool:
 
 def _native_progress_or_configuration_level(line: str) -> str | None:
     body = _PROCESS_RANK.sub("", line, count=1)
-    if _NATIVE_DEVICE_CONFIGURATION.fullmatch(body):
+    if _NATIVE_DEVICE_CONFIGURATION.fullmatch(body) or _TRANSFORMERS_KERNEL_FALLBACK.fullmatch(body):
         return "debug"
     if meter := _SOVITS_TQDM_EPOCH.fullmatch(body):
         try:
@@ -262,13 +273,14 @@ def _native_progress_or_configuration_level(line: str) -> str | None:
         except (ValueError, OverflowError):
             pass
         return "info"
-    if meter := _UNLABELLED_TQDM.fullmatch(body):
+    if meter := _UNLABELLED_TQDM.fullmatch(body) or _TRANSFORMERS_WEIGHT_METER.fullmatch(body):
         try:
             done, total = int(meter["done"]), int(meter["total"])
         except ValueError:
             return "info"
         return "debug" if 0 <= done <= total and total > 0 else "info"
-    if _NATIVE_DEVICE_CONFIGURATION.match(body) or _UNLABELLED_TQDM_PREFIX.match(body):
+    if (_NATIVE_DEVICE_CONFIGURATION.match(body) or _UNLABELLED_TQDM_PREFIX.match(body)
+            or _TRANSFORMERS_WEIGHT_METER_PREFIX.match(body)):
         return "info"
     return None
 

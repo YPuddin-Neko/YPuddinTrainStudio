@@ -56,6 +56,9 @@ const RULES: Rule[] = [
   // Optional Triton: neither line means attention cannot run.
   [/^triton not found; flop counting will not work for triton kernels$/, () => '未找到 Triton：PyTorch 的 FLOPs 统计不包含 Triton 内核，只影响这项统计。'],
   [/^A matching Triton is not available, some optimizations will not be enabled$/, () => 'xFormers 没有可用的匹配 Triton：部分可选的 Triton 内核不可用，xFormers 的其他算子照常使用。'],
+  // transformers loading output; an optional kernel package only changes speed.
+  [/^Loading weights: +(?:100|\d{1,2})%\|[^|]*\| (\d+)\/(\d+) \[[^\]]*\] *$/, m => `加载模型权重：${m[1]}/${m[2]}`],
+  [/^\[transformers\] `(\w+)` is falling back to its reference PyTorch implementation because `([\w.-]+)` is not installed\. This is correct but much slower; install `\2` for the optimized kernel\.$/, m => `可选加速包 ${m[2]} 未安装：transformers 的 ${m[1]} 改用 PyTorch 参考实现，计算结果相同，速度较慢。`],
 
   // Model loading
   [/^loading (\w+) model components$/, m => `正在加载 ${FAMILIES[m[1]] || m[1]} 模型组件`],
