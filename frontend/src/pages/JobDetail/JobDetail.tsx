@@ -6,7 +6,7 @@ import { apiClient } from '../../api/client';
 import { Job, JobMetrics, JobSample, JobCheckpoint, ValidationPoint } from '../../api/types';
 import { useEventStream, useEventStreamReconnect } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
-import { Activity, Archive, ArchiveRestore, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Minus, AudioLines } from 'lucide-react';
+import { Activity, Archive, ArchiveRestore, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Equal, AudioLines } from 'lucide-react';
 import { mergeValidationPoint, appendMetricStep } from '../../utils/metrics';
 import { formatEta, formatSpeed, formatTime } from '../../utils/format';
 import { useFamilies } from '../../api/hooks/useFamilies';
@@ -116,13 +116,13 @@ function learningRateHelp(groups: string[], algo: unknown, optimizer: unknown, t
   return [lines.length ? text('每个参数组当前的学习率：', 'The current learning rate of each parameter group:') : '', ...lines, adaptive].filter(Boolean).join('\n');
 }
 
-/** How a live value moved since the previous reading: down in green, up in red. */
+/** How a live value moved since the previous reading, at the displayed precision. */
 function StepChange({ delta, text, iconRef, updateKey, active }: { delta: number | null; text: (zh: string, en: string) => string; iconRef?: React.Ref<SVGSVGElement>; updateKey: number; active: boolean }) {
   if (delta == null || !Number.isFinite(delta)) return null;
   const direction = delta < 0 ? 'down' : delta > 0 ? 'up' : 'flat';
   const size = Math.abs(delta);
   const amount = size.toFixed(4);
-  const Icon = direction === 'down' ? ArrowDown : direction === 'up' ? ArrowUp : Minus;
+  const Icon = direction === 'down' ? ArrowDown : direction === 'up' ? ArrowUp : Equal;
   const said = direction === 'down' ? text(`比上一次下降 ${amount}`, `Down ${amount} from the previous reading`)
     : direction === 'up' ? text(`比上一次上升 ${amount}`, `Up ${amount} from the previous reading`) : text('与上一次持平', 'Same as the previous reading');
   return <div className="job-stat-change" data-direction={direction} title={said}>
@@ -146,7 +146,8 @@ function useStepChange(step: number | null | undefined, value: number | null | u
 }
 
 function StepComparison({ step, value, fallback, text, updateKey, active }: { step: number | null | undefined; value: number | null | undefined; fallback: number | null; text: (zh: string, en: string) => string; updateKey: number; active: boolean }) {
-  const delta = useStepChange(step, value, fallback);
+  const change = useStepChange(step, value, fallback);
+  const delta = change == null ? null : Number(change.toFixed(4));
   const icon = React.useRef<SVGSVGElement>(null);
   const animation = React.useRef<Animation | null>(null);
   const previous = React.useRef({ value, updateKey, active });

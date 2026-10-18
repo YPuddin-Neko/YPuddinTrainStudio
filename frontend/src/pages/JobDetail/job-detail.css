@@ -57,7 +57,9 @@
 .job-stat-change>svg{flex:none}
 :is(.job-stat-change,.job-stat-delta)[data-direction=down]{color:var(--studio-success)}
 :is(.job-stat-change,.job-stat-delta)[data-direction=up]{color:var(--studio-danger)}
-.job-stat-change[data-direction=flat],.job-stat-mean{color:var(--studio-dim)}
+.job-stat-change[data-direction=flat]{color:var(--studio-warning,#b45309)}
+.dark .job-stat-change[data-direction=flat]{color:var(--studio-warning,#fbbf24)}
+.job-stat-mean{color:var(--studio-dim)}
 @keyframes job-stat-delta{0%{opacity:0}12%,72%{opacity:1}100%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.metric-digit>span:first-child{transform:none!important;opacity:1!important}.metric-digit-previous{opacity:0!important}.job-stat-delta{animation:none}.job-stat-change svg{transform:none!important}}
 /* An inline box sits on the value line's baseline, so its first row lines up with the other cards' values. */
