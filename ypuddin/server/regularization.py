@@ -407,6 +407,7 @@ class RegularizationManager:
                     maintenance_blocked(self.c.db)
                     or running
                     or any(p.poll() is None for p in self.c.supervisor._procs.values())
+                    or bool(getattr(self.c.supervisor, "_orphaned", {}))
                 ):
                     raise ApiError(
                         "Wait for training, another AI task or environment maintenance to finish",

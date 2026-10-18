@@ -962,7 +962,7 @@ class TagBatchResult(_Out):
 
 # --------------------------------------------------------------------------- jobs
 JobStatus = Literal[
-    "queued", "scheduled", "running", "pausing", "cancelling", "paused", "completed", "failed", "cancelled"
+    "queued", "scheduled", "running", "pausing", "cancelling", "paused", "interrupted", "completed", "failed", "cancelled"
 ]
 
 
@@ -1047,6 +1047,14 @@ JobAction = Literal[
 ]
 
 
+class JobRecovery(_Out):
+    can_resume: bool
+    checkpoint_path: str | None = None
+    step: int | None = None
+    reason: str | None = None
+    worker_alive: bool
+
+
 class Job(_Out):
     id: str
     type: str
@@ -1080,6 +1088,7 @@ class Job(_Out):
     latest: JobLatest
     error: str | None
     resume_from: str | None
+    recovery: JobRecovery | None = None
     pid: int | None
     exit_code: int | None
 

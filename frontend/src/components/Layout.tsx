@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Activity, Folder, Layers, Grid2X2, SlidersHorizontal, Settings as SettingsIcon, PlayCircle, Menu, X, Plus, WifiOff, Loader2, RefreshCw, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { SystemStats, Job, JobListResponse, Settings } from '../api/types';
-import { useEventStream, useEventStreamStatus } from '../events/useEventStream';
+import { useEventStream, useEventStreamReconnect, useEventStreamStatus } from '../events/useEventStream';
 import { EVENT_TYPES } from '../events/eventTypes';
 import { formatApiError } from '../utils/errors';
 import { useWorkspaceText } from '../utils/workspaceText';
@@ -75,7 +75,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   const [stats, setStats] = React.useState<SystemStats | null>(null);
   const [telemetryError, setTelemetryError] = React.useState('');
   const statsVersionRef = React.useRef(0);
-  const previousConnectionRef = React.useRef(connectionStatus);
+  const jobsRequestRef = React.useRef<AbortController | null>(null);
   const [runningJobs, setRunningJobs] = React.useState<Job[]>([]);
   // Settings keeps this route's location frozen to preserve the workspace draft.
   // The outer router supplies its real navigation key for transient controls only.
@@ -122,7 +122,10 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   }, [i18n]);
 
   const fetchJobs = React.useCallback(() => {
-    apiClient.get<JobListResponse | Job[]>('/jobs', { params: { status: ACTIVE_JOB_STATUSES } }).then((res) => {
+    jobsRequestRef.current?.abort();
+    const controller = new AbortController(); jobsRequestRef.current = controller;
+    apiClient.get<JobListResponse | Job[]>('/jobs', { params: { status: ACTIVE_JOB_STATUSES }, signal: controller.signal }).then((res) => {
+      if (controller.signal.aborted) return;
       const items = Array.isArray(res) ? res : res.items || [];
       setRunningJobs(items.filter((j) => ACTIVE_JOB_STATUSES.split(',').includes(j.status)));
     }).catch(() => {});
@@ -147,11 +150,9 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
   React.useEffect(() => {
     void refreshTelemetry();
     fetchJobs();
+    return () => jobsRequestRef.current?.abort();
   }, [fetchJobs, refreshTelemetry]);
-  React.useEffect(() => {
-    if (connectionStatus === 'connected' && previousConnectionRef.current !== 'connected') void refreshTelemetry();
-    previousConnectionRef.current = connectionStatus;
-  }, [connectionStatus, refreshTelemetry]);
+  useEventStreamReconnect(() => { fetchJobs(); void refreshTelemetry(); });
 
   useEventStream<SystemStats>(EVENT_TYPES.SYSTEM_STATS, receiveStats);
   useEventStream(EVENT_TYPES.JOB_STATE, fetchJobs);

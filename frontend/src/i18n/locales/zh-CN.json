@@ -257,6 +257,7 @@
       "pausing": "暂停中",
       "pauseing": "暂停中",
       "paused": "已暂停",
+      "interrupted": "异常中断",
       "resumeing": "恢复中",
       "saveing": "保存中",
       "retrying": "重试中",

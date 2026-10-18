@@ -13,7 +13,7 @@ import './job-samples.css';
 
 type Kind = 'paused' | 'stopped' | 'manual' | 'epoch' | 'step';
 /** A job in these states still reads the resume point it started from, so that point cannot be deleted. */
-const HOLDING = ['queued', 'scheduled', 'running', 'pausing', 'cancelling', 'paused'];
+const HOLDING = ['queued', 'scheduled', 'running', 'pausing', 'cancelling', 'paused', 'interrupted'];
 
 /** What saved a resume point, read from its folder name (state-<time>-step<n>[-tag] or the older state-<tag>). */
 function pointKind(path: string): Kind {
@@ -26,8 +26,9 @@ function pointKind(path: string): Kind {
 }
 
 /** Full training states that can continue a run, newest first, separate from exported outputs. */
-export default function ResumePointList({ points, stepsPerEpoch, loaded, resumeFrom, jobStatus, resuming, canResume, onResume, onDelete, onDeleteMany, deleting = false }: {
+export default function ResumePointList({ points, stepsPerEpoch, loaded, resumeFrom, jobStatus, resuming, canResume, protectedPath, onResume, onDelete, onDeleteMany, deleting = false }: {
   points: JobCheckpoint[]; stepsPerEpoch?: number | null; loaded: boolean; resumeFrom?: string | null; jobStatus?: string; resuming: boolean; canResume: boolean;
+  protectedPath?: string | null;
   onResume: (point: JobCheckpoint) => void; onDelete: (point: JobCheckpoint) => void; onDeleteMany: (points: JobCheckpoint[]) => void; deleting?: boolean;
 }) {
   const { t } = useTranslation();
@@ -35,7 +36,7 @@ export default function ResumePointList({ points, stepsPerEpoch, loaded, resumeF
   const [query, setQuery] = React.useState('');
   const ranges = React.useMemo(() => parseEpochQuery(query), [query]);
   const shown = React.useMemo(() => [...points].reverse().filter(point => inEpochs(epochAt(point, stepsPerEpoch), ranges)), [points, stepsPerEpoch, ranges]);
-  const isHeld = (point: JobCheckpoint) => !!resumeFrom && resumeFrom === point.path && HOLDING.includes(jobStatus || '');
+  const isHeld = (point: JobCheckpoint) => point.path === protectedPath || !!resumeFrom && resumeFrom === point.path && HOLDING.includes(jobStatus || '');
   const browser = useCheckpointBrowser(shown, 'studio.job.resume.pageSize', point => !isHeld(point));
   const changeQuery = (value: string) => { setQuery(value); browser.resetFilter(); };
   const labels: Record<Kind, string> = {
@@ -44,7 +45,7 @@ export default function ResumePointList({ points, stepsPerEpoch, loaded, resumeF
   };
 
   if (!loaded) return <div className="resume-list" aria-busy="true">{Array.from({ length: 3 }, (_, index) => <div key={index} className="resume-point resume-point-skeleton" aria-hidden="true"><span className="ui-skeleton"/><span className="ui-skeleton"/></div>)}</div>;
-  if (!points.length) return <div className="sample-empty"><History size={30} aria-hidden="true"/><p>{text('暂无恢复点', 'No resume points yet')}</p><span>{text('开启定期保存恢复点，或暂停训练后，可以从这里继续训练。', 'Turn on periodic resume points, or pause training, to continue from here later.')}</span></div>;
+  if (!points.length) return <div className="sample-empty"><History size={30} aria-hidden="true"/><p>{text('暂无恢复点', 'No resume points yet')}</p><span>{jobStatus === 'interrupted' ? text('本次训练没有保存完整恢复点，可以重新训练。', 'This run has no complete resume point. You can start a new training run.') : text('开启定期保存恢复点，或暂停训练后，可以从这里继续训练。', 'Turn on periodic resume points, or pause training, to continue from here later.')}</span></div>;
 
   return <section className="artifact-browser" aria-label={text('恢复点', 'Resume points')}>
     <div className="sample-toolbar">
@@ -77,7 +78,7 @@ export default function ResumePointList({ points, stepsPerEpoch, loaded, resumeF
           <div className="resume-point-actions">
             <button type="button" className="ui-btn ui-btn-sm" disabled={deleting || resuming || !canResume} onClick={() => onResume(point)}>{t('job.continueTraining')}</button>
             <button type="button" className="ui-btn ui-btn-sm ui-btn-quiet ui-btn-danger" disabled={deleting || held} onClick={() => onDelete(point)}
-              title={held ? (jobStatus === 'paused' ? text('暂停中的训练会从这个恢复点继续，不能删除', 'The paused run continues from this point; it cannot be deleted')
+              title={held ? (jobStatus === 'interrupted' && point.path === protectedPath ? text('中断的训练会从这个恢复点继续，取消任务后才能删除', 'The interrupted run continues from this point; cancel it before deleting') : jobStatus === 'paused' ? text('暂停中的训练会从这个恢复点继续，不能删除', 'The paused run continues from this point; it cannot be deleted')
                 : text('这次训练从这个恢复点开始，结束或取消后才能删除', 'This run started from this point; delete it after the run ends or is cancelled')) : undefined}><Trash2 size={14}/>{text('删除', 'Delete')}</button>
           </div>
         </li>;

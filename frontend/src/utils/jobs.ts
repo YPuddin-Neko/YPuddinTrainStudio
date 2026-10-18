@@ -58,9 +58,9 @@ export function mergeJobEvent(job: Job, event: Record<string, any>, kind: 'step'
 
 type Text = (zh: string, en: string) => string;
 
-/** The run a project page should describe: the one holding a device, then paused, then waiting, then the newest. */
+/** Keep paused or interrupted work visible ahead of waiting and historical runs. */
 export function focusJob<T extends Pick<Job, 'status'>>(jobs: T[]): T | undefined {
-  return jobs.find(job => ['running', 'pausing', 'cancelling'].includes(job.status)) || jobs.find(job => job.status === 'paused')
+  return jobs.find(job => ['running', 'pausing', 'cancelling'].includes(job.status)) || jobs.find(job => ['paused', 'interrupted'].includes(job.status))
     || jobs.find(job => ['queued', 'scheduled'].includes(job.status)) || jobs[0];
 }
 

@@ -7,7 +7,7 @@ import { ArrowRight, Download, FolderPlus, Images, Loader2, Pencil } from 'lucid
 import { apiClient, apiUrl } from '../../api/client';
 import type { Artifact, DatasetInfo, DatasetSource, JobListResponse } from '../../api/types';
 import { useFamilies } from '../../api/hooks/useFamilies';
-import { useEventStream } from '../../events/useEventStream';
+import { useEventStream, useEventStreamReconnect } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { formatBytes } from '../../utils/format';
 import { decimalText } from '../../utils/numberText';
@@ -81,7 +81,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
   const activeQuery = useQuery({
     queryKey: activeKey,
     queryFn: () => apiClient.get<JobListResponse>('/jobs', { params: { project_id: project.id, version_id: scopedVersionId, type: 'train', group: 'active', page: 1, page_size: 20 }, silent: true }),
-    refetchInterval: query => query.state.data?.items.some(job => job.status !== 'paused') ? 5000 : false,
+    refetchInterval: query => query.state.data?.items.some(job => LIVE.includes(job.status)) ? 5000 : false,
   });
   const artifactsQuery = useQuery({
     queryKey: ['project-overview-artifacts', project.id, scopedVersionId],
@@ -96,6 +96,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
   useEventStream(EVENT_TYPES.JOB_STEP, applyEvent);
   useEventStream(EVENT_TYPES.JOB_PHASE, applyEvent);
   useEventStream(EVENT_TYPES.JOB_STATE, event => { if (event.project_id && event.project_id !== project.id) return; applyEvent(event); refreshJobs(); });
+  useEventStreamReconnect(refreshJobs);
   useEventStream(EVENT_TYPES.ARTIFACT_CREATED, event => { if (!event.project_id || event.project_id === project.id) void artifactsQuery.refetch(); });
 
   const stats = overviewDatasetStats(datasets);

@@ -38,7 +38,7 @@ export default function TimestepSamplingStatus({ status, configured, jobStatus }
     nonfinite_statistics: text('统计出现非有限值', 'Non-finite statistics'),
   };
   const reason = status.reason ? reasons[status.reason] || text(`原因：${status.reason}`, `Reason: ${status.reason}`) : '';
-  const ended = ['paused', 'completed', 'failed', 'cancelled'].includes(jobStatus);
+  const ended = ['paused', 'interrupted', 'completed', 'failed', 'cancelled'].includes(jobStatus);
   const stage = stages[status.stage] || text('状态未知', 'Unknown state');
   const recentBatch = status.token_scope === 'last_primary_microbatch';
   const baselineNames = {

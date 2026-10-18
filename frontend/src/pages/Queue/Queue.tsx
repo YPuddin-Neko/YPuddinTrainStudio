@@ -12,7 +12,7 @@ import ProgressBar from '../../components/ProgressBar';
 import { useQueueDevices } from '../../api/hooks/useQueueDevices';
 import { useTelemetryInterval } from '../../api/hooks/useTelemetryInterval';
 import { gpuDeviceLabel } from '../../utils/gpuDevices';
-import { useEventStream } from '../../events/useEventStream';
+import { useEventStream, useEventStreamReconnect } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { formatApiError } from '../../utils/errors';
 import { jobModelTypeLabel, jobTypeLabel, mergeJobEvent, shortTime } from '../../utils/jobs';
@@ -30,7 +30,7 @@ import OverflowStrip from '../../components/OverflowStrip';
 
 type Group = 'active' | 'waiting' | 'history' | 'archive';
 const groups: Group[] = ['active', 'waiting', 'history', 'archive'];
-const statuses = { active: ['running', 'pausing', 'cancelling', 'paused'], waiting: ['queued', 'scheduled'], history: ['completed', 'failed', 'cancelled'], archive: ['completed', 'failed', 'cancelled'] };
+const statuses = { active: ['running', 'pausing', 'cancelling', 'paused', 'interrupted'], waiting: ['queued', 'scheduled'], history: ['completed', 'failed', 'cancelled'], archive: ['completed', 'failed', 'cancelled'] };
 const groupIcons = { active: Activity, waiting: Clock3, history: History, archive: Archive };
 
 function DeviceCell({ job }: { job: Job }) {
@@ -38,7 +38,7 @@ function DeviceCell({ job }: { job: Job }) {
   const assigned = job.progress?.devices?.length ? job.progress.devices : [];
   const devices = assigned.length ? assigned : job.gpu_devices || [];
   if (!devices.length) return <span className="queue-muted">{['queued', 'scheduled'].includes(job.status) ? text('自动分配', 'Automatic') : '—'}</span>;
-  return <><span className="queue-device-list">{devices.map(gpuDeviceLabel).join(', ')}</span><small>{assigned.length ? text('已分配', 'Assigned') : text('申请', 'Requested')}</small></>;
+  return <><span className="queue-device-list">{devices.map(gpuDeviceLabel).join(', ')}</span><small>{assigned.length ? job.status === 'interrupted' && job.recovery?.worker_alive === false ? text('上次使用', 'Last used') : text('已分配', 'Assigned') : text('申请', 'Requested')}</small></>;
 }
 
 export default function Queue() {
@@ -99,6 +99,7 @@ export default function Queue() {
     return () => { controller.abort(); if (refreshTimer.current) clearTimeout(refreshTimer.current); };
   }, []);
   const refresh = () => { void fetchJobs(); void fetchCounts(); gpuStatus.refresh(); };
+  useEventStreamReconnect(refresh);
   const queueRefresh = () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); refreshTimer.current = setTimeout(refresh, 180); };
   useEventStream(EVENT_TYPES.JOB_STATE, event => {
     request.current?.abort();
@@ -152,16 +153,16 @@ export default function Queue() {
     ...TTS_ENGINES.map(engine => ({ value: engine, label: ttsEngineLabel(engine) }))];
   // A link may name a type the lists leave out, such as retired FLUX.1; it stays readable as the selection.
   if (modelType && !modelTypeOptions.some(option => option.value === modelType)) modelTypeOptions.push({ value: modelType, label: familySeriesName(familyDisplayName(families.data, modelType)) });
-  const groupLabels = { active: text('运行与暂停', 'Active & paused'), waiting: text('等待调度', 'Waiting'), history: text('训练历史', 'History'), archive: text('归档', 'Archive') };
-  const statusLabels: Record<string, string> = { running: text('运行中', 'Running'), pausing: text('暂停中', 'Pausing'), cancelling: text('取消中', 'Cancelling'), paused: text('已暂停', 'Paused'), queued: text('排队中', 'Queued'), scheduled: text('已排期', 'Scheduled'), completed: text('已完成', 'Completed'), failed: text('失败', 'Failed'), cancelled: text('已取消', 'Cancelled') };
+  const groupLabels = { active: text('当前任务', 'Current jobs'), waiting: text('等待调度', 'Waiting'), history: text('训练历史', 'History'), archive: text('归档', 'Archive') };
+  const statusLabels: Record<string, string> = { running: text('运行中', 'Running'), pausing: text('暂停中', 'Pausing'), cancelling: text('取消中', 'Cancelling'), paused: text('已暂停', 'Paused'), interrupted: text('异常中断', 'Interrupted'), queued: text('排队中', 'Queued'), scheduled: text('已排期', 'Scheduled'), completed: text('已完成', 'Completed'), failed: text('失败', 'Failed'), cancelled: text('已取消', 'Cancelled') };
   const devices = gpuStatus.snapshot?.devices || [];
   const freeDevices = devices.filter(device => !device.job_id && device.status !== 'unavailable').length;
   const summary = [
-    counts.active != null && text(`${counts.active} 个运行或暂停`, `${counts.active} active`),
+    counts.active != null && text(`${counts.active} 个当前任务`, `${counts.active} current jobs`),
     counts.waiting != null && text(`${counts.waiting} 个等待`, `${counts.waiting} waiting`),
     devices.length > 0 && text(`${freeDevices} / ${devices.length} 张显卡空闲`, `${freeDevices} of ${devices.length} GPUs free`),
   ].filter(Boolean).join(' · ');
-  const emptyTitle = loading ? text('读取任务…', 'Loading jobs…') : filtered ? text('没有符合筛选条件的任务', 'No jobs match the filters') : group === 'archive' ? text('归档是空的', 'The archive is empty') : group === 'history' ? text('还没有训练记录', 'No finished jobs yet') : group === 'waiting' ? text('没有等待中的任务', 'No jobs are waiting') : text('没有运行中的任务', 'No jobs are running');
+  const emptyTitle = loading ? text('读取任务…', 'Loading jobs…') : filtered ? text('没有符合筛选条件的任务', 'No jobs match the filters') : group === 'archive' ? text('归档是空的', 'The archive is empty') : group === 'history' ? text('还没有训练记录', 'No finished jobs yet') : group === 'waiting' ? text('没有等待中的任务', 'No jobs are waiting') : text('当前没有运行、暂停或中断的任务', 'No running, paused or interrupted jobs');
 
   return <section className="queue-page task-workspace">
     <header className="queue-header">

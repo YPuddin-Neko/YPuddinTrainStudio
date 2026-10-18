@@ -40,7 +40,9 @@ from .xyz import RESIDENT_IDLE_SECONDS, resident_key, resident_label
 log = logging.getLogger(__name__)
 
 ACTIVE = ("queued", "scheduled", "running", "pausing", "cancelling")
-TERMINAL = ("completed", "failed", "cancelled", "paused")
+TERMINAL = ("completed", "failed", "cancelled", "paused", "interrupted")
+RESTART_ERROR = "service restarted while the job was running"
+INTERRUPTED_ERROR = "服务或训练进程意外中断。"
 EVENT_BATCH_SIZE = 128
 EVENT_BATCH_BYTES = 256 * 1024
 RELEASE_WAIT_SECONDS = 30
@@ -197,6 +199,7 @@ class JobSupervisor:
         self.max_concurrent = max_concurrent
         self.python = python or sys.executable
         self._procs: dict[str, subprocess.Popen] = {}
+        self._orphaned: dict[str, dict[str, Any]] = {}
         self._output_captures: dict[int, ProcessOutput] = {}
         # When each exited job was first seen with its output still arriving.
         self._draining_since: dict[str, float] = {}
@@ -225,10 +228,87 @@ class JobSupervisor:
     # ----------------------------------------------------------------- lifecycle
     async def start(self) -> None:
         self._event_loop = asyncio.get_running_loop()
-        # Jobs that were running when the service died cannot be trusted; mark them failed.
-        for job in self.db.fetchall("SELECT id FROM jobs WHERE status IN ('running','pausing','cancelling')"):
-            self._set_status(job["id"], "failed", error="service restarted while the job was running")
+        from .job_processes import remaining_workers
+
+        for job in self.db.fetchall(
+            "SELECT * FROM jobs WHERE archived_at IS NULL AND ("
+            "status IN ('running','pausing','cancelling','interrupted','paused') OR (status='failed' AND error=?))",
+            (RESTART_ERROR,),
+        ):
+            alive = remaining_workers(job)
+            if alive:
+                self._orphaned[job["id"]] = job
+            if job["status"] == "paused":
+                continue
+            cancelling = job["status"] == "cancelling" or (
+                job["error"] == RESTART_ERROR and (Path(job["run_dir"]) / "control" / "stop").is_file()
+            )
+            if not alive and (outcome := self._restart_outcome(job)):
+                event_type = "run.stopped" if cancelling and outcome["type"] == "run.paused" else outcome["type"]
+                self._set_terminal(job["id"], event_type, outcome)
+                continue
+            self._set_status(
+                job["id"], "cancelling" if cancelling and alive else "cancelled" if cancelling else "interrupted",
+                error=None if cancelling else INTERRUPTED_ERROR,
+                finished_at=None if alive else job.get("finished_at") or now(),
+                forced_at=None,
+            )
         self._task = asyncio.create_task(self._loop())
+
+    def _restart_outcome(self, job: dict[str, Any]) -> dict[str, Any] | None:
+        """Restore preparation and the terminal outcome from this launch's durable events."""
+        offset = job.get("launch_event_offset")
+        started = job.get("started_at")
+        if offset is None and not isinstance(started, (int, float)):
+            return None
+        outcome = None
+        prepared = None
+        try:
+            with event_file(job).open("rb") as stream:
+                if offset is not None:
+                    stream.seek(offset)
+                for line in stream:
+                    if not line.endswith(b"\n"):
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except (ValueError, UnicodeDecodeError):
+                        continue
+                    if not isinstance(event, dict):
+                        continue
+                    if offset is None and (not isinstance(event.get("ts"), (int, float)) or event["ts"] < started):
+                        continue
+                    if event.get("type") == "run.prepared":
+                        prepared = event
+                    if event.get("type") in {"run.finished", "run.failed", "run.paused", "run.stopped"}:
+                        outcome = event
+        except OSError:
+            pass
+        if prepared is not None:
+            # This launch consumed its explicit starting point; subsequent recovery
+            # uses the latest published state, just as when the event was read live.
+            self._handle_event(job["id"], prepared)
+        return outcome
+
+    def _reap_orphans(self) -> bool:
+        from .job_processes import remaining_workers
+
+        with self.db.lock:
+            for jid, original in list(self._orphaned.items()):
+                if remaining_workers(original):
+                    continue
+                del self._orphaned[jid]
+                job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (jid,))
+                if not job or job["status"] not in {"interrupted", "cancelling"}:
+                    continue
+                if outcome := self._restart_outcome(job):
+                    event_type = ("run.stopped" if job["status"] == "cancelling" and outcome["type"] == "run.paused"
+                                  else outcome["type"])
+                    self._set_terminal(jid, event_type, outcome)
+                else:
+                    self._set_status(jid, "cancelled" if job["status"] == "cancelling" else "interrupted",
+                                     finished_at=now(), error=None if job["status"] == "cancelling" else INTERRUPTED_ERROR)
+            return bool(self._orphaned)
 
     async def stop(self) -> None:
         self._stopping = True
@@ -312,6 +392,9 @@ class JobSupervisor:
             elif job_id in self._staying and drained:
                 self._detach(job_id)
         self._reap_residents()
+        if self._reap_orphans():
+            self._mark_blocked("等待原任务进程退出。")
+            return backlog
         settings = self.db.get_kv("queue.settings", {"held": False, "max_concurrent": self.max_concurrent})
         blocked = maintenance_reason(self.db)
         if blocked or self._blocked_reason:
@@ -657,6 +740,8 @@ class JobSupervisor:
         return (device,) if isinstance(device, str) else device
 
     def _launch(self, job: dict[str, Any], *, device: str | tuple[str, ...] | None = None) -> None:
+        from .job_processes import capture_created
+
         job_id = job["id"]
         devices = self._allocation(device or "cpu")
         count = self._gpu_count(job)
@@ -843,6 +928,8 @@ class JobSupervisor:
             "running",
             started_at=now(),
             pid=proc.pid,
+            pid_created=capture_created(proc.pid),
+            launch_event_offset=self._offsets[job_id],
             exit_code=None,
             resume_from=resume_from,
             forced_at=None,
@@ -1174,7 +1261,7 @@ class JobSupervisor:
             "run.stopped": "cancelled",
             "run.failed": "failed",
         }[event_type]
-        fields: dict[str, Any] = {"finished_at": now()}
+        fields: dict[str, Any] = {"finished_at": now(), "error": None}
         event = event or {}
         if status == "failed":
             fields["error"] = str(
@@ -1222,8 +1309,15 @@ class JobSupervisor:
                 self._set_status(job_id, job["status"], exit_code=code)
                 return
             self._outcome_seen.discard(job_id)
-            status = "cancelled" if job["status"] == "cancelling" else "failed"
+            status = ("cancelled" if job["status"] == "cancelling" else
+                      "interrupted" if code in {-9, -15} and not failed_after_completion else "failed")
             error = None
+            if status == "interrupted":
+                from .job_processes import remaining_workers
+
+                if remaining_workers(job):
+                    self._orphaned[job_id] = job
+                error = INTERRUPTED_ERROR
             if status == "failed":
                 error = _exit_error(job, code, completed=failed_after_completion)
                 details = _exit_diagnostics(log_file(job), log_start)
@@ -1310,6 +1404,12 @@ class JobSupervisor:
             if job_id in deleting_jobs:
                 raise ValueError("这个任务的文件正在删除，不能再开始。")
             self._check_job_version(job)
+            if job.get("archived_at") is not None:
+                raise ValueError("请先恢复已归档的任务。")
+            if job_id in self._orphaned:
+                if self._reap_orphans() and job_id in self._orphaned:
+                    raise ValueError("原任务进程尚未退出，不能再次启动。")
+                job = self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
         status = job["status"]
         if command == "pause":
             if status in ("queued", "scheduled"):
@@ -1326,12 +1426,19 @@ class JobSupervisor:
             if command == "force" and status in ("queued", "scheduled"):
                 self._set_status(job_id, "queued", forced_at=forced_at)
                 return self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
-            allowed = ("paused",) if command == "force" else ("paused", "failed", "cancelled")
+            allowed = ("paused",) if command == "force" else ("paused", "failed", "cancelled", "interrupted")
             if status not in allowed:
                 raise ValueError(f"cannot {command} a job in status {status}")
             progress = json.loads(job.get("progress_json") or "{}")
             resume_from = job.get("resume_from")
-            if not progress.get("preparing"):
+            if status == "interrupted":
+                from .job_recovery import recovery
+
+                available = recovery(job, worker_alive=False)
+                if not available["can_resume"]:
+                    raise ValueError(available["reason"])
+                resume_from = available["checkpoint_path"]
+            elif not progress.get("preparing"):
                 resume_from = resume_from or self._latest_state(state_directory(job))
             if status != "paused" and job["type"] != "cache" and not resume_from:
                 raise ValueError("no checkpoint to resume from")
@@ -1341,7 +1448,10 @@ class JobSupervisor:
                 job_id, "queued", resume_from=resume_from, error=None, finished_at=None, forced_at=forced_at
             )
         elif command == "cancel":
-            if status in ("queued", "scheduled", "paused"):
+            if status in {"interrupted", "paused"} and job_id in self._orphaned:
+                self._control_file(job, "stop")
+                self._set_status(job_id, "cancelling")
+            elif status in ("queued", "scheduled", "paused", "interrupted"):
                 self._set_status(job_id, "cancelled", finished_at=now(), forced_at=None)
             elif status in ("running", "pausing"):
                 self._control_file(job, "stop")
@@ -1496,7 +1606,7 @@ class JobSupervisor:
         return self.db.fetchone("SELECT * FROM jobs WHERE id=?", (new,))
 
     def is_running(self, job_id: str) -> bool:
-        return job_id in self._procs
+        return job_id in self._procs or job_id in self._orphaned
 
     def _check_job_version(self, job: dict[str, Any]) -> None:
         from .errors import ApiError

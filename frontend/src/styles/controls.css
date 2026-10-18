@@ -121,7 +121,7 @@
 .task-status { --status:#64748b; display:inline-flex; align-items:center; gap:6px; height:22px; padding:0 8px; border-radius:999px; background:color-mix(in srgb, var(--status) 11%, transparent); color:color-mix(in srgb, var(--status) 88%, var(--studio-text)); font-size:12px; font-weight:550; white-space:nowrap; }
 .task-status-dot { width:6px; height:6px; flex:none; border-radius:50%; background:var(--status); }
 .task-status[data-status=running] { --status:#16a34a; }
-.task-status[data-status=paused],.task-status[data-status=pausing] { --status:#d97706; }
+.task-status[data-status=paused],.task-status[data-status=pausing],.task-status[data-status=interrupted] { --status:#d97706; }
 .task-status[data-status=failed],.task-status[data-status=cancelling] { --status:#dc2626; }
 .task-status[data-status=queued],.task-status[data-status=scheduled] { --status:#2563eb; }
 .task-status[data-status=completed] { --status:#0f766e; }

@@ -370,6 +370,7 @@ class DatasetPipeline:
                 status = {
                     "completed": "completed",
                     "failed": "failed",
+                    "interrupted": "running" if self.c.supervisor.is_running(job["id"]) else "failed",
                     "cancelled": "cancelled",
                     "paused": "cancelled",
                     "cancelling": "cancelling",

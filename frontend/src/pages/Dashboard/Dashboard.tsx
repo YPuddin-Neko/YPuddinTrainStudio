@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Activity, ArrowRight, ChevronLeft, ChevronRight, FolderOpen, Plus, RefreshCw } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { JobListResponse, Project } from '../../api/types';
-import { useEventStream } from '../../events/useEventStream';
+import { useEventStream, useEventStreamReconnect } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { formatTime } from '../../utils/format';
 import { formatApiError } from '../../utils/errors';
@@ -108,6 +108,7 @@ export default function Dashboard() {
   };
   useEventStream(EVENT_TYPES.JOB_STATE, queueRefresh);
   useEventStream(EVENT_TYPES.QUEUE_CHANGED, queueRefresh);
+  useEventStreamReconnect(queueRefresh);
   useEventStream(EVENT_TYPES.JOB_STEP, liveProgress);
   useEventStream(EVENT_TYPES.JOB_PHASE, liveProgress);
   const last = projects[0];
@@ -116,7 +117,7 @@ export default function Dashboard() {
   return <section className="task-workspace dashboard-overview" data-testid="dashboard-page">
     <PageLocation trail={[{ label: text('仪表盘', 'Dashboard') }]}/><header className="task-page-heading"><div><h1>{text('训练工作台', 'Training workspace')}</h1></div><div className="dashboard-page-actions"><button type="button" className="ui-btn ui-btn-icon" aria-label={text('刷新概览', 'Refresh overview')} title={text('刷新概览', 'Refresh overview')} disabled={loading} onClick={() => void fetchOverview()}><RefreshCw size={15} className={loading ? 'animate-spin' : undefined}/></button><Link className="ui-btn ui-btn-primary" to="/projects"><Plus size={15}/>{text('新建或打开项目', 'Create or open a project')}</Link></div></header>
     {error && <div role="alert" className="task-error">{error}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void fetchOverview()}>{text('重试', 'Retry')}</button></div>}
-    <div className="dashboard-summary" aria-label={text('任务总览', 'Job overview')}>{([{ view: 'active', label: text('进行中与暂停', 'Active & paused'), value: counts.active }, { view: 'waiting', label: text('等待调度', 'Waiting'), value: counts.waiting }, { view: 'history', label: text('历史记录', 'History'), value: counts.history }] as const).map(item => <Link className="ui-card-interactive" key={item.view} to={`/queue?view=${item.view}`}><strong>{loading ? '—' : item.value ?? '—'}</strong><span>{item.label}</span><ArrowRight size={14}/></Link>)}</div>
+    <div className="dashboard-summary" aria-label={text('任务总览', 'Job overview')}>{([{ view: 'active', label: text('当前任务', 'Current jobs'), value: counts.active }, { view: 'waiting', label: text('等待调度', 'Waiting'), value: counts.waiting }, { view: 'history', label: text('历史记录', 'History'), value: counts.history }] as const).map(item => <Link className="ui-card-interactive" key={item.view} to={`/queue?view=${item.view}`}><strong>{loading ? '—' : item.value ?? '—'}</strong><span>{item.label}</span><ArrowRight size={14}/></Link>)}</div>
     <div className="dashboard-content-grid">
       <section className="dashboard-panel" aria-label={text('当前任务', 'Current jobs')}>
         <header>
@@ -131,7 +132,7 @@ export default function Dashboard() {
           <JobContext job={job}/>
           {job.progress?.total_steps ? <div className="dashboard-run-progress"><span>{job.progress.step ?? 0} / {job.progress.total_steps} {text('步', 'steps')}</span><progress aria-label={text(`${job.name}训练进度`, `${job.name} training progress`)} value={job.progress.step ?? 0} max={job.progress.total_steps}/></div> : null}
         </article>)}</div> : <div className="task-empty">
-          <Activity size={26}/><strong>{loading ? text('读取任务…', 'Loading jobs…') : !activeAvailable ? text('当前任务暂时无法读取', 'Active jobs are temporarily unavailable') : text('现在没有运行或暂停的任务', 'No active or paused jobs')}</strong>
+          <Activity size={26}/><strong>{loading ? text('读取任务…', 'Loading jobs…') : !activeAvailable ? text('当前任务暂时无法读取', 'Active jobs are temporarily unavailable') : text('当前没有运行、暂停或中断的任务', 'No running, paused or interrupted jobs')}</strong>
           {(!activeAvailable || (counts.waiting ?? 0) > 0) && <span>{!activeAvailable ? text('请重试，或直接打开队列。', 'Retry or open the queue directly.') : text('有任务等待调度，可在队列查看原因。', 'Jobs are waiting. Check the queue for details.')}</span>}
         </div>}
       </section>

@@ -20,7 +20,7 @@ JOB_ACTIONS: tuple[JobAction, ...] = get_args(JobAction)
 TTS_JOBS = frozenset({"tts_train", "tts_sample"})
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
 WAITING = frozenset({"queued", "scheduled"})
-ACTIVE = frozenset({"queued", "scheduled", "running", "cancelling", "pausing", "paused"})
+ACTIVE = frozenset({"queued", "scheduled", "running", "cancelling", "pausing", "paused", "interrupted"})
 
 
 def _issue(code: str, message: str, *, loc: list[str | int] | None = None, **details: Any) -> TtsIssue:
@@ -177,7 +177,7 @@ def _decisions(c: Any, job: dict, requested: tuple[str, ...] = JOB_ACTIONS) -> d
         elif action in {"retry", "force", "change_gpu", "change_priority"} and owner:
             problem = owner
         elif action == "cancel":
-            problem = None if status in WAITING | {"running"} else _issue("job.bad_state", "当前任务状态不能取消。", status=status)
+            problem = None if status in WAITING | {"running", "interrupted"} else _issue("job.bad_state", "当前任务状态不能取消。", status=status)
         elif action == "unarchive":
             problem = None if archived else _issue("job.bad_state", "任务尚未归档。", status=status)
         elif running:
@@ -194,13 +194,13 @@ def _decisions(c: Any, job: dict, requested: tuple[str, ...] = JOB_ACTIONS) -> d
             else:
                 problem = None
         elif action == "change_gpu":
-            problem = None if status in WAITING | {"failed", "cancelled"} else _issue("job.bad_state", "当前任务状态不能更换显卡。", status=status)
+            problem = None if status in WAITING | {"failed", "cancelled", "interrupted"} else _issue("job.bad_state", "当前任务状态不能更换显卡。", status=status)
         elif action == "change_priority":
             problem = None if status in WAITING else _issue("job.bad_state", "只能调整排队任务的优先级。", status=status)
         elif action == "force":
             problem = None if status in WAITING and job.get("forced_at") is None else _issue("job.bad_state", "只有尚未强制开始的排队任务可以强制开始。", status=status)
         else:
-            problem = None if status in TERMINAL else _issue("job.bad_state", "只能重试已结束的任务。", status=status)
+            problem = None if status in TERMINAL | {"interrupted"} else _issue("job.bad_state", "只能重试已结束或中断的任务。", status=status)
         if problem is None and action in {"retry", "force", "change_gpu"}:
             if not dependencies:
                 dependencies.append(dependency_issue(c, job))

@@ -12,6 +12,7 @@ import { formatEta } from '../../utils/format';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { projectUrl } from '../../utils/projectVersions';
 import { shortTime } from '../../utils/jobs';
+import { jobRecoveryMessage } from '../../utils/jobRecovery';
 import { TtsTaskActions } from '../Tts/TtsTaskActions';
 
 const DEVICE_WAIT = 'waiting for a free accelerator with enough memory';
@@ -21,6 +22,7 @@ export function JobProgressSummary({ job }: { job: Job }) {
   const text = useWorkspaceText();
   const { t } = useTranslation();
   const progress = job.progress || {};
+  if (job.status === 'interrupted') return <small className="queue-status-note">{jobRecoveryMessage(job, text)}</small>;
   const active = ['running', 'pausing', 'cancelling', 'paused'].includes(job.status);
   // A pause another run forced; the job waits until someone resumes it.
   const preempted = ['pausing', 'paused'].includes(job.status) && progress.preempted_by ? text(`为「${progress.preempted_by}」暂停`, `Paused for “${progress.preempted_by}”`) : '';
@@ -62,7 +64,7 @@ export function JobContext({ job }: { job: ContextJob }) {
 }
 export function JobStatus({ status }: { status: string }) {
   const text = useWorkspaceText();
-  const labels: Record<string, [string, string]> = { running: ['运行中', 'Running'], paused: ['已暂停', 'Paused'], pausing: ['暂停中', 'Pausing'], cancelling: ['取消中', 'Cancelling'], queued: ['排队中', 'Queued'], scheduled: ['已排期', 'Scheduled'], completed: ['已完成', 'Completed'], failed: ['失败', 'Failed'], cancelled: ['已取消', 'Cancelled'] };
+  const labels: Record<string, [string, string]> = { running: ['运行中', 'Running'], paused: ['已暂停', 'Paused'], interrupted: ['异常中断', 'Interrupted'], pausing: ['暂停中', 'Pausing'], cancelling: ['取消中', 'Cancelling'], queued: ['排队中', 'Queued'], scheduled: ['已排期', 'Scheduled'], completed: ['已完成', 'Completed'], failed: ['失败', 'Failed'], cancelled: ['已取消', 'Cancelled'] };
   return <span className="task-status" data-status={status}><span className="task-status-dot" aria-hidden="true"/>{labels[status] ? text(...labels[status]) : status}</span>;
 }
 export function JobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: Job) => void }) {
@@ -80,7 +82,8 @@ function ImageJobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: Jo
     pending.current = true;
     const id = job.id; setBusy(action); setError('');
     try {
-      if (action === 'cancel' && !await confirm({ title: text('取消任务', 'Cancel job'), message: isTtsJob(job) ? text(`取消任务“${job.name}”？进程将停止，已保存的产物会保留，尚未保存的进度会丢失。`, `Cancel “${job.name}”? The process will stop. Saved outputs are kept; unsaved progress is lost.`) : text(`取消任务“${job.name}”？任务将在安全位置停止。已有产物会保留。`, `Cancel “${job.name}”? It will stop at a safe point. Existing outputs are kept.`), confirmLabel: text('取消任务', 'Cancel job'), danger: true })) return;
+      if (action === 'retry' && job.status === 'interrupted' && !await confirm({ title: text('重新开始任务', 'Start a new run'), message: text('将创建新任务从头运行，原任务和已保存的产物会保留。', 'Create a new job and start from the beginning. The original job and saved outputs are kept.'), confirmLabel: text('重新开始', 'Start again') })) return;
+      if (action === 'cancel' && !await confirm({ title: text('取消任务', 'Cancel job'), message: job.status === 'interrupted' && job.recovery && !job.recovery.worker_alive ? text(`取消任务“${job.name}”？任务会移到训练历史，已保存的产物会保留。`, `Cancel “${job.name}”? It will move to History; saved outputs are kept.`) : isTtsJob(job) ? text(`取消任务“${job.name}”？进程将停止，已保存的产物会保留，尚未保存的进度会丢失。`, `Cancel “${job.name}”? The process will stop. Saved outputs are kept; unsaved progress is lost.`) : text(`取消任务“${job.name}”？任务将在安全位置停止。已有产物会保留。`, `Cancel “${job.name}”? It will stop at a safe point. Existing outputs are kept.`), confirmLabel: text('取消任务', 'Cancel job'), danger: true })) return;
       if (action === 'force' && !await confirm({ title: text('强制开始', 'Force start'), message: text(`强制开始“${job.name}”？将跳过显存估算并优先调度；没有空闲显卡时，可暂停的任务会保存状态后让出显卡，语音任务需结束或取消后让出显卡。`, `Force-start “${job.name}”? Skip the memory estimate and prioritize this job. If no GPU is free, pausable jobs save and yield their GPU; speech jobs must finish or be cancelled first.`), confirmLabel: text('强制开始', 'Force start') })) return;
       if (current.current !== id) return;
       const result = await apiClient.post<Job>(`/jobs/${id}/${action}`, {}, { silent: true }); if (current.current === id) onUpdated(result);
@@ -91,9 +94,10 @@ function ImageJobActions({ job, onUpdated }: { job: Job; onUpdated: (updated: Jo
   const actions: { key: string; label: string; Icon: typeof Play }[] = [];
   if (!isTtsJob(job) && job.type !== 'xyz' && ['running', 'queued', 'scheduled'].includes(job.status)) actions.push({ key: 'pause', label: text('暂停', 'Pause'), Icon: Pause });
   if (!isTtsJob(job) && job.type !== 'xyz' && job.status === 'paused') actions.push({ key: 'resume', label: text('继续', 'Resume'), Icon: Play });
+  if (job.status === 'interrupted' && job.type === 'train' && job.recovery?.can_resume && !job.recovery.worker_alive) actions.push({ key: 'resume', label: text('继续训练', 'Continue training'), Icon: Play });
   if (job.forced_at == null && (['queued', 'scheduled'].includes(job.status) || !isTtsJob(job) && job.type !== 'xyz' && job.status === 'paused')) actions.push({ key: 'force', label: text('强制开始', 'Force start'), Icon: Zap });
   if (job.status === 'running' && job.type === 'train') actions.push({ key: 'save', label: text('保存检查点', 'Save checkpoint'), Icon: Save });
-  if (['running', 'queued', 'scheduled', 'paused', 'pausing'].includes(job.status)) actions.push({ key: 'cancel', label: text('取消', 'Cancel'), Icon: XCircle });
-  if (['failed', 'cancelled', 'completed'].includes(job.status)) actions.push({ key: 'retry', label: job.type === 'xyz' || job.type === 'tts_sample' ? text('重新生成', 'Generate again') : job.type === 'cache' ? text('重新准备', 'Prepare again') : text('重新训练', 'Run again'), Icon: RotateCcw });
+  if (['running', 'queued', 'scheduled', 'paused', 'pausing', 'interrupted'].includes(job.status)) actions.push({ key: 'cancel', label: text('取消', 'Cancel'), Icon: XCircle });
+  if (['failed', 'cancelled', 'completed'].includes(job.status) || job.status === 'interrupted' && job.recovery && !job.recovery.worker_alive) actions.push({ key: 'retry', label: job.type === 'xyz' || job.type === 'tts_sample' ? text('重新生成', 'Generate again') : job.type === 'cache' ? text('重新准备', 'Prepare again') : text('重新训练', 'Run again'), Icon: RotateCcw });
   return <div className="task-actions-wrap"><div className="task-actions">{actions.map(({ key, label, Icon }) => <button key={key} type="button" className="ui-btn ui-btn-sm" disabled={!!busy} data-testid={`job-${key}-${job.id}`} onClick={() => void run(key)}>{busy === key ? <Loader2 size={13} className="animate-spin"/> : <Icon size={13}/>}<span>{label}</span></button>)}</div>{error && <p className="task-inline-error" role="alert">{error}</p>}{confirmation}</div>;
 }

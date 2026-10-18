@@ -10,6 +10,7 @@ interface RequestOptions extends RequestInit {
 
 /** How long a page section waits for its data before it offers a retry instead of loading on. */
 export const READ_TIMEOUT_MS = 60_000;
+let networkReadNotice = false;
 
 export class RequestTimeout extends Error {
   constructor() {
@@ -60,10 +61,17 @@ async function request<T>(method: string, endpoint: string, body?: unknown, opti
         code: `http_${response.status}`, message: response.statusText || `HTTP ${response.status}`,
       });
     }
-    return response.status === 204 ? undefined as T : await response.json() as T;
+    const result = response.status === 204 ? undefined as T : await response.json() as T;
+    if (method === 'GET' && networkReadNotice) {
+      networkReadNotice = false;
+      window.dispatchEvent(new CustomEvent('api.error', { detail: '' }));
+    }
+    return result;
   } catch (caught) {
     const error = limit?.expired() ? new RequestTimeout() : caught;
     if (!silent && !(error instanceof Error && error.name === 'AbortError')) {
+      networkReadNotice = method === 'GET' && error instanceof TypeError
+        && /^(Failed to fetch|Load failed|NetworkError when attempting to fetch resource\.?)$/i.test(error.message);
       window.dispatchEvent(new CustomEvent('api.error', { detail: formatApiError(error) }));
     }
     throw error;

@@ -136,7 +136,7 @@ def _latest_training(c: ServiceContext, project_id: str, project_type: str = "im
     job = c.db.fetchone(
         "SELECT id,name,status,progress_json,created_at,finished_at,error FROM jobs"
         " WHERE project_id=? AND type=? ORDER BY CASE"
-        " WHEN status IN ('running','pausing','cancelling') THEN 0 WHEN status='paused' THEN 1"
+        " WHEN status IN ('running','pausing','cancelling') THEN 0 WHEN status IN ('paused','interrupted') THEN 1"
         " WHEN status IN ('queued','scheduled') THEN 2 ELSE 3 END, created_at DESC, id DESC LIMIT 1",
         (project_id, "tts_train" if project_type == "tts" else "train"),
     )
@@ -376,7 +376,7 @@ def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)
             if c.db.fetchone("SELECT id FROM project_versions WHERE project_id=? AND (status='copying' OR busy IS NOT NULL)", (pid,)):
                 raise ApiError("请等待版本复制或处理完成后再归档项目。", code="project.busy", status=409)
             jobs = c.db.fetchall("SELECT * FROM jobs WHERE project_id=?", (pid,))
-            if any(row["status"] in {"queued", "scheduled", "running", "cancelling", "pausing"} or c.supervisor.is_running(row["id"]) for row in jobs):
+            if any(row["status"] in {"queued", "scheduled", "running", "cancelling", "pausing", "interrupted"} or c.supervisor.is_running(row["id"]) for row in jobs):
                 raise ApiError("请先等待语音任务结束或取消任务。", code="project.jobs_busy", status=409)
         fields = {
             k: (int(v) if isinstance(v, bool) else v) for k, v in body.model_dump().items() if v is not None
@@ -771,7 +771,7 @@ def patch_version(pid: str, vid: str, body: VersionPatch, c: ServiceContext = De
         if body.archived:
             if c.db.fetchone("SELECT id FROM tts_sources WHERE version_id=? AND state='checking'", (vid,)):
                 raise ApiError("请等待语音数据检查完成后再归档版本。", code="version.busy", status=409)
-            if c.db.fetchone(f"SELECT id FROM jobs WHERE version_id=? AND status IN {ACTIVE_JOBS}", (vid,)):
+            if c.db.fetchone(f"SELECT id FROM jobs WHERE version_id=? AND status IN {ACTIVE_JOBS[:-1]},'interrupted')", (vid,)):
                 raise ApiError("version has queued or running jobs", code="version.jobs_busy", status=409)
             if _get_project(c, pid)["project_type"] == "tts" and any(
                 c.supervisor.is_running(item["id"]) for item in c.db.fetchall("SELECT id FROM jobs WHERE version_id=?", (vid,))
@@ -2125,6 +2125,10 @@ def _job_row(r: dict[str, Any], c: ServiceContext | None = None) -> dict[str, An
         from .tts_job_actions import present
 
         out.update(present(c, r))
+    if c is not None and r.get("status") == "interrupted" and r.get("type") not in {"tts_train", "tts_sample"}:
+        from .job_recovery import recovery
+
+        out["recovery"] = recovery(r, worker_alive=c.supervisor.is_running(r["id"]))
     return out
 
 
@@ -2152,7 +2156,7 @@ def list_jobs(
     conds.append("j.archived_at IS NOT NULL" if group == "archive" else "j.archived_at IS NULL")
     if group and group != "archive":
         groups = {
-            "active": ("running", "pausing", "cancelling", "paused"),
+            "active": ("running", "pausing", "cancelling", "paused", "interrupted"),
             "waiting": ("queued", "scheduled"),
             "history": FINISHED,
         }
@@ -2519,6 +2523,7 @@ def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dic
                 "queued",
                 "scheduled",
                 "paused",
+                "interrupted",
                 "failed",
                 "cancelled",
             } or c.supervisor.is_running(jid):
@@ -2562,7 +2567,7 @@ def _jobs_using(
     column = "project_id" if owner_type == "project" else "id"
     rows = c.db.fetchall(
         "SELECT id, name, config_json, resume_from FROM jobs"
-        f" WHERE ({column} IS NULL OR {column}!=?) AND status IN {ACTIVE_JOBS[:-1]},'paused')",
+        f" WHERE ({column} IS NULL OR {column}!=?) AND status IN {ACTIVE_JOBS[:-1]},'paused','interrupted')",
         (owner_id,),
     )
     known = {row["id"] for row in rows}
@@ -2900,21 +2905,29 @@ def delete_job_checkpoint(jid: str, path: str, c: ServiceContext = Depends(ctx))
         return {"ok": True}
     if job["project_id"]:
         assert_version_writable(c, job["project_id"], job.get("version_id"))
-    # A queued, running or paused job may still resume from this state.
-    waiting = c.db.fetchall(
-        f"SELECT id FROM jobs WHERE status IN {ACTIVE_JOBS[:-1]},'paused') "
-        "AND (resume_from=? OR json_extract(config_json,'$.checkpoint.resume')=?)",
-        (str(target), str(target)),
-    )
-    if waiting:
-        raise ApiError(
-            "这个恢复点正被排队、运行或暂停中的训练使用，任务结束或取消后才能删除。",
-            code="checkpoint.in_use",
-            status=409,
+    from .job_recovery import image_resume_state
+
+    # Resume admission and checkpoint deletion share the database lock.
+    with c.db.lock:
+        waiting = c.db.fetchall(
+            f"SELECT id FROM jobs WHERE status IN {ACTIVE_JOBS[:-1]},'paused','interrupted') "
+            "AND (resume_from=? OR json_extract(config_json,'$.checkpoint.resume')=?)",
+            (str(target), str(target)),
         )
-    if target.is_symlink() or not target.is_dir() or not (target / "state.json").is_file():
-        raise ApiError("not a resume point directory", code="checkpoint.invalid", status=409)
-    shutil.rmtree(target)
+        recovery_users = c.db.fetchall("SELECT * FROM jobs WHERE status='interrupted'")
+        selected = any(
+            point is not None and Path(point).resolve() == target.resolve()
+            for point, _ in (image_resume_state(row) for row in recovery_users)
+        )
+        if waiting or selected or c.supervisor.is_running(jid):
+            raise ApiError(
+                "这个恢复点正被尚未结束的训练使用，任务结束或取消后才能删除。",
+                code="checkpoint.in_use",
+                status=409,
+            )
+        if target.is_symlink() or not target.is_dir() or not (target / "state.json").is_file():
+            raise ApiError("not a resume point directory", code="checkpoint.invalid", status=409)
+        shutil.rmtree(target)
     c.bus.publish("job.checkpoint", {"job_id": jid, "deleted": str(target)})
     return {"ok": True}
 

@@ -21402,6 +21402,7 @@
                   "pausing",
                   "cancelling",
                   "paused",
+                  "interrupted",
                   "completed",
                   "failed",
                   "cancelled"
@@ -21596,6 +21597,16 @@
               }
             ],
             "title": "Resume From"
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobRecovery"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "pid": {
             "anyOf": [
@@ -22544,6 +22555,58 @@
         "additionalProperties": true,
         "type": "object",
         "title": "JobProgress"
+      },
+      "JobRecovery": {
+        "properties": {
+          "can_resume": {
+            "type": "boolean",
+            "title": "Can Resume"
+          },
+          "checkpoint_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Path"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "worker_alive": {
+            "type": "boolean",
+            "title": "Worker Alive"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "can_resume",
+          "worker_alive"
+        ],
+        "title": "JobRecovery"
       },
       "JobSample": {
         "properties": {

@@ -82,6 +82,13 @@ export default function OverviewBanner({ versionName, job, artifact, checks, rea
       {progressRow}
     </Shell>;
   }
+  if (job && status === 'interrupted') {
+    return <Shell tone="neutral" icon={<AlertTriangle size={18}/>} title={`${versionName} · ${text('异常中断', 'Interrupted')}`}
+      subtitle={<>{jobLink}{steps && <> · {text('停在', 'Stopped at')} {steps}</>}</>}
+      actions={<>{actions}<Link className="ui-btn ui-btn-sm" to={jobUrl}>{text('查看任务', 'View job')}<ArrowRight size={13}/></Link></>}>
+      {progressRow}
+    </Shell>;
+  }
   if (job && WAITING.includes(status)) {
     const reason = status === 'scheduled' && job.scheduled_at != null ? text(`${shortTime(job.scheduled_at)} 开始`, `Starts ${shortTime(job.scheduled_at)}`)
       : progress.wait_reason || text('设备空闲后自动开始', 'Starts when a device is free');

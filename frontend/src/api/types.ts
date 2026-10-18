@@ -94,6 +94,7 @@ export type JobStatus =
   | 'pausing'
   | 'cancelling'
   | 'paused'
+  | 'interrupted'
   | 'completed'
   | 'failed'
   | 'cancelled';

@@ -110,6 +110,8 @@ class Database:
                     ("jobs", "gpu_devices_json", "TEXT NOT NULL DEFAULT '[]'"),
                     ("jobs", "archived_at", "REAL"),
                     ("jobs", "forced_at", "REAL"),
+                    ("jobs", "pid_created", "REAL"),
+                    ("jobs", "launch_event_offset", "INTEGER"),
                     ("models", "purpose", "TEXT NOT NULL DEFAULT 'training'"),
                     ("models", "variant", "TEXT"),
                 ):

@@ -213,7 +213,7 @@ def _project_busy(c: Any, pid: str, project: dict) -> ApiError | None:
     """Conditions in the database that refuse any deletion of the project; caller holds the lock."""
     if c.db.fetchone("SELECT id FROM tts_sources WHERE project_id=? AND state='checking'", (pid,)):
         return ApiError("项目的数据来源正在检查，请等待检查完成。", code="project.busy", status=409)
-    if c.db.fetchone(f"SELECT id FROM jobs WHERE project_id=? AND status IN {ACTIVE_JOBS}", (pid,)):
+    if c.db.fetchone(f"SELECT id FROM jobs WHERE project_id=? AND status IN {ACTIVE_JOBS[:-1]},'interrupted')", (pid,)):
         return ApiError("项目还有排队或运行中的任务，请等它们结束或取消后再删除。", code="project.busy", status=409)
     if c.db.fetchone(
         "SELECT id FROM project_versions WHERE project_id=? AND (status='copying' OR busy IS NOT NULL)", (pid,)

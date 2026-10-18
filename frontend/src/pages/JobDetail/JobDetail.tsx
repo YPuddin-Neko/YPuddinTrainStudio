@@ -4,13 +4,14 @@ import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'reac
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../api/client';
 import { Job, JobMetrics, JobSample, JobCheckpoint, ValidationPoint } from '../../api/types';
-import { useEventStream } from '../../events/useEventStream';
+import { useEventStream, useEventStreamReconnect } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { Activity, Archive, ArchiveRestore, Layers, History, Image as ImageIcon, Terminal, Code, ArrowLeft, ArrowDown, ArrowUp, Minus, AudioLines } from 'lucide-react';
 import { mergeValidationPoint, appendMetricStep } from '../../utils/metrics';
 import { formatEta, formatSpeed, formatTime } from '../../utils/format';
 import { useFamilies } from '../../api/hooks/useFamilies';
 import { formatApiError } from '../../utils/errors';
+import { jobRecoveryMessage } from '../../utils/jobRecovery';
 import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { JobActions, JobStatus } from '../Queue/jobPresentation';
@@ -230,7 +231,9 @@ export default function JobDetail() {
   };
   const jobKind = React.useRef<{ id: string; type: string } | null>(null);
   const ttsProjectionRequest = React.useRef<AbortController | null>(null);
+  const imageProjectionRequest = React.useRef<AbortController | null>(null);
   React.useEffect(() => () => ttsProjectionRequest.current?.abort(), [id]);
+  React.useEffect(() => () => imageProjectionRequest.current?.abort(), [id]);
   const refreshTtsProjection = () => {
     if (!id) return;
     ttsProjectionRequest.current?.abort();
@@ -289,6 +292,8 @@ export default function JobDetail() {
   // Tabs replace the entry so Back leaves the job instead of stepping through tabs.
   const setActiveTab = (tab: string) => { const next = new URLSearchParams(params); next.set('tab', tab); setParams(next, { replace: true, state: location.state }); };
   const samplesRequestRef = React.useRef<AbortController | null>(null);
+  const [connectionRevision, setConnectionRevision] = React.useState(0);
+  useEventStreamReconnect(() => setConnectionRevision(value => value + 1));
   const refreshSamples = React.useCallback(async () => {
     if (!id || jobKind.current?.id === id && isTtsJob(jobKind.current)) return;
     samplesRequestRef.current?.abort();
@@ -337,7 +342,7 @@ export default function JobDetail() {
     });
     apiClient.get<any>(`/jobs/${id}/config`, options).then(snapshot => { if (!controller.signal.aborted) setConfigSnapshot(snapshot); }).catch(ignoreAbort);
     return () => { controller.abort(); samplesRequestRef.current?.abort(); };
-  }, [id, refreshSamples]);
+  }, [id, refreshSamples, connectionRevision]);
 
   // Version names are optional context; missing legacy metadata must not block monitoring.
   React.useEffect(() => {
@@ -367,15 +372,20 @@ export default function JobDetail() {
   // 2. SSE 增量监听
   useEventStream(EVENT_TYPES.JOB_STATE, (data: any) => {
     if (data.job_id === id) {
+      imageProjectionRequest.current?.abort();
       setJob((prev) => prev ? isTtsJob(prev) ? { ...mergeJobEvent(prev, data), allowed_actions: undefined, action_reasons: undefined } : mergeJobEvent(prev, data) : null);
       // A resumed run also brings its pause history.
       if (isTtsJob(jobKind.current)) refreshTtsProjection();
-      else if (['completed', 'failed', 'cancelled', 'paused', 'running'].includes(data.status)) {
+      else if (['completed', 'failed', 'cancelled', 'paused', 'interrupted', 'running'].includes(data.status)) {
+        const controller = new AbortController(); imageProjectionRequest.current = controller;
         void refreshSamples();
         const requestedAtUpdate = metricUpdateRef.current;
         const requestedAtSampling = samplingUpdateRef.current;
         const requestedJob = jobRequestRef.current;
-        void apiClient.get<VersionedJob>(`/jobs/${id}`, {silent:true}).then(updated => setJob(previous => previous?.id === updated.id
+        if (data.status === 'interrupted') void apiClient.get<JobCheckpoint[]>(`/jobs/${id}/checkpoints`, { silent: true, signal: controller.signal }).then(points => {
+          if (!controller.signal.aborted && jobRequestRef.current === requestedJob) { setCheckpoints(points); setCheckpointsLoaded(true); }
+        }).catch(() => {});
+        void apiClient.get<VersionedJob>(`/jobs/${id}`, {silent:true, signal: controller.signal}).then(updated => setJob(previous => !controller.signal.aborted && previous?.id === updated.id
           && jobRequestRef.current === requestedJob
           ? mergeJobProjection(previous, updated, metricUpdateRef.current !== requestedAtUpdate, samplingUpdateRef.current !== requestedAtSampling)
           : previous)).catch(() => {});
@@ -479,6 +489,10 @@ export default function JobDetail() {
     }
     if (deleteJobId.current === jobId) {
       setDeleting(failed.length ? failed : null); setDeleteError(errors.join('\n')); setDeleteBusy(false);
+      if (job?.status === 'interrupted') {
+        const updated = await apiClient.get<VersionedJob>(`/jobs/${encodeURIComponent(jobId)}`, { silent: true }).catch(() => null);
+        if (deleteJobId.current === jobId) setJob(previous => previous?.id === jobId ? updated || { ...previous, recovery: null } : previous);
+      }
     }
   };
 
@@ -546,7 +560,7 @@ export default function JobDetail() {
         </TopbarBreadcrumb>
         <div className="job-monitor-identity">
           <div className="job-monitor-title"><button type="button" className="ui-btn ui-btn-sm job-monitor-back" onClick={goBack}><ArrowLeft size={14}/>{text('返回', 'Back')}</button><h1>{job?.name || text('读取任务…', 'Loading job…')}</h1>{job && <JobStatus status={job.status}/>}</div>
-          {job && <JobActions key={job.id} job={job} onUpdated={updated => { if (isTtsJob(job)) ttsProjectionRequest.current?.abort(); if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`, { replace: true, state: location.state }); }}/>}
+          {job && <JobActions key={job.id} job={job} onUpdated={updated => { ttsProjectionRequest.current?.abort(); imageProjectionRequest.current?.abort(); if (updated.id === job.id) setJob(updated); else navigate(`/jobs/${updated.id}`, { replace: true, state: location.state }); }}/>}
         </div>
       </header>
       <dl className="job-run-metadata" aria-label={text('运行信息','Run information')}>
@@ -562,7 +576,8 @@ export default function JobDetail() {
       {actionError && <div role="alert" className="task-error">{actionError}</div>}
       {job?.archived_at != null && <div className="job-archived" role="status"><Archive size={15} aria-hidden="true"/><span>{text('此任务已归档，不再显示在队列和项目结果中，权重和记录仍保留。', 'This job is archived: it is hidden from the queue and project results; its weights and records are kept.')}</span>
         <button type="button" className="ui-btn ui-btn-sm" disabled={restoring || !ttsAction(job, 'unarchive', text).allowed} title={ttsAction(job, 'unarchive', text).reason || undefined} onClick={() => void restore()}><ArchiveRestore size={14}/>{text('恢复到训练历史', 'Restore to History')}</button>{!ttsAction(job, 'unarchive', text).allowed && <span>{ttsAction(job, 'unarchive', text).reason}</span>}</div>}
-      {job?.error && <div role="alert" className="job-failure"><div><strong>{job.type === 'train' ? text('训练失败', 'Training failed') : text('任务失败', 'Job failed')}</strong><p>{job.error}</p></div>{activeTab !== 'logs' && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setActiveTab('logs')}><Terminal size={14}/>{text('查看日志', 'Open log')}</button>}</div>}
+      {job?.status === 'interrupted' && <p className="task-notice" role="status">{jobRecoveryMessage(job, text)}</p>}
+      {job?.error && job.status !== 'interrupted' && <div role="alert" className="job-failure"><div><strong>{job.type === 'train' ? text('训练失败', 'Training failed') : text('任务失败', 'Job failed')}</strong><p>{job.error}</p></div>{activeTab !== 'logs' && <button type="button" className="ui-btn ui-btn-sm" onClick={() => setActiveTab('logs')}><Terminal size={14}/>{text('查看日志', 'Open log')}</button>}</div>}
       {/* 1. 头部指标与阶段时间线 */}
       {job?.type !== 'xyz' && job?.type !== 'tts_sample' && <div className="job-monitor-summary bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
         <OverflowStrip snap role="group" label={text('训练核心指标','Training metrics')} containerClassName="job-stat-strip" className="job-stat-grid"
@@ -575,10 +590,10 @@ export default function JobDetail() {
             value={learningRates.length > 1 ? <span className="job-learning-rates">{learningRateRows.map((row, index) => <span key={index}>{row.map(([name, rate]) => <span key={name}><small>{learningRateGroupName(name)}</small>{rate.toExponential(2)}</span>)}</span>)}</span> : learningRates.length ? learningRates[0][1].toExponential(2) : '—'}/>
           <StatCard label={t('job.speed')} value={metricValue(speedReading ? `${speedReading.shown} it/s` : '—', speed)} warning={speedWarning}
             detail={job?.id === id && <MeanStepTime seconds={job?.progress?.mean_step_s} scope={job?.progress?.mean_step_scope} text={text} contextKey={`${metricContext}:mean-step`} updateKey={metricUpdate} active={metricActive}/>}/>
-          <StatCard label={t('job.eta')} value={metricValue(job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s), job?.status === 'completed' ? 0 : job?.progress?.eta_s)}/>
+          <StatCard label={t('job.eta')} value={job?.status === 'interrupted' ? '—' : metricValue(job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s), job?.status === 'completed' ? 0 : job?.progress?.eta_s)}/>
         </OverflowStrip>
 
-        {job && isTtsJob(job) && job.progress?.phase && <p className="queue-status-note" role="status">{text('训练阶段', 'Training phase')} · {['completed', 'failed', 'cancelled'].includes(job.status) ? t(`queue.status.${job.status}`) : t(`phase.${job.progress.phase}`, t('job.phaseInProgress'))}</p>}
+        {job && isTtsJob(job) && job.progress?.phase && <p className="queue-status-note" role="status">{text('训练阶段', 'Training phase')} · {['completed', 'failed', 'cancelled', 'interrupted'].includes(job.status) ? t(`queue.status.${job.status}`) : t(`phase.${job.progress.phase}`, t('job.phaseInProgress'))}</p>}
         {job && !isTtsJob(job) && <JobStepper status={job.status} phase={job.progress?.phase || ''} progress={job.progress}/>}
         {job?.id === id && job?.type === 'train' && <TimestepSamplingStatus status={job.latest.timestep_sampling} jobStatus={job.status}
           configured={configSnapshot?.model?.family === 'anima' && (configSnapshot?.objective?.infonoise_enabled === true || configSnapshot?.objective?.timestep_sampling === 'resolution_sqrt')}/>}
@@ -632,7 +647,7 @@ export default function JobDetail() {
         onOpenSample={url => { setSelectedSample(url); setActiveTab('samples'); }} deleting={deleteBusy} onDelete={item => requestCheckpointDelete([item])} onDeleteMany={requestCheckpointDelete}/>}
 
       {activeTab === 'states' && <ResumePointList key={id} points={resumePoints} stepsPerEpoch={stepsPerEpoch} loaded={checkpointsLoaded} resumeFrom={job?.resume_from ?? null} jobStatus={job?.status}
-        resuming={resuming} canResume={!!configSnapshot} onResume={point => void resumeCheckpoint(point)} deleting={deleteBusy} onDelete={item => requestCheckpointDelete([item])} onDeleteMany={requestCheckpointDelete}/>}
+        resuming={resuming} canResume={!!configSnapshot && (job?.status !== 'interrupted' || !!job.recovery && !job.recovery.worker_alive)} protectedPath={job?.status === 'interrupted' ? job.recovery?.checkpoint_path : undefined} onResume={point => void resumeCheckpoint(point)} deleting={deleteBusy} onDelete={item => requestCheckpointDelete([item])} onDeleteMany={requestCheckpointDelete}/>}
 
       {!!deleting?.length && <Dialog title={deleting[0].kind === 'full' ? text('删除恢复点', deleting.length > 1 ? 'Delete resume points' : 'Delete resume point') : text('删除产物', deleting.length > 1 ? 'Delete outputs' : 'Delete output')} onClose={() => setDeleting(null)} closeDisabled={deleteBusy}>
         <div className="checkpoint-delete">

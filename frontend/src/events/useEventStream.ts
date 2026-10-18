@@ -40,7 +40,8 @@ class EventStreamManager {
     this.reconnectTimer = null;
     if (this.activityTimer) clearInterval(this.activityTimer);
     this.activityTimer = null;
-    this.status = 'disconnected';
+    // A later subscriber starts a fresh connection, without a prior outage.
+    this.status = 'connecting';
   }
 
   private reconnect(source: EventSource) {
@@ -193,4 +194,20 @@ export function useEventStreamStatus() {
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
   useEffect(() => EventStreamManager.getInstance().subscribeStatus(setStatus), []);
   return status;
+}
+
+/** Re-read server state after a connection gap may have hidden job events. */
+export function useEventStreamReconnect(callback: () => void) {
+  const savedCallback = useRef(callback);
+  savedCallback.current = callback;
+  useEffect(() => {
+    let refreshOnConnect = false;
+    return EventStreamManager.getInstance().subscribeStatus(status => {
+      if (status === 'disconnected') refreshOnConnect = true;
+      if (status === 'connected' && refreshOnConnect) {
+        refreshOnConnect = false;
+        savedCallback.current();
+      }
+    });
+  }, []);
 }

@@ -146,20 +146,10 @@ def _children(path: Path) -> list[Path]:
         return []
 
 
-def _alive(pid: Any) -> bool:
-    if not isinstance(pid, int) or pid <= 0:
-        return False
-    import psutil
-
-    try:
-        return "ypuddin" in " ".join(psutil.Process(pid).cmdline())
-    except (psutil.Error, OSError):
-        return False
-
-
 def _move_job(c: Any, job: dict[str, Any], moved: PathMap) -> dict[str, Any] | bool | None:
     """Move one job's files; returns what its record needs, None when it needs nothing, False to retry."""
     from .job_paths import event_file
+    from .job_processes import remaining_workers
 
     jid = job["id"]
     try:
@@ -170,7 +160,10 @@ def _move_job(c: Any, job: dict[str, Any], moved: PathMap) -> dict[str, Any] | b
     old = Path(job["run_dir"])
     if old != products / jid or old.is_symlink():
         return None  # Already in this layout, or kept under a custom output root.
-    if job["status"] in ("running", "pausing", "cancelling") and _alive(job.get("pid")):
+    may_have_worker = job["status"] in {"running", "pausing", "cancelling", "paused", "interrupted"} or (
+        job["status"] == "failed" and job.get("error") == "service restarted while the job was running"
+    )
+    if may_have_worker and remaining_workers(job):
         return False
     new = records_dir(version, jid)
     config = json.loads(job.get("config_json") or "{}")

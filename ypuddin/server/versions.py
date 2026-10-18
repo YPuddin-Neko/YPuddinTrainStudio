@@ -32,8 +32,17 @@ def assert_version_writable(c: Any, pid: str, vid: str | None, *, data: bool = F
         raise ApiError(
             "版本已归档或正在处理，请恢复版本或等待当前操作完成。", code="version.busy", status=409
         )
-    if data and c.db.fetchone(
-        f"SELECT id FROM jobs WHERE version_id=? AND status IN {ACTIVE_JOBS}", (row["id"],)
+    if data and (
+        c.db.fetchone(f"SELECT id FROM jobs WHERE version_id=? AND status IN {ACTIVE_JOBS}", (row["id"],))
+        or (
+            (supervisor := getattr(c, "supervisor", None)) is not None
+            and any(
+                supervisor.is_running(job["id"])
+                for job in c.db.fetchall(
+                    "SELECT id FROM jobs WHERE version_id=? AND status IN ('paused','interrupted')", (row["id"],)
+                )
+            )
+        )
     ):
         raise ApiError(
             "版本数据正被排队或运行中的任务使用，请等任务结束或取消后再修改。", code="version.jobs_busy", status=409

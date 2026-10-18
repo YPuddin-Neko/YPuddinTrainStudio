@@ -812,7 +812,9 @@ class EnvironmentManager:
             self.context.db.fetchone(
                 "SELECT id FROM jobs WHERE status IN ('running','pausing','cancelling') LIMIT 1"
             )
-        ) or any(proc.poll() is None for proc in list(self.context.supervisor._procs.values()))
+        ) or any(proc.poll() is None for proc in list(self.context.supervisor._procs.values())) or bool(
+            getattr(self.context.supervisor, "_orphaned", {})
+        )
         if jobs:
             return True
         # Tagging owns a spawned ONNX process rather than a jobs-table worker. Its
