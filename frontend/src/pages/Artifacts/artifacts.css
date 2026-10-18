@@ -29,7 +29,7 @@
   .artifact-table .artifact-secondary { display:none; }
   .artifact-table th:first-child { width:30%; }
   .artifact-table th:nth-child(2) { width:16%; }
-  .artifact-table th:nth-child(3),.artifact-table th:nth-child(5) { width:10%; }
+  .artifact-table th:nth-child(5),.artifact-table th:nth-child(7) { width:10%; }
   .artifact-table th:last-child { width:34%; }
   .artifact-compact-meta { display:block; margin-top:6px; font-weight:400; color:var(--studio-dim); line-height:1.6; }
 }
