@@ -80,8 +80,8 @@ class ModelDownloadRequest(BaseModel):
         if self.bundle:
             _bundle_module(self.family).validate_request(self)
             return self
-        if self.family == "moss_image":
-            raise ValueError("MOSS-Image 下载需要完整组件目录包。")
+        if self.family == "moss_image" and self.kind != "vae":
+            raise ValueError("MOSS-Image 主模型与文本编码器下载需要完整组件目录包。")
         if self.family == "flux3" and self.kind not in {"dit", "vae"}:
             raise ValueError("FLUX.3 文本编码器需要完整本地 HF 目录及 processor 资源，不能下载单个权重文件。")
         if self.variant is not None and (self.family != "krea2" or self.kind != "dit"):

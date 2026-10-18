@@ -52,7 +52,7 @@ class MOSSImageFamily(ModelFamily):
         activation_units=42.0,
         weights=(("dit_path", "MOSS-Image Base DiT", "完整模型目录或 transformer 目录"),
                  ("text_encoder_path", "Qwen3.5 文本编码器", "完整模型内含时可留空；也可选择配套本地 text_encoder 目录"),
-                 ("vae_path", "MOSS-Image VAE", "完整模型内含时可留空；也可选择配套本地 vae 目录"),
+                 ("vae_path", "MOSS-Image VAE", "配套小解码器或标准 FLUX.2 VAE；完整模型内含时可留空"),
                  ("tokenizer_path", "分词器", "配套 tokenizer 目录；自动发现时可留空")),
         optional_weights=("text_encoder_path", "vae_path", "tokenizer_path"),
         directory_only_weights=("tokenizer_path",),

@@ -25,6 +25,27 @@ def unpatchify(x: Tensor) -> Tensor:
     return x.reshape(b, c // 4, 2, 2, h, w).permute(0, 1, 4, 2, 5, 3).reshape(b, c // 4, h * 2, w * 2)
 
 
+def convert_vae_state_dict(state, config):
+    """Convert original BFL projections and preserve patchified BN statistics."""
+    if "encoder.down.0.block.0.norm1.weight" not in state:
+        return state
+    with LIBRARY_IMPORTS:
+        from diffusers.loaders.single_file_utils import convert_ldm_vae_checkpoint
+
+    state = dict(state)
+    bn = {k: v for k, v in state.items() if k.startswith("bn.")}
+    for prefix, target in (
+        ("encoder.quant_conv", "quant_conv"),
+        ("decoder.post_quant_conv", "post_quant_conv"),
+    ):
+        for suffix in ("weight", "bias"):
+            if f"{prefix}.{suffix}" in state:
+                state[f"{target}.{suffix}"] = state.pop(f"{prefix}.{suffix}")
+    state = convert_ldm_vae_checkpoint(state, config)
+    state.update(bn)
+    return state
+
+
 class Flux2Latent(LatentPipeline):
     channels, stride = 128, 16
 
@@ -67,26 +88,12 @@ class Flux2Latent(LatentPipeline):
                 ):
                     raise ValueError(f"FLUX.2 VAE weights do not match config: {info}")
             else:
-                with LIBRARY_IMPORTS:
-                    from diffusers.loaders.single_file_utils import convert_ldm_vae_checkpoint
                 from safetensors.torch import load_file
 
                 state = load_file(str(self.path))
                 with torch.device("meta"):
                     model = AutoencoderKLFlux2.from_config(self.config)
-                if "encoder.down.0.block.0.norm1.weight" in state:
-                    bn = {k: v for k, v in state.items() if k.startswith("bn.")}
-                    # BFL nests these projections inside encoder/decoder; LDM's
-                    # converter expects them at the autoencoder root.
-                    for prefix, target in (
-                        ("encoder.quant_conv", "quant_conv"),
-                        ("decoder.post_quant_conv", "post_quant_conv"),
-                    ):
-                        for suffix in ("weight", "bias"):
-                            if f"{prefix}.{suffix}" in state:
-                                state[f"{target}.{suffix}"] = state.pop(f"{prefix}.{suffix}")
-                    state = convert_ldm_vae_checkpoint(state, model.config)
-                    state.update(bn)
+                state = convert_vae_state_dict(state, model.config)
                 model.load_state_dict(state, strict=True, assign=True)
             self.vae = model.to(device=self.device, dtype=self.dtype).requires_grad_(False).eval()
         return self.vae

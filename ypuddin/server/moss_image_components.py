@@ -13,7 +13,10 @@ MARKER = ".ypuddin-moss-image-download.json"
 
 
 def valid_snapshot(context, record):
-    return _valid_snapshot(context, record) and all(_valid_snapshot(context, item) for item in record.get("sidecars", []))
+    return (_valid_snapshot(context, record)
+            and all(_valid_snapshot(context, item) for item in record.get("sidecars", []))
+            and all(not Path(path).exists() and not Path(path).is_symlink()
+                    for path in record.get("absent_sidecars", [])))
 
 
 def proof_key(path):
@@ -51,8 +54,11 @@ def admission_snapshot(context, path, kind, processor_path=None):
     records.update({key: capture(part) for key, part in paths.items() if key != "asset"})
     for key, part in paths.items():
         config = part.parent / "config.json"
-        if part.is_file() and config.is_file():
-            records[key]["sidecars"] = [capture(config)]
+        if part.is_file():
+            if config.is_file():
+                records[key]["sidecars"] = [capture(config)]
+            elif key == "asset" and kind == "vae" or key == "vae":
+                records[key]["absent_sidecars"] = [str(config)]
     return {"kind": kind, "path": str(path), "records": records}
 
 

@@ -229,8 +229,7 @@ def vae_memory(
         try:
             _, _, _, path, _ = component_paths(cfg.model)
             path = MOSSImageLatent.validate_path(path)
-            config_path = (path if path.is_dir() else path.parent) / "config.json"
-            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config = MOSSImageLatent.vae_config(path)
             storage, channels = _autoencoder_kl_geometry("flux2", json.dumps(config, sort_keys=True))
         except (OSError, ValueError, KeyError, TypeError, RuntimeError):
             return None

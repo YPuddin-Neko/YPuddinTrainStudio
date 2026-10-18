@@ -224,8 +224,8 @@ def flux_component(shapes: dict[str, list[int]], config: dict | None = None) -> 
             return result(
                 "flux2",
                 "vae",
-                ["flux2", "flux3"],
-                "32-channel spatial VAE with 128-channel patchified batchnorm statistics; FLUX.2/3 geometry",
+                ["flux2", "flux3", "moss_image"],
+                "32-channel spatial VAE with 128-channel patchified batchnorm statistics; FLUX.2/3 and MOSS-Image geometry",
             )
         if (
             encoder[0] == 32
@@ -747,9 +747,10 @@ def check_moss_paths(path: Path, kind: str, allowed, *, tokenizer_path=None, com
         raise ValueError("MOSS-Image 不使用第二文本编码器。")
     root = path if path.is_dir() else path.parent
     config = _moss_path(root / "config.json", allowed)
-    if not config.is_file():
+    if not config.is_file() and not (kind == "vae" and path.is_file()):
         raise ValueError("MOSS-Image component requires a local config.json file")
-    _local_references(_json(config, CONFIG_LIMIT), root, allowed, "MOSS-Image config", reject_symlinks=True)
+    if config.is_file():
+        _local_references(_json(config, CONFIG_LIMIT), root, allowed, "MOSS-Image config", reject_symlinks=True)
     basename = "model" if kind == "text_encoder" else "diffusion_pytorch_model"
     index = root / f"{basename}.safetensors.index.json"
     if path.is_dir() and (index.exists() or index.is_symlink()):

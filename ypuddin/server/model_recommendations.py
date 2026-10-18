@@ -488,6 +488,10 @@ RECOMMENDATIONS = [
 RECOMMENDATIONS.insert(2, next(entry for entry in RECOMMENDATIONS if entry.id == "flux2-vae").model_copy(
     update={"id": "flux3-vae", "family": "flux3", "name": "FLUX.3 VAE"}, deep=True,
 ))
+RECOMMENDATIONS.insert(3, next(entry for entry in RECOMMENDATIONS if entry.id == "flux2-vae").model_copy(
+    update={"id": "moss-image-vae-full", "family": "moss_image", "name": "FLUX.2 VAE",
+            "recommended": False}, deep=True,
+))
 
 
 def find_recommendation(id_: str) -> RecommendedModel | None:
@@ -498,6 +502,15 @@ def model_display_name(context, row) -> str | None:
     """Name verified MOSS component directories while retaining custom basenames."""
     if row.get("family") != "moss_image":
         return None
+    if row.get("kind") == "vae":
+        from .flux3_components import component_sha256
+
+        full = find_recommendation("moss-image-vae-full")
+        path = Path(row["path"]).expanduser().absolute()
+        if (full and path.is_file() and path.resolve() == path
+                and path.name in {"ae.safetensors", *(Path(source.filename).name for source in full.sources)}
+                and component_sha256(context, path) == full.sha256):
+            return full.name
     recommendation = {"dit": "moss-image-base", "text_encoder": "moss-image-text", "vae": "moss-image-vae"}
     entry = find_recommendation(recommendation.get(row.get("kind"), ""))
     if entry is None or entry.manifest is None:
@@ -710,7 +723,7 @@ def component_metadata(context, path: Path) -> dict:
 def related_download(entry, tasks, *, bundle=None):
     """A shared component reports the task that owns its actual preparation."""
     shared_text = {"krea2-qwen3vl", "flux3-text"}
-    shared_vae = {"flux2-vae", "flux3-vae"}
+    shared_vae = {"flux2-vae", "flux3-vae", "moss-image-vae-full"}
     for row in tasks:
         if row.get("status") not in {"queued", "downloading"}:
             continue
@@ -766,7 +779,7 @@ def available_models(context, *, tasks=None) -> list[RecommendedModel]:
                             and asset["kind"] == entry.kind and asset["path"] == path), None)
                 available = own or {"path": path}
                 verified_paths.add(path)
-        if entry.family == "moss_image" and entry.kind in moss_shared:
+        if entry.family == "moss_image" and entry.bundle and entry.kind in moss_shared:
             path = moss_shared[entry.kind]
             processor = moss_shared.get("tokenizer") if entry.kind == "text_encoder" else None
             own = next((asset for asset in assets if asset["family"] == entry.family

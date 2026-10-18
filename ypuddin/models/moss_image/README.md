@@ -1,7 +1,8 @@
 # MOSS-Image Base
 
 This family loads the original dense Base DiT, frozen Qwen3.5 last hidden states,
-and the released small-decoder Flux2 autoencoder. Image batches keep a real batch
+and the released small-decoder Flux2 autoencoder or an explicitly selected full
+FLUX.2 VAE. Existing model bundles keep their bundled VAE. Image batches keep a real batch
 axis through all projections and attention; masks isolate samples and exclude
 padding from text refinement and joint attention. Checkpointing supports none/block.
 
@@ -23,6 +24,9 @@ branches, additional SLG, model compilation, block swapping, quantized weights,
 full model/text encoder training, T-LoRA, and distributed training are not enabled.
 
 Component overrides use local paths. A complete official directory works directly;
+`model.vae_path` also accepts a standard full FLUX.2 Diffusers VAE directory or
+safetensors file, including the original BFL layout. VAE caches follow the selected
+weights and configuration; small and full decoders do not share cached latents.
 shared installations may use `.ypuddin-moss-image-components.json` with format
 `ypuddin-moss-image-components`, version 1, and absolute `text_encoder`, `vae`,
 `tokenizer` paths under `components`. Explicit model fields take precedence.

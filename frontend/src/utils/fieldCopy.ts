@@ -16,7 +16,7 @@ export const MOSS_WEIGHT_COPY: Record<string, { label: Copy; help: Copy }> = {
   },
   vae_path: {
     label: ['MOSS-Image VAE', 'MOSS-Image VAE'],
-    help: ['选择 MOSS-Image 配套的小型解码器 VAE 目录，或原始 Diffusers safetensors 文件；单文件旁需有配套 config.json。\n使用完整模型包时可留空；填写此项后优先使用所选 VAE。', 'Select the matching MOSS-Image small-decoder VAE folder, or its original Diffusers safetensors file with the matching config.json alongside it.\nLeave blank with a full model package; an explicit VAE path takes priority.'],
+    help: ['可选择 MOSS-Image 小型解码器 VAE 或标准 FLUX.2 完整解码器 VAE。\n小型解码器支持配套目录或原始 Diffusers safetensors 文件，单文件旁需有配套 config.json。完整解码器支持 Diffusers 目录或单文件，以及无需 config.json 的 BFL／ComfyUI 单文件。\n使用完整模型包时可留空；填写此项后优先使用所选 VAE。', 'Select the MOSS-Image small-decoder VAE or the standard FLUX.2 full-decoder VAE.\nThe small decoder accepts its matching folder or original Diffusers safetensors file with config.json alongside it. The full decoder accepts a Diffusers folder or single file, or a BFL/ComfyUI single file without config.json.\nLeave blank with a full model package; an explicit VAE path takes priority.'],
   },
   tokenizer_path: {
     label: ['分词器', 'Tokenizer'],
@@ -314,7 +314,7 @@ const MODEL_PATH_HINTS: Record<string, Record<string, Copy>> = {
   moss_image: {
     dit_path: ['MOSS-Image Base 完整目录、transformer 目录或原始权重文件。', 'MOSS-Image Base package, transformer folder or original weights file.'],
     text_encoder_path: ['配套 Qwen3.5-9B 文本编码器，使用完整模型包时可留空。', 'Matching Qwen3.5-9B text encoder; optional with the full package.'],
-    vae_path: ['MOSS-Image 配套 VAE，使用完整模型包时可留空。', 'Matching MOSS-Image VAE; optional with the full package.'],
+    vae_path: ['MOSS-Image 小型解码器或 FLUX.2 完整解码器 VAE；使用完整模型包时可留空。', 'MOSS-Image small-decoder or FLUX.2 full-decoder VAE; optional with the full package.'],
     tokenizer_path: ['留空自动查找配套的本地分词器目录。', 'Blank finds the matching local tokenizer folder.'],
   },
   anima: {

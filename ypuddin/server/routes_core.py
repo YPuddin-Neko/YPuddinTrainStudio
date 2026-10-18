@@ -1547,7 +1547,7 @@ def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[s
         kind = detected["kind"]
         family = detected["family"]
         if body.family in detected["family_candidates"] and (
-            family is None or body.family == "flux3"
+            family is None or body.family in {"flux3", "moss_image"}
         ):
             family = body.family  # Explicit target for recognized shared components.
         if not kind or not family:
