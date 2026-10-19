@@ -21,7 +21,8 @@
 .reg-action-buttons { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; }
 .reg-model-fields { min-width:0; border-top:1px solid var(--studio-line); padding-top:12px; }
 .reg-model-fields legend { display:flex; align-items:center; gap:8px; font-size:12px; padding-right:8px; }
-.reg-model-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.reg-model-grid { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; }
+.reg-model-grid > label > .reg-model-label { min-height:24px; }
 .reg-model-path { display:grid; gap:7px; min-width:0; }
 .reg-model-label,.reg-model-switch { display:flex; align-items:center; gap:8px; }
 .reg-model-switch { align-self:center; }

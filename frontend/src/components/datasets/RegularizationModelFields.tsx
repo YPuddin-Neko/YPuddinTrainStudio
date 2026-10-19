@@ -36,7 +36,7 @@ export default function RegularizationModelFields({ model, families, assets, dis
   return <fieldset className="reg-model-fields" disabled={disabled}>
     <legend>{text('生成模型', 'Generation model')}<ConfigHelp label={text('生成模型说明', 'Generation model help')}>{text('使用所选底模生成正则图，不加载 LoRA。', 'Generate regularization images with the selected base model, without LoRA.')}</ConfigHelp></legend>
     <div className="reg-form-grid reg-model-grid">
-      <label>{text('模型类型', 'Model type')}<StudioSelect aria-label={text('生成模型类型', 'Generation model type')} value={model.family} disabled={disabled} options={trainingFamilyOptions(families, text('zh', 'en') === 'en', model.family)} onValueChange={value => {
+      <label><span className="reg-model-label">{text('模型类型', 'Model type')}</span><StudioSelect aria-label={text('生成模型类型', 'Generation model type')} value={model.family} disabled={disabled} options={trainingFamilyOptions(families, text('zh', 'en') === 'en', model.family)} onValueChange={value => {
         const next = { family: value as GenerationModel['family'], dtype: 'auto' as const };
         onChange(fillDefaultModels({ model: next }, assets).model);
       }}/></label>
