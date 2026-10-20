@@ -15,6 +15,13 @@ SAMPLERS = ("euler", "euler_ancestral", "heun", "er_sde")
 SCHEDULERS = ("uniform", "simple", "sgm_uniform", "normal")
 
 
+def _validate_schedule_options(steps: int, shift: float) -> None:
+    if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 1000:
+        raise ValueError("sampling steps must be an integer between 1 and 1000")
+    if not math.isfinite(shift) or shift <= 0:
+        raise ValueError("sampling shift must be finite and positive")
+
+
 def noise_schedule(
     steps: int,
     shift: float = 1.0,
@@ -30,10 +37,7 @@ def noise_schedule(
     1000-point discrete grid. SGM excludes the low endpoint, while normal includes it.
     The latter two follow the flow timestep convention (timestep does not undo shift).
     """
-    if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 1000:
-        raise ValueError("sampling steps must be an integer between 1 and 1000")
-    if not math.isfinite(shift) or shift <= 0:
-        raise ValueError("sampling shift must be finite and positive")
+    _validate_schedule_options(steps, shift)
     if scheduler not in SCHEDULERS:
         raise ValueError(f"unknown sampling scheduler: {scheduler}")
     if scheduler == "simple" and comfyui:
@@ -87,10 +91,14 @@ def sample(
     dtype: torch.dtype = torch.float32,
     on_step: Callable[[int, int], None] | None = None,
     noise: str = "comfyui",
+    sigmas: Tensor | None = None,
+    require_terminal_zero: bool = True,
 ) -> Tensor:
     """Generate a preview from velocity predictions using the selected integration method.
 
     ``noise`` names whose way the seed in ``generator`` becomes noise (``SeedNoise``).
+    ``sigmas`` supplies a family's already shifted schedule. ``require_terminal_zero``
+    may be disabled for a family whose discrete schedule ends at a positive near-zero time.
     """
     if sampler not in SAMPLERS:
         raise ValueError(f"unknown sampler: {sampler}")
@@ -106,10 +114,25 @@ def sample(
         generator = torch.Generator(device="cpu")
         generator.seed()
     seeded = SeedNoise(generator, noise, device)
-    times = noise_schedule(
-        steps, shift, scheduler, dtype=torch.float64 if sampler == "er_sde" else torch.float32,
-        comfyui=noise == "comfyui",
-    )
+    schedule_dtype = torch.float64 if sampler == "er_sde" else torch.float32
+    if sigmas is None:
+        times = noise_schedule(steps, shift, scheduler, dtype=schedule_dtype, comfyui=noise == "comfyui")
+    else:
+        _validate_schedule_options(steps, shift)
+        if (
+            not isinstance(sigmas, Tensor) or sigmas.ndim != 1 or not sigmas.is_floating_point()
+            or not 2 <= len(sigmas) <= steps + 1
+        ):
+            raise ValueError("sampling sigmas must be a floating-point vector with 2 to steps+1 entries")
+        times = sigmas.detach().to(device="cpu", dtype=schedule_dtype).clone()
+        if (
+            not torch.isfinite(times).all() or times[0] <= 0 or times[-1] < 0
+            or (require_terminal_zero and (times[0] != 1 or times[-1] != 0))
+            or not (times[:-1] > times[1:]).all()
+        ):
+            raise ValueError("sampling sigmas must descend strictly with valid endpoints")
+        steps = len(times) - 1
+    ends_at_zero = bool(times[-1] == 0)
     if sampler == "er_sde":
         from .er_sde import er_sde_sample
 
@@ -130,8 +153,9 @@ def sample(
             max_order=er_sde_order,
             s_noise=er_sde_s_noise,
             noise=seeded,
+            require_terminal_zero=require_terminal_zero,
         )
-    if sampler == "euler" and scheduler == "uniform":
+    if sampler == "euler" and scheduler == "uniform" and sigmas is None:
         return euler_sample(
             predict,
             shape,
@@ -166,7 +190,7 @@ def sample(
                 first = (x - denoised) / current
                 delta = following - current
                 proposed = x + first * delta
-                if sampler == "heun" and index < steps - 1:
+                if sampler == "heun" and (index < steps - 1 or not ends_at_zero):
                     next_denoised = comfyui_denoised(predict, predict_uncond, proposed, following, cfg, predict_pair)
                     second = (proposed - next_denoised) / following
                     x = x + ((first + second) / 2) * delta
@@ -183,7 +207,7 @@ def sample(
         delta = (following - current).to(dtype)
         first = velocity(x, current)
         proposed = x + delta * first
-        if sampler == "heun" and index < steps - 1:
+        if sampler == "heun" and (index < steps - 1 or not ends_at_zero):
             x = x + delta * (first + velocity(proposed, following)) / 2
         else:
             x = proposed

@@ -1,5 +1,7 @@
-"""MOSS-Image Base adapter training and its two-branch Euler sampler."""
+"""MOSS-Image Base adapter training and two-branch flow sampling."""
 from __future__ import annotations
+
+import math
 
 import torch
 from safetensors import SafetensorError
@@ -18,6 +20,7 @@ from ypuddin.models.base import (
     TextSpec,
 )
 from ypuddin.models.registry import register
+from ypuddin.sampling import sample
 from ypuddin.sampling.noise import SeedNoise
 
 from . import loading
@@ -27,9 +30,15 @@ from .objective import MOSSImageObjective
 from .text import MOSSImageText
 
 
+def _validate_sampling_schedule(steps, shift):
+    if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 1000:
+        raise ValueError("MOSS-Image 采样步数必须为 1～1000 的整数。")
+    if not math.isfinite(shift) or shift <= 0:
+        raise ValueError("MOSS-Image 采样偏移必须为有限正数。")
+
+
 def sampling_sigmas(steps, shift=5.0, *, device="cpu"):
-    if steps < 1 or shift <= 0:
-        raise ValueError("MOSS-Image 采样步数和偏移必须大于 0。")
+    _validate_sampling_schedule(steps, shift)
     values = torch.linspace(1, shift / (1000 + shift - 1), steps)
     sigmas = shift * values / (1 + (shift - 1) * values)
     training = torch.linspace(1, 0.001, 1000).flip(0)
@@ -37,6 +46,19 @@ def sampling_sigmas(steps, shift=5.0, *, device="cpu"):
     lower = (upper - 1).clamp(min=0)
     nearest = torch.where((sigmas - training[lower]).abs() <= (training[upper] - sigmas).abs(), lower, upper)
     return torch.cat((torch.unique_consecutive(training[nearest]), torch.zeros(1))).to(device)
+
+
+def normal_sigmas_near_zero(steps, shift):
+    """Comfy's MOSS normal schedule retains its low endpoint when it is near zero."""
+    _validate_sampling_schedule(steps, shift)
+    # MOSS's Comfy schedule multiplier is 1; the DiT's x1000 conversion is in forward().
+    endpoints = torch.tensor([0.001, 1.0], dtype=torch.float32)
+    endpoints = shift * endpoints / (1 + (shift - 1) * endpoints)
+    low = shift * endpoints[0] / (1 + (shift - 1) * endpoints[0])
+    if not math.isclose(float(low), 0, abs_tol=0.00001):
+        return None
+    times = torch.linspace(endpoints[1], endpoints[0], steps + 1)
+    return shift * times / (1 + (shift - 1) * times)
 
 
 class MOSSImageFamily(ModelFamily):
@@ -47,7 +69,8 @@ class MOSSImageFamily(ModelFamily):
         sampling=SamplingDefaults(steps=50, cfg=3.0, shift=5.0, sampler="euler"),
         capabilities=frozenset({"activation_checkpointing", "masked_loss", "online_text"}),
         attention_backends=("auto", "sdpa", "flash_attn"), adapter_prefix="lora_unet",
-        sampling_samplers=("euler",), sampling_schedulers=("uniform",),
+        sampling_samplers=("euler", "euler_ancestral", "heun", "er_sde"),
+        sampling_schedulers=("uniform", "moss", "simple", "normal", "sgm_uniform"),
         objective_timestep_sampling=("moss_image", "uniform", "logit_normal", "shift", "resolution_shift", "mode", "cosmap"),
         activation_units=42.0,
         weights=(("dit_path", "MOSS-Image Base DiT", "完整模型目录或 transformer 目录"),
@@ -186,16 +209,39 @@ class MOSSImageFamily(ModelFamily):
 
     def sample_latents(self, loaded, predict, shape, *, steps, shift=5.0, cfg=3.0, sampler="euler", scheduler="uniform",
                        predict_uncond=None, predict_pair=None, generator=None, device="cpu", dtype=torch.float32,
-                       on_step=None, noise="comfyui", **options):
-        if sampler != "euler" or scheduler != "uniform":
-            raise ValueError("MOSS-Image 当前使用 Euler 与官方离散时间步日程。")
+                       on_step=None, noise="comfyui", er_sde_order=3, er_sde_s_noise=1.0, **options):
+        if sampler not in self.spec.sampling_samplers or scheduler not in self.spec.sampling_schedulers:
+            raise ValueError("MOSS-Image 采样算法或噪声日程不受支持。")
+        if not math.isfinite(cfg) or cfg < 0:
+            raise ValueError("MOSS-Image CFG 必须为有限非负数。")
+        if cfg != 1 and predict_pair is None:
+            raise ValueError("MOSS-Image CFG 需要包含负分支跳层的配对预测。")
+        if not shape or any(size <= 0 for size in shape):
+            raise ValueError("MOSS-Image 采样尺寸必须大于 0。")
+        # Keep stored uniform values intact: they identify the original MOSS grid.
+        sigmas = sampling_sigmas(steps, shift) if scheduler in ("uniform", "moss") else None
+        near_zero = normal_sigmas_near_zero(steps, shift) if scheduler == "normal" else None
+        if sampler != "euler" or scheduler not in ("uniform", "moss"):
+            guided_predict, solver_cfg = predict, cfg
+            if noise == "a1111" and cfg != 1:
+                # The velocity-space solvers need MOSS's paired negative skip-layer branch.
+                def guided_predict(x, t):
+                    positive, negative = predict_pair(x, t)
+                    return negative.float() + cfg * (positive.float() - negative.float())
+                solver_cfg = 1.0
+            return sample(
+                guided_predict, shape, steps=steps, shift=shift, cfg=solver_cfg, sampler=sampler,
+                scheduler=scheduler, sigmas=near_zero if near_zero is not None else sigmas,
+                require_terminal_zero=near_zero is None, predict_pair=predict_pair,
+                generator=generator, device=device, dtype=dtype, on_step=on_step, noise=noise,
+                er_sde_order=er_sde_order, er_sde_s_noise=er_sde_s_noise,
+            )
+        # Preserve the original Euler/CFG operation order for both names of the MOSS grid.
         x = SeedNoise(generator, noise, device).first(shape)
-        sigmas = sampling_sigmas(steps, shift, device=device)
+        sigmas = sigmas.to(device)
         for index, (sigma, following) in enumerate(zip(sigmas[:-1], sigmas[1:], strict=True)):
             t = sigma.expand(shape[0])
             if cfg != 1:
-                if predict_pair is None:
-                    raise ValueError("MOSS-Image CFG 需要包含负分支跳层的配对预测。")
                 positive, negative = predict_pair(x, t)
                 prediction = negative.float() + cfg * (positive.float() - negative.float())
             else:

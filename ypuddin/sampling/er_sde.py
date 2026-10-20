@@ -132,10 +132,12 @@ def er_sde_sample(
     max_order: int = 3,
     s_noise: float = 1.0,
     noise: SeedNoise | None = None,
+    require_terminal_zero: bool = True,
 ) -> Tensor:
     """Sample with the author's ER-SDE Taylor update, using ``predict(x,t) -> velocity``.
 
-    ``sigmas`` are RF times, strictly decreasing from ``0 < t0 < 1`` to exactly zero.
+    ``sigmas`` are RF times, strictly decreasing from ``0 < t0 < 1`` to exactly zero
+    unless ``require_terminal_zero=False`` accepts a positive final time.
     Denoised=x-t*v, alpha=1-t, lambda=t/alpha. The caller owns the schedule. ``noise``
     (``SeedNoise``) gives the initial unit Gaussian and every stochastic increment; without
     it they come from the CPU ``generator`` (or a fresh private one) as in ComfyUI. Global
@@ -168,11 +170,12 @@ def er_sde_sample(
     times = sigmas.detach().to(device="cpu", dtype=torch.float64).tolist()
     if (
         not all(math.isfinite(value) for value in times)
-        or times[-1] != 0.0
+        or times[-1] < 0.0
+        or (require_terminal_zero and times[-1] != 0.0)
         or not 0.0 < times[0] < 1.0
         or any(first <= second for first, second in zip(times, times[1:], strict=False))
     ):
-        raise ValueError("ER-SDE times must strictly decrease from 0 < t0 < 1 to exactly zero")
+        raise ValueError("ER-SDE times must strictly decrease from 0 < t0 < 1 to a valid nonnegative endpoint")
     if noise is None:
         if generator is not None and generator.device.type != "cpu":
             raise ValueError("ER-SDE requires a CPU random generator")

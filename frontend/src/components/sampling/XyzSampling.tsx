@@ -19,7 +19,7 @@ import ProgressBar from '../ProgressBar';
 import { gpuDeviceLabel } from '../../utils/gpuDevices';
 import Dialog from '../Dialog';
 import { LazyImage } from '../Loading';
-import { axisCount, axisNames, checkpointLabel, choiceLabel, isActive, isWaiting, parseAxis, taskProgress, useStatusLabel, type AxisKey, type XyzAxis, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
+import { axisChoiceValues, axisCount, axisNames, checkpointLabel, choiceLabel, isActive, isWaiting, parseAxis, taskProgress, useStatusLabel, type AxisKey, type XyzAxis, type XyzOptions, type XyzRequest, type XyzTask, type SamplingValues } from './xyzTypes';
 import XyzHistory from './XyzHistory';
 import SampleLightbox from './SampleLightbox';
 import { useGridImageFit } from './useGridImageFit';
@@ -64,16 +64,18 @@ function AxisEditor({ position, draft, onChange, options, used, disabled, weight
   const name = (key: AxisKey) => key === 'checkpoint' && options.training_mode === 'full' ? text('模型检查点', 'Model checkpoint') : text(...axisNames[key]);
   const title = position === 'X' ? text('X · 横向比较', 'X · Columns') : position === 'Y' ? text('Y · 纵向比较', 'Y · Rows') : text('Z · 分页比较', 'Z · Pages');
   const icon = position === 'X' ? <ArrowRight size={14}/> : position === 'Y' ? <ArrowDown size={14}/> : <Layers size={14}/>;
+  const english = text('zh', 'en') === 'en';
   const current = options.axes.find(axis => axis.key === draft?.key);
-  const choices = draft?.key === 'checkpoint' ? options.checkpoints.map(cp => ({ value: cp.id, label: checkpointLabel(options, cp) })) : current?.values?.map(value => ({ value: String(value), label: choiceLabel(draft!.key, value) }));
-  const values = draft ? parseAxis(draft.key, draft.raw).values.map(String) : [];
+  const selectedValues = draft ? parseAxis(draft.key, draft.raw).values.map(String) : [];
+  const choices = draft?.key === 'checkpoint' ? options.checkpoints.map(cp => ({ value: cp.id, label: checkpointLabel(options, cp) })) : current?.values && axisChoiceValues(current.key, current.values, options.family, selectedValues).map(value => ({ value: String(value), label: choiceLabel(current.key, value, english, options.family) }));
+  const values = selectedValues;
   return <fieldset className="xyz-axis" disabled={disabled}>
     <legend>{icon}{title}</legend>
     <StudioSelect aria-label={title} disabled={disabled} value={draft?.key || ''} onValueChange={value => {
       if (!value) { onChange(null); return; }
       const key = value as AxisKey;
       const axis = options.axes.find(item => item.key === key);
-      const defaults = key === 'checkpoint' ? (weights.length > 1 ? weights : ownCheckpoints(options).slice(0, 3).map(cp => cp.id)) : axis?.values?.slice(0, 3) || (key === 'steps' ? [8, 16, 24] : key === 'adapter_scale' ? [0.6, 0.8, 1] : key === 'cfg' ? [1, 3, 5] : key === 'seed' ? [42, 43, 44] : [1, 3]);
+      const defaults = key === 'checkpoint' ? (weights.length > 1 ? weights : ownCheckpoints(options).slice(0, 3).map(cp => cp.id)) : (axis?.values && axisChoiceValues(key, axis.values, options.family).slice(0, 3)) || (key === 'steps' ? [8, 16, 24] : key === 'adapter_scale' ? [0.6, 0.8, 1] : key === 'cfg' ? [1, 3, 5] : key === 'seed' ? [42, 43, 44] : [1, 3]);
       onChange({ key, raw: defaults.join(', ') });
     }} options={[...(position !== 'X' ? [{ value: '', label: text('不使用', 'Off') }] : []), ...options.axes.map(axis => ({ value: axis.key, label: name(axis.key),
       // Weights move to this axis from another one; they are chosen once, in the setup above.
@@ -91,6 +93,7 @@ export default function XyzSampling({ sourceJobId, readOnly = false, initialTask
 
 function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJobId: string; readOnly: boolean; initialTaskId?: string }) {
   const text = useWorkspaceText();
+  const english = text('zh', 'en') === 'en';
   const location = useLocation();
   const [options, setOptions] = React.useState<XyzOptions | null>(null);
   const [values, setValues] = React.useState<SamplingValues | null>(null);
@@ -116,7 +119,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const displayValue = (axis: XyzAxis | null | undefined, value: string | number | null) => {
     const checkpoint = axis?.key === 'checkpoint' ? options?.checkpoints.find(cp => cp.id === value) : undefined;
     if (checkpoint && options) return checkpointLabel(options, checkpoint);
-    return axis && value != null && ['sampler', 'scheduler', 'noise'].includes(axis.key) ? choiceLabel(axis.key, value) : String(value ?? '');
+    return axis && value != null && ['sampler', 'scheduler', 'noise'].includes(axis.key) ? choiceLabel(axis.key, value, english, options?.family) : String(value ?? '');
   };
   // Products from every run of the version are picked run first, then product.
   const runs = options ? [...new Map(options.checkpoints.map(cp => [cp.job_id || '', cp.job_name || ''])).entries()].map(([value, label]) => ({ value, label: value === sourceRun(options) ? text(`${label}（来源任务）`, `${label} (source run)`) : label })) : [];
@@ -295,7 +298,6 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
     setError('');
   };
 
-  const english = text('zh', 'en') === 'en';
   const noiseOptions = options?.axes.find(axis => axis.key === 'noise')?.values?.map(String);
   const noiseHelp = (family && contextHelp('sampling.noise', { family, config: {}, english }, noiseOptions)) || text(...FIELD_HELP['sampling.noise']);
 
@@ -331,7 +333,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
           <div className="xyz-axes">{(['X', 'Y', 'Z'] as const).map((position, index) => <AxisEditor key={position} position={position} draft={drafts[index]} options={options} disabled={locked} weights={weights} used={drafts.filter((_, other) => other !== index).flatMap(draft => draft ? [draft.key] : [])} onChange={draft => changeAxis(index, draft)}/>)}</div>
           <details className="xyz-settings"><summary>{text('固定参数', 'Fixed parameters')}<span>{values.width} × {values.height} · Seed {values.seed}</span></summary><fieldset className="xyz-fields" disabled={locked}>
             {(['width', 'height', 'seed', 'steps', 'cfg', 'adapter_scale'] as const).filter(key => !fullModel || key !== 'adapter_scale').map(key => <label key={key}><span>{key === 'width' ? text('宽度', 'Width') : key === 'height' ? text('高度', 'Height') : name(key)}</span><input aria-label={`${text('固定', 'Fixed')} ${key}`} type="number" min={key === 'adapter_scale' ? -4 : key === 'cfg' || key === 'seed' ? 0 : 1} step={key === 'cfg' || key === 'adapter_scale' ? 0.1 : 1} required disabled={axes.some(axis => axis?.key === key)} value={values[key]} onChange={event => update(key, Number(event.target.value))}/></label>)}
-            {(['sampler', 'scheduler', 'noise'] as const).map(key => <label key={key}><span>{name(key)}{key === 'noise' && <ConfigHelp label={text('采样兼容模式说明', 'Sampling compatibility help')}>{noiseHelp}</ConfigHelp>}</span><StudioSelect aria-label={`${text('固定', 'Fixed')} ${name(key)}`} disabled={locked || axes.some(axis => axis?.key === key)} value={values[key]} options={(options.axes.find(axis => axis.key === key)?.values || [values[key]]).map(value => ({ value: String(value), label: choiceLabel(key, value) }))} onValueChange={value => update(key, value)}/></label>)}
+            {(['sampler', 'scheduler', 'noise'] as const).map(key => <label key={key}><span>{name(key)}{key === 'noise' && <ConfigHelp label={text('采样兼容模式说明', 'Sampling compatibility help')}>{noiseHelp}</ConfigHelp>}</span><StudioSelect aria-label={`${text('固定', 'Fixed')} ${name(key)}`} disabled={locked || axes.some(axis => axis?.key === key)} value={values[key]} options={axisChoiceValues(key, options.axes.find(axis => axis.key === key)?.values || [values[key]], options.family, [values[key]]).map(value => ({ value: String(value), label: choiceLabel(key, value, english, options.family) }))} onValueChange={value => update(key, value)}/></label>)}
             {!fullModel && (values.noise === 'comfyui' || axes.some(axis => axis?.key === 'noise' && axis.values.includes('comfyui'))) && <label><span>{text('适配器融合精度', 'Adapter merge precision')}<ConfigHelp label={text('适配器融合精度说明', 'Adapter merge precision help')}>{text(...FIELD_HELP['sampling.adapter_merge_dtype'])}</ConfigHelp></span><StudioSelect aria-label={text('固定 适配器融合精度', 'Fixed Adapter merge precision')} disabled={locked} value={values.adapter_merge_dtype || 'auto'} options={['auto', 'bf16', 'fp16', 'fp32'].map(value => ({ value, label: text(configOptionLabel('sampling.adapter_merge_dtype', value), configOptionLabel('sampling.adapter_merge_dtype', value, true)) }))} onValueChange={value => update('adapter_merge_dtype', value as SamplingValues['adapter_merge_dtype'])}/></label>}
             <label className="xyz-span"><span>{text('负面提示词', 'Negative prompt')}</span><textarea rows={2} value={values.negative} onChange={event => update('negative', event.target.value)}/></label>
           </fieldset></details>
@@ -378,7 +380,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
         ...(previewRequest.y ? [`${name(previewRequest.y.key)} · ${displayValue(previewRequest.y, preview.y_value)}`] : []),
         ...(previewRequest.z ? [`${name(previewRequest.z.key)} · ${displayValue(previewRequest.z, preview.z_value)}`] : []),
         `${preview.steps} ${text('步', 'steps')} · CFG ${preview.cfg}`,
-        `${choiceLabel('sampler', preview.sampler)} / ${choiceLabel('scheduler', preview.scheduler)} · ${choiceLabel('noise', preview.noise || 'comfyui')}`,
+        `${choiceLabel('sampler', preview.sampler, english, options.family)} / ${choiceLabel('scheduler', preview.scheduler, english, options.family)} · ${choiceLabel('noise', preview.noise || 'comfyui', english, options.family)}`,
         ...(!fullModel ? [`LoRA ${preview.adapter_scale}`] : []),
       ]}
       onPrevious={previewIndex > 0 ? () => navigatePreview(previewIndex - 1) : undefined}

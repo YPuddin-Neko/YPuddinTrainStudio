@@ -1,5 +1,5 @@
 import type { FamilyInfo, FamilyPreset } from '../api/types';
-import { configFieldHelp, configFieldLabel, configOptionLabel, schedulerTypeHelp } from './configPresentation';
+import { configFieldHelp, configFieldLabel, configOptionLabel, samplingSchedulerOptions, schedulerTypeHelp } from './configPresentation';
 
 /**
  * Settings that depend on the selected model and on the machine the service runs on. A setting neither uses is
@@ -122,6 +122,9 @@ const multiGpu = (config: Record<string, any>) => Number(config.loop?.gpu_count 
 /** Options this model and machine can run, keeping the current value visible; undefined keeps the list as it is. */
 export function contextOptions(path: string, { family, config }: FieldContext, options: string[] | undefined, current: unknown): string[] | undefined {
   if (!options) return undefined;
+  if (path === 'sampling.scheduler') {
+    return samplingSchedulerOptions(options, family?.name ?? config.model?.family, [String(current ?? '')]);
+  }
   if (path === 'objective.timestep_sampling') {
     const selectedFamily = family?.name ?? config.model?.family;
     return options.filter(option => (option !== 'resolution_sqrt' || selectedFamily === 'anima')
@@ -185,7 +188,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
   if (!family) return undefined;
   const runtime = runtimeOf(family);
   const text = (zh: string, en: string) => english ? en : zh;
-  const label = (option: string) => configOptionLabel(path, option, english);
+  const label = (option: string) => configOptionLabel(path, option, english, family.name);
   const listed = (option: string) => !options || options.includes(option);
   // One line per option the dropdown offers, named as the dropdown names it.
   const optionLines = (describe: Record<string, [string, string]>) => Object.entries(describe)
@@ -287,7 +290,17 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       ]);
     }
     case 'sampling.scheduler':
-      if (family.name === 'moss_image') return text('先按采样时间步偏移调整噪声目标，再映射到 MOSS-Image 训练噪声表中最近的离散时间步。只影响预览图。', 'Applies the sampling shift to the target noise levels, then maps them to the nearest discrete timesteps in the MOSS-Image training noise table. Affects previews only.');
+      if (family.name === 'moss_image') return join([
+        text('采样时各步噪声强度的取法，按采样时间步偏移调整：', 'How noise levels are chosen at each sampling step, with the sampling shift applied:'),
+        (!options || options.includes('uniform') || options.includes('moss')) && `${label('moss')}${text(
+          '：偏移后取最近的 0.001 级离散时间步，并合并重复点。',
+          ': applies shift, then rounds to the nearest 0.001 timestep and merges duplicate points.')}`,
+        ...optionLines({
+          simple: ['从 1000 级离散噪声表中等间隔取点。', 'evenly spaced picks from the 1000-level discrete noise table.'],
+          normal: ['从最高噪声到最低一级噪声均匀取点，包含最低一级。', 'evenly spaced from the highest noise to the lowest discrete level, including that level.'],
+          sgm_uniform: ['与 Normal 相同，但不包含最低一级。', 'as Normal, but leaving out the lowest discrete level.'],
+        }),
+      ]);
       return join([
         text(`预览时各步噪声强度的取法，只影响预览图；都会按「${configFieldLabel('sampling.shift', '')}」调整：`, 'How the noise levels of the preview steps are chosen; previews only, and every choice applies the sampling shift:'),
         ...optionLines({

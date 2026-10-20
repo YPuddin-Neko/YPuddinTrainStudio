@@ -9346,11 +9346,11 @@ export interface components {
             sampler: "euler" | "euler_ancestral" | "heun" | "er_sde";
             /**
              * Scheduler
-             * @description 预览采样使用的噪声时间点。默认 uniform 使用均匀网格并应用 shift；simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。
+             * @description 预览采样使用的噪声时间点。uniform 使用均匀网格并应用 shift；MOSS-Image 的 uniform 保留原离散日程，与 moss 相同。simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。
              * @default uniform
              * @enum {string}
              */
-            scheduler: "uniform" | "simple" | "sgm_uniform" | "normal";
+            scheduler: "uniform" | "simple" | "sgm_uniform" | "normal" | "moss";
             /**
              * Er Sde Order
              * @description ER-SDE 的最高阶数，默认 3；开始时从低阶逐步升阶，也可选择 1 或 2。

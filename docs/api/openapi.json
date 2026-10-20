@@ -30561,10 +30561,11 @@
               "uniform",
               "simple",
               "sgm_uniform",
-              "normal"
+              "normal",
+              "moss"
             ],
             "title": "Scheduler",
-            "description": "预览采样使用的噪声时间点。默认 uniform 使用均匀网格并应用 shift；simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。",
+            "description": "预览采样使用的噪声时间点。uniform 使用均匀网格并应用 shift；MOSS-Image 的 uniform 保留原离散日程，与 moss 相同。simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。",
             "default": "uniform",
             "x-ui": {
               "advanced": true,

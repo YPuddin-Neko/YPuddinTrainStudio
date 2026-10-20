@@ -1021,7 +1021,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     // A choice whose package this environment lacks stays listed, greyed out, so the reason is visible where it is chosen.
     const unavailableOptions = family?.unavailable_options?.[fullPathKey];
     const choice = (option: string): StudioSelectOption => {
-      const label = configOptionLabel(fullPathKey, option, english);
+      const label = configOptionLabel(fullPathKey, option, english, family?.name ?? value.model?.family);
       const reason = unavailableOptions?.[option];
       if (!reason) return { value: option, label };
       const note = reason === 'wrong_version' ? (english ? 'wrong version' : '版本不符') : (english ? 'not installed' : '未安装');
@@ -1038,7 +1038,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <Switch id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`} checked={!!fieldValue} disabled></Switch>
       </div>;
     } else if (managedReason) {
-      const display = computeManaged?.label ?? (prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english) : managedValueLabel(fieldValue, english));
+      const display = computeManaged?.label ?? (prop.enum ? configOptionLabel(fullPathKey, String(fieldValue), english, family?.name ?? value.model?.family) : managedValueLabel(fieldValue, english));
       control = <div className="config-managed-value"><output id={fieldId} aria-label={fieldLabel} aria-describedby={`${fieldId}-managed-reason`}>{display}</output><span>{computeManaged?.tag ?? (english ? 'Automatic' : '自动管理')}</span></div>;
     } else if (fullPathKey === 'checkpoint.save_state_every_steps') {
       control = <RecoveryInterval id={fieldId} label={fieldLabel} english={english} invalid={!!errorItem}
@@ -1215,7 +1215,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={['raw', 'turbo'].map(option => ({value:option, label:configOptionLabel(fullPathKey, option, english)}))}/>;
     } else if (fullPathKey === 'model.dtype') {
-      control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english)}
+      control = <StudioSelect aria-label={fieldLabel} value={fieldValue || 'auto'} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english, family?.name ?? value.model?.family)}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={(supportedOptions ?? ['auto', 'bf16', 'fp16', 'fp32']).map(choice)}/>;
     } else if (fullPathKey === 'adapter.dora_merge_dtype') {
@@ -1224,11 +1224,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         options={['auto', 'bf16', 'fp16', 'fp32'].map(option => ({value: option, label: option === 'auto' ? doraAutoLabel(doraPrecision, english) : configOptionLabel(fullPathKey, option, english)}))}/>;
     } else if (fullPathKey === 'model.attention') {
       const attentionOptions = offeredOptions?.length ? offeredOptions : ['sdpa'];
-      control = <StudioSelect aria-label={fieldLabel} value={!fieldValue || fieldValue === 'auto' ? 'sdpa' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english)}
+      control = <StudioSelect aria-label={fieldLabel} value={!fieldValue || fieldValue === 'auto' ? 'sdpa' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english, family?.name ?? value.model?.family)}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={attentionOptions.map(choice)}/>;
     } else if (supportedOptions) {
-      control = <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english)}
+      control = <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english, family?.name ?? value.model?.family)}
         onValueChange={next => {
           const updated = setNestedValue(value, path, prop.type === 'integer' || prop.type === 'number' ? Number(next) : next);
           onChange(fullPathKey === 'adapter.algo' && next !== 'lokr' && value.adapter?.rank === 'full'

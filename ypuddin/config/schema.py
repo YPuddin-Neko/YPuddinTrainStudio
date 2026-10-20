@@ -1598,9 +1598,9 @@ class SamplingConfig(_IntervalConfig):
         help="预览图的采样算法，默认 Euler 每步评估一次；Euler a（euler_ancestral）每步去噪后再加入新的随机噪声；Heun 先预测再校正，除末步外通常多评估一次；ER-SDE 使用历史结果与随机噪声。开启 CFG 引导时还需分别计算正向和负向条件。",
         ui_=ui("sampling", advanced=True, order=120, control="select", show_when="sampling.enabled == true"),
     )
-    scheduler: Literal["uniform", "simple", "sgm_uniform", "normal"] = F(
+    scheduler: Literal["uniform", "simple", "sgm_uniform", "normal", "moss"] = F(
         "uniform",
-        help="预览采样使用的噪声时间点。默认 uniform 使用均匀网格并应用 shift；simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。",
+        help="预览采样使用的噪声时间点。uniform 使用均匀网格并应用 shift；MOSS-Image 的 uniform 保留原离散日程，与 moss 相同。simple、sgm_uniform、normal 使用不同网格或端点。与采样算法、学习率调度分别设置。",
         ui_=ui("sampling", advanced=True, order=130, control="select", show_when="sampling.enabled == true"),
     )
     er_sde_order: Literal[1, 2, 3] = F(

@@ -1,4 +1,4 @@
-import { configOptionLabel } from '../../utils/configPresentation';
+import { configOptionLabel, samplingSchedulerOptions } from '../../utils/configPresentation';
 import { useWorkspaceText } from '../../utils/workspaceText';
 
 export type AxisKey = 'steps' | 'cfg' | 'seed' | 'sampler' | 'scheduler' | 'noise' | 'shift' | 'adapter_scale' | 'checkpoint';
@@ -73,8 +73,11 @@ export function parseAxis(key: AxisKey, raw: string): XyzAxis {
   return { key, values: tokens.map(value => numeric ? Number(value) : value) };
 }
 /** How the page names a sampler, scheduler or noise source value. */
-export function choiceLabel(key: AxisKey, value: string | number) {
-  return configOptionLabel(key === 'noise' ? 'sampling.noise' : `sampling.${key}`, String(value));
+export function choiceLabel(key: AxisKey, value: string | number, english = false, family?: string) {
+  return configOptionLabel(`sampling.${key}`, String(value), english, family);
+}
+export function axisChoiceValues(key: AxisKey, values: AxisValue[], family: string, current: readonly string[] = []): AxisValue[] {
+  return key === 'scheduler' ? samplingSchedulerOptions(values.map(String), family, current) : values;
 }
 export function axisCount(axes: (XyzAxis | null | undefined)[]) {
   return axes.reduce((total, axis) => total * (axis ? axis.values.length : 1), 1);

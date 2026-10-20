@@ -320,7 +320,17 @@ export function configPresetLabel(name: string, description: string, defaultPres
   return name === defaultPreset ? `${label}${english ? ' (default)' : '（默认）'}` : label;
 }
 
-export function configOptionLabel(path: string, option: string, english = false) {
+/** Keep a saved MOSS alias selectable without offering the same schedule twice. */
+export function samplingSchedulerOptions(options: string[], family?: string, current: readonly string[] = []) {
+  if (family !== 'moss_image') return options.filter(option => option !== 'moss');
+  if (!options.includes('uniform') || !options.includes('moss')) return options;
+  return options.filter(option => option !== (current.includes('uniform') ? 'moss' : 'uniform'));
+}
+
+export function configOptionLabel(path: string, option: string, english = false, family?: string) {
+  if (path === 'sampling.scheduler' && (option === 'moss' || (family === 'moss_image' && option === 'uniform'))) {
+    return english ? 'MOSS discrete' : 'MOSS discrete (MOSS 离散)';
+  }
   const options: Record<string, Record<string, [string, string]>> = {
     'objective.weighting': { none: ['不加权', 'None'], sigma_sqrt: ['噪声尺度平方根', 'Sigma square root'], cosmap: ['余弦映射', 'CosMap'], snr_like: ['类信噪比加权', 'SNR-like'], cosmos: ['Cosmos', 'Cosmos'], min_snr: ['最小信噪比加权', 'Min-SNR'] },
     'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['逻辑正态分布', 'Logit-Normal'], shift: ['偏移采样', 'Shift'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], resolution_sqrt: ['按分辨率修正 Shift', 'Resolution-corrected Shift'], mode: ['模式分布', 'Mode'], cosmap: ['余弦映射', 'CosMap'], moss_image: ['MOSS-Image 分布', 'MOSS-Image distribution'] },
