@@ -622,6 +622,34 @@ def config_inspect(body: ConfigBody) -> dict[str, Any]:
     return inspect_config(body.config)
 
 
+def _plan_model_errors(family, model, c: ServiceContext) -> list[str]:
+    if family.spec.name != "moss_image" or not model.dit_path:
+        return family.validate_config(model)
+    from ypuddin.moss_singlefile import BASE_BF16_SHA256, is_fused_singlefile
+
+    from .model_inspection import _moss_path
+    from .model_recommendations import cached_sha256
+    from .moss_image_components import admission_error
+
+    path = _moss_path(Path(model.dit_path), c.is_allowed)
+    if not is_fused_singlefile(path):
+        return family.validate_config(model)
+
+    def identity_error():
+        if error := admission_error(c, path, "dit"):
+            return error
+        if cached_sha256(c, path) != BASE_BF16_SHA256:
+            return "MOSS-Image 缺少可用校验记录，需重新导入校验。"
+        return None
+
+    if error := identity_error():
+        return [error]
+    errors = family.validate_config(model, authenticate=False)
+    if error := identity_error():
+        errors.append(error)
+    return errors
+
+
 @router.post("/plan", response_model=m.Plan, response_model_exclude_unset=True)
 def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     # plan keeps full validation errors while previewing independently valid data fields.
@@ -709,6 +737,7 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
     result = make_plan(
         cfg,
         index_db_path=c.service_cache_dir("index") / "index.sqlite",
+        validate_model=lambda family, model: _plan_model_errors(family, model, c),
         **planning_memory(selected),
     )
     from .memory_fit import admission_estimate, capacity_shortfall, host_memory_error, shortfall_error
@@ -936,10 +965,16 @@ def _check_model_admission(
     if reason := training_rejection({}, family):
         raise ApiError(reason, code="model.unsupported", status=422)
     if family == "moss_image":
+        from ypuddin.moss_singlefile import is_fused_singlefile, validate_fused_singlefile
+
         from .model_inspection import check_moss_paths
         from .model_recommendations import component_metadata
 
         try:
+            if kind == "dit" and is_fused_singlefile(path):
+                checked = check_moss_paths(path, kind, c.is_allowed)[kind]
+                validate_fused_singlefile(checked)
+                return
             from ypuddin.models.moss_image.latent import MOSSImageLatent
             from ypuddin.models.moss_image.loading import transformer_config
             from ypuddin.models.moss_image.text import MOSSImageText
@@ -1302,10 +1337,6 @@ def _authenticate_moss_import(c, path, kind, tokenizer=None):
     """Authenticate outside the database lock; return proofs for the registration transaction."""
     from types import SimpleNamespace
 
-    from ypuddin.models.moss_image.loading import component_paths, tokenizer_directory
-
-    from .moss_image_components import authenticate, authenticate_root, candidate, proof_key, valid_component
-
     pending = {}
 
     class Proofs:
@@ -1316,6 +1347,19 @@ def _authenticate_moss_import(c, path, kind, tokenizer=None):
             pending[key] = value
 
     verification = SimpleNamespace(db=Proofs(), is_allowed=c.is_allowed)
+    if kind == "dit" and path.is_file():
+        from ypuddin.moss_singlefile import BASE_BF16_SHA256, is_fused_singlefile, validate_fused_singlefile
+
+        from .model_recommendations import remember_verified_file
+
+        if is_fused_singlefile(path):
+            validate_fused_singlefile(path)
+            remember_verified_file(verification, path, BASE_BF16_SHA256)
+        return pending
+    from ypuddin.models.moss_image.loading import component_paths, tokenizer_directory
+
+    from .moss_image_components import authenticate, authenticate_root, candidate, proof_key, valid_component
+
     if kind == "dit" and path.is_dir() and (path / "transformer").is_dir():
         _, _, text, vae, tok = component_paths(SimpleNamespace(
             dit_path=str(path), text_encoder_path=None, vae_path=None, tokenizer_path=None))
@@ -1390,8 +1434,8 @@ class ModelInspection(BaseModel):
 def inspect_local_model(body: ModelInspectionBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     from .model_inspection import inspect_model
 
-    path = Path(body.path).expanduser().resolve()
-    if not c.is_allowed(path):
+    path = Path(body.path).expanduser().absolute()
+    if not c.is_allowed(path.resolve()):
         raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
     try:
         return inspect_model(path, allowed=c.is_allowed)
@@ -1405,6 +1449,24 @@ class ModelDefaultPatch(BaseModel):
 
 @router.patch("/models/{model_id}", response_model=m.ModelAsset)
 def patch_model(model_id: str, body: ModelDefaultPatch, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    fused_snapshot, fused_proofs = None, {}
+    if body.is_default:
+        candidate = c.db.fetchone("SELECT * FROM models WHERE id=?", (model_id,))
+        if (candidate and candidate["family"] == "moss_image" and candidate["kind"] == "dit"
+                and Path(candidate["path"]).exists()):
+            from ypuddin.moss_singlefile import is_fused_singlefile
+
+            from .model_inspection import _moss_path
+            from .moss_image_components import admission_snapshot as capture_admission
+
+            try:
+                path = _moss_path(Path(candidate["path"]), c.is_allowed)
+                if is_fused_singlefile(path):
+                    fused_snapshot = capture_admission(c, path, "dit")
+                    _check_model_admission(path, "moss_image", "dit", c)
+                    fused_proofs = _authenticate_moss_import(c, path, "dit")
+            except (ValueError, OSError, ImportError, RuntimeError) as error:
+                raise ApiError(str(error), code="model.component", status=422) from error
     with c.db.transaction():
         row = c.db.fetchone("SELECT * FROM models WHERE id=?", (model_id,))
         if row is None:
@@ -1418,19 +1480,25 @@ def patch_model(model_id: str, body: ModelDefaultPatch, c: ServiceContext = Depe
         if body.is_default:
             if _model_row(row, c).get("purpose") == "inference":
                 raise ApiError("仅采样模型不能设为训练默认组件。", code="model.purpose", status=422)
-            admission_snapshot = None
+            admission_snapshot = fused_snapshot
             if row["family"] == "moss_image":
                 from .moss_image_components import admission_snapshot as capture_admission
                 from .moss_image_components import remember_admission
 
                 try:
-                    admission_snapshot = capture_admission(c, Path(row["path"]), row["kind"])
+                    if fused_snapshot is None:
+                        admission_snapshot = capture_admission(c, Path(row["path"]), row["kind"])
+                    elif row["kind"] != "dit" or row["path"] != fused_snapshot["path"]:
+                        raise ValueError("MOSS-Image 模型登记在校验期间发生变化，请重试。")
                 except (ValueError, OSError, ImportError, RuntimeError) as error:
                     raise ApiError(str(error), code="model.component", status=422) from error
-            _check_model_admission(Path(row["path"]).expanduser().resolve(), row["family"], row["kind"], c)
+            if fused_snapshot is None:
+                _check_model_admission(Path(row["path"]).expanduser().resolve(), row["family"], row["kind"], c)
             if admission_snapshot is not None:
                 try:
                     remember_admission(c, admission_snapshot)
+                    for key, value in fused_proofs.items():
+                        c.db.set_kv(key, value)
                 except ValueError as error:
                     raise ApiError(str(error), code="model.component", status=422) from error
             c.db.execute(

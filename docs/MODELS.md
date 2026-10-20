@@ -74,7 +74,9 @@ Base 和蒸馏模型可能具有相同的权重形状。完整目录的元数据
 
 在模型系列中选择 `MOSS-Image 5B`，DiT 条目为 `MOSS-Image Base 5B`。各条目只下载对应组件；顶部“下载缺失组件”补齐 DiT、文本编码器和 VAE。
 
-主模型接受官方完整目录、其中的 `transformer/` 目录，或带有匹配 `config.json` 的原始 safetensors 单文件。分片目录必须保留索引和全部分片。独立文本编码器需要配套 `config.json`、完整权重及本地 `tokenizer/`；程序优先从 `text_encoder/` 的同级目录发现分词器，也可明确填写“分词器”路径。独立 VAE 同样需要匹配的配置和权重。
+DiT 推荐下载使用 Comfy-Org 的 `moss_image_base_bf16.safetensors` 单文件，支持 Hugging Face 和 ModelScope 两个来源。该文件无需配套 `config.json`；导入和加载时会校验官方 Base BF16 文件身份，不接受 SFT、INT8、GPTQ 或 FP16 修正版。已有且通过校验的 Base 目录也会显示为可用，无需重新下载。
+
+主模型继续接受官方完整目录、其中的 `transformer/` 目录，或带有匹配 `config.json` 的原始 safetensors 单文件。分片目录必须保留索引和全部分片。独立文本编码器需要配套 `config.json`、完整权重及本地 `tokenizer/`；程序优先从 `text_encoder/` 的同级目录发现分词器，也可明确填写“分词器”路径。独立 VAE 同样需要匹配的配置和权重。DiT 单文件不包含这些组件；已有的文本编码器、分词器和 VAE 可继续选择使用，“下载缺失组件”只补齐尚缺的组件。
 
 使用 MOSS-Image 发布的 Qwen3.5-9B 文本编码器；Krea 2 / FLUX.3 的 Qwen3-VL 不能替代。配套小解码器 VAE 与现有 FLUX 系列 AE 权重不同，需独立准备。文本编码器固定 BF16，VAE 固定 FP32。DiT 支持未量化 BF16 / FP32，训练时文本编码器与 VAE 保持冻结。
 

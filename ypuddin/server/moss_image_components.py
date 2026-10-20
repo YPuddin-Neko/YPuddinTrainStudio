@@ -31,7 +31,7 @@ def admission_snapshot(context, path, kind, processor_path=None):
     """Capture files before an explicit import performs its full structural validation."""
     from types import SimpleNamespace
 
-    from ypuddin.models.moss_image.loading import component_paths, tokenizer_directory
+    from ypuddin.moss_singlefile import is_fused_singlefile
 
     path = _safe(context, path)
 
@@ -41,6 +41,10 @@ def admission_snapshot(context, path, kind, processor_path=None):
                 for name, member in _files(context, part).items()}}
 
     records = {"asset": capture(path)}
+    if kind == "dit" and is_fused_singlefile(path):
+        return {"kind": kind, "path": str(path), "records": records}
+    from ypuddin.models.moss_image.loading import component_paths, tokenizer_directory
+
     paths = {"asset": path}
     if kind == "dit" and (path / "transformer").is_dir():
         parts = component_paths(SimpleNamespace(dit_path=str(path), text_encoder_path=None,

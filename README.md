@@ -30,7 +30,7 @@
 | Krea 2 | Raw；支持 BF16 和受支持的 FP8 scaled 格式 | Qwen3-VL-4B |
 | FLUX.2 Klein | Base 4B / 9B | 对应 Qwen3-4B / Qwen3-8B |
 | FLUX.3 Klein 5.5B | Image Klein Base，原始 BF16 / FP32 权重 | Qwen3-VL-4B-Instruct |
-| MOSS-Image 5B | Base，原始 BF16 / FP32 权重 | 配套 Qwen3.5-9B |
+| MOSS-Image 5B | Base，原始 BF16 / FP32 权重或 Comfy-Org Base BF16 单文件 | 配套 Qwen3.5-9B |
 
 Krea 2 Turbo 用于采样。FLUX.2 Klein 蒸馏版、KV 版及 FLUX.2 dev 不用于训练；FLUX.3 训练使用 Image Klein Base，不接受蒸馏版或 FP8／NVFP4 推理权重。FLUX.3 与 MOSS-Image 当前支持单卡适配器训练，文本编码器保持冻结。各模型所需的 VAE、文件格式和加载限制见 [模型配置](docs/MODELS.md)。
 

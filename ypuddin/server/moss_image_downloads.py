@@ -20,6 +20,32 @@ REPO = "OpenMOSS-Team/MOSS-Image-Base"
 REVISION = "5f40f07a304541840b6019d2d34d30f966756787"
 MS_REPO = "openmoss/MOSS-Image-Base"
 MS_REVISION = "bf675045be106b8c620f856d555d218f881120a2"
+COMFY_REPO = "Comfy-Org/MOSS-Image"
+COMFY_FILENAME = "diffusion_models/moss_image_base_bf16.safetensors"
+COMFY_REVISIONS = {
+    "huggingface": "3284a1dbb351e3396d70f39f2a71cbf6ed2ef1bb",
+    "modelscope": "05cf96d24fa7b4755289b923ac5729b16cc0d9ba",
+}
+
+
+def validate_singlefile_request(body):
+    from urllib.parse import urlencode
+
+    revision = COMFY_REVISIONS[body.provider]
+    url = (
+        f"https://huggingface.co/{COMFY_REPO}/resolve/{revision}/{COMFY_FILENAME}"
+        if body.provider == "huggingface" else
+        f"https://modelscope.cn/api/v1/models/{COMFY_REPO}/repo?"
+        + urlencode({"Revision": revision, "FilePath": COMFY_FILENAME})
+    )
+    source_matches = (
+        body.url == url and all(value is None for value in (body.repo_id, body.filename, body.revision))
+        if body.url else
+        (body.repo_id, body.filename, body.revision) == (COMFY_REPO, COMFY_FILENAME, revision)
+    )
+    if (body.kind != "dit" or body.dtype not in (None, "bf16") or body.variant is not None
+            or body.purpose != "training" or body.mirror != "official" or not source_matches):
+        raise ValueError("MOSS-Image 单文件下载仅支持固定官方 Base BF16 权重。")
 
 
 class MossBundleManifest(BaseModel):
@@ -242,7 +268,8 @@ def start_bundle(service, body, recommendation=None, *, frozen=None, layout_vers
         if not service.context.is_allowed(storage):
             raise ApiError("model directory is outside allowed storage roots", status=403)
         for previous in service.list():
-            if previous.get("family") == "moss_image" and previous["status"] in {"failed", "cancelled"}:
+            if (previous.get("family") == "moss_image" and previous.get("bundle")
+                    and previous["status"] in {"failed", "cancelled"}):
                 recover_publication(service, previous)
                 if previous["status"] == "completed":
                     service._update(previous["id"], **{key: previous[key] for key in (
@@ -261,7 +288,7 @@ def start_bundle(service, body, recommendation=None, *, frozen=None, layout_vers
         with service.lock:
             if service.closed:
                 raise Conflict("download service is stopping")
-            if any(row.get("family") == "moss_image" and row["status"] in ACTIVE
+            if any(row.get("family") == "moss_image" and row.get("bundle") and row["status"] in ACTIVE
                    and _download_roles(MossBundleManifest.model_validate(row["manifest"])) & _download_roles(spec)
                    for row in service.tasks.values()):
                 raise Conflict("a shared MOSS-Image component is downloading", code="download.active")

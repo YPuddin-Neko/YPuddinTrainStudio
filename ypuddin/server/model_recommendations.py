@@ -158,8 +158,37 @@ def _moss_entry(id_):
                             size=manifest.size, bundle=bundle, manifest=manifest, sources=sources)
 
 
+def _moss_singlefile_entry():
+    from ypuddin.moss_singlefile import BASE_BF16_SHA256, BASE_BF16_SIZE
+
+    from .moss_image_downloads import COMFY_FILENAME, COMFY_REPO, COMFY_REVISIONS
+
+    return RecommendedModel(
+        id="moss-image-base", family="moss_image", kind="dit", name="MOSS-Image Base 5B",
+        dtype="bf16", size=BASE_BF16_SIZE, sha256=BASE_BF16_SHA256,
+        sources=[
+            RecommendedSource(
+                provider=provider, repo_id=COMFY_REPO, filename=COMFY_FILENAME, revision=revision,
+                url=f"https://huggingface.co/{COMFY_REPO}/blob/{revision}/{COMFY_FILENAME}"
+                if provider == "huggingface" else f"https://modelscope.cn/models/{COMFY_REPO}/files",
+            )
+            for provider, revision in COMFY_REVISIONS.items()
+        ],
+    )
+
+
+def _legacy_moss_dit_available(context, path: Path) -> bool:
+    from .moss_image_downloads import available_bundle, bundle_manifest
+
+    return path.is_dir() and any(
+        available_bundle(context, path, bundle_manifest("moss-image-dit", provider))
+        for provider in ("huggingface", "modelscope")
+    )
+
+
 RECOMMENDATIONS = [
-    *[_moss_entry(id_) for id_ in ("moss-image-base", "moss-image-text", "moss-image-vae")],
+    _moss_singlefile_entry(),
+    *[_moss_entry(id_) for id_ in ("moss-image-text", "moss-image-vae")],
     *[_flux3_entry(id_) for id_ in ("flux3-base", "flux3-text")],
     RecommendedModel(
         id="flux2-klein-base-4b",
@@ -513,16 +542,23 @@ def model_display_name(context, row) -> str | None:
             return full.name
     recommendation = {"dit": "moss-image-base", "text_encoder": "moss-image-text", "vae": "moss-image-vae"}
     entry = find_recommendation(recommendation.get(row.get("kind"), ""))
-    if entry is None or entry.manifest is None:
+    if entry is None:
         return None
     from .moss_image_components import proof_key
     from .moss_image_downloads import available_bundle, bundle_manifest
 
     try:
         path = Path(row["path"]).expanduser().absolute()
-        if path.resolve() != path or not path.is_dir():
+        if path.resolve() != path:
             return None
         kind = row["kind"]
+        if kind == "dit" and path.is_file():
+            if (entry.sha256 and path.name in {Path(source.filename).name for source in entry.sources}
+                    and cached_sha256(context, path) == entry.sha256):
+                return entry.name
+            return None
+        if not path.is_dir():
+            return None
         if kind == "dit":
             if path.name != "transformer" and not any(
                 path.name == bundle_manifest(bundle, provider).digest[:12]
@@ -534,7 +570,8 @@ def model_display_name(context, row) -> str | None:
             proof = context.db.get_kv(proof_key(path), {})
             if path.name != kind or proof.get("records", {}).get(kind, {}).get("path") != str(path):
                 return None
-        if available_bundle(context, path, entry.manifest):
+        if (_legacy_moss_dit_available(context, path) if kind == "dit"
+                else entry.manifest and available_bundle(context, path, entry.manifest)):
             return entry.name
     except (OSError, ValueError, KeyError, TypeError):
         pass
@@ -574,6 +611,10 @@ def _bundle_manifests(entry):
 
 def verify_local_model(context, entry: RecommendedModel, path: Path) -> None:
     """Verify a local candidate once before choosing it as this exact recommendation."""
+    if entry.id == "moss-image-base" and path.is_dir():
+        if not _legacy_moss_dit_available(context, path):
+            raise ApiError("模型目录包的文件已变化或缺少完整下载记录。", code="model.integrity")
+        return
     if entry.id in {"flux3-text", "krea2-qwen3vl"}:
         from .flux3_components import find_components
 
@@ -803,10 +844,16 @@ def available_models(context, *, tasks=None) -> list[RecommendedModel]:
                     continue
                 path = Path(asset["path"])
                 try:
+                    if entry.id == "moss-image-base" and _legacy_moss_dit_available(context, path):
+                        matches.append(asset)
+                        verified_paths.add(asset["path"])
+                        continue
                     if not context.is_allowed(path) or not path.is_file() or path.stat().st_size != entry.size:
                         continue
                     digest = component_sha256(context, path)
-                    if digest == entry.sha256 or digest is None and path.name in filenames:
+                    if digest == entry.sha256 or (
+                        entry.id != "moss-image-base" and digest is None and path.name in filenames
+                    ):
                         matches.append(asset)
                         if digest == entry.sha256:
                             verified_paths.add(asset["path"])

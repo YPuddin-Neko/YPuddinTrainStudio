@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack, nullcontext
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
@@ -81,7 +82,9 @@ class ModelDownloadRequest(BaseModel):
             _bundle_module(self.family).validate_request(self)
             return self
         if self.family == "moss_image" and self.kind != "vae":
-            raise ValueError("MOSS-Image 主模型与文本编码器下载需要完整组件目录包。")
+            from .moss_image_downloads import validate_singlefile_request
+
+            validate_singlefile_request(self)
         if self.family == "flux3" and self.kind not in {"dit", "vae"}:
             raise ValueError("FLUX.3 文本编码器需要完整本地 HF 目录及 processor 资源，不能下载单个权重文件。")
         if self.variant is not None and (self.family != "krea2" or self.kind != "dit"):
@@ -488,6 +491,9 @@ class ModelDownloads:
                                   and source.revision == (body.revision or ("master" if body.provider == "modelscope" else "main"))
                                   for source in item.sources))), None)
                 recommendation = entry
+            if entry is None and body.family == "moss_image" and body.kind == "dit" and not body.bundle:
+                entry = next(item for item in RECOMMENDATIONS if item.id == "moss-image-base")
+                recommendation = entry
             if entry is not None:
                 active = related_download(entry, self.list())
                 if active:
@@ -722,7 +728,7 @@ class ModelDownloads:
         event = self.cancelled[id_]
         partial = root / ".downloads" / id_ / row["filename"]
         target = Path(row["target_path"])
-        published = False
+        published, registered = False, False
         token = None
         policy = ProxyPolicy()
         try:
@@ -828,6 +834,10 @@ class ModelDownloads:
                     if not keys or all(k.startswith(("lora_", "lycoris_")) for k in keys):
                         raise ValueError("expected a base model component, not empty or adapter weights")
                     check_component(weights, row["family"], row["kind"])
+                if row["family"] == "moss_image" and row["kind"] == "dit":
+                    from ypuddin.moss_singlefile import validate_fused_singlefile
+
+                    validate_fused_singlefile(partial, authenticate=False)
             if verified and row.get("recommendation_id") in {"flux2-klein-base-4b", "flux2-klein-base-9b"}:
                 partial.with_name(partial.name + ".ypuddin.json").write_text(
                     json.dumps({"_class_name": "Flux2KleinPipeline", "is_distilled": False}), encoding="utf-8"
@@ -845,39 +855,55 @@ class ModelDownloads:
                 partial.parent.rename(target.parent)
                 published = True
             # Registration writes the database: outside the lock, so the list never waits for it.
-            if verified:
-                from .model_recommendations import remember_verified_file
-
-                remember_verified_file(self.context, target, row["sha256"])
             from .routes_core import ModelBody, add_model
 
-            with self.context.db.transaction():
-                asset = add_model(
-                    ModelBody(
-                        family=row["family"],
-                        kind=row["kind"],
-                        path=str(target.parent if bundle else target),
-                        dtype=row["dtype"],
-                        is_default=row["is_default"],
-                        purpose=row.get("purpose", "training"),
-                        variant=row.get("variant"),
-                    ),
-                    self.context,
-                )
-                if not bundle:
-                    from .model_recommendations import remember_component
+            authentication = nullcontext()
+            if row["family"] == "moss_image" and row["kind"] == "dit":
+                from ypuddin.moss_singlefile import authenticated_fused_singlefile
 
-                    remember_component(self.context, target, source_download_id=id_)
+                authentication = authenticated_fused_singlefile(target)
+            with authentication, ExitStack() as commit:
+                if event.is_set() or self.closed:
+                    raise _Cancelled()
+                with self.context.db.transaction():
+                    if verified:
+                        from .model_recommendations import remember_verified_file
+
+                        remember_verified_file(self.context, target, row["sha256"])
+                    asset = add_model(
+                        ModelBody(
+                            family=row["family"],
+                            kind=row["kind"],
+                            path=str(target.parent if bundle else target),
+                            dtype=row["dtype"],
+                            is_default=row["is_default"],
+                            purpose=row.get("purpose", "training"),
+                            variant=row.get("variant"),
+                        ),
+                        self.context,
+                    )
+                    if not bundle:
+                        from .model_recommendations import remember_component
+
+                        remember_component(self.context, target, source_download_id=id_)
+                    # Cancellation and commit share only this short final boundary.
+                    commit.enter_context(self.lock)
+                    if event.is_set() or self.closed:
+                        raise _Cancelled()
+                registered = True
+                self.tasks[id_].update(status="completed", model_id=asset["id"], finished_at=now())
             self._update(id_, status="completed", model_id=asset["id"], finished_at=now())
-        except _Cancelled:
-            self._update(id_, status="cancelled", finished_at=now())
         except Exception as error:
-            if published:
-                target.unlink(missing_ok=True)
-                target.with_name(target.name + ".ypuddin.json").unlink(missing_ok=True)
-                if row["kind"] == "tagger":
-                    (target.parent / "selected_tags.csv").unlink(missing_ok=True)
-                target.parent.rmdir()
+            if published and not registered:
+                from .flux3_components import registered_under
+
+                with self.context.db.transaction():
+                    if not registered_under(self.context, target.parent):
+                        target.unlink(missing_ok=True)
+                        target.with_name(target.name + ".ypuddin.json").unlink(missing_ok=True)
+                        if row["kind"] == "tagger":
+                            (target.parent / "selected_tags.csv").unlink(missing_ok=True)
+                        target.parent.rmdir()
             message = policy.redact(error)
             if token:
                 message = message.replace(token, "[redacted]")
@@ -885,10 +911,11 @@ class ModelDownloads:
                 message = download_auth_error(
                     error, provider=row["provider"], authenticated=bool(token), mirror=row["mirror"] != "official",
                 ) or download_http_error(error.code)
+            cancelled = (isinstance(error, _Cancelled) or event.is_set()) and not registered
             self._update(
                 id_,
-                status="cancelled" if event.is_set() else "failed",
-                error=None if event.is_set() else message,
+                status="cancelled" if cancelled else "failed",
+                error=None if cancelled else message,
                 finished_at=now(),
             )
         finally:

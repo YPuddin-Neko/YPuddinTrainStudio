@@ -82,7 +82,7 @@ class MOSSImageFamily(ModelFamily):
     )
     _paths = staticmethod(loading.component_paths)
 
-    def validate_config(self, cfg):
+    def validate_config(self, cfg, *, authenticate=True):
         if not cfg.dit_path:
             return ["请选择 MOSS-Image Base 主模型。"]
         if cfg.dtype == "fp16":
@@ -93,7 +93,7 @@ class MOSSImageFamily(ModelFamily):
             return [error]
         try:
             _, dit, text, vae, tokenizer = self._paths(cfg)
-            loading.transformer_config(dit)
+            loading.transformer_config(dit, authenticate=authenticate)
             MOSSImageText.validate_paths(text, tokenizer)
             MOSSImageLatent.validate_path(vae)
         except (OSError, ValueError, KeyError, TypeError, RuntimeError, SafetensorError) as error:
@@ -267,7 +267,7 @@ class MOSSImageFamily(ModelFamily):
         return image_tokens + self.spec.text.max_len
 
     def meta_backbone(self, cfg):
-        config = loading.transformer_config(self._paths(cfg)[1]) if cfg.dit_path else loading.BASE_CONFIG
+        config = loading.transformer_config(self._paths(cfg)[1], authenticate=False) if cfg.dit_path else loading.BASE_CONFIG
         return MOSSImageTransformer(**config)
 
     def linear_module_names(self):

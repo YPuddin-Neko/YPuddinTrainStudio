@@ -9,12 +9,10 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import load_file
 
+from ypuddin.moss_singlefile import BASE_CONFIG, is_fused_singlefile, validate_fused_singlefile
 from ypuddin.runtime_imports import LIBRARY_IMPORTS
 
 from .dit import MOSSImageTransformer
-
-BASE_CONFIG = dict(dim=3072, ffn_dim=8192, num_heads=24, num_layers=42, text_dim=4096,
-                   freq_dim=256, latent_channels=128, rope_base=10000.0)
 
 
 def runtime_error() -> str | None:
@@ -119,8 +117,10 @@ def validate_weights(path: Path, expected: dict, *, basename="model", integer_ke
     return elements
 
 
-def transformer_config(path: Path) -> dict:
+def transformer_config(path: Path, *, authenticate: bool = True) -> dict:
     path = Path(path)
+    if is_fused_singlefile(path):
+        return validate_fused_singlefile(path, authenticate=authenticate)
     config = read_json((path if path.is_dir() else path.parent) / "config.json")
     if config.get("_class_name") != "MOSSImageTransformer" or config.get("quantization_config"):
         raise ValueError("请选择 MOSS-Image Base 原始未量化 DiT。")
@@ -135,9 +135,27 @@ def transformer_config(path: Path) -> dict:
 def load_transformer(path: Path, config: dict, *, device, dtype, checkpointing="none"):
     if dtype not in {torch.float32, torch.bfloat16}:
         raise ValueError("MOSS-Image 主模型计算精度请选择 BF16 或 FP32。")
-    transformer_config(path)
+    path = Path(path)
+    fused = is_fused_singlefile(path)
+    before = path.stat() if fused else None
+    validated = transformer_config(path)
+    if config != validated:
+        raise ValueError("MOSS-Image 加载配置与权重结构不符。")
     with torch.device("meta"):
         model = MOSSImageTransformer(**config, checkpointing=checkpointing)
-    for file in weight_files(path, "diffusion_pytorch_model")[0]:
-        model.load_state_dict(load_file(str(file), device="cpu"), strict=False, assign=True)
+    if fused:
+        state = load_file(str(path), device="cpu")
+        after = path.stat()
+        if any(getattr(before, key) != getattr(after, key)
+               for key in ("st_size", "st_mtime_ns", "st_ctime_ns", "st_ino", "st_dev")):
+            raise ValueError("MOSS-Image 权重文件在加载期间发生变化，请重试。")
+        # Comfy's main projections concatenate output rows in q, k, v order.
+        for index in range(config["num_layers"]):
+            prefix = f"layers.{index}.proj."
+            for name, tensor in zip(("q", "k", "v"), state.pop(prefix + "qkv.weight").chunk(3, dim=0), strict=True):
+                state[prefix + name + ".weight"] = tensor
+        model.load_state_dict(state, strict=True, assign=True)
+    else:
+        for file in weight_files(path, "diffusion_pytorch_model")[0]:
+            model.load_state_dict(load_file(str(file), device="cpu"), strict=False, assign=True)
     return model.to(device=device, dtype=dtype).eval()

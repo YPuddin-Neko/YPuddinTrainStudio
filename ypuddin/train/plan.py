@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ from ypuddin.data import BucketBatchSampler, IndexDB
 from ypuddin.data.dataset import DataConfigError, DataLayout, item_geometry, prepare_data_layout
 from ypuddin.data.native import NativeBatchSampler, microbatch_indices, native_size
 from ypuddin.models import get_family
-from ypuddin.models.base import LatentSpec
+from ypuddin.models.base import LatentSpec, ModelFamily
 from ypuddin.runtime_compile import CompileEnvironmentError, validate_compile_environment
 from ypuddin.runtime_profiles import current_profile
 
@@ -701,12 +702,14 @@ def plan(
     index_db_path: str | Path | None = None,
     device: str | torch.device | None = None,
     check_compile: bool = True,
+    validate_model: Callable[[ModelFamily, ModelConfig], list[str]] | None = None,
 ) -> dict[str, Any]:
     """Plan without loading weights. None is an offline target-hardware estimate.
 
     Pass the execution device from CLI/service to enforce hardware constraints and account
     for CPU/MPS fp32 execution. This does not require target CUDA hardware to be locally present.
     Cache-only workers set check_compile=False because they never compile the model.
+    Services may supply validation based on their persisted model admission records.
     """
     out: dict[str, Any] = {
         "ok": True,
@@ -909,7 +912,9 @@ def plan(
             }
         )
     try:
-        out["errors"] += [{"loc": "model", "msg": message} for message in family.validate_config(cfg.model)]
+        model_errors = (validate_model(family, cfg.model) if validate_model is not None
+                        else family.validate_config(cfg.model))
+        out["errors"] += [{"loc": "model", "msg": message} for message in model_errors]
     except (OSError, ValueError) as e:
         out["errors"].append({"loc": "model", "msg": str(e)})
 

@@ -715,9 +715,13 @@ def check_moss_paths(path: Path, kind: str, allowed, *, tokenizer_path=None, com
     """Check the actual local files selected by the MOSS loader before it opens them."""
     from types import SimpleNamespace
 
-    from ypuddin.models.moss_image.loading import component_paths, tokenizer_directory, weight_files
+    from ypuddin.moss_singlefile import is_fused_singlefile
 
     path = _moss_path(path, allowed)
+    if kind == "dit" and is_fused_singlefile(path):
+        return {kind: path}
+    from ypuddin.models.moss_image.loading import component_paths, tokenizer_directory, weight_files
+
     if complete:
         directory = path if path.is_dir() else path.parent
         if directory.name == "transformer":
@@ -768,6 +772,20 @@ def check_moss_paths(path: Path, kind: str, allowed, *, tokenizer_path=None, com
 
 
 def _moss_component(path, allowed, budget, *, original=None):
+    from ypuddin.moss_singlefile import is_fused_singlefile, validate_fused_singlefile
+
+    if is_fused_singlefile(path):
+        path = _moss_path(original or path, allowed)
+        validate_fused_singlefile(path, authenticate=False)
+        budget["files"] += 1
+        if budget["files"] > MAX_FILES:
+            raise ValueError("too many model shards")
+        return {
+            "path": str(path), "family": "moss_image", "family_candidates": ["moss_image"], "kind": "dit",
+            "dtype": "bf16", "dtypes": {}, "confidence": "high",
+            "evidence": ["MOSS-Image BF16 single-file fused projections and complete tensor geometry"],
+            "warnings": [], "files_inspected": 1,
+        }
     root = path if path.is_dir() else path.parent
     index = (_json(_contained(root, root / "model_index.json", allowed, "model index"), CONFIG_LIMIT)
              if (root / "model_index.json").is_file() else {})

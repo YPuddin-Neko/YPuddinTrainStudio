@@ -8,7 +8,7 @@ type Copy = [string, string];
 export const MOSS_WEIGHT_COPY: Record<string, { label: Copy; help: Copy }> = {
   dit_path: {
     label: ['MOSS-Image Base DiT', 'MOSS-Image Base DiT'],
-    help: ['选择 MOSS-Image Base 完整模型目录、transformer 目录，或原始未量化的 safetensors 文件；单文件旁需有配套 config.json。\n完整模型包可自动读取内含或已登记共用的文本编码器、VAE 和分词器。单独填写的组件路径优先。', 'Select a MOSS-Image Base package folder, transformer folder, or original unquantized safetensors file with its matching config.json alongside it.\nA full package resolves its bundled or registered shared text encoder, VAE and tokenizer. Explicit component paths take priority.'],
+    help: ['选择 MOSS-Image Base 完整模型目录、transformer 目录，或原始未量化的 safetensors 文件；原始单文件旁需有配套 config.json。\n也支持 Comfy-Org 的 MOSS-Image Base BF16 单文件，无需配套 config.json。\n完整模型包可自动读取内含或已登记共用的文本编码器、VAE 和分词器。单独填写的组件路径优先。', 'Select a MOSS-Image Base package folder, transformer folder, or original unquantized safetensors file with its matching config.json alongside it.\nThe MOSS-Image Base BF16 single file from Comfy-Org is also supported and needs no accompanying config.json.\nA full package resolves its bundled or registered shared text encoder, VAE and tokenizer. Explicit component paths take priority.'],
   },
   text_encoder_path: {
     label: ['Qwen3.5-9B 文本编码器', 'Qwen3.5-9B text encoder'],
@@ -312,7 +312,7 @@ export const FIELD_HELP: Record<string, Copy> = {
 
 const MODEL_PATH_HINTS: Record<string, Record<string, Copy>> = {
   moss_image: {
-    dit_path: ['MOSS-Image Base 完整目录、transformer 目录或原始权重文件。', 'MOSS-Image Base package, transformer folder or original weights file.'],
+    dit_path: ['MOSS-Image Base 模型目录、原始权重或 Comfy-Org BF16 单文件。', 'MOSS-Image Base folder, original weights or Comfy-Org BF16 single file.'],
     text_encoder_path: ['配套 Qwen3.5-9B 文本编码器，使用完整模型包时可留空。', 'Matching Qwen3.5-9B text encoder; optional with the full package.'],
     vae_path: ['MOSS-Image 小型解码器或 FLUX.2 完整解码器 VAE；使用完整模型包时可留空。', 'MOSS-Image small-decoder or FLUX.2 full-decoder VAE; optional with the full package.'],
     tokenizer_path: ['留空自动查找配套的本地分词器目录。', 'Blank finds the matching local tokenizer folder.'],
