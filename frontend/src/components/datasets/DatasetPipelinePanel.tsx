@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ScanLine, Loader2, RefreshCw, X, FolderOpen, ScanSearch, ListChecks, Wand2, Tags, PencilLine, Layers, Image as ImageIcon, CircleAlert, TriangleAlert, Copy as CopyIcon, type LucideIcon } from 'lucide-react';
+import { ScanLine, RefreshCw, X, FolderOpen, ScanSearch, ListChecks, Wand2, Tags, PencilLine, Layers, Image as ImageIcon, CircleAlert, TriangleAlert, Copy as CopyIcon, type LucideIcon } from 'lucide-react';
 import { apiClient, apiUrl } from '../../api/client';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
@@ -20,7 +20,7 @@ import TaggingStage from './TaggingStage';
 import AutoMaskPanel from './AutoMaskPanel';
 import type { WorkspaceDataset } from './ProjectDatasetCards';
 import { SlidingIndicator } from '../motion';
-import { LazyImage } from '../Loading';
+import { LazyImage, LoadingNote } from '../Loading';
 import { useEnterAnimation } from '../../utils/motion';
 import { useWorkspaceHeight } from '../projects/useWorkspaceHeight';
 import OverflowStrip from '../OverflowStrip';
@@ -150,7 +150,7 @@ export default function DatasetPipelinePanel({ projectId, versionId, readOnly = 
     {snapshot?.stale && (stage === 'inspect' || stage === 'prepare') && <p className="pipeline-note" role="status">{changedInputs ? text(`${changedInputs}有变化，当前显示上次结果，请重新检查。`, `${changedInputs} changed. The previous report is shown; inspect again to update it.`) : text('检查结果需要更新，当前显示上次结果，请重新检查。', 'The previous report needs updating. Inspect the data again.')}</p>}
     {failed && <div role="alert" className="workspace-message error pipeline-failure"><span>{text(`${actionName(failed.action)}失败`, `${actionName(failed.action)} failed`)}{failed.error ? `：${failed.error}` : ''}{failed.result.rolled_back ? text('。更改已回滚，原文件已恢复。', '. Changes were rolled back and the original files restored.') : ''}</span>{!['tag','captions','paint'].includes(failed.action) && <button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={() => void perform({}, `/dataset-pipeline/operations/${failed.id}/retry`)}>{text('重试','Retry')}</button>}<button type="button" className="ui-btn ui-btn-quiet ui-btn-icon ui-btn-sm" aria-label={text('关闭提示','Dismiss')} onClick={() => setDismissed(failed.id)}><X size={14}/></button></div>}
     {active && !hosted && progress}
-    {query.isPending && <p role="status"><Loader2 size={14} className="animate-spin"/>{text('读取数据状态…','Loading dataset status…')}</p>}
+    {query.isPending && <LoadingNote label={text('读取数据状态…','Loading dataset status…')}/>}
     <div className="pipeline-stage-body" ref={stageBody}>
     {stage === 'datasets' ? <div className={readOnly ? '' : 'version-data-layout'}>{!readOnly && <fieldset disabled={locked}>{importPanel}</fieldset>}{datasetList}</div> : stage === 'curate' ? <DatasetCurationPanel datasets={datasets} readOnly={locked} onChanged={onChanged} onAddImages={() => setStage('datasets')}/> : stage === 'preprocess' ? <div className="pipeline-preprocess"><AutoMaskPanel projectId={projectId} versionId={versionId} locked={locked} latest={latest('automask')} detection={latest('detectheads')} running={hosted ? progress : null} onStart={startOperation} onUndo={undo} onRefresh={refresh}/><CaptionViewer key={`${projectId}/${versionId}/paint`} projectId={projectId} versionId={versionId} readOnly={readOnly || snapshot?.archived || locked} editing initialDatasetId={params.get('dataset') || ''}/></div> : stage === 'tagging' ? <TaggingStage projectId={projectId} versionId={versionId} locked={locked} latest={latest} active={hosted ? active : undefined} progress={hosted ? progress : null} onStart={startOperation} onUndo={undo} onReview={() => setStage('captions')}/> : stage === 'reg' ? <RegularizationPanel projectId={projectId} versionId={versionId} readOnly={readOnly || snapshot?.archived} onChanged={onChanged}/> : <>
       {stage !== 'captions' && <div className="pipeline-toolbar"><h3 className="sr-only">{tabs.find(tab => tab[0] === stage)?.[1]}</h3><button type="button" className="ui-btn ui-btn-primary" disabled={locked} onClick={() => void perform({action: 'inspect'})}><ScanLine size={15}/>{text('检查数据','Inspect data')}</button><button type="button" className="ui-btn ui-btn-icon" aria-label={text('刷新数据状态','Refresh pipeline')} title={text('刷新数据状态','Refresh pipeline')} onClick={refresh}><RefreshCw size={15}/></button>{stage === 'inspect' && inspectionTime && <span className="pipeline-inspection-last">{text('上次检查 ' + inspectionTime + ' · ' + (snapshot?.stale ? '需要重新检查' : '无变化'), 'Checked ' + inspectionTime + ' · ' + (snapshot?.stale ? 'Reinspection needed' : 'No changes'))}</span>}</div>}
