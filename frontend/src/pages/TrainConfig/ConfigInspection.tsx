@@ -1,8 +1,9 @@
 import {useEffect, useState} from 'react';
-import {CheckCircle2, Loader2} from 'lucide-react';
+import {CheckCircle2} from 'lucide-react';
 import {apiClient} from '../../api/client';
 import type {components} from '../../api/generated';
 import Dialog from '../../components/Dialog';
+import {LoadingNote} from '../../components/Loading';
 import {configFieldLabel, presentValueAdvice} from '../../utils/configPresentation';
 import {formatApiError} from '../../utils/errors';
 import {useWorkspaceText} from '../../utils/workspaceText';
@@ -51,12 +52,12 @@ export default function ConfigInspection({config,onApply,onChange,onClose,valida
   };
   return <Dialog title={text('参数检查','Parameter check')} wide onClose={onClose}>
     <div className="config-inspection">
-      {error ? <p role="alert">{error}<button type="button" className="ui-btn ui-btn-sm" onClick={()=>setAttempt(value=>value+1)}>{text('重试','Retry')}</button></p> : !current ? <p role="status">{text('正在检查参数…','Checking parameters…')}</p> : <>
+      {error ? <p role="alert">{error}<button type="button" className="ui-btn ui-btn-sm" onClick={()=>setAttempt(value=>value+1)}>{text('重试','Retry')}</button></p> : !current ? <LoadingNote className="config-inspection-loading" label={text('正在检查参数…','Checking parameters…')}/> : <>
         {current.fields.length ? <><p>{text('选择要移除的参数。暂不使用的参数可以保留，方便以后切换配置。','Select fields to remove. Inactive fields can be kept for future configuration changes.')}</p>
           <div className="config-inspection-list">{current.fields.map(field=>{const label=configFieldLabel(field.loc,field.loc,text('zh','en')==='en');return <label className="config-inspection-field" key={fieldKey(field)}>
             <input type="checkbox" checked={selected.has(fieldKey(field))} aria-label={text(`移除 ${field.loc}`,`Remove ${field.loc}`)} onChange={event=>setSelected(previous=>{const next=new Set(previous);if(event.target.checked)next.add(fieldKey(field));else next.delete(fieldKey(field));return next;})}/>
             <span>{label!==field.loc && <strong>{label}</strong>}<code>{field.loc}</code><small>{field.kind==='unknown'?text('当前版本不识别','Not recognized by this version'):text('当前条件下不使用','Inactive in this configuration')}</small><pre>{JSON.stringify(field.value,null,2)}</pre></span>
-          </label>;})}</div></> : valid ? <p role="status" className="config-inspection-success"><CheckCircle2 size={22} aria-hidden="true"/>{text('所有参数均已设置正确','All parameters are configured correctly')}</p> : validation?.pending ? <p role="status"><Loader2 size={16} className="animate-spin"/>{text('正在检查参数…','Checking parameters…')}</p> : null}
+          </label>;})}</div></> : valid ? <p role="status" className="config-inspection-success"><CheckCircle2 size={22} aria-hidden="true"/>{text('所有参数均已设置正确','All parameters are configured correctly')}</p> : validation?.pending ? <LoadingNote className="config-inspection-loading" label={text('正在检查参数…','Checking parameters…')}/> : null}
         {!!current.advice?.length && <div className="config-inspection-advice">
           <strong>{text('以下取值会被取整','These values are rounded')}</strong>
           {current.advice.map(item=>{const advice=presentValueAdvice(item,text('zh','en')==='en');return advice && <div className="config-inspection-advice-item" key={advice.loc}>

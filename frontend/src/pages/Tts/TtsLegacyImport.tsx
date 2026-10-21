@@ -1,9 +1,10 @@
 import React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Download, Loader2 } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ttsApi, type TtsConfig, type TtsConfigResponse, type TtsSourcesResponse, type TtsVersionConfig } from '../../api/tts';
 import Dialog from '../../components/Dialog';
+import { LoadingNote } from '../../components/Loading';
 import StudioSelect from '../../components/StudioSelect';
 import { formatApiError } from '../../utils/errors';
 import { projectUrl } from '../../utils/projectVersions';
@@ -140,7 +141,7 @@ export default function TtsLegacyImport({ projectId: pid, versionId: vid, readOn
       <div className="tts-legacy-import">
         <p>{text('将选中内容写入当前版本。旧草稿保留，旧任务仍在任务队列中。', 'Write selected items into this version. The legacy draft is preserved; old jobs remain in the queue.')}</p>
         <p className="tts-legacy-target">{text('目标版本', 'Target version')}：{pid} / {vid}</p>
-        {busy && <p role="status"><Loader2 size={14} className="animate-spin"/>{text('正在处理…', 'Working…')}</p>}
+        {busy && <p><LoadingNote label={text('正在处理…', 'Working…')}/></p>}
         {error && <p role="alert" className="workspace-message error">{error}</p>}
         {global && current && sources && <>
           {local && !plan && <StudioSelect aria-label={text('旧草稿来源', 'Legacy draft source')} value={source} onValueChange={setSource} disabled={busy} options={[{value:'global',label:text('服务端旧配置', 'Legacy server configuration')},{value:'browser',label:text('此浏览器未保存草稿', 'Unsaved draft in this browser')}]}/>}

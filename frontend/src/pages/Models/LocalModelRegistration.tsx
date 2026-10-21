@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { FamilyInfo } from '../../api/types';
 import { PathInput } from '../../components/PathBrowser';
+import { LoadingNote } from '../../components/Loading';
 import StudioSelect from '../../components/StudioSelect';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -71,7 +72,7 @@ export default function LocalModelRegistration({ initialFamily, initialKind = ''
     <p className="model-help-text">{text('选择权重文件或完整编码器目录。','Select a weight file or complete encoder directory.')}</p>
     <fieldset disabled={saving}>
       <label>{text('文件路径','File path')}<PathInput ariaLabel={text('文件路径','File path')} value={path} onChange={value=>{setPath(value);setDetected(null);inspectedPath.current='';}}/></label>
-      {detecting&&<p role="status"><Loader2 size={14} className="animate-spin"/>{text('正在检测模型…','Inspecting model…')}</p>}
+      {detecting&&<p><LoadingNote label={text('正在检测模型…','Inspecting model…')}/></p>}
       {ready&&<p role="status" data-testid="model-inspection-status">{detected.confidence==='high'?text('已识别模型结构','Model structure identified'):text('部分信息未识别，请确认下方选项','Some information is unknown; confirm the choices below')}</p>}
       <div className="model-form-grid">
         <label>{text('模型系列','Model family')}<StudioSelect aria-label={text('登记模型系列','Registration model family')} value={family} disabled={!ready||!!detected?.family&&registrationFamilies.length<=1} onValueChange={next=>{setFamily(next);if(!detected?.kind)setKind('');}} placeholder={text('请选择','Choose')} options={registrationFamilies.map(item=>({value:item.name,label:item.label||item.name}))}/></label>
