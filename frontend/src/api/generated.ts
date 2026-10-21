@@ -7512,6 +7512,30 @@ export interface components {
                 [key: string]: number;
             };
             /**
+             * Momentum
+             * @description Muon 矩阵梯度的动量系数，默认 0.95；辅助 AdamW 使用 β1、β2。
+             * @default 0.95
+             */
+            momentum: number;
+            /**
+             * Nesterov
+             * @description Muon 使用当前梯度与动量组合计算更新方向；关闭时只使用动量。
+             * @default true
+             */
+            nesterov: boolean;
+            /**
+             * Ns Steps
+             * @description Muon 的 Newton–Schulz 迭代次数，默认 5；范围 1 至 10。迭代用于近似正交化矩阵更新方向，会增加每步计算量。
+             * @default 5
+             */
+            ns_steps: number;
+            /**
+             * Aux Lr Ratio
+             * @description 辅助 AdamW 学习率相对各参数组学习率的倍率。默认 0.005，基础学习率为 0.02 时得到 0.0001；用于偏置、归一化、标量、嵌入、模型输入输出及非二维参数，并随同一调度器变化。
+             * @default 0.005
+             */
+            aux_lr_ratio: number;
+            /**
              * D Coef
              * @description 自适应步长倍率。默认 1；放大或缩小优化器估计的步长，调大通常更新更强。基础学习率由优化器管理时，用它调整训练强度。
              * @default 1

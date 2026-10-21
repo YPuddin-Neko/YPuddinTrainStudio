@@ -20,6 +20,7 @@ from ypuddin.adapters.frozen import FrozenLinear
 from ypuddin.adapters.io import model_identity
 from ypuddin.config import TrainConfig, write_config
 from ypuddin.config.export_metadata import USER_METADATA_FIELDS, user_modelspec_metadata
+from ypuddin.config.optimizer_rules import optimizer_key
 
 from .full_parameter_groups import no_decay_names, parameter_category, parameter_rate
 
@@ -85,6 +86,11 @@ class FullTrainingSet:
         if cfg is None:
             return []
         excluded = no_decay_names(self.modules) if cfg.optimizer.exclude_bias_norm_from_weight_decay else set()
+        roles = {}
+        if optimizer_key(cfg.optimizer.type) == "muon":
+            from ypuddin.optim.muon_groups import muon_parameter_roles
+
+            roles = muon_parameter_roles(self)
         rows = {}
         seen = set()
         for name, parameter in self._names.items():
@@ -93,6 +99,11 @@ class FullTrainingSet:
             seen.add(id(parameter))
             lr, source = parameter_rate(name, cfg, cfg.optimizer.lr, cfg.optimizer.group_lr)
             category = parameter_category(name, cfg.model.family)
+            if roles:
+                role = roles[id(parameter)]
+                category = f"{category}/{role}"
+                if role == "adamw":
+                    lr *= cfg.optimizer.aux_lr_ratio
             decay = 0.0 if name in excluded else cfg.optimizer.weight_decay
             key = (category, lr, decay, not parameter.requires_grad, source)
             row = rows.setdefault(key, {

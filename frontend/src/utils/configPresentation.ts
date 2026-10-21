@@ -60,6 +60,8 @@ const labels: Record<string, string> = {
   'objective.scale_v_pred_loss_like_noise_pred': '按 ε 预测尺度缩放 v 损失', 'objective.v_pred_like_loss': '附加 v 预测损失系数', 'objective.debiased_estimation_loss': '去偏损失加权',
   'objective.snr_gamma': 'SNR Gamma', 'objective.ip_noise_gamma': '输入扰动强度', 'optimizer.type': '优化器',
   'optimizer.lr': '学习率', 'optimizer.weight_decay': '权重衰减', 'optimizer.betas': '更新平滑程度',
+  'optimizer.momentum': 'Muon 动量', 'optimizer.nesterov': 'Nesterov 动量',
+  'optimizer.ns_steps': '正交化迭代次数', 'optimizer.aux_lr_ratio': '辅助 AdamW 学习率比例',
   'optimizer.eps': '数值稳定常量', 'optimizer.args': '优化器附加参数', 'optimizer.grad_clip_norm': '梯度保护阈值',
   'optimizer.kahan': '低精度更新补偿', 'optimizer.fused_backward': '融合反向更新', 'optimizer.group_lr': '参数组学习率',
   'optimizer.d_coef': '自适应步长倍率（D Coef）', 'optimizer.d0': '初始步长估计（D0）',
@@ -154,6 +156,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (english && path.startsWith('optimizer.')) {
     const optimizerLabels: Record<string, string> = {
       type: 'Optimizer', lr: 'Learning rate', weight_decay: 'Weight decay', betas: 'Update smoothing', eps: 'EPS · numerical stability',
+      momentum: 'Muon momentum', nesterov: 'Nesterov momentum', ns_steps: 'Orthogonalization iterations', aux_lr_ratio: 'Auxiliary AdamW learning-rate ratio',
       args: 'Extra optimizer arguments', grad_clip_norm: 'Gradient clipping threshold', kahan: 'Low-precision update compensation', group_lr: 'Parameter-group learning rates',
       d_coef: 'Adaptive step multiplier (D Coef)', d0: 'Initial step estimate (D0)', beta3: 'Step estimate smoothing (β3)', prodigy_steps: 'Adaptive estimation steps',
       use_bias_correction: 'Early-statistics bias correction', safeguard_warmup: 'Warmup estimation safeguard', growth_rate: 'Step-growth limit', slice_p: 'Estimation sampling interval',
@@ -222,7 +225,16 @@ export function schedulerTypeHelp(english = false, options?: string[]) {
 
 /** Explain what a choice changes before introducing the implementation term. */
 export function configFieldHelp(path: string, fallback: string | undefined, english = false, optimizerType?: string, scheduleFree = false) {
+  if (path === 'optimizer.args' && optimizerType === 'muon') return english
+    ? 'Muon uses its dedicated parameter controls. Resolve conflicting imported values or remove unsupported arguments.'
+    : 'Muon 使用专用参数控件。导入配置中的冲突项或不支持的参数，需要修改或移除。';
   if (path === 'scheduler.type') return schedulerTypeHelp(english);
+  if (path === 'optimizer.betas' && optimizerType === 'muon') return english
+    ? 'Applies only to auxiliary AdamW updates: β1 smooths the update direction and β2 smooths the estimate of gradient size. Defaults: 0.9 and 0.99. The Muon branch uses its separate momentum setting.'
+    : '仅作用于辅助 AdamW：β1 平滑更新方向，β2 平滑梯度大小的估计，默认分别为 0.9 和 0.99。Muon 分支使用单独的动量设置。';
+  if (path === 'optimizer.eps' && optimizerType === 'muon') return english
+    ? 'Prevents division by values near zero in auxiliary AdamW updates only. Default: 1e-8. It does not affect Muon orthogonalization.'
+    : '仅用于辅助 AdamW，防止除以接近零的数，默认 1e-8。不影响 Muon 的正交化更新。';
   if (path === 'optimizer.eps' && optimizerType === 'prodigy_plus_sf') return english
     ? 'Prevents division by very small estimates. Select Adam-atan2 to use that mode instead; StableAdamW and FOCUS must be disabled.'
     : '防止梯度大小估计过小时除法不稳定。选择 Adam-atan2 才会切换算法，此时需关闭 StableAdamW 和 FOCUS。';
@@ -271,6 +283,9 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
 }
 
 export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false, dataset?: {resolution_mode?:string;native_overflow?:string;crop_anchor?:string}) {
+  if (path === 'optimizer.args' && optimizerType === 'muon') return english
+    ? 'Resolve conflicting values or remove unsupported arguments.'
+    : '请调整冲突值或移除不支持的参数。';
   const cropHints: Record<string,[string,string]> = {
     top_left:['保留左上方，从右侧和下方裁掉多余部分。','Keep the top left; trim excess from the right and bottom.'],
     top:['保留顶部，从下方裁掉多余部分。','Keep the top; trim excess from the bottom.'],
@@ -289,7 +304,9 @@ export function configFieldHint(path: string, english = false, optimizerType?: s
         ? ['使用原图尺寸；超过下方上限时停止并报错。', 'Uses original image sizes; stops with an error if a limit below is exceeded.']
         : ['使用原图尺寸；超过下方上限时等比缩小。', 'Uses original image sizes; scales down proportionally if a limit below is exceeded.']
       : ['按训练分辨率设定目标尺寸，图片按长宽比分组。', 'Groups images by aspect ratio at the configured training resolutions.'],
-    'optimizer.betas': scheduleFree
+    'optimizer.betas': optimizerType === 'muon'
+      ? ['只调整辅助 AdamW 的平滑程度，默认 0.9、0.99。', 'Smooths auxiliary AdamW updates only; defaults are 0.9 and 0.99.']
+      : scheduleFree
       ? ['分别控制权重平均与梯度大小估计，通常保留默认值。', 'Controls weight averaging and gradient-size estimation; usually keep the defaults.']
       : ['数值越大，反应越平缓；通常保留默认值。', 'Higher values react more smoothly; usually keep the defaults.'],
     'optimizer.grad_clip_norm': optimizerType === 'prodigy_plus_sf'
@@ -297,7 +314,9 @@ export function configFieldHint(path: string, english = false, optimizerType?: s
       : optimizerType === 'automagic'
       ? ['外部梯度裁剪，默认设为 0 关闭；与优化器内部更新保护不同。', 'External gradient clipping: set to 0 to disable (default); it differs from internal update clipping.']
       : ['限制异常大梯度；通常保留 1，设为 0 关闭。', 'Limits unusually large gradients; usually keep 1. Set to 0 to disable.'],
-    'optimizer.eps': optimizerType === 'prodigy_plus_sf'
+    'optimizer.eps': optimizerType === 'muon'
+      ? ['只用于辅助 AdamW 的数值稳定，默认 1e-8。', 'Numerical stability for auxiliary AdamW only; default 1e-8.']
+      : optimizerType === 'prodigy_plus_sf'
       ? ['通常保留默认值；选择 Adam-atan2 才切换算法，需关闭 StableAdamW 和 FOCUS。', 'Usually keep the default. Selecting Adam-atan2 changes the algorithm; StableAdamW and FOCUS must be off.']
       : ['防止除以接近零的数；通常保留默认值。', 'Prevents division by values near zero; usually keep the default.'],
   };
@@ -361,7 +380,7 @@ export function configOptionLabel(path: string, option: string, english = false,
     'sampling.adapter_merge_dtype': { auto:['自动（跟随底模）', 'Auto (follow base model)'], bf16:['BF16', 'BF16'], fp16:['FP16', 'FP16'], fp32:['FP32', 'FP32'] },
     'sampling.noise': { comfyui:['ComfyUI', 'ComfyUI'], a1111:['A1111 WebUI', 'A1111 WebUI'] },
     'sampling.scheduler': { uniform:['均匀', 'Uniform'], simple:['简单', 'Simple'], sgm_uniform:['SGM 均匀', 'SGM Uniform'], normal:['常规', 'Normal'] },
-    'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free']},
+    'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free'],muon:['Muon','Muon']},
     'dataset.native_batch_mode': { physical: ['真实合批', 'Physical'], area: ['按面积拆微批', 'Area'] },
     'dataset.native_max_pixels_mode': {auto: ['自动分辨率优先', 'Auto, resolution first'], auto_vram: ['自动显存优先', 'Auto, VRAM first'], custom: ['自定义', 'Custom']},
     'dataset.resolution_mode': { bucket: ['按设定分辨率训练', 'Bucket'], native: ['按原图尺寸训练', 'Native'] },
@@ -415,12 +434,21 @@ export function presentConfigIssues(errors: ValidationIssue[], english = false):
     const location = (Array.isArray(error.loc) ? error.loc.map(String).join('.') : String(error.loc || '')).replace(/^body\./, '').replace(/^config\./, '');
     const leading = detail.match(/^([a-z_]+(?:\.[a-z_0-9]+)+):\s*/);
     const embedded = leading?.[1] ?? detail.match(/\b(model\.[a-z_]+)\b/)?.[1];
-    const path = embedded && (!location || location === embedded.split('.')[0]) ? embedded : location;
+    const unknownMuonArgs = detail.match(/^Muon does not support extra optimizer\.args: (.+)$/);
+    const conflictingArg = detail.match(/^optimizer\.([a-z_]+) conflicts with optimizer\.args\.\1; keep one value in the dedicated field$/);
+    const invalidArgs = detail === 'optimizer.args must be an object of named optimizer parameters';
+    const argumentIssue = (!location || location === 'optimizer' || location === 'optimizer.args') && !!(unknownMuonArgs || conflictingArg || invalidArgs);
+    const path = argumentIssue ? 'optimizer.args' : embedded && (!location || location === embedded.split('.')[0]) ? embedded : location;
     const label = configFieldLabel(path, path || (english ? 'Configuration' : '配置'), english);
     const type = typeof error.type === 'string' ? error.type : undefined;
     const ctx = error.ctx && typeof error.ctx === 'object' ? error.ctx as Record<string, unknown> : undefined;
     let message = describeValidation(error, { label, percent: PERCENTAGE_FIELDS.includes(path), english }) ?? detail;
-    if (memory) message = english
+    if (argumentIssue) message = unknownMuonArgs
+      ? english ? `Muon does not support these extra arguments: ${unknownMuonArgs[1]}. Remove them to continue.` : `Muon 不支持这些附加参数：${unknownMuonArgs[1]}，请移除。`
+      : conflictingArg
+        ? english ? `Extra argument ${conflictingArg[1]} conflicts with its dedicated field. Correct or remove the extra value.` : `附加参数 ${conflictingArg[1]} 与专用字段冲突，请修正或移除附加值。`
+        : english ? 'Extra arguments must be a named-parameter object. Remove the invalid value.' : '附加参数必须是键值对象，请移除无效值。';
+    else if (memory) message = english
       ? `Estimated peak memory ${memory[1]} exceeds ${memory[2]} (${memory[3]}), so training cannot start. Turn on gradient checkpointing, reduce the batch size or lower the training size.`
       : `预计显存峰值 ${memory[1]}，超过 ${memory[2]} 的 ${memory[3]} 容量，无法开始训练。开启梯度检查点、减小批量大小或降低训练尺寸都能减少显存占用。`;
     else if (message === detail && !english) {

@@ -315,6 +315,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         text('优化器决定每一步怎样用梯度更新参数，不同优化器对学习率的要求和显存占用不同。', 'The optimizer decides how each step turns gradients into weight updates; optimizers differ in the learning rate they need and the memory they use.'),
         ...optionLines({
           adamw: ['默认选择，稳定通用。', 'The default; stable and general-purpose.'],
+          muon: ['二维隐藏权重及 LoRA／LoKr 的二维因子使用 Muon；偏置、归一化、标量、嵌入、模型输入输出权重及卷积等非二维参数使用辅助 AdamW。两者跟随同一个学习率调度器。', 'Uses Muon for two-dimensional hidden weights and two-dimensional LoRA / LoKr factors. Biases, normalization, scalars, embeddings, model input/output weights, and non-matrix parameters such as convolution kernels use auxiliary AdamW. Both follow the same learning-rate scheduler.'],
           adam: ['经典 Adam，权重衰减的算法与 AdamW 不同，一般选 AdamW。', 'Classic Adam; it applies weight decay differently from AdamW, which is usually preferred.'],
           sgd: ['最省显存，但对学习率很敏感，训练 LoRA 很少用。', 'Uses the least memory but is very sensitive to the learning rate; rarely used for LoRA.'],
           adamw8bit: ['AdamW 的 8 位版本，优化器状态的显存约为原来的四分之一，效果接近。', 'AdamW with 8-bit state: about a quarter of the optimizer-state memory, with similar results.'],

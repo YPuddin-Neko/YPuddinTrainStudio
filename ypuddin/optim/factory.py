@@ -32,6 +32,7 @@ _BUILTIN: dict[str, str] = {
     "came": "pytorch_optimizer.CAME",
     "adamw_sf": "schedulefree.AdamWScheduleFree",
     "automagic": "ypuddin.optim.automagic.Automagic",
+    "muon": "ypuddin.optim.muon.Muon",
 }
 
 SCHEDULE_FREE = {"prodigy_plus_sf", "adamw_sf"}
@@ -93,13 +94,14 @@ def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) ->
         "prodigy_plus_sf",
         "adamw_sf",
         "came",
+        "muon",
     ):
         kwargs["betas"] = tuple(cfg.betas)
     if key == "came":
         # The shared beta control has two values; CAME additionally requires
         # its confidence-statistic decay (the upstream default is 0.9999).
         kwargs["betas"] = (*cfg.betas, 0.9999)
-    if key in ("adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic"):
+    if key in ("adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic", "muon"):
         kwargs["eps"] = cfg.eps
     if key == "adafactor":
         kwargs.update({"scale_parameter": False, "relative_step": False, "warmup_init": False})
@@ -113,6 +115,11 @@ def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) ->
             value = getattr(cfg, name)
             kwargs[name] = math.inf if name == "growth_rate" and value is None else value
     groups = [dict(g) for g in param_groups]
+    if key == "muon":
+        from .muon_groups import prepare_muon_groups
+
+        groups = prepare_muon_groups(cfg, groups)
+        kwargs.pop("aux_lr_ratio")
     _validate_managed_learning_rates(key, kwargs["lr"], groups)
     if getattr(cfg, "cpu_offload", False):
         from .cpu_offload import CPUOffloadAdamW
@@ -214,6 +221,8 @@ def optimizer_hyperparameter_snapshot(cfg: OptimizerConfig, optimizer: Optimizer
     keys = {"name", "betas", "eps", "weight_decay", "optimiser_version"}
     keys.update(optimizer_specific_fields(cfg.type))
     keys.update(cfg.args)
+    if optimizer_key(cfg.type) == "muon":
+        keys.update({"muon_role", "param_names", "muon_base_lr"})
     # A scheduler changes group.lr; its initial_lr remains the requested base.
     keys.discard("lr")
     return [{key: deepcopy(group[key]) for key in keys if key in group} for group in optimizer.param_groups]

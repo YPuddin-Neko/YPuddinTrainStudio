@@ -107,6 +107,9 @@ export const FIELD_HINTS: Record<string, Copy> = {
 
   'optimizer.type': ['更新参数的算法，AdamW 最通用。', 'Algorithm that updates weights; AdamW is the default.'],
   'optimizer.lr': ['每次更新的步长，过大不稳，过小学得慢。', 'Update size; too high is unstable, too low is slow.'],
+  'optimizer.momentum': ['平滑 Muon 更新方向，越接近 1 越依赖历史。', 'Smooths Muon updates; closer to 1 gives more weight to history.'],
+  'optimizer.ns_steps': ['每次 Muon 更新的正交化迭代次数，通常保留 5。', 'Orthogonalization iterations per Muon update; usually keep 5.'],
+  'optimizer.aux_lr_ratio': ['辅助 AdamW 学习率为各组基础学习率乘以此比例。', 'Each auxiliary AdamW group uses its base learning rate times this ratio.'],
   'optimizer.weight_decay': ['约束权重增长；通常保留默认值，设为 0 关闭。', 'Constrains weight growth; usually keep the default. Set to 0 to disable.'],
   'optimizer.args': ['当前优化器没有专用控件的额外参数。', 'Extra arguments without dedicated controls.'],
   'optimizer.group_lr': ['按模块分别设置学习率，留空统一使用上方值。', 'Per-module rates; blank uses the rate above.'],
@@ -210,6 +213,10 @@ export const FIELD_HINTS: Record<string, Copy> = {
 };
 
 export const FIELD_HELP: Record<string, Copy> = {
+  'optimizer.momentum': ['平滑 Muon 分支的梯度方向，默认 0.95。越接近 1，越依赖过去的方向；设为 0 不保留动量，须小于 1。', 'Smooths gradient directions in the Muon branch. Default: 0.95. Closer to 1 gives more weight to past directions; 0 keeps no momentum. Must be less than 1.'],
+  'optimizer.nesterov': ['使用 Nesterov 动量计算 Muon 更新方向，默认开启。关闭后使用普通动量，只影响 Muon 分支。', 'Uses Nesterov momentum for Muon update directions. On by default; turning it off uses ordinary momentum. Applies only to the Muon branch.'],
+  'optimizer.ns_steps': ['每次 Muon 更新中，使用 Newton–Schulz 迭代对更新矩阵做正交化。默认 5 次，通常保留；增加次数会增加更新计算量，最多 10 次，至少保留 1 次。', 'Newton–Schulz iterations used to orthogonalize the update matrix at each Muon update. Usually keep the default of 5. More iterations add update computation; use at least 1 and at most 10.'],
+  'optimizer.aux_lr_ratio': ['辅助 AdamW 的实际学习率 = 所属参数组或层的基础学习率 × 此比例，分组和逐层学习率覆盖同样适用。\n默认 0.005，基础学习率为 0.02 时，辅助 AdamW 为 1e-4。此比例须大于 0；Muon 与辅助 AdamW 跟随同一个学习率调度器。', 'The effective auxiliary AdamW learning rate is the base learning rate of its parameter group or layer multiplied by this ratio. Group and layer overrides use the same multiplier.\nDefault: 0.005. With a base learning rate of 0.02, auxiliary AdamW uses 1e-4. The ratio must be positive; Muon and auxiliary AdamW follow the same learning-rate scheduler.'],
   'objective.shift': ["训练时间步偏移，默认 3；大于 1 将样本推向高噪声，1 不偏移。公式为 t'=s·t/(1+(s-1)·t)。该字段只影响训练 shift 分布，预览另有采样 shift。", "Training timestep shift, default 3. Values above 1 move samples toward higher noise; 1 applies no shift. The formula is t'=s·t/(1+(s-1)·t). This affects only the training shift distribution; previews have a separate sampling shift."],
   'objective.resolution_reference_tokens': ['基础 Shift 对应的图像 token 数。Anima 的 1024×1024 图像对应 4096，实际 token 数由潜空间和 patch 尺寸计算。\n例如基础 Shift 为 3、参考值为 4096：实际 token 数为 16384 时偏移为 6，为 1024 时偏移为 1.5。这不是图像尺寸上限。', 'Image token count corresponding to the base shift. A 1024×1024 Anima image has 4096 tokens; actual tokens are calculated from latent and patch dimensions.\nFor a base shift of 3 and reference of 4096, 16384 tokens give a shift of 6, while 1024 give 1.5. This is not an image-size limit.'],
   'objective.infonoise_enabled': ['根据主训练数据在各噪声区间的原始 MSE 调整抽样概率，正则图片不更新统计。热身阶段混合基础分布与均匀探索；达到热身更新数、有效样本数和区间覆盖率后，自适应占比随覆盖率提高。\n基础分布可选均匀采样、逻辑正态分布、偏移采样或按分辨率修正 Shift。仅用于 Anima，损失须为 MSE、损失加权为 None，并关闭额外噪声修饰。\n自适应分布按实际时间步学习，不再次应用 Shift。关闭后保留下面的参数；完整恢复需与恢复点保持相同设置。', 'Adjusts sampling probabilities from raw MSE statistics of the main training data across noise bins. Regularization images do not update the statistics. Warmup mixes the baseline with uniform exploration; after the update, sample-count and coverage requirements are met, the adaptive share grows with coverage.\nThe baseline can be Uniform, Logit-Normal, Shift or Resolution-corrected Shift. Requires Anima, MSE loss, None loss weighting and no extra noise modifiers.\nThe adaptive distribution learns physical timesteps and receives no additional shift. Turning this off retains the parameters below; full resume requires the recovery point’s settings.'],

@@ -20,8 +20,8 @@ function assign(config: Config, path: string, value: unknown): Config {
   return result;
 }
 
-function optimizerSchema(schema: any) {
-  const section = schema?.properties?.optimizer;
+function optimizerSchema(schema: any, group = 'optimizer') {
+  const section = schema?.properties?.[group];
   return section?.$ref ? section.$ref.slice(2).split('/').reduce((node: any, key: string) => node?.[key], schema) : section;
 }
 
@@ -106,7 +106,7 @@ export function normalizeOptimizerConfig(schema: any, source: Config): Config {
 }
 
 /** Explicit algorithm changes start with that algorithm's defaults. Saved values are restored by the editor. */
-export function selectOptimizer(schema: any, config: Config, type: string): Config {
+export function selectOptimizer(schema: any, config: Config, type: string, selection: { previous?: Config; optimizer?: Config } = {}): Config {
   let next = assign(config, 'optimizer.type', type);
   const profile = capability(schema, next);
   const properties = optimizerSchema(schema)?.properties || {};
@@ -117,6 +117,15 @@ export function selectOptimizer(schema: any, config: Config, type: string): Conf
     next = assign(next, `optimizer.${name}`, property.default);
   }
   for (const [path, value] of Object.entries(profile?.defaults || {})) next = assign(next, path, value);
+  if (selection.optimizer) next = assign(next, 'optimizer', { ...next.optimizer, ...selection.optimizer });
+  // Release the previous algorithm's scheduler locks when the new one uses external scheduling.
+  const nextRules = optimizerRules(schema, next);
+  for (const path of Object.keys(optimizerRules(schema, selection.previous || config).fixed)) {
+    if (!path.startsWith('scheduler.') || path in nextRules.fixed || path in (profile?.defaults || {})) continue;
+    const field = path.slice('scheduler.'.length);
+    const fallback = optimizerSchema(schema, 'scheduler')?.properties?.[field]?.default;
+    if (fallback !== undefined) next = assign(next, path, fallback);
+  }
   return normalizeOptimizerConfig(schema, clearIncompatibleOptimizerSettings(schema, next));
 }
 

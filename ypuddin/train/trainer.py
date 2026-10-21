@@ -56,6 +56,7 @@ from ypuddin.config.compute_policy import (
 )
 from ypuddin.config.export_metadata import user_modelspec_metadata
 from ypuddin.config.io import config_hash_variants
+from ypuddin.config.optimizer_rules import optimizer_key
 from ypuddin.data import (
     BucketBatchSampler,
     DataBundle,
@@ -703,6 +704,10 @@ class Trainer:
         groups = self.adapters.param_groups(
             cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr
         )
+        if optimizer_key(cfg.optimizer.type) == "muon":
+            from ypuddin.optim.muon_groups import prepare_muon_groups
+
+            groups = prepare_muon_groups(cfg.optimizer, groups, self.adapters)
         if cfg.optimizer.cpu_offload:
             from .optimizer_memory import validate_cpu_offload_memory
 

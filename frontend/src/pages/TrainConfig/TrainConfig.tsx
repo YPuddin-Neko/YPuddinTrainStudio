@@ -11,6 +11,7 @@ import { Job, Plan, Preset, ModelAsset, DatasetInfo } from '../../api/types';
 import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
 import { mergeConfig } from '../../utils/config';
 import { intervalFieldPath, normalizeLegacyIntervals } from '../../utils/intervals';
+import { normalizeOptimizerConfig } from '../../utils/optimizerCapabilities';
 import { applyTrainingPreset, reusableTrainingPreset } from '../../utils/trainingPresets';
 import { formatApiError } from '../../utils/errors';
 import { fillDefaultModels, changeModelFamily, matchingTrainingDatasets } from '../../utils/workspaceConfig';
@@ -48,8 +49,8 @@ const trainingDraftKey = (projectId: string, versionId?: string) => `training-dr
 class DatasetListUnavailable extends Error {}
 const isConfigObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
-function mergeTrainingDefaults(defaults: Record<string, any>, draft: Record<string, any>) {
-  const next = mergeConfig(defaults, normalizeLegacyIntervals(draft));
+function mergeTrainingDefaults(defaults: Record<string, any>, draft: Record<string, any>, schema: any) {
+  const next = mergeConfig(defaults, normalizeOptimizerConfig(schema, normalizeLegacyIntervals(draft)));
   // Older resume recipes inherit their authenticated checkpoint's policy.
   if (draft.checkpoint?.resume) {
     next.dataset = { ...next.dataset };
@@ -389,7 +390,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       projectId ? apiClient.get<Record<string, any>>(versionConfigUrl(projectId, versionId), { silent: true }) : Promise.resolve({}),
     ]).then(([nextSchema, nextDefaults, draft]) => {
       if (!active) return;
-      const next = fillDefaultModels(mergeTrainingDefaults(nextDefaults, draft), registeredModelsRef.current);
+      const next = fillDefaultModels(mergeTrainingDefaults(nextDefaults, draft, nextSchema), registeredModelsRef.current);
       setSchema(nextSchema);
       setDefaults(nextDefaults);
       initialConfigRef.current = JSON.stringify(next);
@@ -481,7 +482,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         const [remote, nextDatasets] = await request;
         await saveQueueRef.current.catch(() => {});
         if (controller.signal.aborted || draftRef.current.projectId !== projectId || draftRef.current.versionId !== versionId) return;
-        const next = fillDefaultModels(mergeTrainingDefaults(defaults, remote), registeredModelsRef.current);
+        const next = fillDefaultModels(mergeTrainingDefaults(defaults, remote, schema), registeredModelsRef.current);
         // An in-flight save may have reached the server after this GET snapshot.
         // Keep its acknowledged baseline so the merged dataset changes are saved again.
         if (!savingAtStart) lastSavedRef.current = JSON.stringify(next);
@@ -628,7 +629,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     if (inactiveTrainingReason(config) || inactiveTrainingReason(preset.config)) return;
     if (presetFamily(preset) && presetFamily(preset) !== config.model?.family) return;
     setError('');
-    setConfig((prev) => fillDefaultModels(applyTrainingPreset(prev, preset.config), registeredModels));
+    setConfig((prev) => fillDefaultModels(applyTrainingPreset(prev, preset.config, schema), registeredModels));
     setPendingPreset(null);
   };
 
@@ -841,7 +842,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       </div>
     </Dialog>}
     {inspectionOpen && <ConfigInspection config={config} validation={{pending:validating,ok:checked && plan?.ok === true,errors:validationErrors,error:planError}} onApply={next=>{setConfig(next);setInspectionOpen(false);}} onChange={setConfig} onClose={()=>setInspectionOpen(false)}/>}
-    {pendingPreset && <PresetPreview preset={pendingPreset} current={config} onClose={()=>setPendingPreset(null)} onApply={()=>handleApplyPreset(pendingPreset)}/>}
+    {pendingPreset && <PresetPreview preset={pendingPreset} current={config} schema={schema} onClose={()=>setPendingPreset(null)} onApply={()=>handleApplyPreset(pendingPreset)}/>}
     {importOpen && <Dialog title={t('train.importToml')} closeDisabled={importing} onClose={() => setImportOpen(false)}><section className="config-import">{importError && <p role="alert" className="studio-error">{importError}</p>}<input disabled={importing} type="file" accept=".toml,text/plain" aria-label={t('train.importFile')} onChange={event => { const file = event.target.files?.[0]; if (file) file.text().then(setImportText).catch(err => setImportError(formatApiError(err))); }}/><textarea disabled={importing} aria-label={t('train.importContent')} value={importText} onChange={event => setImportText(event.target.value)} /><button type="button" className="ui-btn ui-btn-primary" disabled={importing || !importText.trim()} onClick={handleImport}>{t('train.applyImport')}</button></section></Dialog>}
 
 

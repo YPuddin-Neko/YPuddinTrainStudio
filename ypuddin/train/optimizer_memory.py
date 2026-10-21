@@ -61,10 +61,14 @@ def optimizer_memory_breakdown(
         result["state_layout_kind"] = "cpu_offload_separate"
         return result
     supported = {"adam", "adamw", "sgd", "lion", "adamw8bit", "lion8bit", "adafactor",
-                 "came", "automagic", "prodigy", "prodigy_plus_sf", "adamw_sf"}
+                 "came", "automagic", "prodigy", "prodigy_plus_sf", "adamw_sf", "muon"}
     if key not in supported:
         return {**result, "state_bytes": None, "step_workspace_bytes": None,
                 "state_kind": "unknown", "workspace_kind": "unknown", "unknowns": ["optimizer_class"]}
+    if key == "muon" and any("muon_role" not in group for group in param_groups):
+        from ypuddin.optim.muon_groups import prepare_muon_groups
+
+        param_groups = prepare_muon_groups(cfg, param_groups)
     if key == "prodigy_plus_sf":
         try:
             installed = metadata.version("prodigy-plus-schedule-free")
@@ -75,6 +79,7 @@ def optimizer_memory_breakdown(
                     "state_kind": "unknown", "workspace_kind": "unknown", "unknowns": ["ppsf_version"]}
     state = host_state = workspace = kahan = kahan_gradients = 0
     schedulefree_retained = 0
+    muon_parameters = 0
     previous = previous_live = 0
     bnb_block, bnb_floor, bnb_known = _bitsandbytes_layout() if key in {"adamw8bit", "lion8bit"} else (256, 0, True)
     nonempty_groups = 0
@@ -131,7 +136,25 @@ def optimizer_memory_breakdown(
                 kahan_gradients += n * (4 - p.element_size())
                 parameter_record("shadow", shape, torch.float32, component="kahan")
                 parameter_record("compensation", shape, torch.float32, component="kahan")
-            if key in {"adam", "adamw"}:
+            if key == "muon":
+                muon_parameters += 1
+                roles = ("momentum_buffer",) if group["muon_role"] == "muon" else ("exp_avg", "exp_avg_sq")
+                for role in roles:
+                    state += n * 4
+                    parameter_record(role, shape, torch.float32)
+                if low_precision:
+                    state += n * 4
+                    parameter_record("master_param", shape, torch.float32)
+                # State is lazy; count every parameter once initialized. Step is
+                # a Python integer. _update releases temporaries per parameter.
+                if group["muon_role"] == "muon":
+                    # FP32 gradient/Nesterov copies, BF16 Newton-Schulz matrix
+                    # expressions and Gram polynomials. Transpose the tall case.
+                    workspace = max(workspace, n * 16 + min(shape) ** 2 * 8)
+                else:
+                    # FP32 gradient copy, corrected numerator and denominator.
+                    workspace = max(workspace, n * 12)
+            elif key in {"adam", "adamw"}:
                 state += size * (3 if group.get("amsgrad", False) else 2)
                 parameter_record("exp_avg")
                 parameter_record("exp_avg_sq")
@@ -316,6 +339,10 @@ def optimizer_memory_breakdown(
                     previous = size
                 if key == "adamw_sf":
                     schedulefree_retained = sizes[-1]
+    if key == "muon" and muon_parameters:
+        # Finite checks retain one boolean scalar per gradient and a stacked
+        # reduction. Include their storage in the conservative tensor bound.
+        workspace += 2 * muon_parameters + 1
     if key in {"prodigy", "prodigy_plus_sf"}:
         result["state_kind"] = "upper_bound"
     if key == "prodigy_plus_sf":

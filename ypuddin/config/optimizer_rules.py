@@ -43,6 +43,7 @@ PPSF_FIELDS = (
     "use_focus",
 )
 AUTOMAGIC_FIELDS = ("beta2", "min_lr", "max_lr", "lr_bump", "clip_threshold")
+MUON_FIELDS = ("momentum", "nesterov", "ns_steps", "aux_lr_ratio")
 
 
 def optimizer_key(name: str) -> str:
@@ -52,6 +53,7 @@ def optimizer_key(name: str) -> str:
         "prodigyplus.prodigyplusschedulefree": "prodigy_plus_sf",
         "prodigyplus.prodigy_plus_schedulefree.prodigyplusschedulefree": "prodigy_plus_sf",
         "ypuddin.optim.automagic.automagic": "automagic",
+        "ypuddin.optim.muon.muon": "muon",
         "schedulefree.adamwschedulefree": "adamw_sf",
         "schedulefree.adamw_schedulefree.adamwschedulefree": "adamw_sf",
     }
@@ -63,6 +65,7 @@ def optimizer_specific_fields(name: str) -> tuple[str, ...]:
         "prodigy": PRODIGY_FIELDS,
         "prodigy_plus_sf": PPSF_FIELDS,
         "automagic": AUTOMAGIC_FIELDS,
+        "muon": MUON_FIELDS,
     }.get(optimizer_key(name), ())
 
 
@@ -146,6 +149,17 @@ def optimizer_capabilities() -> dict[str, Any]:
     )
     auto["defaults"] = {"optimizer.eps": 1e-30, "optimizer.grad_clip_norm": 0}
     return {
+        "muon": {
+            "fixed": {"optimizer.kahan": False, "optimizer.cpu_offload": False},
+            "reason": {
+                "optimizer.kahan": _KAHAN_REASON,
+                "optimizer.cpu_offload": _reason("Muon 不支持优化器 CPU 卸载。", "Muon does not support optimizer CPU offload."),
+            },
+            "defaults": {"optimizer.lr": 0.02, "optimizer.betas": [0.9, 0.99], "optimizer.eps": 1e-8},
+            "conditional": [],
+            "aliases": ["ypuddin.optim.muon.Muon"],
+            "typed_fields": list(MUON_FIELDS),
+        },
         "prodigy": prodigy,
         "prodigy_plus_sf": ppsf,
         "automagic": auto,
@@ -187,6 +201,10 @@ def canonical_optimizer_fragment(raw: dict[str, Any], validated: dict[str, Any])
     for name in original.get("args", {}):
         if name not in effective["args"] and name in effective:
             optimizer[name] = deepcopy(effective[name])
+    if optimizer_key(effective["type"]) == "muon":
+        # Unsupported toggles are already rejected; partial presets need not
+        # persist their disabled defaults.
+        return result
     policy = optimizer_policy(effective["type"], use_schedulefree=effective["use_schedulefree"])
     for path, value in policy.get("fixed", {}).items():
         group, field = path.split(".")

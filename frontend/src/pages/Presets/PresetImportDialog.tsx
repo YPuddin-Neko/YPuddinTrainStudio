@@ -6,11 +6,12 @@ import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { mergeConfig } from '../../utils/config';
 import { normalizeLegacyIntervals } from '../../utils/intervals';
+import { normalizeOptimizerConfig } from '../../utils/optimizerCapabilities';
 import { PRESET_MODEL_FIELDS, preservePresetDoraMode, reusableTrainingPreset } from '../../utils/trainingPresets';
 
 export interface ImportedPreset { name: string; description: string; config: Record<string, any>; }
 
-export default function PresetImportDialog({ onClose, onImport }: { onClose: () => void; onImport: (preset: ImportedPreset) => Promise<boolean> }) {
+export default function PresetImportDialog({ schema, onClose, onImport }: { schema: any; onClose: () => void; onImport: (preset: ImportedPreset) => Promise<boolean> }) {
   const text = useWorkspaceText();
   const [content, setContent] = React.useState('');
   const [filename, setFilename] = React.useState('');
@@ -60,7 +61,7 @@ export default function PresetImportDialog({ onClose, onImport }: { onClose: () 
         const family = typeof model?.family === 'string' ? model.family : 'anima';
         const defaults = reusableTrainingPreset(await apiClient.get<Record<string, any>>('/config/defaults', { params: { family }, silent: true }));
         for (const field of PRESET_MODEL_FIELDS) if (defaults.model) delete defaults.model[field];
-        configText = JSON.stringify(mergeConfig(defaults, normalizeLegacyIntervals(preservePresetDoraMode(config))));
+        configText = JSON.stringify(mergeConfig(defaults, normalizeOptimizerConfig(schema, normalizeLegacyIntervals(preservePresetDoraMode(config)))));
       }
       const config = await apiClient.post<Record<string, any>>('/config/import', { text: configText, format: isJson ? 'json' : 'toml' }, { silent: true });
       if (await onImport({ name, description, config })) onClose();

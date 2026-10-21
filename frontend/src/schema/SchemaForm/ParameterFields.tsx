@@ -39,11 +39,11 @@ const layouts: Record<string, Section[]> = {
     section('execution', ['mode', 'param_dtype', 'lr_scale'], ['计算与学习率', 'Computation and learning rate']),
   ],
   optimizer: [
-    section('basic', ['type', 'lr', 'weight_decay'], ['优化器与学习率', 'Optimizer and learning rate']),
+    section('basic', ['type', 'lr', 'weight_decay', 'aux_lr_ratio'], ['优化器与学习率', 'Optimizer and learning rate']),
     section('full-rates', ['training.backbone_lr', 'training.text_encoder_lr', 'training.text_encoder_2_lr', 'training.llm_adapter_lr', 'training.self_attn_lr', 'training.cross_attn_lr', 'training.mlp_lr', 'training.modulation_lr'], ['全量微调学习率', 'Full fine-tuning learning rates']),
     section('adaptive', ['d_coef', 'd0', 'beta3', 'prodigy_steps', 'growth_rate', 'slice_p', 'min_lr', 'max_lr', 'lr_bump', 'use_speed', 'd_limiter', 'safeguard_warmup', 'split_groups', 'split_groups_mean'], ['自动步长估计', 'Step-size estimation']),
     section('averaging', ['use_schedulefree', 'schedulefree_c', 'weight_decay_by_lr', 'decouple', 'exclude_bias_norm_from_weight_decay'], ['权重平均与衰减', 'Weight averaging and decay'], { togglesFirst: true }),
-    section('stability', ['betas', 'beta2', 'eps', 'grad_clip_norm', 'clip_threshold', 'use_bias_correction', 'use_stableadamw'], ['平滑与稳定性', 'Smoothing and stability']),
+    section('stability', ['momentum', 'nesterov', 'ns_steps', 'betas', 'beta2', 'eps', 'grad_clip_norm', 'clip_threshold', 'use_bias_correction', 'use_stableadamw'], ['平滑与稳定性', 'Smoothing and stability']),
     section('precision', ['factored', 'factored_fp32', 'stochastic_rounding', 'kahan', 'cpu_offload'], ['状态占用与精度', 'State memory and precision']),
     section('variants', ['use_cautious', 'use_grams', 'use_adopt', 'use_orthograd', 'use_focus'], ['更新方式', 'Update methods']),
     section('options', ['group_lr', 'args'], ['优化器选项', 'Optimizer options']),

@@ -282,8 +282,9 @@ const RulesEditor: React.FC<{
 const KeyValueEditor: React.FC<{
   value: Record<string, any>;
   addLabel?: string;
+  allowAdd?: boolean;
   onChange: (val: Record<string, any>) => void;
-}> = ({ value = {}, addLabel, onChange }) => {
+}> = ({ value = {}, addLabel, allowAdd = true, onChange }) => {
   const { t, i18n } = useTranslation();
   const [keyDrafts, setKeyDrafts] = React.useState<Record<string,string>>({});
   const [keyError, setKeyError] = React.useState('');
@@ -345,7 +346,7 @@ const KeyValueEditor: React.FC<{
         </div>
       ))}
       {keyError && <p role="alert" className="text-xs text-amber-600">{keyError}</p>}
-      <button
+      {allowAdd && <button
         type="button"
         onClick={addEntry}
         data-testid="add-property"
@@ -353,7 +354,7 @@ const KeyValueEditor: React.FC<{
       >
         <Plus className="w-3.5 h-3.5" />
         <span>{addLabel || t('train.addProperty', '添加属性')}</span>
-      </button>
+      </button>}
     </div>
   );
 };
@@ -912,7 +913,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (type !== undefined && type !== value.optimizer?.type) {
       optimizerEdits.current.set(value.optimizer?.type ?? 'adamw', value);
       const previous = optimizerEdits.current.get(type);
-      next = previous ? restoreOptimizerSelection(schema, next, previous) : selectOptimizer(schema, next, type);
+      next = previous ? restoreOptimizerSelection(schema, next, previous) : selectOptimizer(schema, next, type, { previous: value });
     }
     const normalized = normalizeOptimizerConfig(schema, normalizeLegacyIntervals(next));
     lastEmittedConfig.current = normalized;
@@ -1004,6 +1005,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const lockedSwitch = switchLock(fullPathKey, value, family, english);
     const computeManaged: {value: unknown; label?: string; reason: string; tag?: string} | null = layerLock ?? lockedSwitch ?? trainingComputeManagedField(activeComputePolicy, fullPathKey, english);
     const fieldValue = computeManaged ? computeManaged.value : getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
+    const muonArgs = fullPathKey === 'optimizer.args' && value.optimizer?.type === 'muon';
+    if (muonArgs && fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue) && Object.keys(fieldValue).length === 0) return null;
     const groupName = ui.group || (parentPath.length > 0 ? parentPath[0] : 'default');
     const compactField = compact || groupName === 'adapter';
     const percentage = PERCENTAGE_FIELDS.includes(fullPathKey);
@@ -1137,9 +1140,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       prop.additionalProperties &&
       !prop.properties
     ) {
-      control = (
+      control = muonArgs && (!fieldValue || typeof fieldValue !== 'object' || Array.isArray(fieldValue)) ? (
+        <button type="button" className="ui-btn ui-btn-sm" aria-label={english ? 'Remove invalid arguments' : '移除无效参数'} onClick={() => onChange(setNestedValue(value, path, {}))}>{english ? 'Remove invalid arguments' : '移除无效参数'}</button>
+      ) : (
         <KeyValueEditor
           value={fieldValue || {}}
+          allowAdd={!muonArgs}
           addLabel={({'optimizer.group_lr': english ? 'Add parameter group' : '添加参数组', 'optimizer.args': english ? 'Add argument' : '添加参数', 'adapter.lr_scale': english ? 'Add multiplier' : '添加倍率'} as Record<string, string>)[fullPathKey]}
           onChange={(val) => onChange(setNestedValue(value, path, val))}
         />

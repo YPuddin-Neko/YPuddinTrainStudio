@@ -1,5 +1,6 @@
 import { mergeConfig } from './config';
 import { normalizeLegacyIntervals } from './intervals';
+import { normalizeOptimizerConfig, selectOptimizer } from './optimizerCapabilities';
 
 const VERSION_FIELDS = [
   ['dataset', 'sources'],
@@ -43,7 +44,7 @@ export function reusableTrainingPreset(config: Record<string, any>): Record<stri
   return result;
 }
 
-export function applyTrainingPreset(current: Record<string, any>, preset: Record<string, any>) {
+export function applyTrainingPreset(current: Record<string, any>, preset: Record<string, any>, schema?: any) {
   const reusable = reusableTrainingPreset(preset);
   // A preset cannot change the policy belonging to the retained recovery point.
   if (current.checkpoint?.resume && reusable.dataset) {
@@ -76,12 +77,24 @@ export function applyTrainingPreset(current: Record<string, any>, preset: Record
   if (reusable.model && (!current.model?.family || reusable.model.family !== current.model.family)) {
     for (const field of PRESET_MODEL_FIELDS) delete reusable.model[field];
   }
-  const merged = mergeConfig(current, reusable);
+  const type = reusable.optimizer?.type;
+  const normalizedType = typeof type === 'string' ? normalizeOptimizerConfig(schema, { optimizer: { type } }).optimizer.type : undefined;
+  const changedOptimizer = normalizedType !== undefined && normalizedType !== current.optimizer?.type;
+  const values = changedOptimizer ? normalizeOptimizerConfig(schema, reusable) : reusable;
+  // An algorithm named by the preset starts from its own defaults before explicit values are applied.
+  const base = changedOptimizer
+    ? selectOptimizer(schema, schema ? current : { ...current, optimizer: {} }, normalizedType, { optimizer: values.optimizer })
+    : current;
+  const merged = mergeConfig(base, values);
+  const explicitEmptyArgs = reusable.optimizer?.args && typeof reusable.optimizer.args === 'object' && !Array.isArray(reusable.optimizer.args) && Object.keys(reusable.optimizer.args).length === 0;
+  if (merged.optimizer && (changedOptimizer || explicitEmptyArgs)) {
+    merged.optimizer.args = values.optimizer?.args === undefined ? {} : values.optimizer.args;
+  }
   if (!current.checkpoint?.resume && merged.dataset) {
     merged.dataset = { ...merged.dataset };
     delete merged.dataset.native_max_pixels_resolved;
     delete merged.dataset.native_batching_version;
   }
   if (current.model?.family) merged.model = { ...merged.model, family: current.model.family };
-  return merged;
+  return changedOptimizer ? normalizeOptimizerConfig(schema, merged) : merged;
 }

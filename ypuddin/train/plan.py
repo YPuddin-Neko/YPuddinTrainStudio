@@ -18,6 +18,7 @@ from ypuddin.adapters.frozen import FrozenLinear
 from ypuddin.config import DatasetConfig, LoopConfig, ModelConfig, TrainConfig, ValidationConfig
 from ypuddin.config.compute_policy import resolve_training_compute_config, validate_resume_compute_policy
 from ypuddin.config.issues import validation_issues
+from ypuddin.config.optimizer_rules import optimizer_key
 from ypuddin.data import BucketBatchSampler, IndexDB
 from ypuddin.data.dataset import DataConfigError, DataLayout, item_geometry, prepare_data_layout
 from ypuddin.data.native import NativeBatchSampler, microbatch_indices, native_size
@@ -1070,6 +1071,10 @@ def plan(
                 from .optimizer_memory import cpu_offload_memory_bytes, cpu_offload_step_workspace_bytes
 
                 optimizer_groups = aset.param_groups(cfg.optimizer.lr, cfg.optimizer.weight_decay, cfg.optimizer.group_lr)
+                if optimizer_key(cfg.optimizer.type) == "muon":
+                    from ypuddin.optim.muon_groups import prepare_muon_groups
+
+                    optimizer_groups = prepare_muon_groups(cfg.optimizer, optimizer_groups, aset)
                 optimizer_estimate = optimizer_memory_breakdown(
                     cfg.optimizer, optimizer_groups, device_type=device_type or "cuda",
                 )

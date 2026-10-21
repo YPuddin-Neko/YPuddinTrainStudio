@@ -25512,7 +25512,8 @@
                 "adafactor",
                 "came",
                 "adamw_sf",
-                "automagic"
+                "automagic",
+                "muon"
               ],
               "order": 0
             }
@@ -25561,7 +25562,7 @@
               "advanced": true,
               "group": "optimizer",
               "order": 30,
-              "show_when": "optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came']"
+              "show_when": "optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came','muon']"
             }
           },
           "eps": {
@@ -25581,7 +25582,7 @@
               "advanced": true,
               "group": "optimizer",
               "order": 40,
-              "show_when": "optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic']"
+              "show_when": "optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic','muon']"
             }
           },
           "args": {
@@ -25669,6 +25670,59 @@
               "advanced": true,
               "group": "optimizer",
               "order": 90
+            }
+          },
+          "momentum": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "title": "Momentum",
+            "description": "Muon 矩阵梯度的动量系数，默认 0.95；辅助 AdamW 使用 β1、β2。",
+            "default": 0.95,
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 92,
+              "show_when": "optimizer.type == 'muon'"
+            }
+          },
+          "nesterov": {
+            "type": "boolean",
+            "title": "Nesterov",
+            "description": "Muon 使用当前梯度与动量组合计算更新方向；关闭时只使用动量。",
+            "default": true,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "optimizer",
+              "order": 93,
+              "show_when": "optimizer.type == 'muon'"
+            }
+          },
+          "ns_steps": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Ns Steps",
+            "description": "Muon 的 Newton–Schulz 迭代次数，默认 5；范围 1 至 10。迭代用于近似正交化矩阵更新方向，会增加每步计算量。",
+            "default": 5,
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 94,
+              "show_when": "optimizer.type == 'muon'"
+            }
+          },
+          "aux_lr_ratio": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Aux Lr Ratio",
+            "description": "辅助 AdamW 学习率相对各参数组学习率的倍率。默认 0.005，基础学习率为 0.02 时得到 0.0001；用于偏置、归一化、标量、嵌入、模型输入输出及非二维参数，并随同一调度器变化。",
+            "default": 0.005,
+            "x-ui": {
+              "group": "optimizer",
+              "order": 95,
+              "show_when": "optimizer.type == 'muon'"
             }
           },
           "d_coef": {

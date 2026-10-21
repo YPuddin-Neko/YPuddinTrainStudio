@@ -11,6 +11,7 @@ import { SchemaForm, type ValidationError } from '../../schema/SchemaForm/Schema
 import { OPAQUE_CONFIG_ISSUE, presentConfigIssues, type ConfigTab, type ConfigIssue } from '../../utils/configPresentation';
 import { mergeConfig } from '../../utils/config';
 import { normalizeLegacyIntervals } from '../../utils/intervals';
+import { normalizeOptimizerConfig } from '../../utils/optimizerCapabilities';
 import { formatApiError } from '../../utils/errors';
 import { presetEditorSchema, presetPayload, presetFamily } from '../../utils/presetEditor';
 import { PRESET_MODEL_FIELDS, preservePresetDoraMode, reusableTrainingPreset } from '../../utils/trainingPresets';
@@ -104,7 +105,7 @@ function ImagePresets() {
         for (let i = 2; list.data?.some(item => item.name.toLocaleLowerCase() === name.toLocaleLowerCase()); i += 1) name = `${base}-${i}`;
       }
       const existing = preset && !copy && !newDraft;
-      const merged = mergeConfig(defaults, normalizeLegacyIntervals(preservePresetDoraMode(preset?.config || {})));
+      const merged = mergeConfig(defaults, normalizeOptimizerConfig(schema.data, normalizeLegacyIntervals(preservePresetDoraMode(preset?.config || {}))));
       // Model files come only from the preset itself, never from family defaults.
       const presetModel = (preset?.config?.model || {}) as Record<string, unknown>;
       merged.model = { ...merged.model, ...Object.fromEntries(PRESET_MODEL_FIELDS.map(field => [field, presetModel[field] || null])) };
@@ -152,7 +153,7 @@ function ImagePresets() {
   const requestAction = (action: () => void) => { if (busy) return; if (dirty) setPending(() => action); else action(); };
   const initial = React.useRef(false);
   React.useEffect(() => {
-    if (!list.data || !families.data || initial.current) return;
+    if (!list.data || !families.data || !schema.data || initial.current) return;
     initial.current = true;
     const name = params.get('name');
     if (name) {
@@ -162,7 +163,7 @@ function ImagePresets() {
     } else void begin(userPresets[0], false, userPresets[0] ? presetFamily(userPresets[0].config) : families.data.find(item=>item.name==='anima')?.name || families.data[0]?.name || 'anima');
     // A list refresh must never replace an editor's unsaved draft.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list.data, families.data]);
+  }, [list.data, families.data, schema.data]);
 
   const save = async (): Promise<boolean> => {
     if (!draft || draft.builtin || busy || inactiveReason) return false;
@@ -218,7 +219,8 @@ function ImagePresets() {
       let field = document.getElementById(`field-${path}`);
       while (!field && path.includes('.')) { path = path.slice(0, path.lastIndexOf('.')); field = document.getElementById(`field-${path}`); }
       field?.scrollIntoView?.({ block: 'center', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-      const control = field?.querySelector<HTMLElement>('input:not(:disabled):not([readonly]):not([type="hidden"]),textarea:not(:disabled),[role="combobox"]:not(:disabled)');
+      const control = field?.querySelector<HTMLElement>('input:not(:disabled):not([readonly]):not([type="hidden"]),textarea:not(:disabled),[role="combobox"]:not(:disabled)')
+        || field?.querySelector<HTMLElement>('button:not(:disabled):not([aria-disabled="true"]):not(.config-help-trigger)');
       control?.focus({ preventScroll: true });
     }));
   };
@@ -272,6 +274,6 @@ function ImagePresets() {
     </div>}
     {(pending || blocker.state === 'blocked') && <Dialog title={text('保存预设修改？', 'Save preset changes?')} onClose={cancelLeave} closeDisabled={busy}><p>{text('当前预设尚未保存。可以先保存，或放弃这些修改。', 'This preset has unsaved changes. Save them or discard the draft.')}</p>{error && <p role="alert" className="studio-error">{error}</p>}<div className="presets-confirm-actions"><button type="button" className="ui-btn" disabled={busy} onClick={cancelLeave}>{text('继续编辑', 'Keep editing')}</button><button type="button" className="ui-btn ui-btn-danger" disabled={busy} onClick={proceed}>{text('放弃修改', 'Discard changes')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={busy} onClick={()=>{void save().then(ok=>{if(ok)proceed();});}}>{text('保存并继续', 'Save and continue')}</button></div></Dialog>}
     {deleting && <Dialog title={text('删除预设', 'Delete preset')} onClose={()=>setDeleting(false)} closeDisabled={busy}><p>{text('删除后不会改变任何已有项目配置。确定删除', 'Existing project configurations will remain unchanged. Delete')} “{draft?.name}”?</p>{error&&<p role="alert" className="studio-error">{error}</p>}<div className="presets-confirm-actions"><button type="button" className="ui-btn" disabled={busy} onClick={()=>setDeleting(false)}>{text('取消', 'Cancel')}</button><button type="button" className="ui-btn ui-btn-primary ui-btn-danger" disabled={busy} onClick={()=>void remove()}>{text('确认删除', 'Confirm deletion')}</button></div></Dialog>}
-    {importing && <PresetImportDialog onClose={() => setImporting(false)} onImport={importPreset}/>}
+    {importing && <PresetImportDialog schema={schema.data} onClose={() => setImporting(false)} onImport={importPreset}/>}
   </section>;
 }

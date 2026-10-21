@@ -770,6 +770,7 @@ class OptimizerConfig(_Strict):
                     "came",
                     "adamw_sf",
                     "automagic",
+                    "muon",
                 ],
             }
         },
@@ -793,7 +794,7 @@ class OptimizerConfig(_Strict):
             "optimizer",
             advanced=True,
             order=30,
-            show_when="optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came']",
+            show_when="optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came','muon']",
         ),
     )
     eps: float | None = F(
@@ -804,7 +805,7 @@ class OptimizerConfig(_Strict):
             "optimizer",
             advanced=True,
             order=40,
-            show_when="optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic']",
+            show_when="optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic','muon']",
         ),
     )
     args: dict[str, Any] = F(
@@ -842,6 +843,27 @@ class OptimizerConfig(_Strict):
         default_factory=dict,
         help="按模块分组的学习率，如 {'llm_adapter': 5e-5, 'te': 2e-5}",
         ui_=ui("optimizer", advanced=True, order=90),
+    )
+
+    momentum: float = F(
+        0.95, ge=0, lt=1,
+        help="Muon 矩阵梯度的动量系数，默认 0.95；辅助 AdamW 使用 β1、β2。",
+        ui_=ui("optimizer", advanced=True, order=92, show_when="optimizer.type == 'muon'"),
+    )
+    nesterov: bool = F(
+        True,
+        help="Muon 使用当前梯度与动量组合计算更新方向；关闭时只使用动量。",
+        ui_=ui("optimizer", advanced=True, order=93, control="switch", show_when="optimizer.type == 'muon'"),
+    )
+    ns_steps: int = F(
+        5, ge=1, le=10,
+        help="Muon 的 Newton–Schulz 迭代次数，默认 5；范围 1 至 10。迭代用于近似正交化矩阵更新方向，会增加每步计算量。",
+        ui_=ui("optimizer", advanced=True, order=94, show_when="optimizer.type == 'muon'"),
+    )
+    aux_lr_ratio: float = F(
+        0.005, gt=0,
+        help="辅助 AdamW 学习率相对各参数组学习率的倍率。默认 0.005，基础学习率为 0.02 时得到 0.0001；用于偏置、归一化、标量、嵌入、模型输入输出及非二维参数，并随同一调度器变化。",
+        ui_=ui("optimizer", order=95, show_when="optimizer.type == 'muon'"),
     )
 
     d_coef: float = F(
@@ -1076,6 +1098,7 @@ class OptimizerConfig(_Strict):
             "came",
             "adamw_sf",
             "automagic",
+            "muon",
         }
         if key in known:
             data["type"] = key
@@ -1103,9 +1126,10 @@ class OptimizerConfig(_Strict):
             "prodigy_plus_sf",
             "adamw_sf",
             "came",
+            "muon",
         }:
             migrated.add("betas")
-        if key in {"adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic"}:
+        if key in {"adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic", "muon"}:
             migrated.add("eps")
         for name in migrated & args.keys():
             legacy = args.pop(name)
@@ -1143,6 +1167,13 @@ class OptimizerConfig(_Strict):
     @model_validator(mode="after")
     def _optimizer_combinations(self) -> OptimizerConfig:
         key = optimizer_key(self.type)
+        if key == "muon":
+            if self.kahan:
+                raise ValueError("Muon preserves low-precision updates with FP32 master weights; disable Kahan")
+            if self.cpu_offload:
+                raise ValueError("Muon does not support optimizer CPU offload")
+            if self.args:
+                raise ValueError("Muon does not support extra optimizer.args: " + ", ".join(sorted(self.args)))
         if any(not 0 <= beta < 1 for beta in self.betas):
             raise ValueError("optimizer.betas must be within [0, 1)")
         if key in {"prodigy_plus_sf", "adamw_sf"} and self.use_schedulefree and self.betas[0] == 0:

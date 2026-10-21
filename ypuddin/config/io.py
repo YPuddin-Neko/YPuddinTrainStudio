@@ -128,7 +128,10 @@ _LEGACY_VALUES: dict[str, dict[str, Any]] = {
     },
     "logging": {"output_dir": None},
     "training": {"backbone_lr": None, "text_encoder_lr": None, "text_encoder_2_lr": None, "llm_adapter_lr": None, "self_attn_lr": None, "cross_attn_lr": None, "mlp_lr": None, "modulation_lr": None},
-    "optimizer": {"cpu_offload": False, "exclude_bias_norm_from_weight_decay": False},
+    "optimizer": {
+        "cpu_offload": False, "exclude_bias_norm_from_weight_decay": False,
+        "momentum": 0.95, "nesterov": True, "ns_steps": 5, "aux_lr_ratio": 0.005,
+    },
     # Center keeps the pixel geometry of older checkpoints.
     "dataset": {"crop_anchor": "center", "native_max_pixels_mode": "custom", "native_max_pixels_resolved": None},
     # SDXL's original single CLIP context and cache behavior.

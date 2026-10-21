@@ -810,6 +810,26 @@ def _preset_path(name: str, c: ServiceContext) -> Path:
     return _preset_dir(c) / f"{name}.json"
 
 
+def _merge_preset_config(base: dict[str, Any], fragment: dict[str, Any]) -> dict[str, Any]:
+    from ypuddin.config.optimizer_rules import optimizer_key, optimizer_policy
+
+    optimizer = fragment.get("optimizer")
+    previous = base.get("optimizer")
+    if (
+        isinstance(optimizer, dict) and isinstance(optimizer.get("type"), str)
+        and optimizer_key(optimizer["type"]) == "muon"
+        and not (isinstance(previous, dict) and optimizer_key(str(previous.get("type", ""))) == "muon")
+    ):
+        # Let Muon's validator supply missing defaults and migrate explicit args.
+        # Values from the previous optimizer must not become explicit Muon values.
+        previous = dict(previous) if isinstance(previous, dict) else {}
+        for path in optimizer_policy("muon").get("defaults", {}):
+            previous.pop(path.removeprefix("optimizer."), None)
+        previous.pop("args", None)
+        base = {**base, "optimizer": previous}
+    return deep_merge(base, fragment)
+
+
 def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: bool) -> dict[str, Any]:
     from ypuddin.config.io import preserve_legacy_dora
 
@@ -832,7 +852,7 @@ def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: boo
     from ypuddin.train.native_resolution import clear_native_vram_resolution
 
     fragment = normalize_legacy_intervals(clear_native_vram_resolution(preserve_legacy_dora(body.config)))
-    validated = _validated_or_error(deep_merge(initial_family_config(c, family), fragment))
+    validated = _validated_or_error(_merge_preset_config(initial_family_config(c, family), fragment))
     from ypuddin.config.optimizer_rules import canonical_optimizer_fragment
 
     config = canonical_optimizer_fragment(fragment, validated.to_dict())
@@ -900,8 +920,8 @@ def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)
     checkpoint = raw.get("checkpoint")
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         raw = clear_native_vram_resolution(raw)
-    overlay = deep_merge(normalize_legacy_intervals(clear_native_vram_resolution(preset["config"])), raw)
-    merged = deep_merge(TrainConfig().to_dict(), overlay)
+    overlay = _merge_preset_config(normalize_legacy_intervals(clear_native_vram_resolution(preset["config"])), raw)
+    merged = _merge_preset_config(TrainConfig().to_dict(), overlay)
     dataset, checkpoint = merged.get("dataset"), merged.get("checkpoint")
     if (
         isinstance(dataset, dict) and dataset.get("resolution_mode") == "native"

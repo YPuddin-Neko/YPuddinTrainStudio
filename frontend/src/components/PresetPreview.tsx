@@ -14,7 +14,9 @@ function comparisonJson(value: unknown) {
 }
 
 function changedFields(current: Record<string, any>, next: Record<string, any>, prefix=''): Array<{path:string;before:unknown;after:unknown}> {
-  return Object.entries(next).flatMap(([key,after])=>{
+  const keys=prefix==='optimizer.args' ? [...new Set([...Object.keys(current || {}),...Object.keys(next)])] : Object.keys(next);
+  return keys.flatMap(key=>{
+    const after=next[key];
     const before=current?.[key],path=prefix?`${prefix}.${key}`:key;
     if(comparisonJson(before)===comparisonJson(after))return [];
     if(after && typeof after==='object' && !Array.isArray(after))return changedFields(before || {},after,path);
@@ -22,9 +24,9 @@ function changedFields(current: Record<string, any>, next: Record<string, any>, 
   });
 }
 
-export default function PresetPreview({preset,current,onClose,onApply}: {preset:Preset;current:Record<string,any>;onClose:()=>void;onApply:()=>void}) {
+export default function PresetPreview({preset,current,schema,onClose,onApply}: {preset:Preset;current:Record<string,any>;schema?:any;onClose:()=>void;onApply:()=>void}) {
   const text=useWorkspaceText(),{i18n}=useTranslation();
-  const changes=changedFields(current,applyTrainingPreset(current,preset.config));
+  const changes=changedFields(current,applyTrainingPreset(current,preset.config,schema));
   const display=(value:unknown)=>value===undefined||value===null?text('自动 / 未设置','Auto / unset'):typeof value==='boolean'?value?text('开','On'):text('关','Off'):typeof value==='object'?JSON.stringify(value):String(value);
   return <Dialog title={text('加载预设前确认参数','Review preset changes')} onClose={onClose} wide>
     <div className="preset-preview-body"><h3>{preset.name}</h3>{preset.description && <p>{preset.description}</p>}
