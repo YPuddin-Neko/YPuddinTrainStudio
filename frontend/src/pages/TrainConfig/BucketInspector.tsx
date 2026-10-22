@@ -70,8 +70,8 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
   const maxCount = Math.max(1, ...buckets.map(bucket => bucket.items));
   const groups = nativeMode ? [{ base: 0, buckets, items: 0 }] : groupByBase(buckets);
   const grouped = groups.length > 1;
-  // Native tiles carry the source size and an arrow, so they get wider columns.
-  const gridClass = `bucket-grid${nativeMode && buckets.some(bucket => bucket.sources?.length) ? ' has-routes' : ''}`;
+  // Tiles with source sizes and an arrow use wider columns.
+  const gridClass = `bucket-grid${buckets.some(bucket => bucket.sources?.length) ? ' has-routes' : ''}`;
   const baseLabel = (base: number) => text(`分辨率 ${base}`, `Resolution ${base}`);
   const fitMode = plan?.image_fit?.mode === 'pad' ? 'pad' : 'crop';
   const cropAnchor = plan?.image_fit?.crop_anchor || 'center';
@@ -93,10 +93,10 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
     }
     return steps.length === 1 ? [text(`与原图一致，未缩放或${fitMode === 'pad' ? '补边' : '裁切'}`, `Same as the source, no resize or ${fitMode === 'pad' ? 'padding' : 'crop'}`)] : steps;
   };
-  // A native tile reads source size → what was done → training size.
+  // A tile with source details reads source size → what was done → training size.
   const tileRoute = (bucket: PlanBucket) => {
     const routes = bucket.sources || [];
-    if (!nativeMode || !routes.length) return null;
+    if (!routes.length) return null;
     const variants = Math.max(bucket.source_variants || 0, routes.length);
     const scaled = routes.some(resized), fitted = routes.some(route => trimmed(bucket, route));
     return {
