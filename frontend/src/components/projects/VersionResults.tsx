@@ -197,7 +197,7 @@ function VersionResultsWorkspace({ projectId, versionId, readOnly = false }: Ver
         <button className="results-sample-preview" type="button" onClick={event => { event.currentTarget.focus(); setLightbox(sample); }} aria-label={text(`查看采样图：第 ${sample.step} 步，提示词 ${sample.prompt_index + 1}`, `View sample: step ${sample.step}, prompt ${sample.prompt_index + 1}`)}>{failedImages.has(sample.url) ? <span><ImageIcon size={22}/>{text('图片文件不可用', 'Image file unavailable')}</span> : <LazyImage src={fileUrl(sample.url)} alt={sample.prompt} loading="lazy" width={sample.width} height={sample.height} onError={() => setFailedImages(previous => new Set(previous).add(sample.url))}/>}</button>
         <div className="results-sample-description"><div><strong>{text('步数', 'Step')} {sample.step}</strong><span>Seed {sample.seed}</span></div><SampleLoss sample={sample}/><p title={sample.prompt}>{sample.prompt}</p>
           {!selectedJobId && <Link className="results-sample-job" to={`/jobs/${encodeURIComponent(sample.job_id)}`} title={`${jobName(sample.job_id)} · ${sample.job_id}`}>{jobName(sample.job_id)} · {sample.job_id}</Link>}
-          <div><time>{formatTime(sample.created_at)}</time><a className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" href={fileUrl(sample.url)} download aria-label={text(`下载第 ${sample.step} 步采样图`, `Download step ${sample.step} sample`)}><Download size={13}/></a></div></div>
+          <div><time>{formatTime(sample.created_at)}</time><a className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon" href={fileUrl(sample.url)} download target="_blank" rel="noopener noreferrer" aria-label={text(`下载第 ${sample.step} 步采样图`, `Download step ${sample.step} sample`)}><Download size={13}/></a></div></div>
       </article>)}</div>}
     </div>}
 

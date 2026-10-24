@@ -203,7 +203,7 @@ export default function SampleLightbox({ sample, title, position, total, details
         <button type="button" onClick={() => zoom.current?.fit()} disabled={!state.zoomed} aria-label={text('适应窗口', 'Fit')} title={text('适应窗口（0）', 'Fit (0)')}><Scan size={15}/></button>
         <button type="button" className="sample-lightbox-actual" onClick={() => zoom.current?.actual()} disabled={!state.ready || state.atActual} aria-label={text('原图大小', 'Actual size')} title={text('原图大小（1）', 'Actual size (1)')}>1:1</button>
         <span className="sample-lightbox-divider" aria-hidden="true"/>
-        <a href={src} download aria-label={text('下载原图', 'Download image')} title={text('下载原图', 'Download image')}><Download size={15}/></a>
+        <a href={src} download target="_blank" rel="noopener noreferrer" aria-label={text('下载原图', 'Download image')} title={text('下载原图', 'Download image')}><Download size={15}/></a>
       </div>
       <span className="sr-only" aria-live="polite">{state.ready ? text(`显示比例 ${state.percent}%`, `Scale ${state.percent}%`) : ''}</span>
     </div>

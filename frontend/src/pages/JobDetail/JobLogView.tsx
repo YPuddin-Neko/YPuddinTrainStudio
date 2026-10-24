@@ -254,7 +254,7 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
       {chinese && <Switch className="job-log-debug" checked={original} onCheckedChange={toggleOriginal}>显示原文</Switch>}
       <div className="job-log-actions">
         <button type="button" className="ui-btn ui-btn-icon ui-btn-quiet" disabled={!visible.length} onClick={() => void copyVisible()} aria-label={text('复制显示的日志', 'Copy shown lines')} title={copied === 'done' ? text('已复制', 'Copied') : copied === 'failed' ? text('复制失败', 'Copy failed') : text('复制显示的日志', 'Copy shown lines')}>{copied === 'done' ? <Check size={15}/> : <Copy size={15}/>}</button>
-        <a className="ui-btn ui-btn-icon ui-btn-quiet" href={apiUrl(`/jobs/${encodeURIComponent(jobId)}/log/raw`)} download aria-label={text('下载完整日志', 'Download full log')} title={text('下载完整日志', 'Download full log')} aria-disabled={!hasLog || undefined} onClick={event => { if (!hasLog) event.preventDefault(); }}><Download size={15}/></a>
+        <a className="ui-btn ui-btn-icon ui-btn-quiet" href={apiUrl(`/jobs/${encodeURIComponent(jobId)}/log/raw`)} download target="_blank" rel="noopener noreferrer" aria-label={text('下载完整日志', 'Download full log')} title={text('下载完整日志', 'Download full log')} aria-disabled={!hasLog || undefined} onClick={event => { if (!hasLog) event.preventDefault(); }}><Download size={15}/></a>
       </div>
     </div>
     {error && <div className="task-error" role="alert">{error}<button type="button" className="ui-btn ui-btn-sm" onClick={() => void (loaded && hasLog ? pull() : load())}>{text('重试', 'Retry')}</button></div>}

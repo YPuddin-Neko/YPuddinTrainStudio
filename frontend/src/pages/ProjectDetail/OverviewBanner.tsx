@@ -122,7 +122,7 @@ export default function OverviewBanner({ versionName, job, artifact, checks, rea
   const elapsed = job.started_at != null && job.finished_at != null ? job.finished_at - job.started_at : null;
   const output = artifact && <div className="overview-banner-output">
     <span><strong title={artifact.name}>{artifact.name}</strong><small>{[artifactKindLabel(artifact.kind, text), formatBytes(artifact.size), artifact.step != null ? `${artifact.step} ${text('步', 'steps')}` : ''].filter(Boolean).join(' · ')}</small></span>
-    <a className="ui-btn ui-btn-sm ui-btn-primary" href={apiUrl(`/artifacts/${encodeURIComponent(artifact.id)}/download`)} download aria-label={text(`下载 ${artifact.name}`, `Download ${artifact.name}`)}><Download size={13}/>{text('下载', 'Download')}</a>
+    <a className="ui-btn ui-btn-sm ui-btn-primary" href={apiUrl(`/artifacts/${encodeURIComponent(artifact.id)}/download`)} download target="_blank" rel="noopener noreferrer" aria-label={text(`下载 ${artifact.name}`, `Download ${artifact.name}`)}><Download size={13}/>{text('下载', 'Download')}</a>
   </div>;
   if (status === 'completed') {
     return <Shell tone="success" icon={<CheckCircle2 size={18}/>} title={`${versionName} · ${text('训练完成', 'Training complete')}`}

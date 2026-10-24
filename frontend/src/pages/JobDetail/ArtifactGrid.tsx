@@ -71,7 +71,7 @@ export default function ArtifactGrid({ checkpoints, stepsPerEpoch, loaded, onOpe
               <div className="is-wide"><dt>{text('保存时间', 'Saved')}</dt><dd>{formatTime(item.created_at)}</dd></div>
             </dl>
             <div className="artifact-actions">
-              {item.artifact_id ? <a className="ui-btn ui-btn-sm" href={apiUrl(`/artifacts/${item.artifact_id}/download`)}><Download size={14}/>{t('job.download')}</a>
+              {item.artifact_id ? <a className="ui-btn ui-btn-sm" href={apiUrl(`/artifacts/${encodeURIComponent(item.artifact_id)}/download`)} download target="_blank" rel="noopener noreferrer"><Download size={14}/>{t('job.download')}</a>
                 : <span>{t('job.downloadUnavailable')}</span>}
               <CopyButton value={item.path} label={text('复制本机路径', 'Copy local path')}/>
               <button type="button" className="ui-btn ui-btn-icon ui-btn-sm ui-btn-quiet ui-btn-danger" disabled={deleting} onClick={() => onDelete(item)} aria-label={text(`删除 ${name}`, `Delete ${name}`)} title={text('删除', 'Delete')}><Trash2 size={14}/></button>

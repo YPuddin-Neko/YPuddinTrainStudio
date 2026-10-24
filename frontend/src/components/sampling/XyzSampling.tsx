@@ -349,7 +349,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
             <div className="xyz-result-title"><span className="task-status" data-status={isActive(task) && !isWaiting(task) ? 'running' : task.status}><span className="task-status-dot" aria-hidden="true"/>{statusLabel(task.status)}</span>
               <strong>{formatTime(task.created_at)}</strong>
               <span>{[`${request?.width} × ${request?.height}`, text(`${task.total} 张`, `${task.total} images`), request?.gpu_devices?.length ? request.gpu_devices.map(gpuDeviceLabel).join(', ') : ''].filter(Boolean).join(' · ')}</span></div>
-            <div className="xyz-result-actions"><button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={reuse}>{text('复用参数', 'Reuse settings')}</button>{grid && <a className="ui-btn ui-btn-sm" href={imageUrl(grid.url)} download><Download size={14}/>{text('下载本页网格', 'Download grid')}</a>}</div>
+            <div className="xyz-result-actions"><button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={reuse}>{text('复用参数', 'Reuse settings')}</button>{grid && <a className="ui-btn ui-btn-sm" href={imageUrl(grid.url)} download target="_blank" rel="noopener noreferrer"><Download size={14}/>{text('下载本页网格', 'Download grid')}</a>}</div>
           </header>
           {task.output_dir && <details className="xyz-result-location"><summary>{text('图片保存位置', 'Image folder')}</summary><code>{task.output_dir}</code></details>}
           {isActive(task) && <XyzProgress task={task}/>}

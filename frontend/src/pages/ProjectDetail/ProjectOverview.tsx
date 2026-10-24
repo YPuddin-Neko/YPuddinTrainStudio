@@ -192,7 +192,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
       : artifactsQuery.error ? <div role="alert" className="overview-inline-error"><span>{formatApiError(artifactsQuery.error)}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void artifactsQuery.refetch()}>{text('重新读取产物', 'Reload outputs')}</button></div>
         : artifacts.length ? <ul className="overview-output-list">{artifacts.slice(0, 3).map(artifact => <li key={artifact.id}>
           <span><strong title={artifact.name}>{artifact.name}</strong><small>{[artifactKindLabel(artifact.kind, text), formatBytes(artifact.size), artifact.step != null ? `${artifact.step} ${text('步', 'steps')}` : '', shortTime(artifact.created_at)].filter(Boolean).join(' · ')}</small></span>
-          <a className="ui-btn ui-btn-sm ui-btn-icon ui-btn-quiet" href={apiUrl(`/artifacts/${encodeURIComponent(artifact.id)}/download`)} download aria-label={text(`下载 ${artifact.name}`, `Download ${artifact.name}`)} title={text('下载', 'Download')}><Download size={14}/></a>
+          <a className="ui-btn ui-btn-sm ui-btn-icon ui-btn-quiet" href={apiUrl(`/artifacts/${encodeURIComponent(artifact.id)}/download`)} download target="_blank" rel="noopener noreferrer" aria-label={text(`下载 ${artifact.name}`, `Download ${artifact.name}`)} title={text('下载', 'Download')}><Download size={14}/></a>
         </li>)}</ul>
           : <p className="overview-muted">{text('训练保存的模型权重会显示在这里。', 'Saved model weights appear here.')}</p>}
   </section>;

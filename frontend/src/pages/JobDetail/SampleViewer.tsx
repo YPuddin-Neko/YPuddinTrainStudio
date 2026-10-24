@@ -55,7 +55,7 @@ function SampleFacts({ sample, stepsPerEpoch, position, total }: { sample: Sampl
       {parameters.length ? <dl className="sample-facts-list">{parameters.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         : <p>{text('此采样图没有记录采样参数（较早的任务）。', 'No sampling parameters were recorded for this preview (earlier jobs).')}</p>}
     </section>
-    <a className="ui-btn ui-btn-sm sample-facts-download" href={sampleSource(sample.url)} download><Download size={14}/>{text('下载原图', 'Download image')}</a>
+    <a className="ui-btn ui-btn-sm sample-facts-download" href={sampleSource(sample.url)} download target="_blank" rel="noopener noreferrer"><Download size={14}/>{text('下载原图', 'Download image')}</a>
   </aside>;
 }
 
