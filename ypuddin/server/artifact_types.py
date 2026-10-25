@@ -29,6 +29,6 @@ def export_type(kind: str, path: Path, *, family: str | None = None, config_json
         return None
     if family in {"sdxl", "sdxl_base_v1-0"}:
         return "checkpoint"
-    if family in {"anima", "flux2", "krea2"}:
+    if family in {"anima", "flux2", "krea2", "moss_image", "flux3"}:
         return "diffusion_model"
     return None

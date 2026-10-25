@@ -1,4 +1,4 @@
-"""FLUX 3 Image Klein Base text-to-image adapter training."""
+"""FLUX 3 Image Klein Base text-to-image training."""
 
 from __future__ import annotations
 
@@ -116,7 +116,6 @@ class Flux3Family(ModelFamily):
     def training_options_errors(self, cfg):
         errors = super().training_options_errors(cfg)
         for failed, field, message in (
-            (cfg.training.mode != "adapter", "training.mode", "FLUX.3 当前支持适配器训练。"),
             (cfg.training.train_text_encoder, "training.train_text_encoder", "FLUX.3 文本编码器保持冻结。"),
             (cfg.memory.compile, "memory.compile", "FLUX.3 训练暂不支持编译。"),
             (bool(cfg.memory.blocks_to_swap), "memory.blocks_to_swap", "FLUX.3 训练暂不支持块换出。"),
@@ -124,7 +123,8 @@ class Flux3Family(ModelFamily):
              "FLUX.3 梯度检查点请选择关闭或开启。"),
             (cfg.loop.distributed_strategy == "fsdp", "loop.distributed_strategy", "FLUX.3 训练暂不支持显存分片。"),
             (cfg.loop.gpu_count != 1, "loop.gpu_count", "FLUX.3 当前支持单卡训练。"),
-            (cfg.adapter.algo == "tlora", "adapter.algo", "FLUX.3 变长序列尚不支持按图片时间步调整秩的 T-LoRA。"),
+            (cfg.training.mode == "adapter" and cfg.adapter.algo == "tlora", "adapter.algo",
+             "FLUX.3 变长序列尚不支持按图片时间步调整秩的 T-LoRA。"),
             (cfg.model.dtype == "fp16", "model.dtype", "FLUX.3 主模型计算精度请选择 BF16 或 FP32。"),
             (cfg.memory.base_precision == "fp16", "memory.base_precision", "FLUX.3 底模精度请选择保留原精度、BF16 或 FP32。"),
             (cfg.loop.mixed_precision == "fp16", "loop.mixed_precision", "FLUX.3 混合精度请选择 BF16 或关闭。"),
@@ -132,7 +132,7 @@ class Flux3Family(ModelFamily):
             if failed:
                 errors.append({"loc": field, "msg": message})
         for index, rule in enumerate(cfg.adapter.rules):
-            if rule.algo == "tlora":
+            if cfg.training.mode == "adapter" and rule.algo == "tlora":
                 errors.append({"loc": f"adapter.rules.{index}.algo",
                                "msg": "FLUX.3 变长序列尚不支持按图片时间步调整秩的 T-LoRA。"})
         return errors

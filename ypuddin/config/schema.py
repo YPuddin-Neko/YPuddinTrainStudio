@@ -1752,7 +1752,7 @@ class TrainingConfig(_Strict):
     )
     train_backbone: bool = F(
         True,
-        help="训练生成图像的主模型：SDXL 为 UNet，Anima/Krea 2/Klein 为 DiT。全量微调时包括卷积、归一化、嵌入与偏置，不局限于线性层。",
+        help="训练生成图像的主模型：SDXL 为 UNet，Anima、Krea 2、Klein、MOSS-Image 为 DiT。全量微调时包括卷积、归一化、嵌入与偏置，不局限于线性层。",
         ui_=ui("training", order=10, control="switch"),
     )
     train_text_encoder: bool = F(

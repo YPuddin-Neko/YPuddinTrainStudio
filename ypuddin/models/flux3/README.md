@@ -10,13 +10,20 @@ include it; native framework constraints remain protected. The Linux DTK launche
 retains its vendor dependency rules and does not select this group. Family preflight
 reports an incompatible Transformers version before loading model payloads.
 
-The supported initial path is ordinary text-to-image adapter training with a
-frozen BF16 text encoder and FP32 VAE. LoRA, LoKr, LoHa, Full-diff and Ortho adapters
-use the existing adapter runtime. Ortho export remains plain LoRA. T-LoRA, backbone
-or text-encoder full training, FP16/FP8 base conversion, compilation, block swap and
+Text-to-image training supports adapters or the full DiT, with a frozen BF16 text
+encoder and FP32 VAE. LoRA, LoKr, LoHa, Full-diff and Ortho adapters
+use the existing adapter runtime. Ortho export remains plain LoRA. T-LoRA,
+text encoder training, FP16/FP8 base conversion, compilation, block swap and
 multi-GPU training are rejected by the family configuration checks. Reference-image
 editing, bounding boxes, the prompt upsampler and distilled flow-map weights are
 outside this family entry.
+
+Full training selects every DiT parameter, including normalization, modulation and
+conditioning projections; the image-conditioning branch receives gradients only
+when nonempty image conditions are supplied. Trainable parameters stay FP32, with
+optional BF16 mixed precision. Ordinary and EMA exports contain native
+`backbone/model.safetensors`, the architecture `config.json` and an artifact training
+config referencing the frozen components. Full model save precision is BF16 or FP32.
 
 Text conditioning retains the official 80-token padding multiple (4096 maximum),
 all eight selected hidden layers, and the full padded states for each caption.

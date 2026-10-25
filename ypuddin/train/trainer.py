@@ -789,8 +789,10 @@ class Trainer:
             cfg.dataset.resolution_mode,
         )
         if cfg.loop.ema:
+            buffers = self.adapters.buffer_state_keys() if isinstance(self.adapters, FullTrainingSet) else set()
             self.ema = {
-                k: v.detach().float().cpu().clone() for k, v in self.adapters.export_state()[0].items()
+                k: (v.detach() if k in buffers else v.detach().float()).cpu().clone()
+                for k, v in self.adapters.export_state()[0].items()
             }
         if cfg.checkpoint.resume:
             self._resume(cfg.checkpoint.resume)
@@ -1308,7 +1310,8 @@ class Trainer:
         self.sampler.load_state_dict(ck["sampler"])
         self._restore_checkpoint_rng(ck["rng"])
         if "ema" in ck and self.ema is not None:
-            self.ema = {k: v.float() for k, v in ck["ema"].items()}
+            buffers = self.adapters.buffer_state_keys() if isinstance(self.adapters, FullTrainingSet) else set()
+            self.ema = {k: v if k in buffers else v.float() for k, v in ck["ema"].items()}
         self._loss_ema = self.progress.extra.get("loss_ema")
         self.emit(
             "run.resumed",
@@ -2482,8 +2485,13 @@ class Trainer:
         d = self.cfg.loop.ema_decay
         with self._evaluation():
             tensors, _ = self.adapters.export_state()
+        buffers = self.adapters.buffer_state_keys() if isinstance(self.adapters, FullTrainingSet) else set()
         for k, v in tensors.items():
-            self.ema[k].mul_(d).add_(v.detach().float().cpu(), alpha=1 - d)
+            if k in buffers:
+                # Rotary frequencies and other model buffers are state, not learned EMA weights.
+                self.ema[k].copy_(v)
+            else:
+                self.ema[k].mul_(d).add_(v.detach().float().cpu(), alpha=1 - d)
 
     def _step_hooks(self, step: int) -> None:
         cfg = self.cfg

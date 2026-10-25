@@ -21,7 +21,14 @@ with thinking enabled, truncation at 4096 tokens, and unpadded encoding per capt
 Sampling uses the official snapped Euler schedule (50 steps, shift 5, CFG 3 by
 default). The negative CFG branch skips main block 22. The text and image reference
 branches, additional SLG, model compilation, block swapping, quantized weights,
-full model/text encoder training, T-LoRA, and distributed training are not enabled.
+text encoder training, T-LoRA, and distributed training are not enabled.
+
+Single-device full training updates the complete DiT, including normalization,
+text refinement, timestep and modulation parameters. The external text encoder and
+VAE stay frozen. Trainable parameters remain FP32, with optional BF16 mixed precision.
+Ordinary and EMA exports use native `diffusion_pytorch_model.safetensors` plus the
+architecture `config.json` inside a `.model` artifact. Save precision is BF16 or FP32;
+the artifact's training config retains explicit references to the frozen components.
 
 Component overrides use local paths. A complete official directory works directly;
 `model.vae_path` also accepts a standard full FLUX.2 Diffusers VAE directory or

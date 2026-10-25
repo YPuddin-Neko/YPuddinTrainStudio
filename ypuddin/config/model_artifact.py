@@ -23,6 +23,6 @@ def rebind_artifact_components(config: dict, manifest: dict, root: Path) -> dict
         source = (root / relative).resolve()
         if not source.is_relative_to(root) or not source.is_file():
             raise ValueError("full model artifact component is outside the artifact or missing")
-        directory = family in {"sdxl", "flux2"} or (family == "toy" and component != "backbone")
+        directory = family in {"sdxl", "flux2", "moss_image"} or (family == "toy" and component != "backbone")
         model[fields[component]] = str(source.parent if directory else source)
     return config

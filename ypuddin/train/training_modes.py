@@ -146,6 +146,13 @@ class FullTrainingSet:
     def export_state(self):
         return self.training_state_dict(), {"components": sorted(self.modules), "format": "full-model-v1"}
 
+    def buffer_state_keys(self) -> set[str]:
+        return {
+            f"{component}.{self._native_key(name)}"
+            for component, module in self.modules.items()
+            for name, _ in module.named_buffers()
+        }
+
     def load_training_state(self, tensors):
         expected = self._state_keys()
         if tensors.keys() != expected.keys():
@@ -250,9 +257,21 @@ def save_model_artifact(
                     module.save_config(target)
                     save_file(values, str(target / "diffusion_pytorch_model.safetensors"), metadata=metadata)
                     config.model.dit_path = str(path / component)
+                elif family == "moss_image":
+                    (target / "config.json").write_text(
+                        json.dumps({"_class_name": "MOSSImageTransformer", **loaded.extra["dit_config"]}, indent=2),
+                        encoding="utf-8",
+                    )
+                    save_file(values, str(target / "diffusion_pytorch_model.safetensors"), metadata=metadata)
+                    config.model.dit_path = str(path / component)
                 else:
                     save_file(values, str(target / "model.safetensors"), metadata=metadata)
                     config.model.dit_path = str(path / component / "model.safetensors")
+                    if family == "flux3":
+                        (target / "config.json").write_text(
+                            json.dumps({"_class_name": "DiT", **loaded.extra["dit_config"]}, indent=2),
+                            encoding="utf-8",
+                        )
             else:
                 if hasattr(module_config, "save_pretrained"):
                     module_config.save_pretrained(target)
@@ -267,7 +286,7 @@ def save_model_artifact(
                 )
             component_outputs[component] = f"{component}/" + (
                 "diffusion_pytorch_model.safetensors"
-                if component == "backbone" and family in {"sdxl", "flux2"}
+                if component == "backbone" and family in {"sdxl", "flux2", "moss_image"}
                 else "model.safetensors"
             )
         # Resolve components embedded in the original SDXL checkpoint before replacing UNet.
@@ -286,6 +305,11 @@ def save_model_artifact(
             if "text_encoder" not in training.modules:
                 config.model.text_encoder_path = str(loaded.text.path)
             config.model.tokenizer_path = str(loaded.text.tokenizer_path)
+        elif family in {"moss_image", "flux3"}:
+            config.model.vae_path = str(loaded.latent.path.resolve())
+            config.model.text_encoder_path = str(loaded.text.path.resolve())
+            tokenizer = loaded.text.tokenizer_path if family == "moss_image" else loaded.text.processor_path
+            config.model.tokenizer_path = str(tokenizer.resolve())
         if family in {"anima", "krea2"} and "text_encoder" in training.modules:
             # tokenizer_path means old T5 in Anima, so retain that setting; the Qwen
             # tokenizer sits next to decoder weights and is copied as small text assets.

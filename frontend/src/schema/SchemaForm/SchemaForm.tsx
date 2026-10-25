@@ -928,6 +928,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
+    const trainingMode = fullPathKey === 'training.mode';
     const intervalRule = INTERVAL_FIELDS[fullPathKey];
     if (intervalFieldPath(fullPathKey) !== fullPathKey) return null;
     if (['checkpoint.save_state_every_epochs', 'dataset.native_max_pixels_mode'].includes(fullPathKey)) return null;
@@ -944,7 +945,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (ddpmModifier && family?.objective !== 'ddpm' && !incompatibleFamilyLoss) return null;
     if (fullPathKey === 'model.krea2_variant' && selectedModel?.variant && selectedModel.variant === value.model?.krea2_variant) return null;
     if (fullPathKey === 'model.text_encoder_2_path' && value.model?.family !== 'sdxl') return null;
-    if (familyOptions?.length === 0) return null;
+    if (!trainingMode && familyOptions?.length === 0) return null;
     if (family?.objective === 'ddpm' && ['sampling.shift', 'sampling.er_sde_order', 'sampling.er_sde_s_noise', 'objective.shift', 'objective.res_shift_tokens', 'objective.res_shift_mu', 'objective.mode_scale'].includes(fullPathKey)) return null;
     if (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS && weights.length && !weightMeta && !(key === 'tokenizer_path' && family?.name === 'sdxl')) return null;
     if (family?.name === 'sdxl' && weightMeta?.required === false && !showAdvanced) return null;
@@ -1025,13 +1026,19 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const unavailableOptions = family?.unavailable_options?.[fullPathKey];
     const choice = (option: string): StudioSelectOption => {
       const label = configOptionLabel(fullPathKey, option, english, family?.name ?? value.model?.family);
+      if (trainingMode && supportedOptions && !supportedOptions.includes(option)) {
+        const note = option === 'full'
+          ? (english ? 'not yet available for this model' : '当前模型尚未接入')
+          : (english ? 'not supported by this model' : '当前模型不支持');
+        return { value: option, label: `${label} (${note})`, displayLabel: label, disabled: true };
+      }
       const reason = unavailableOptions?.[option];
       if (!reason) return { value: option, label };
       const note = reason === 'wrong_version' ? (english ? 'wrong version' : '版本不符') : (english ? 'not installed' : '未安装');
       return { value: option, label: `${label} (${note})`, disabled: true };
     };
-    // A model that offers a single choice (SDXL's preview scheduler) has nothing to pick.
-    if (familyOptions && offeredOptions?.length === 1 && !managedReason && [offeredOptions[0], 'auto', ''].includes(fieldValue == null ? '' : String(fieldValue))) return null;
+    // Keep training mode visible so unavailable modes can explain their limits.
+    if (!trainingMode && familyOptions && offeredOptions?.length === 1 && !managedReason && [offeredOptions[0], 'auto', ''].includes(fieldValue == null ? '' : String(fieldValue))) return null;
 
     let control = null;
 
@@ -1240,7 +1247,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           onChange(fullPathKey === 'adapter.algo' && next !== 'lokr' && value.adapter?.rank === 'full'
             ? setNestedValue(updated, ['adapter', 'rank'], lastLowRank.current ?? 16) : updated);
         }}
-        options={supportedOptions.map(choice)}/>;
+        options={(trainingMode ? schemaOptions ?? supportedOptions : supportedOptions).map(choice)}/>;
     } else if (ui.options?.length) {
       control = <div className="space-y-2"><StudioSelect aria-label={fieldLabel} value={ui.options.includes(fieldValue) || !ui.allow_custom ? fieldValue || '' : '__custom__'} fallbackLabel={String(fieldValue || '')}
         onValueChange={next => onChange(setNestedValue(value,path,next === '__custom__' ? '' : next))}
@@ -1402,6 +1409,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         ? (english ? 'Updates the selected model weights directly.' : '直接训练所选模型本身的权重。')
         : (english ? 'Trains LoRA weights while keeping the base model frozen.' : '只训练 LoRA 权重，底模保持不变。')
       : fullPathKey === 'model.dtype' ? modelPrecisionHint
+      : fullPathKey === 'checkpoint.save_dtype' && value.training?.mode === 'full'
+        ? (english ? 'Precision of exported full-model weights; FP32 files are larger.' : '导出完整模型权重的精度，FP32 文件更大。')
+      : fullPathKey === 'sampling.noise' && value.training?.mode === 'full'
+        ? (english ? 'Selects how sampling noise is generated.' : '选择采样噪声的生成规则。')
       : fullPathKey === 'adapter.dora_axis' ? fieldValue === 'input'
         ? (english ? 'One magnitude per input channel; loads in ComfyUI, Forge and A1111.' : '每个输入通道一个幅度；ComfyUI、Forge 和 A1111 都能加载。')
         : (english ? 'One magnitude per output channel; not A1111, and Forge and ComfyUI render it differently, possibly badly distorted.' : '每个输出通道一个幅度；A1111 不支持，Forge 与 ComfyUI 出图不一致，可能严重失真。')
@@ -1530,14 +1541,16 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   });
   const renderToggleSection = (path: string, children: React.ReactNode) => {
     const features: Record<string, {title:string;description?:string;switchLabel:string}> = {
-      'loop.ema': {title:english?'Weight averaging (EMA)':'权重平均 (EMA)',description:english?'Keep a separate copy of averaged adapter weights for comparison.':'平滑适配器权重变化，额外保存平均权重用于对比。',switchLabel:english?'Enable EMA':'启用 EMA'},
+      'loop.ema': {title:english?'Weight averaging (EMA)':'权重平均 (EMA)',description:value.training?.mode === 'full'
+        ? (english?'Keep a separate copy of averaged model weights for comparison.':'平滑模型权重变化，额外保存平均权重用于对比。')
+        : (english?'Keep a separate copy of averaged adapter weights for comparison.':'平滑适配器权重变化，额外保存平均权重用于对比。'),switchLabel:english?'Enable EMA':'启用 EMA'},
       'dataset.caption.shuffle': {title:english?'Shuffle caption tags':'打乱标签顺序',description:english?'Randomize variable tags while keeping fixed tags in place.':'随机调整可变标签的顺序，固定标签保持不变。',switchLabel:english?'Shuffle caption tags':'打乱标签顺序'},
       'objective.infonoise_enabled': {title:english?'InfoNoise adaptive timesteps':'InfoNoise 自适应时间步',switchLabel:english?'Enable InfoNoise':'启用 InfoNoise'},
     };
     const fieldPath=path.split('.');
     let fieldSchema=schema;
     for(const key of fieldPath)fieldSchema=(fieldSchema?.$ref ? resolveRef(schema,fieldSchema.$ref) : fieldSchema)?.properties?.[key];
-    const help=configFieldHelp(path,fieldSchema?.description,english);
+    const help=(path === 'loop.ema' ? contextHelp(path,fieldContext) : undefined) || configFieldHelp(path,fieldSchema?.description,english);
     const feature=features[path];
     return <ParameterToggleSection key={`${path}:${search.trim()}`} id={`feature-${path}`} {...feature} fieldPath={path}
       switchPosition={path === 'objective.infonoise_enabled' ? 'start' : 'end'} keepHelpEnabled={path === 'objective.infonoise_enabled'}

@@ -299,7 +299,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   };
 
   const noiseOptions = options?.axes.find(axis => axis.key === 'noise')?.values?.map(String);
-  const noiseHelp = (family && contextHelp('sampling.noise', { family, config: {}, english }, noiseOptions)) || text(...FIELD_HELP['sampling.noise']);
+  const noiseHelp = (family && contextHelp('sampling.noise', { family, config: { training: { mode: options?.training_mode } }, english }, noiseOptions)) || text(...FIELD_HELP['sampling.noise']);
 
   if (!options || !values) return <div className="xyz-loading">{loading ? <><Loader2 size={20} className="animate-spin"/>{text('读取采样配置…', 'Loading sampling setup…')}</> : <><p role="alert">{error}</p><button type="button" className="ui-btn ui-btn-sm" onClick={() => setRevision(value => value + 1)}>{text('重试', 'Retry')}</button></>}</div>;
   return <section className="xyz-workspace" aria-label={text('模型测试', 'Model testing')}>

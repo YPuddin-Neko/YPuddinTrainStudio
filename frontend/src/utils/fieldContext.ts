@@ -65,15 +65,20 @@ export function unusedSettingReason(path: string, { family, config, english }: F
   const text = (zh: string, en: string) => english ? en : zh;
   const name = modelName(family);
   const adapterOnlyModel = family.name === 'flux3' ? 'FLUX.3' : family.name === 'moss_image' ? 'MOSS-Image' : null;
+  const modes = family.training_capabilities?.modes;
+  const fullSaveDtypes = family.training_capabilities?.full_save_dtypes;
   switch (path) {
     case 'training.mode':
-      return adapterOnlyModel && config.training?.mode === 'full' ? text(`${adapterOnlyModel} 仅支持适配器训练，请切换训练方式。`, `${adapterOnlyModel} supports adapter training only. Change the training mode.`) : undefined;
+      return adapterOnlyModel && config.training?.mode === 'full' && !(Array.isArray(modes) && modes.includes('full')) ? text(`${adapterOnlyModel} 仅支持适配器训练，请切换训练方式。`, `${adapterOnlyModel} supports adapter training only. Change the training mode.`) : undefined;
     case 'loop.gpu_count':
       return adapterOnlyModel && Number(config.loop?.gpu_count ?? 1) !== 1 ? text(`${adapterOnlyModel} 使用单卡训练，请将显卡数设为 1。`, `${adapterOnlyModel} trains on one GPU. Set the GPU count to 1.`) : undefined;
     case 'loop.distributed_strategy':
       return adapterOnlyModel && config.loop?.distributed_strategy === 'fsdp' ? text(`${adapterOnlyModel} 不支持显存分片，请切换为数据并行并将显卡数设为 1。`, `${adapterOnlyModel} does not support memory sharding. Select data parallelism and set the GPU count to 1.`) : undefined;
     case 'training.train_text_encoder':
       return adapterOnlyModel ? text(`${adapterOnlyModel} 使用冻结的文本编码器，请关闭文本编码器训练。`, `${adapterOnlyModel} uses a frozen text encoder. Turn off text encoder training.`) : undefined;
+    case 'checkpoint.save_dtype':
+      return config.training?.mode === 'full' && Array.isArray(fullSaveDtypes) && !fullSaveDtypes.includes(config.checkpoint?.save_dtype ?? 'bf16')
+        ? text(`全量模型的权重保存精度请选择 ${fullSaveDtypes.join(' / ').toUpperCase()}。`, `For full-model exports, select ${fullSaveDtypes.join(' / ').toUpperCase()}.`) : undefined;
     case 'optimizer.cpu_offload':
       if (runtime === 'mps' || runtime === 'cpu') return text('当前设备没有独立显存，CPU 卸载会增加内存占用。', 'This device has no dedicated VRAM; CPU offload increases memory use.');
       if (config.loop?.distributed_strategy === 'fsdp' || config.optimizer?.kahan) return text('CPU 卸载需使用数据并行并关闭低精度更新补偿。', 'CPU offload requires data parallelism with Kahan updates disabled.');
@@ -122,6 +127,10 @@ const multiGpu = (config: Record<string, any>) => Number(config.loop?.gpu_count 
 /** Options this model and machine can run, keeping the current value visible; undefined keeps the list as it is. */
 export function contextOptions(path: string, { family, config }: FieldContext, options: string[] | undefined, current: unknown): string[] | undefined {
   if (!options) return undefined;
+  if (path === 'checkpoint.save_dtype' && config.training?.mode === 'full') {
+    const dtypes = family?.training_capabilities?.full_save_dtypes;
+    if (Array.isArray(dtypes)) return options.filter(option => dtypes.includes(option));
+  }
   if (path === 'sampling.scheduler') {
     return samplingSchedulerOptions(options, family?.name ?? config.model?.family, [String(current ?? '')]);
   }
@@ -196,6 +205,12 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
   const name = modelName(family);
   const ddpm = family.objective === 'ddpm';
   switch (path) {
+    case 'checkpoint.save_dtype':
+      return context.config.training?.mode === 'full'
+        ? text('导出完整模型权重的精度，不改变训练参数或完整恢复状态。BF16 文件更小，FP32 保留更多精度。', 'Precision of exported full-model weights; it does not change training parameters or full recovery states. BF16 files are smaller; FP32 preserves more precision.') : undefined;
+    case 'loop.ema':
+      return context.config.training?.mode === 'full'
+        ? text('在 CPU 维护模型权重的指数移动平均，额外保存 EMA 模型用于对比，会增加内存和文件占用。训练预览仍使用普通权重。', 'Maintains an exponential moving average of model weights on the CPU and exports an additional EMA model for comparison. Uses extra memory and storage. Training previews still use the regular weights.') : undefined;
     case 'model.attention': {
       const sdpa: [string, string] = runtime === 'cuda'
         ? ['PyTorch 内置的注意力；在 NVIDIA 显卡上会自动选用内置的 FlashAttention 或省显存内核，一般直接用它。', "PyTorch's built-in attention; on NVIDIA GPUs it picks PyTorch's own FlashAttention or memory-efficient kernel, usually the right choice."]
@@ -239,6 +254,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         has(family, 'compile') && onGpu(runtime) && text(`不能与「${configFieldLabel('memory.compile', '')}」同时使用。`, 'Cannot be combined with compiling the model.'),
       ]);
     case 'memory.base_precision':
+      if (context.config.training?.mode === 'full') return text('全量微调保留 FP32 可训练权重；前向计算精度由混合精度控制。', 'Full fine-tuning retains FP32 trainable weights. Mixed precision controls forward computation.');
       return join([
         text('降低冻结底模的存储精度来省显存：只转换加了 LoRA 的线性层，原模型文件和 LoRA 本身的精度不变。精度越低越省显存，但可能影响效果。', 'Stores the frozen base model at a lower precision to save memory. Only the linear layers that carry LoRA are converted; the model file and the LoRA weights keep their precision. Lower precision saves more memory but can affect results.'),
         listed('fp8_e4m3') && text('FP8 最省显存，在启动时量化。', 'FP8 saves the most and is quantized at start-up.'),
@@ -395,6 +411,17 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
     case 'objective.res_shift_tokens':
       return text(`按图像 token 数插值偏移量的两个参考点，${name} 默认 256 和 ${family.name === 'krea2' ? 6400 : 4096}。它们不是图像尺寸上限，范围外会外推；与下方 mu 成对使用。`, `The two image token counts the shift is interpolated between; ${name} uses 256 and ${family.name === 'krea2' ? 6400 : 4096}. They are not size limits (values outside extrapolate) and pair with the mu values below.`);
     case 'sampling.noise':
+      if (context.config.training?.mode === 'full') return join([
+        text('选择采样噪声的生成规则。采样由训练器执行。', 'Selects how sampling noise is generated. Sampling runs in the trainer.'),
+        ...optionLines({
+          comfyui: ['初始噪声在 CPU 上按种子生成。', 'draws seeded initial noise on the CPU.'],
+          a1111: onGpu(runtime)
+            ? ['在显卡上逐张按种子生成噪声。', 'draws per-image seeded noise on the GPU.']
+            : ['这台机器使用 CPU 逐张按种子生成噪声。', 'draws per-image seeded noise on the CPU on this machine.'],
+        }),
+        ddpm && text(`${name} 的初始噪声缩放也随选项切换。`, `${name}'s initial-noise scaling also follows this selection.`),
+        text('Euler a、ER-SDE 在采样过程中追加的噪声也使用所选规则。仅影响采样，不影响训练。', 'Euler a and ER-SDE use the selected rules for noise added during sampling. Affects sampling, not training.'),
+      ]);
       return join([
         text('选择适配器融合与噪声规则。采样由训练器执行。', 'Selects adapter merging and noise rules. Sampling runs in the trainer.'),
         ...optionLines({
@@ -432,6 +459,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       return join([general, text(`留空使用 ${name} 的默认值：${fallback}。`, `Leave blank for the ${name} default: ${fallback}.`)]);
     }
     case 'training.train_backbone':
+      if ((family.name === 'flux3' || family.name === 'moss_image') && context.config.training?.mode === 'full') return text('训练 DiT 主模型的全部参数，包括归一化、嵌入和偏置。文本编码器与 VAE 保持冻结。', 'Trains all DiT model parameters, including norms, embeddings and biases. The text encoder and VAE stay frozen.');
       if (family.name === 'flux3') return text('训练 FLUX.3 图像主模型的适配器。底模权重保持冻结，只更新所选线性层的适配器参数。', 'Trains adapters for the FLUX.3 image model. Base weights stay frozen; only adapter parameters in the selected linear layers are updated.');
       if (family.name === 'moss_image') return text('训练 MOSS-Image 主模型所选线性层的适配器，底模和文本编码器保持冻结。', 'Trains adapters in the selected MOSS-Image linear layers while keeping the base model and text encoder frozen.');
       return family.name === 'sdxl'

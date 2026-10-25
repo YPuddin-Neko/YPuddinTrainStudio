@@ -2,7 +2,8 @@
 
 from .optimizer_rules import optimizer_key, optimizer_policy
 
-FULL_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "toy"})
+FULL_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "moss_image", "flux3", "toy"})
+FULL_TEXT_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "toy"})
 TEXT_ADAPTER_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2"})
 NOISE_SHAPE_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "flux3"})
 _ANIMA_LR_FIELDS = frozenset({"llm_adapter_lr", "self_attn_lr", "cross_attn_lr", "mlp_lr", "modulation_lr"})
@@ -14,12 +15,14 @@ def training_capabilities(family: str) -> dict:
     result = {
         "modes": ["adapter", "full"] if supported else ["adapter"],
         "full_backbone": supported,
-        "full_text_encoder": supported,
+        "full_text_encoder": family in FULL_TEXT_FAMILIES,
         "adapter_text_encoder": family in TEXT_ADAPTER_FAMILIES,
         "text_encoder_components": ["CLIP-L", "CLIP-G"] if family == "sdxl" else ["文本编码器"],
         "full_block_swap": False,
         "full_fp8": False,
     }
+    if family in {"moss_image", "flux3"}:
+        result["full_save_dtypes"] = ["fp32", "bf16"]
     if family == "flux3":
         result.update(
             adapter_algorithms=["lora", "lokr", "loha", "full", "ortho"],
@@ -154,6 +157,10 @@ def training_errors(cfg) -> list[dict[str, str]]:
     else:
         if cfg.model.family not in FULL_FAMILIES:
             reject("training.mode", "当前模型族尚未实现全量微调")
+        if selection.train_text_encoder and cfg.model.family not in FULL_TEXT_FAMILIES:
+            reject("training.train_text_encoder", "当前模型族的全量微调仅支持主模型，文本编码器保持冻结")
+        if cfg.model.family in {"moss_image", "flux3"} and cfg.checkpoint.save_dtype == "fp16":
+            reject("checkpoint.save_dtype", "该模型的完整权重保存精度请选择 FP32 或 BF16")
         if cfg.memory.base_precision not in {"auto", "fp32"}:
             reject("memory.base_precision", "全量微调的主参数使用 FP32，请选择保留精度；混合精度控制前向计算")
         if cfg.memory.blocks_to_swap:

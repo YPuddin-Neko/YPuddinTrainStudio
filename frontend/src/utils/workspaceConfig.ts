@@ -90,8 +90,9 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
     next.sampling.steps = null; next.sampling.cfg = null; next.sampling.guidance = null;
   }
   if (family.name === 'flux3' || family.name === 'moss_image') {
-    next.training = { ...next.training, mode: 'adapter', train_backbone: true, train_text_encoder: false, resume_weights: null, backbone_lr: null, text_encoder_lr: null };
-    next.optimizer = { ...next.optimizer, cpu_offload: false, exclude_bias_norm_from_weight_decay: false };
+    const keepFull = next.training.mode === 'full' && familyParameterOptions(family, 'training.mode')?.includes('full');
+    next.training = { ...next.training, mode: keepFull ? 'full' : 'adapter', train_backbone: true, train_text_encoder: false, resume_weights: null, backbone_lr: keepFull ? next.training.backbone_lr : null, text_encoder_lr: null };
+    if (!keepFull) next.optimizer = { ...next.optimizer, cpu_offload: false, exclude_bias_norm_from_weight_decay: false };
     next.adapter = { ...next.adapter, layer_types: 'linear', resume_weights: null };
     const algorithms = familyParameterOptions(family, 'adapter.algo');
     if (algorithms?.length && !algorithms.includes(next.adapter.algo)) next.adapter.algo = algorithms[0];
