@@ -4,7 +4,7 @@
 
 # YPuddin Train Studio
 
-一个本地运行的训练工作台，支持 Anima、SDXL、Krea 2、FLUX.2 Klein、FLUX.3 Klein、MOSS-Image 5B 图像训练，以及 VoxCPM 1.5、GPT-SoVITS v5 语音微调
+一个本地运行的训练工作台，支持 Anima、SDXL、Krea 2、FLUX.2 Klein、FLUX.3 Klein、MOSS-Image 图像训练，以及 VoxCPM 1.5、GPT-SoVITS v5 语音微调
 
 [![License](https://img.shields.io/badge/License-GPLv3-blue)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](#支持的模型与平台) [![Version](https://img.shields.io/badge/Version-v0.9.0-orange)](CHANGELOG.md) [![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB)](#快速开始) [![PyTorch](https://img.shields.io/badge/PyTorch-2.4%2B-EE4C2C)](docs/RUNTIME.md) [![React](https://img.shields.io/badge/React-18-61DAFB)](frontend/package.json)
 
@@ -16,6 +16,7 @@
 
 - **整理训练数据**：导入与筛选图片，使用 Tagger 或视觉大模型打标，编辑 TXT / JSON 标签，制作遮罩和准备正则图片。
 - **配置图像训练**：支持 LoRA、LoKr、LoHa、OrthoLoRA、T-LoRA、LyCORIS Full 与主模型全量微调；可选择分桶或原生分辨率，查看图片尺寸变化和显存估算。优化器包括 AdamW、Prodigy 系列和内置 Muon，具体选项随模型与训练方式提供。
+- **调整显存与计算**：按模型选择 FlashAttention 2、梯度检查点与内存卸载、冻结模型块换出、VAE 分块、FP8 底模存储和模型编译；DoRA 另提供标准融合计算。各项适用范围和组合限制见[训练配置](docs/TRAINING.md#精度与显存)与[注意力后端](docs/ATTENTION.md)。
 - **安排显卡与任务**：不同显卡可同时运行不同任务；图像训练可通过 DDP / FSDP 共同训练一个模型，支持暂停、保存恢复点和继续训练。
 - **查看训练过程**：实时日志、损失与硬件曲线、定期预览，以及按任务管理的权重和恢复点。
 - **测试训练结果**：选择保存的权重，对比模型版本、强度和采样参数；保留生成记录，放大或下载图片。OrthoLoRA 和 T-LoRA 导出为通用 LoRA，适配器兼容范围见[内置适配器](docs/ADAPTERS.md)。
@@ -31,8 +32,8 @@
 | SDXL | 完整 checkpoint 或独立组件 | CLIP-L、CLIP-G |
 | Krea 2 | Raw；支持 BF16 和受支持的 FP8 scaled 格式 | Qwen3-VL-4B |
 | FLUX.2 Klein | Base 4B / 9B | 对应 Qwen3-4B / Qwen3-8B |
-| FLUX.3 Klein 5.5B | Image Klein Base，原始 BF16 / FP32 权重 | Qwen3-VL-4B-Instruct |
-| MOSS-Image 5B | Base，原始 BF16 / FP32 权重或 Comfy-Org Base BF16 单文件 | 配套 Qwen3.5-9B |
+| FLUX.3 Klein | Image Klein Base，原始 BF16 / FP32 权重 | Qwen3-VL-4B-Instruct |
+| MOSS-Image | Base，原始 BF16 / FP32 权重或 Comfy-Org Base BF16 单文件 | 配套 Qwen3.5-9B |
 
 Krea 2 Turbo 用于采样。FLUX.2 Klein 蒸馏版、KV 版及 FLUX.2 dev 不用于训练；FLUX.3 训练使用 Image Klein Base，不接受蒸馏版或 FP8／NVFP4 推理权重。FLUX.3 与 MOSS-Image 支持单卡适配器训练及完整 DiT 全量微调，外部文本编码器和 VAE 保持冻结；全量权重可保存为 BF16 或 FP32。各模型所需的 VAE、文件格式和加载限制见 [模型配置](docs/MODELS.md)。
 

@@ -77,7 +77,7 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
     }
     next.training.text_encoder_2_lr = null;
   }
-  if (!['anima', 'krea2', 'sdxl', 'flux2', 'flux3'].includes(family.name)) {
+  if (!['anima', 'krea2', 'sdxl', 'flux2', 'flux3', 'moss_image'].includes(family.name)) {
     next.objective.noise_offset = 0;
     next.objective.multires_noise_iterations = 0;
   }

@@ -14848,10 +14848,11 @@
             "type": "string",
             "enum": [
               "standard",
-              "comfyui"
+              "comfyui",
+              "standard_fused"
             ],
             "title": "Dora Compute Mode",
-            "description": "标准模式：使用 FP32 计算 DoRA，不考虑权重保存和融合时的精度变化；未写此项的旧配置按标准模式读取。兼容模式：训练时考虑权重保存和融合过程中的精度变化，减少导出前后的计算差异，是新配置的默认值。按输出通道时，兼容模式也不能让 Forge 与 ComfyUI 的出图一致。",
+            "description": "标准模式：使用 FP32 计算 DoRA，不考虑权重保存和融合时的精度变化；未写此项的旧配置按标准模式读取。标准融合模式：保持 FP32 范数计算，在支持的 CUDA 线性层上使用融合内核；其他情况使用标准计算，恢复时沿用原后端。兼容模式：训练时考虑权重保存和融合过程中的精度变化，减少导出前后的计算差异，是新配置的默认值。按输出通道时，兼容模式也不能让 Forge 与 ComfyUI 的出图一致。",
             "default": "standard",
             "x-ui": {
               "advanced": true,
@@ -23425,7 +23426,7 @@
             "type": "integer",
             "minimum": 0.0,
             "title": "Blocks To Swap",
-            "description": "把多少个模型块的冻结权重暂放 CPU、在执行前移回设备，默认 0 不换出。提高可减少设备驻留权重，但增加内存占用和传输等待；超过实际块数时按全部块处理，不能与 compile 同用。",
+            "description": "把多少个模型块的冻结权重暂放 CPU、在执行前移回设备，默认 0 不换出。提高可减少设备驻留权重，但增加内存占用和传输等待；不能超过模型实际块数，不能与 compile 同用。",
             "default": 0,
             "x-ui": {
               "group": "memory",
@@ -23484,7 +23485,7 @@
               "control": "switch",
               "group": "memory",
               "order": 27,
-              "show_when": "model.family in ['anima', 'krea2']"
+              "show_when": "model.family in ['anima', 'krea2', 'flux3', 'moss_image']"
             }
           },
           "cache_encode_tiled": {
@@ -23497,7 +23498,7 @@
               "control": "switch",
               "group": "memory",
               "order": 28,
-              "show_when": "model.family in ['anima', 'krea2']"
+              "show_when": "model.family in ['anima', 'krea2', 'flux3', 'moss_image']"
             }
           },
           "vae_encode_batch_size": {
@@ -25259,7 +25260,7 @@
               "advanced": true,
               "group": "objective",
               "order": 130,
-              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3']"
+              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3', 'moss_image']"
             }
           },
           "multires_noise_iterations": {
@@ -25273,7 +25274,7 @@
               "advanced": true,
               "group": "objective",
               "order": 131,
-              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3']"
+              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3', 'moss_image']"
             }
           },
           "multires_noise_discount": {
@@ -25287,7 +25288,7 @@
               "advanced": true,
               "group": "objective",
               "order": 132,
-              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3'] && objective.multires_noise_iterations > 0"
+              "show_when": "model.family in ['anima', 'krea2', 'sdxl', 'flux2', 'flux3', 'moss_image'] && objective.multires_noise_iterations > 0"
             }
           },
           "ip_noise_gamma": {
@@ -27022,7 +27023,8 @@
             "type": "string",
             "enum": [
               "standard",
-              "comfyui"
+              "comfyui",
+              "standard_fused"
             ],
             "title": "Compute Mode"
           },

@@ -12,6 +12,11 @@ from torch.nn import functional as F
 from torch.utils.checkpoint import checkpoint
 
 
+def _linear_dtype(layer, fallback):
+    stored = layer.weight.dtype
+    return fallback if stored in {torch.float8_e4m3fn, torch.float8_e5m2} else stored
+
+
 class _RMSNorm(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -83,7 +88,7 @@ class _TextProjection(nn.Module):
         self.blocks = nn.ModuleList([_TextBlock(dim, ffn_dim, heads) for _ in range(2)])
 
     def forward(self, x, rope, mask=None):
-        x = self.proj(x.to(self.proj.weight.dtype))
+        x = self.proj(x.to(_linear_dtype(self.proj, self.blocks[0].norm1.weight.dtype)))
         for block in self.blocks:
             x = block(x, rope, mask)
         return x
@@ -105,7 +110,7 @@ class _Block(nn.Module):
     def forward(self, x, rope, modulation, mask=None):
         shift_a, scale_a, gate_a, shift_f, scale_f, gate_f = modulation.unbind(1)
         y = self.norm1(x) * (1 + scale_a[:, None]) + shift_a[:, None]
-        dtype = self.proj['q'].weight.dtype
+        dtype = _linear_dtype(self.proj['q'], self.norm1.weight.dtype)
         y = y.to(dtype)
         q = self.q_norm(self.proj['q'](y).unflatten(-1, (self.heads, -1))).flatten(2)
         k = self.k_norm(self.proj['k'](y).unflatten(-1, (self.heads, -1))).flatten(2)
@@ -164,8 +169,8 @@ class MOSSImageTransformer(nn.Module):
     def __init__(self, dim=3072, ffn_dim=8192, num_heads=24, num_layers=42,
                  text_dim=4096, freq_dim=256, latent_channels=128, rope_base=10000.0, checkpointing="none"):
         super().__init__()
-        if checkpointing not in {"none", "block"}:
-            raise ValueError("MOSS-Image supports none or block checkpointing")
+        if checkpointing not in {"none", "block", "unsloth"}:
+            raise ValueError("MOSS-Image supports none, block or CPU-offloaded checkpointing")
         self.checkpointing = checkpointing
         self.config = SimpleNamespace(dim=dim, ffn_dim=ffn_dim, num_heads=num_heads, num_layers=num_layers,
                                       text_dim=text_dim, freq_dim=freq_dim, latent_channels=latent_channels,
@@ -187,6 +192,15 @@ class MOSSImageTransformer(nn.Module):
         for module in self.modules():
             if isinstance(module, (_Block, _TextBlock)):
                 module.attn_mode = mode
+
+    def _run_block(self, block, *args):
+        if self.training and torch.is_grad_enabled():
+            if self.checkpointing == "unsloth":
+                with torch.autograd.graph.save_on_cpu(pin_memory=True):
+                    return checkpoint(block, *args, use_reentrant=False)
+            if self.checkpointing == "block":
+                return checkpoint(block, *args, use_reentrant=False)
+        return block(*args)
 
     def load_training_state_dict(self, state_dict, *, prefix=''):
         """Load a consolidated raw/EMA model mapping, strictly; no silent key drops."""
@@ -216,9 +230,9 @@ class MOSSImageTransformer(nn.Module):
         freq = 10000 ** (-torch.arange(half, device="cpu" if times.device.type == "mps" else times.device, dtype=torch.float64) / half)
         phase = times.to(freq.device).double()[:, None] * freq
         embedding = torch.cat((phase.cos(), phase.sin()), -1).float().to(times.device)
-        time = self.time_embedding(embedding.to(self.time_embedding[0].weight.dtype)).float()
-        mod = self.shared_block_modulation(time.to(self.shared_block_modulation.weight.dtype)).view(batch, 6, -1)
-        head = self.video_head_modulation(time.to(self.video_head_modulation.weight.dtype)).view(batch, 2, -1)
+        time = self.time_embedding(embedding.to(_linear_dtype(self.time_embedding[0], self.final_norm_video.weight.dtype))).float()
+        mod = self.shared_block_modulation(time.to(_linear_dtype(self.shared_block_modulation, self.final_norm_video.weight.dtype))).view(batch, 6, -1)
+        head = self.video_head_modulation(time.to(_linear_dtype(self.video_head_modulation, self.final_norm_video.weight.dtype))).view(batch, 2, -1)
         lengths = mask.bool().sum(1)
         if (lengths == 0).any():
             raise ValueError("Each sample needs at least one valid text token.")
@@ -232,20 +246,19 @@ class MOSSImageTransformer(nn.Module):
             text_mask = valid[:, None, None, :]
             joint_mask = torch.cat((torch.ones(batch, height * width, device=valid.device, dtype=torch.bool), valid), 1)
             joint_mask = joint_mask[:, None, None, :]
-        video = self.video_embedder(hidden_states.flatten(2).transpose(1, 2).to(self.video_embedder.weight.dtype).contiguous())
+        video = self.video_embedder(hidden_states.flatten(2).transpose(1, 2).to(_linear_dtype(self.video_embedder, self.final_norm_video.weight.dtype)).contiguous())
         rope = self.rope(height, width, lengths, hidden_states.device).to(video.dtype)
-        text = self.text_embedder.proj(context.to(self.text_embedder.proj.weight.dtype))
-        recompute = self.checkpointing == "block" and self.training and torch.is_grad_enabled()
+        text = self.text_embedder.proj(context.to(_linear_dtype(self.text_embedder.proj, self.final_norm_video.weight.dtype)))
         for block in self.text_embedder.blocks:
             args = (text, rope[:, height * width:], text_mask)
-            text = checkpoint(block, *args, use_reentrant=False) if recompute else block(*args)
+            text = self._run_block(block, *args)
         x = torch.cat((video, text), 1)
         for layer_index, layer in enumerate(self.layers):
             if layer_index not in skip_layers:
                 args = (x, rope, mod, joint_mask)
-                x = checkpoint(layer, *args, use_reentrant=False) if recompute else layer(*args)
+                x = self._run_block(layer, *args)
         x = self.final_norm_video(x[:, :height * width].to(self.final_norm_video.weight.dtype))
         x = x * (1 + head[:, 1, None]) + head[:, 0, None]
-        x = self.final_linear_video(x.to(self.final_linear_video.weight.dtype))
+        x = self.final_linear_video(x.to(_linear_dtype(self.final_linear_video, self.final_norm_video.weight.dtype)))
         sample = x.transpose(1, 2).reshape(batch, -1, height, width)
         return SimpleNamespace(sample=sample) if return_dict else (sample,)

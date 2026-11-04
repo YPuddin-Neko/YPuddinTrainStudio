@@ -7,6 +7,8 @@ from typing import Any
 from ypuddin.config import TrainConfig
 
 STATE_KEY = "training_feature_contract"
+_TILED_FAMILIES = {"flux3", "moss_image"}
+_LATENT_REVISION = "spatial-v1"
 _DEFAULTS = {
     "training.backbone_lr": None,
     "training.text_encoder_lr": None,
@@ -32,23 +34,57 @@ def training_feature_contract(cfg: TrainConfig) -> dict[str, Any]:
         for key in path.split("."):
             value = getattr(value, key)
         values[path] = value
-    return {"version": 1, "values": values}
+    result = {"version": 1, "values": values}
+    if cfg.model.family in _TILED_FAMILIES and (cfg.memory.vae_tiling or cfg.memory.cache_encode_tiled):
+        result.update(version=2, latent_encoding={
+            "family": cfg.model.family,
+            "vae_tiling": cfg.memory.vae_tiling,
+            "cache_encode_tiled": cfg.memory.cache_encode_tiled,
+            "revision": _LATENT_REVISION,
+        })
+    return result
 
 
 def validate_training_feature_contract(expected: dict[str, Any], saved: Any) -> None:
+    previous_latent = None
     if saved is None:
         previous = _DEFAULTS
     elif (
         not isinstance(saved, dict)
         or type(saved.get("version")) is not int
-        or saved["version"] != 1
-        or set(saved) != {"version", "values"}
-        or not isinstance(saved["values"], dict)
+        or saved["version"] not in {1, 2}
+        or not isinstance(saved.get("values"), dict)
         or saved["values"].keys() != _DEFAULTS.keys()
     ):
         raise ValueError("训练状态的组件学习率、优化器卸载或标签与噪声设置记录无效，不能精确恢复")
     else:
+        if saved["version"] == 1:
+            if set(saved) != {"version", "values"}:
+                raise ValueError("训练状态的组件学习率、优化器卸载或标签与噪声设置记录无效，不能精确恢复")
+        else:
+            recipe = saved.get("latent_encoding")
+            if (
+                set(saved) != {"version", "values", "latent_encoding"}
+                or not isinstance(recipe, dict)
+                or set(recipe) != {"family", "vae_tiling", "cache_encode_tiled", "revision"}
+                or not isinstance(recipe["family"], str)
+                or recipe["family"] not in _TILED_FAMILIES
+                or type(recipe["vae_tiling"]) is not bool
+                or type(recipe["cache_encode_tiled"]) is not bool
+                or not (recipe["vae_tiling"] or recipe["cache_encode_tiled"])
+                or recipe["revision"] != _LATENT_REVISION
+            ):
+                raise ValueError("训练状态的 VAE 分块编码记录无效，不能精确恢复。请从导出权重开始新任务。")
+            previous_latent = recipe
         previous = saved["values"]
+    if expected.get("latent_encoding") != previous_latent:
+        if previous_latent is None:
+            raise ValueError(
+                "恢复点未记录当前 VAE 分块编码方式，不能在精确恢复时启用分块。请从导出权重开始新任务。"
+            )
+        raise ValueError(
+            "VAE 分块编码设置与恢复点不同，不能精确恢复。请恢复原设置，或从导出权重开始新任务。"
+        )
     changed = [path for path, value in expected["values"].items() if value != previous[path]]
     if changed:
         raise ValueError(

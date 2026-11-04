@@ -13,6 +13,8 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
+from .attention import packed_attention
+
 MODES = ("image", "image_cond", "text")  # sorted; the order tokens take inside a sample
 IN_CHANNELS = {"image": 128, "image_cond": 128, "text": 20480}
 HIDDEN = 3072
@@ -101,18 +103,6 @@ def layernorm_modulation(x: Tensor, scale: Tensor, shift: Tensor) -> Tensor:
     return (1.0 + scale) * F.layer_norm(x, (x.shape[-1],), eps=1e-6) + shift
 
 
-def packed_attention(q: Tensor, k: Tensor, v: Tensor, bounds: list[tuple[int, int]]) -> Tensor:
-    """Per-sample attention over (1, H, L, D); samples never attend to each other."""
-    _, heads, length, dim = q.shape
-    out = torch.zeros(length, heads * dim, device=q.device, dtype=q.dtype)
-    for start, end in bounds:
-        if start == end:
-            continue
-        chunk = F.scaled_dot_product_attention(q[:, :, start:end], k[:, :, start:end], v[:, :, start:end])
-        out[start:end] = chunk[0].transpose(0, 1).reshape(end - start, heads * dim)
-    return out
-
-
 class RMSNorm(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
@@ -163,6 +153,7 @@ class Block(nn.Module):
     def __init__(self, hidden: int, heads: int, mlp_ratio: float):
         super().__init__()
         self.heads = heads
+        self.attn_mode = "sdpa"
         mlp_hidden = int(hidden * mlp_ratio)
         self.q_proj = nn.Linear(hidden, hidden, bias=False)
         self.k_proj = nn.Linear(hidden, hidden, bias=False)
@@ -181,7 +172,7 @@ class Block(nn.Module):
             return t.reshape(1, t.shape[0], self.heads, -1).transpose(1, 2)  # L (H D) -> 1 H L D
         q, k = self.norm(split(self.q_proj(x_mod)), split(self.k_proj(x_mod)), freqs)
         v = split(self.v_proj(x_mod))
-        attn = packed_attention(q, k, v.to(q.dtype), bounds)
+        attn = packed_attention(q, k, v.to(q.dtype), bounds, self.attn_mode)
         gate_in, up = self.mlp_in(x_mod).chunk(2, dim=-1)
         return x + gate * (self.attn_out(attn) + self.mlp_out(F.silu(gate_in) * up))
 
@@ -223,12 +214,22 @@ class DiT(nn.Module):
         )
         self.final_layer = nn.ModuleDict({"image": LastLayer(hidden, cfg.image_dim)})
 
+    def set_attention_mode(self, mode: str) -> None:
+        if mode not in {"sdpa", "flash_attn"}:
+            raise ValueError(f"Unsupported FLUX.3 attention mode: {mode}")
+        for module in self.modules():
+            if isinstance(module, Block):
+                module.attn_mode = mode
+
     def set_checkpointing(self, mode: str) -> None:
-        if mode not in {"none", "block"}:
-            raise ValueError("FLUX.3 supports none or block activation checkpointing")
+        if mode not in {"none", "block", "unsloth"}:
+            raise ValueError("FLUX.3 supports none, block or CPU-offloaded activation checkpointing")
         self.checkpointing = mode
 
     def _run_block(self, block, x, freqs, bounds, mod):
+        if self.checkpointing == "unsloth" and torch.is_grad_enabled():
+            with torch.autograd.graph.save_on_cpu(pin_memory=True):
+                return checkpoint(block, x, freqs, bounds, mod, use_reentrant=False)
         if self.checkpointing == "block" and torch.is_grad_enabled():
             return checkpoint(block, x, freqs, bounds, mod, use_reentrant=False)
         return block(x, freqs, bounds, mod)

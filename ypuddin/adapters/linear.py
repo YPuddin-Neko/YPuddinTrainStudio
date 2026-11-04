@@ -116,6 +116,13 @@ class AdaptedLayer(nn.Module):
             w = self.dora(delta, base_weight=self.frozen_weight(self.dora.merge_dtype), alpha=alpha, strength=self.multiplier)
             return w if dtype is None else w.to(dtype)
         delta = self.adapter().float()
+        if self.dora is not None and self.dora.compute_mode == "standard_fused":
+            if self.multiplier != 1.0:
+                raise ValueError("DoRA 标准融合模式仅支持强度 1")
+            from .dora_fused import rescale_pair
+
+            w = rescale_pair(self.dora, self.frozen_weight(torch.float32), delta)
+            return w if dtype is None else w.to(dtype)
         if self.dora is None and self.multiplier != 1.0:
             delta = delta * self.multiplier
         # Adding the stored weight to the FP32 delta promotes it without an FP32 copy.

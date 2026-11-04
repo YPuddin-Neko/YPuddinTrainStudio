@@ -12,6 +12,13 @@
 
 安装成功不等于设备内核可用。运行环境页显示导入与计算检测结果；失败时按具体原因处理。
 
+## FLUX.3 与 MOSS-Image
+
+两者提供自动、SDPA 和 FlashAttention 2，自动保持 SDPA。加载模型时按实际设备、计算精度和注意力形状检查所选后端，训练检查包含反向计算。准备阶段无法使用所选后端时，会检查 SDPA 并记录实际选择；精确续训须保持恢复点记录的后端，后续执行中的内核错误会终止任务。
+
+- **FLUX.3**：NVIDIA CUDA 的 BF16 计算可使用 FA2 变长序列内核，同一批次的不同文本长度按样本边界分别计算。FP32 使用 SDPA。
+- **MOSS-Image**：FA2 用于同批次文本长度相同的 BF16 计算；批量大小为 1 时符合文本长度条件。需要 padding mask 的不同长度批次，以及 FP32 计算，使用 SDPA。
+
 ## Windows CUDA
 
 Windows FlashAttention 使用 [mjun0812 的社区预编译包](https://github.com/mjun0812/flash-attention-prebuild-wheels/releases)。页面按当前服务的 Python、PyTorch 和 PyTorch CUDA 构建筛选文件，不使用驱动支持的最高 CUDA 版本代替包版本。

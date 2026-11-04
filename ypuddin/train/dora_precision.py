@@ -35,7 +35,7 @@ def precision_report(adapters, cfg, compute_dtype: torch.dtype) -> dict:
     # A resume point or warm-start file fixes the computation; the plan checks it matches instead.
     continuing = bool(cfg.checkpoint.resume or cfg.adapter.resume_weights)
     reasons, messages = [], []
-    if layers and cfg.adapter.dora_compute_mode == "standard" and not continuing:
+    if layers and cfg.adapter.dora_compute_mode in {"standard", "standard_fused"} and not continuing:
         reasons.append("standard_mode")
         messages.append(
             "标准模式按 FP32 计算 DoRA；出图软件融合导出权重时使用自身的精度和算法，效果与训练计算有差异。"
@@ -89,7 +89,7 @@ def resume_errors(adapters, cfg) -> list[dict[str, str]]:
                 metadata = json.loads(path.read_text(encoding="utf-8"))
                 extra = metadata.get("progress", {}).get("extra", {})
                 saved = _single_output_records(adapters, extra.get(STATE_KEY))
-                validate_resume_contract(compute_contract(adapters), saved)
+                validate_resume_contract(compute_contract(adapters), saved, allow_unresolved_fused=True)
             except (OSError, UnicodeError, ValueError, AttributeError) as error:
                 errors.append({"loc": "checkpoint.resume", "msg": str(error)})
     if cfg.adapter.resume_weights:

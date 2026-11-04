@@ -90,8 +90,13 @@ export function unusedSettingReason(path: string, { family, config, english }: F
       return runtime && runtime !== 'hip' ? text('此项仅在 HIP 环境生效，当前设备不使用 VAE 注意力分块。', 'This setting applies only on HIP; this device does not use VAE attention chunking.') : undefined;
     case 'memory.allow_tf32':
       return runtime === 'mps' || runtime === 'cpu' ? text('当前设备不使用 TF32。', 'This device does not use TF32.') : undefined;
+    case 'memory.base_precision':
+      if (config.training?.mode === 'full' && !['auto', 'fp32'].includes(config.memory?.base_precision ?? 'auto')) return text('全量微调的可训练权重使用 FP32，请选择沿用加载精度或 FP32。', 'Full fine-tuning uses FP32 trainable weights. Select the loaded precision or FP32.');
+      return String(config.memory?.base_precision).startsWith('fp8') && !onGpu(runtime) ? text('当前设备不支持 FP8 底模存储，请选择沿用加载精度、BF16 或 FP32。', 'This device does not support FP8 base-weight storage. Select the loaded precision, BF16 or FP32.') : undefined;
     case 'memory.compile':
       if (!has(family, 'compile')) return text(`${name} 不支持编译模型，请关闭。`, `${name} does not support compiling the model. Turn it off.`);
+      if (config.training?.mode !== 'full' && config.adapter?.dora && config.adapter?.dora_compute_mode === 'standard_fused') return text('DoRA 标准融合模式不能与编译模型同时使用。', 'Standard fused DoRA cannot be combined with compiling the model.');
+      if (['flux3', 'moss_image'].includes(family.name) && (config.memory?.activation_checkpointing ?? 'none') !== 'none') return text('编译模型前，请先关闭梯度检查点。', 'Turn off activation checkpointing before compiling the model.');
       return runtime === 'mps' || runtime === 'cpu' ? text('只有 NVIDIA / 海光显卡会编译模型，当前设备直接运行。', 'Only NVIDIA / DTK GPUs compile the model; this device runs it directly.') : undefined;
     case 'memory.blocks_to_swap':
       return has(family, 'block_swap') ? undefined : text(`${name} 不支持块换出，请设为 0。`, `${name} does not support block swapping. Set it to 0.`);
@@ -101,6 +106,7 @@ export function unusedSettingReason(path: string, { family, config, english }: F
       return effectiveTextEncoding(family, config) === 'cached' ? text('标签在训练前已编码，训练时不加载文本编码器。', 'Captions are encoded before training, so the text encoder is not loaded while training.') : undefined;
     case 'loop.mixed_precision':
       if (adapterOnlyModel && config.loop?.mixed_precision === 'fp16') return text(`${adapterOnlyModel} 不支持 FP16 混合精度，请选择 BF16 或关闭混合精度。`, `${adapterOnlyModel} does not support FP16 mixed precision. Choose BF16 or turn mixed precision off.`);
+      if (runtime === 'cpu') return text('当前 CPU 训练不启用自动混合精度。', 'CPU training does not use automatic mixed precision.');
       return runtime === 'mps' ? text('Apple 芯片训练统一使用 FP32，不使用混合精度。', 'Apple chips train in FP32 without mixed precision.') : undefined;
     case 'adapter.layer_types':
       return familyHasConvolutions(family) ? undefined : text(`${name} 没有卷积层，只训练线性层。`, `${name} has no convolution layers; only linear layers are trained.`);
@@ -114,8 +120,11 @@ export function unusedSettingReason(path: string, { family, config, english }: F
 
 /** An unused setting is hidden unless it is still switched on or set (or would stop training), so it can be reset. */
 export function hideUnusedSetting(path: string, value: unknown, { config, family }: FieldContext): boolean {
+  if (path === 'memory.compile' && has(family, 'compile') && onGpu(runtimeOf(family)) && ['flux3', 'moss_image'].includes(family?.name ?? '')) return false;
+  if (path === 'memory.compile' && has(family, 'compile') && config.training?.mode !== 'full' && config.adapter?.dora && config.adapter?.dora_compute_mode === 'standard_fused') return false;
   if (path === 'memory.offload_text_encoder') return !(value && config.training?.train_text_encoder);
   if (path === 'adapter.layer_types') return value !== 'linear_conv';
+  if (path === 'loop.mixed_precision' && runtimeOf(family) === 'cpu') return false;
   if (path === 'loop.mixed_precision' && ['flux3', 'moss_image'].includes(family?.name ?? '') && value === 'fp16') return false;
   if (path === 'memory.allow_tf32' || path === 'loop.mixed_precision') return true;
   return !value;
@@ -127,6 +136,7 @@ const multiGpu = (config: Record<string, any>) => Number(config.loop?.gpu_count 
 /** Options this model and machine can run, keeping the current value visible; undefined keeps the list as it is. */
 export function contextOptions(path: string, { family, config }: FieldContext, options: string[] | undefined, current: unknown): string[] | undefined {
   if (!options) return undefined;
+  if (path === 'memory.base_precision' && config.training?.mode === 'full') return options.filter(option => option === 'auto' || option === 'fp32');
   if (path === 'checkpoint.save_dtype' && config.training?.mode === 'full') {
     const dtypes = family?.training_capabilities?.full_save_dtypes;
     if (Array.isArray(dtypes)) return options.filter(option => dtypes.includes(option));
@@ -223,13 +233,21 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
           xformers: ['Meta 的注意力加速库，省显存，速度与 SDPA 接近。', "Meta's attention library; saves memory at about the speed of SDPA."],
           flash_attn: runtime === 'hip'
             ? ['海光 DTK 版 FlashAttention，速度快、省显存。', 'The DTK build of FlashAttention; fast and memory-saving.']
-            : ['独立的 FlashAttention 2，速度快、省显存，需要 RTX 30 系列（Ampere）及更新的显卡。', 'The standalone FlashAttention 2; fast and memory-saving, needs an RTX 30-series (Ampere) or newer GPU.'],
+            : family.name === 'flux3' || family.name === 'moss_image'
+              ? ['独立的 FlashAttention 2，需要 RTX 30 系列（Ampere）及更新的显卡。仅支持 BF16 计算，FP32 请选择 SDPA。已固定的计算设置不会自动回退。', 'The standalone FlashAttention 2 requires an RTX 30-series (Ampere) or newer GPU. Supports BF16 computation only. Select SDPA for FP32. Pinned compute settings do not fall back automatically.']
+              : ['独立的 FlashAttention 2，速度快、省显存，需要 RTX 30 系列（Ampere）及更新的显卡。', 'The standalone FlashAttention 2; fast and memory-saving, needs an RTX 30-series (Ampere) or newer GPU.'],
           sage: ['把注意力量化后计算，速度更快，精度略低。', 'Computes attention in quantized form; faster, slightly less precise.'],
           metal_flash: ['Apple 芯片上的 FlashAttention，只加速 FP32 主模型的注意力，其余调用自动改用 SDPA。', "FlashAttention for Apple chips; it speeds up the main model's FP32 attention and uses SDPA for anything else."],
         }),
         text('只影响主模型，文本编码器和 VAE 不受影响。', 'Affects the main model only; the text encoder and VAE are unchanged.'),
       ]);
     }
+    case 'memory.vae_tiling':
+    case 'memory.cache_encode_tiled':
+      return family.name === 'flux3' || family.name === 'moss_image' ? join([
+        configFieldHelp(path, undefined, english),
+        text('空间分块会改变计算上下文，结果可能与整图处理不同。缓存按分块设置区分，恢复训练须保持恢复点的分块设置。', 'Spatial tiling changes the computation context, so results may differ from whole-image processing. Caches distinguish the tiling settings. Resume with the same tiling settings as the recovery point.'),
+      ]) : undefined;
     case 'memory.vae_attention_chunking':
       return unusedSettingReason(path, context) || configFieldHelp(path, undefined, english);
     case 'memory.allow_tf32':
@@ -240,7 +258,9 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       return text('当前设置会在训练时实时编码标签，文本编码器一直留在显存里。开启后每次编码完就把它移到内存：省下文本编码器占用的显存，但每步都要来回搬运，训练会变慢。显存够用时保持关闭。', 'These settings encode captions during training, so the text encoder stays in GPU memory. Turning this on moves it to system memory after each encoding: it frees that memory, but every step moves it back and forth, so training is slower. Leave it off when memory is sufficient.');
     case 'memory.compile':
       return join([
-        text('用 torch.compile 编译模型：第一次启动要多等几分钟编译，之后每步更快。', 'Compiles the model with torch.compile: the first start takes a few extra minutes, later steps are faster.'),
+        family.name === 'flux3' || family.name === 'moss_image'
+          ? text('用 torch.compile 编译模型块。首次运行和新尺寸可能增加编译耗时，实际速度取决于模型和输入。需要关闭梯度检查点；达到 PyTorch 缓存限制后，后续调用可能直接计算。', 'Compiles model blocks with torch.compile. The first run and new shapes may take extra compilation time. Speed depends on the model and input. Requires activation checkpointing to be off. After PyTorch reaches its cache limit, later calls may run eagerly.')
+          : text('用 torch.compile 编译模型：第一次启动要多等几分钟编译，之后每步更快。', 'Compiles the model with torch.compile: the first start takes a few extra minutes, later steps are faster.'),
         onGpu(runtime) && (runtime === 'hip'
           ? text('需要安装 Triton，海光环境随厂商 PyTorch 一起提供。', 'Needs Triton, which the DTK vendor PyTorch provides.')
           : family.runtime_platform === 'windows'
@@ -250,14 +270,15 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       ]);
     case 'memory.blocks_to_swap':
       return join([
-        text('把多少个模型块的冻结权重先放在内存里，用到时再搬回显存，默认 0 不换出。数值越大越省显存，但搬运越多、训练越慢；超过实际块数时按全部块处理。', 'How many model blocks keep their frozen weights in system memory and move to the GPU only when used. 0 (default) swaps none. Larger values save more GPU memory but move more data and train slower; values above the block count swap every block.'),
+        text('把多少个模型块的冻结权重先放在内存里，用到时再搬回显存，默认 0 不换出。数值越大越省显存，但搬运越多、训练越慢。数量不能超过当前模型的实际块数。', 'How many model blocks keep their frozen weights in system memory and move to the GPU only when used. 0 (default) swaps none. Larger values save more GPU memory but move more data and train slower. The count must not exceed the actual number of blocks in the current model.'),
+        (family.name === 'flux3' || family.name === 'moss_image') && text('用于 CUDA 单卡适配器训练。', 'For single-GPU CUDA adapter training.'),
         has(family, 'compile') && onGpu(runtime) && text(`不能与「${configFieldLabel('memory.compile', '')}」同时使用。`, 'Cannot be combined with compiling the model.'),
       ]);
     case 'memory.base_precision':
       if (context.config.training?.mode === 'full') return text('全量微调保留 FP32 可训练权重；前向计算精度由混合精度控制。', 'Full fine-tuning retains FP32 trainable weights. Mixed precision controls forward computation.');
       return join([
         text('降低冻结底模的存储精度来省显存：只转换加了 LoRA 的线性层，原模型文件和 LoRA 本身的精度不变。精度越低越省显存，但可能影响效果。', 'Stores the frozen base model at a lower precision to save memory. Only the linear layers that carry LoRA are converted; the model file and the LoRA weights keep their precision. Lower precision saves more memory but can affect results.'),
-        listed('fp8_e4m3') && text('FP8 最省显存，在启动时量化。', 'FP8 saves the most and is quantized at start-up.'),
+        listed('fp8_e4m3') && text('FP8 在启动时量化冻结权重，计算时还原为原有运算精度。', 'FP8 quantizes frozen weights at start-up. Computation uses the configured input precision.'),
         text('全量微调只能选沿用加载精度或 FP32。', 'Full fine-tuning accepts only the loaded precision or FP32.'),
       ]);
     case 'memory.activation_checkpointing':
@@ -267,7 +288,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       ]);
     case 'loop.mixed_precision':
       return runtime === 'cpu'
-        ? text('CPU 上选 BF16 会用 BF16 计算。\n其他选项都按 FP32 计算。\n不改变权重本身的精度。', 'On a CPU, BF16 computes in BF16.\nThe other choices compute in FP32.\nWeight precision is unchanged.')
+        ? text('CPU 训练不启用自动混合精度。此选项用于支持混合精度的显卡训练。\n底模存储精度和导出精度分别设置。', 'CPU training does not use automatic mixed precision. This setting applies to GPU training on supported devices.\nBase-weight storage and export precision are configured separately.')
         : text('训练运算的自动混合精度，默认 BF16。\nFP16 需要显卡和模型支持。\n关闭只停用自动混合精度，不改变权重本身的精度；底模和导出文件的精度分别设置。\n可复现训练以参数检查显示的设置为准。', 'Automatic mixed precision for training, BF16 by default.\nFP16 needs GPU and model support.\nTurning it off disables only mixed precision, not weight precision; base-model and export precision are set separately.\nReproducible training uses the values the parameter check shows.');
     case 'loop.distributed_strategy':
       if (family.name === 'moss_image') return text('MOSS-Image 使用单卡训练，显卡数设为 1。', 'MOSS-Image trains on one GPU; set the GPU count to 1.');

@@ -79,8 +79,9 @@ class Flux3Family(ModelFamily):
         text=TextSpec(4096, "flux3-qwen3vl-8layers-pad80-bf16-v1", pad_floor=False,
                       encoder_params=4_400_000_000),
         sampling=SamplingDefaults(steps=50, cfg=3.5, shift=6.93, sampler="euler"),
-        capabilities=frozenset({"activation_checkpointing", "masked_loss", "online_text"}),
-        attention_backends=("auto", "sdpa"),
+        capabilities=frozenset({"activation_checkpointing", "masked_loss", "online_text", "block_swap", "fp8_base", "compile"}),
+        checkpointing_modes=("none", "block", "unsloth"),
+        attention_backends=("auto", "sdpa", "flash_attn"),
         adapter_prefix="lora_unet",
         activation_units=26.0,
         weights=(
@@ -101,7 +102,7 @@ class Flux3Family(ModelFamily):
         if cfg.dtype == "fp16":
             return ["FLUX.3 主模型计算精度请选择 BF16 或 FP32。"]
         if cfg.attention not in self.spec.attention_backends:
-            return ["FLUX.3 注意力请选择自动或 SDPA。"]
+            return ["FLUX.3 注意力请选择自动、SDPA 或 FlashAttention 2。"]
         if error := loading.runtime_error():
             return [error]
         try:
@@ -116,17 +117,17 @@ class Flux3Family(ModelFamily):
     def training_options_errors(self, cfg):
         errors = super().training_options_errors(cfg)
         for failed, field, message in (
+            (cfg.memory.compile and cfg.memory.activation_checkpointing != "none", "memory.compile",
+             "FLUX.3 编译需关闭梯度检查点。"),
             (cfg.training.train_text_encoder, "training.train_text_encoder", "FLUX.3 文本编码器保持冻结。"),
-            (cfg.memory.compile, "memory.compile", "FLUX.3 训练暂不支持编译。"),
-            (bool(cfg.memory.blocks_to_swap), "memory.blocks_to_swap", "FLUX.3 训练暂不支持块换出。"),
-            (cfg.memory.activation_checkpointing not in {"none", "block"}, "memory.activation_checkpointing",
-             "FLUX.3 梯度检查点请选择关闭或开启。"),
+            (cfg.memory.activation_checkpointing not in self.spec.checkpointing_modes, "memory.activation_checkpointing",
+             "FLUX.3 梯度检查点请选择关闭、开启或开启并卸载到内存。"),
             (cfg.loop.distributed_strategy == "fsdp", "loop.distributed_strategy", "FLUX.3 训练暂不支持显存分片。"),
             (cfg.loop.gpu_count != 1, "loop.gpu_count", "FLUX.3 当前支持单卡训练。"),
             (cfg.training.mode == "adapter" and cfg.adapter.algo == "tlora", "adapter.algo",
              "FLUX.3 变长序列尚不支持按图片时间步调整秩的 T-LoRA。"),
             (cfg.model.dtype == "fp16", "model.dtype", "FLUX.3 主模型计算精度请选择 BF16 或 FP32。"),
-            (cfg.memory.base_precision == "fp16", "memory.base_precision", "FLUX.3 底模精度请选择保留原精度、BF16 或 FP32。"),
+            (cfg.memory.base_precision == "fp16", "memory.base_precision", "FLUX.3 底模精度请选择保留原精度、BF16、FP32、FP8 E4M3 或 FP8 E5M2。"),
             (cfg.loop.mixed_precision == "fp16", "loop.mixed_precision", "FLUX.3 混合精度请选择 BF16 或关闭。"),
         ):
             if failed:
@@ -138,12 +139,14 @@ class Flux3Family(ModelFamily):
         return errors
 
     def load(self, cfg, memory, *, device, dtype, backbone_device=None):
+        if memory.compile and memory.activation_checkpointing != "none":
+            raise ValueError("FLUX.3 编译需关闭梯度检查点。")
         problems = self.validate_config(cfg)
         if problems:
             raise ValueError("; ".join(problems))
-        if (memory.base_precision not in {"auto", "bf16", "fp32"} or memory.compile or memory.blocks_to_swap
-                or memory.activation_checkpointing not in {"none", "block"}):
-            raise ValueError("FLUX.3 请选择未量化权重、关闭编译和块换出，并使用普通梯度检查点。")
+        if (memory.base_precision not in {"auto", "bf16", "fp32", "fp8_e4m3", "fp8_e5m2"}
+                or memory.activation_checkpointing not in self.spec.checkpointing_modes):
+            raise ValueError("FLUX.3 请选择支持的底模精度和梯度检查点模式。")
         if dtype not in {torch.bfloat16, torch.float32}:
             raise ValueError("FLUX.3 主模型计算精度请选择 BF16 或 FP32。")
         _, dit, text_path, vae, processor = self._paths(cfg)
@@ -152,7 +155,8 @@ class Flux3Family(ModelFamily):
         with torch.device("meta"):
             backbone = DiT(config=config, checkpointing=memory.activation_checkpointing)
         return LoadedModel(
-            backbone, text, Flux3Latent(vae, device=device),
+            backbone, text, Flux3Latent(vae, device=device, vae_tiling=memory.vae_tiling,
+                                         cache_encode_tiled=memory.cache_encode_tiled),
             torch.device(device), dtype,
             extra={"dit_config": loading.config_dict(config), "dit_path": dit, "config": config,
                    "backbone_device": backbone_device or device, "checkpointing": memory.activation_checkpointing,
@@ -170,10 +174,11 @@ class Flux3Family(ModelFamily):
             dtype=loaded.dtype, checkpointing=loaded.extra["checkpointing"],
         )
         loaded.extra["materialized"] = True
+        loaded.backbone.set_attention_mode(loaded.extra.get("attention", "sdpa"))
 
     def prepare_attention(self, loaded, configured, *, device, dtype, training, pinned=None):
-        if configured not in {"auto", "sdpa"}:
-            raise ValueError("FLUX.3 注意力请选择自动或 SDPA。")
+        if configured not in self.spec.attention_backends:
+            raise ValueError("FLUX.3 注意力请选择自动、SDPA 或 FlashAttention 2。")
         from ypuddin.models.attention_check import check_attention, grad_mode
 
         from .dit import Block, rope_embed
@@ -184,18 +189,23 @@ class Flux3Family(ModelFamily):
         def run(backend):
             with torch.autocast(torch.device(device).type, enabled=False), grad_mode(training):
                 block = Block(hidden, 2, config.mlp_ratio).to(device=device, dtype=dtype)
+                block.attn_mode = backend
                 x = torch.randn(24, hidden, device=device, dtype=dtype, requires_grad=training)
                 ids = torch.zeros(1, 24, 4, device=device)
                 freqs = rope_embed(ids, config.axes_dim, config.theta)
                 mods = tuple(torch.zeros_like(x) for _ in range(3))
                 mods[-1].fill_(1)
-                prediction = block(x, freqs, [(0, 16), (16, 24)], mods)
+                prediction = block(x, freqs, [(0, 16), (16, 16), (16, 24)], mods)
                 if training:
                     prediction.float().square().mean().backward()
 
         loaded.extra["attention"] = check_attention(
-            selected="sdpa", run=run, device=device, dtype=dtype, pinned=pinned,
+            selected="flash_attn" if configured == "flash_attn" else "sdpa",
+            run=run, device=device, dtype=dtype, pinned=pinned,
         )
+
+        if loaded.extra.get("materialized"):
+            loaded.backbone.set_attention_mode(loaded.extra["attention"])
 
     def build_objective(self, loaded, cfg):
         from ypuddin.models.flux2.latent import patchify, unpatchify

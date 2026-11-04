@@ -552,7 +552,7 @@ class PlanMasks(_Out):
 
 class PlanDora(_Out):
     active: bool
-    compute_mode: Literal["standard", "comfyui"]
+    compute_mode: Literal["standard", "comfyui", "standard_fused"]
     base_dtypes: list[str]
     auto_merge_dtypes: list[str]
     merge_dtypes: list[str]

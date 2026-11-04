@@ -36,7 +36,7 @@ xFormers、FlashAttention、SageAttention、bitsandbytes 等扩展需要与新�
 
 扩展更新后需重启服务。具体后端的版本要求和计算限制见 [注意力后端](ATTENTION.md)。
 
-Triton 是编译模型（`torch.compile`）使用的 GPU 内核编译器，xFormers 的部分可选内核和 Triton 内核的 FLOPs 统计也依赖它；没有 Triton 也能训练。它列在“注意力加速”一栏：
+Triton 是编译模型（`torch.compile`）及[标准融合 DoRA](ADAPTERS.md#dora-融合与外部加载)使用的 GPU 内核编译器，xFormers 的部分可选内核和 Triton 内核的 FLOPs 统计也依赖它；没有 Triton 也能训练，标准融合 DoRA 会在准备阶段选择 PyTorch 标准计算。它列在“注意力加速”一栏：
 
 - Linux CUDA：随 PyTorch 安装，显示 PyTorch 要求的版本，不单独安装。
 - Windows CUDA：可安装与当前 PyTorch 配套的固定 `triton-windows` 版本，按[维护方的版本对应表](https://github.com/triton-lang/triton-windows/tree/readme#3-pytorch)选择（PyTorch 2.11 对应 3.6.0.post26），使用预编译 wheel。没有配套版本或显卡不受支持时不提供安装；在线没有合适的构建时，可上传同一 Triton 系列的 `triton-windows` wheel。
@@ -49,7 +49,7 @@ Triton 是编译模型（`torch.compile`）使用的 GPU 内核编译器，xForm
 
 ## LoRA 环境
 
-“设置 → 运行环境 → LoRA 环境”显示本项目内置实现所参考的 LyCORIS 版本、官方最新版本和主分支，以及各自的提交号。训练器的 LoRA / LoKr 等算法由本项目自行实现，不需要安装 LyCORIS；导出的文件采用对应的格式布局，可用该版本读取。
+“设置 → 运行环境 → LoRA 环境”显示本项目内置实现所参考的 LyCORIS 版本、官方最新版本和主分支，以及各自的提交号。当前格式参考为 LyCORIS 4.1.3（`7abd5709`）。训练器的 LoRA / LoKr 等算法由本项目自行实现，不需要安装 LyCORIS；导出的文件采用对应的格式布局，具体加载与合并限制见[适配器说明](ADAPTERS.md#与-lycoris-的边界)。
 
 同一区块提供 bitsandbytes 的安装入口，AdamW 8-bit 和 Lion 8-bit 优化器依赖它：
 

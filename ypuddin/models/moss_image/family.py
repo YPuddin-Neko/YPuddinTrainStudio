@@ -67,7 +67,8 @@ class MOSSImageFamily(ModelFamily):
         latent=LatentSpec(128, 16, 1, "moss-image-small-vae-mode-fp32-patch2-bn-v1"),
         text=TextSpec(4096, "moss-image-qwen35-last-thinking-unpadded-4096-bf16-v1", pad_floor=False),
         sampling=SamplingDefaults(steps=50, cfg=3.0, shift=5.0, sampler="euler"),
-        capabilities=frozenset({"activation_checkpointing", "masked_loss", "online_text"}),
+        capabilities=frozenset({"activation_checkpointing", "masked_loss", "online_text", "block_swap", "fp8_base", "compile"}),
+        checkpointing_modes=("none", "block", "unsloth"),
         attention_backends=("auto", "sdpa", "flash_attn"), adapter_prefix="lora_unet",
         sampling_samplers=("euler", "euler_ancestral", "heun", "er_sde"),
         sampling_schedulers=("uniform", "moss", "simple", "normal", "sgm_uniform"),
@@ -103,37 +104,36 @@ class MOSSImageFamily(ModelFamily):
     def training_options_errors(self, cfg):
         errors = super().training_options_errors(cfg)
         for failed, field, message in (
+            (cfg.memory.compile and cfg.memory.activation_checkpointing != "none", "memory.compile",
+             "MOSS-Image 编译需关闭梯度检查点。"),
             (cfg.training.train_text_encoder, "training.train_text_encoder", "MOSS-Image 文本编码器保持冻结。"),
-            (cfg.memory.compile, "memory.compile", "MOSS-Image 训练暂不支持编译。"),
-            (bool(cfg.memory.blocks_to_swap), "memory.blocks_to_swap", "MOSS-Image 训练暂不支持块换出。"),
-            (cfg.memory.activation_checkpointing not in {"none", "block"}, "memory.activation_checkpointing", "MOSS-Image 梯度检查点请选择关闭或开启。"),
+            (cfg.memory.activation_checkpointing not in self.spec.checkpointing_modes, "memory.activation_checkpointing", "MOSS-Image 梯度检查点请选择关闭、开启或开启并卸载到内存。"),
             (cfg.loop.distributed_strategy == "fsdp", "loop.distributed_strategy", "MOSS-Image 训练暂不支持显存分片。"),
             (cfg.loop.gpu_count != 1, "loop.gpu_count", "MOSS-Image 当前支持单卡训练。"),
-            (cfg.training.mode == "adapter" and cfg.adapter.algo == "tlora", "adapter.algo", "MOSS-Image 当前不支持 T-LoRA。"),
             (cfg.model.dtype == "fp16", "model.dtype", "MOSS-Image 主模型计算精度请选择 BF16 或 FP32。"),
-            (cfg.memory.base_precision not in {"auto", "bf16", "fp32"}, "memory.base_precision", "MOSS-Image 底模精度请选择保留原精度、BF16 或 FP32。"),
+            (cfg.memory.base_precision not in {"auto", "bf16", "fp32", "fp8_e4m3", "fp8_e5m2"}, "memory.base_precision", "MOSS-Image 底模精度请选择保留原精度、BF16、FP32、FP8 E4M3 或 FP8 E5M2。"),
             (cfg.loop.mixed_precision == "fp16", "loop.mixed_precision", "MOSS-Image 混合精度请选择 BF16 或关闭。"),
         ):
             if failed:
                 errors.append({"loc": field, "msg": message})
-        for index, rule in enumerate(cfg.adapter.rules if cfg.training.mode == "adapter" else ()):
-            if rule.algo == "tlora":
-                errors.append({"loc": f"adapter.rules.{index}.algo", "msg": "MOSS-Image 当前不支持 T-LoRA。"})
         return errors
 
     def load(self, cfg, memory, *, device, dtype, backbone_device=None):
+        if memory.compile and memory.activation_checkpointing != "none":
+            raise ValueError("MOSS-Image 编译需关闭梯度检查点。")
         if problems := self.validate_config(cfg):
             raise ValueError("; ".join(problems))
-        if (memory.base_precision not in {"auto", "bf16", "fp32"} or memory.compile or memory.blocks_to_swap
-                or memory.activation_checkpointing not in {"none", "block"}
+        if (memory.base_precision not in {"auto", "bf16", "fp32", "fp8_e4m3", "fp8_e5m2"}
+                or memory.activation_checkpointing not in self.spec.checkpointing_modes
                 or dtype not in {torch.bfloat16, torch.float32}):
-            raise ValueError("MOSS-Image 需要 BF16 或 FP32，关闭编译和块换出，使用普通梯度检查点。")
+            raise ValueError("MOSS-Image 需要 BF16 或 FP32 计算精度，并使用支持的底模精度和梯度检查点模式。")
         _, dit, text, vae, tokenizer = self._paths(cfg)
         config = loading.transformer_config(dit)
         encoder = MOSSImageText(text, tokenizer, device=device)
         with torch.device("meta"):
             backbone = MOSSImageTransformer(**config, checkpointing=memory.activation_checkpointing)
-        return LoadedModel(backbone, encoder, MOSSImageLatent(vae, device=device), torch.device(device), dtype,
+        return LoadedModel(backbone, encoder, MOSSImageLatent(vae, device=device, vae_tiling=memory.vae_tiling,
+                                                                  cache_encode_tiled=memory.cache_encode_tiled), torch.device(device), dtype,
                            extra={"dit_config": config, "config": config, "dit_path": dit,
                                   "backbone_device": backbone_device or device,
                                   "checkpointing": memory.activation_checkpointing,

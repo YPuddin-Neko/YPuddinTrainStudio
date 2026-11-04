@@ -14,7 +14,7 @@ from .package_releases import PYPI, _read
 PACKAGE = "lycoris-lora"
 REPOSITORY = "https://api.github.com/repos/KohakuBlueleaf/LyCORIS"
 # The release used for format and loader checks; the adapter implementations are local.
-COMPATIBLE = {"version": "4.0.0", "commit": "03270a3"}
+COMPATIBLE = {"version": "4.1.3", "commit": "7abd5709"}
 
 
 class LoraLocal(BaseModel):

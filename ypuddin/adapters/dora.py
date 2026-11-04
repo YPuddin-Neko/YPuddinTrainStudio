@@ -15,7 +15,7 @@ import torch
 from torch import Tensor, nn
 
 AXES = ("input", "output")
-COMPUTE_MODES = ("standard", "comfyui")
+COMPUTE_MODES = ("standard", "comfyui", "standard_fused")
 MERGE_DTYPES = (torch.float16, torch.bfloat16, torch.float32)
 MERGE_PRECISIONS = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}
 _AXIS_NAMES = {"output": "输出通道", "input": "输入通道"}
@@ -69,6 +69,10 @@ def loader_decompose(base: Tensor, delta: Tensor, magnitude: Tensor, *, alpha: f
     ``weight_decompose`` order (see ypuddin/sampling/ADAPTER_FUSION_NOTICE.md): alpha scales the delta
     before normalisation and strength interpolates afterwards; the magnitude's first dimension names the
     axis and epsilon follows the base dtype. Differentiable; nothing is modified in place."""
+    if magnitude.ndim == 1:
+        if magnitude.numel() != base.shape[0]:
+            raise ValueError(f"DoRA magnitude {tuple(magnitude.shape)} does not fit {base.shape[0]} output channels")
+        magnitude = magnitude.reshape(base.shape[0], *([1] * (base.ndim - 1)))
     merged = base + (delta * alpha).to(base.dtype)
     # The shape check is the external loader's axis convention.
     axis = "output" if magnitude.shape[0] == base.shape[0] else "input"

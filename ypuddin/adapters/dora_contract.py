@@ -33,6 +33,8 @@ def validate_active_config(adapters, config, *, compute_dtype: torch.dtype | Non
             if dora.compute_mode == "comfyui":
                 merge_dtype = resolve_merge_dtype(requested.dora_merge_dtype, layer.base, compute_dtype)
                 matches = matches and (dora.merge_dtype, dora.save_dtype) == (merge_dtype, _DTYPES[config.checkpoint.save_dtype])
+            if dora.compute_mode == "standard_fused":
+                matches = matches and bool(getattr(dora, "_fused_runtime", None))
         if not matches:
             raise ValueError("DoRA 计算设置或权重保存精度在训练期间发生变化，不能保存。请恢复启动训练时的设置。")
 
@@ -54,21 +56,42 @@ def saved_magnitudes(path: str | Path) -> set[str]:
 
 def compute_contract(adapters) -> dict[str, Any] | None:
     components = adapters.components.values() if isinstance(adapters, ComponentAdapterSet) else (adapters,)
-    layers = {}
+    layers, fused = {}, {}
     for component in components:
         for name, layer in getattr(component, "layers", {}).items():
             dora = layer.dora
             if dora is None or dora.compute_mode == "standard":
+                continue
+            if dora.compute_mode == "standard_fused":
+                fused[component.export_key(name)] = [dora.axis, "float32", getattr(dora, "_fused_runtime", None)]
                 continue
             layers[component.export_key(name)] = [
                 dora.axis,
                 str(dora.merge_dtype).removeprefix("torch."),
                 str(dora.save_dtype).removeprefix("torch."),
             ]
+    if fused:
+        from .dora_fused import KERNEL_REVISION
+
+        if layers:
+            raise ValueError("同一组适配器不能混用不同的 DoRA 计算模式")
+        return {"version": 2, "mode": "standard_fused", "kernel_revision": KERNEL_REVISION, "layers": fused}
     return {"version": 1, "mode": "comfyui", "layers": layers} if layers else None
 
 
-def validate_resume_contract(current, saved) -> None:
+def validate_resume_contract(current, saved, *, allow_unresolved_fused: bool = False) -> None:
+    if (allow_unresolved_fused and isinstance(current, dict) and isinstance(saved, dict)
+            and current.get("mode") == saved.get("mode") == "standard_fused"
+            and isinstance(saved.get("layers"), dict)):
+        resolved = {}
+        for key, value in current["layers"].items():
+            previous = saved["layers"].get(key)
+            if (value[2] is None and isinstance(previous, list) and len(previous) == 3
+                    and isinstance(previous[2], dict) and previous[2].get("backend") in {"torch", "triton"}):
+                resolved[key] = [*value[:2], previous[2]]
+            else:
+                resolved[key] = value
+        current = {**current, "layers": resolved}
     if current != saved:
         raise ValueError(
             "DoRA 计算模式、融合精度或保存精度与原训练不一致，不能继续训练。"
@@ -77,7 +100,8 @@ def validate_resume_contract(current, saved) -> None:
 
 
 def portable_contract(contract) -> dict[str, Any] | None:
-    if contract is None:
+    # Exported magnitudes retain standard DoRA semantics; backend identity belongs to exact resume.
+    if contract is None or contract.get("mode") == "standard_fused":
         return None
     return {
         "version": contract["version"],

@@ -1304,7 +1304,7 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
             dtype = torch.float32
         with fingerprint_cache(cache_root / "fingerprints"):
             latent_identity = family.latent_fingerprint(cfg.model, dtype=dtype)
-            if cfg.model.family in {"anima", "krea2"}:
+            if cfg.model.family in {"anima", "krea2", "flux3", "moss_image"}:
                 from ypuddin.models.vae_tiling import tiled_latent_fingerprint
 
                 latent_identity = tiled_latent_fingerprint(

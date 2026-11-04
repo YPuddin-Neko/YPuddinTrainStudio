@@ -13,10 +13,36 @@ reports an incompatible Transformers version before loading model payloads.
 Text-to-image training supports adapters or the full DiT, with a frozen BF16 text
 encoder and FP32 VAE. LoRA, LoKr, LoHa, Full-diff and Ortho adapters
 use the existing adapter runtime. Ortho export remains plain LoRA. T-LoRA,
-text encoder training, FP16/FP8 base conversion, compilation, block swap and
+text encoder training, FP16 base conversion and
 multi-GPU training are rejected by the family configuration checks. Reference-image
 editing, bounding boxes, the prompt upsampler and distilled flow-map weights are
 outside this family entry.
+
+Attention supports SDPA and FlashAttention 2 varlen for packed per-sample sequences.
+Auto selects SDPA. Explicit FA2 runs a forward/backward capability check before
+training; a failed initial check falls back to SDPA, while a pinned resume backend
+must remain available. FA2 uses NVIDIA CUDA with BF16; the FP32 path uses SDPA.
+Runtime FA2 errors propagate rather than changing the attention backend mid-run.
+
+Adapter training supports CUDA block swapping through `memory.blocks_to_swap`.
+It swaps frozen block tensors only, retaining trainable adapters on the device.
+The valid count follows the loaded architecture's memory layout. Full-DiT training
+keeps block swapping disabled.
+
+Adapter training can convert selected frozen linear weights to FP8 E4M3 or E5M2
+storage at startup. Forward calculations dequantize to BF16 or FP32; this does
+not accept arbitrary quantized source checkpoints or quantize the text encoder
+and VAE. Full-DiT trainable parameters remain FP32. CUDA block compilation uses
+the shared Inductor path and requires `memory.activation_checkpointing=none`;
+it cannot be combined with block swapping. With compilation disabled, both
+`block` and CPU-offloaded `unsloth` checkpointing remain available, including
+with FP8 frozen storage. Compilation does not change saved configuration values.
+
+Activation checkpointing supports none/block and `unsloth`. The latter uses
+non-reentrant block checkpoints with saved tensors on CPU, retaining gradients
+through the nested timestep/modulation arguments. It uses the same training
+calculation as block checkpointing; accelerator transfer costs and memory peaks
+depend on the training hardware and workload.
 
 Full training selects every DiT parameter, including normalization, modulation and
 conditioning projections; the image-conditioning branch receives gradients only
@@ -33,6 +59,13 @@ is applied. The training objective predicts noise minus clean latents. Its initi
 recipe is logit-normal time sampling with no loss weighting. The preview defaults
 are 50 Euler steps, CFG 3.5 and inference time shift 6.93; inference shift does not
 set the training time distribution.
+
+Optional VAE tiling uses 512-pixel tiles with 128-pixel overlap for encoding and
+decoding. Cache-only tiling uses 1024/128 when image area is greater than 2048²
+pixels and otherwise follows ordinary tiling. Both options default off. Tiles
+retain FP32 mean encoding and frozen normalization; overlap blending runs on CPU.
+Spatial normalization and attention operate within each tile, so tiled results
+differ from whole-image computation. Enabled settings have distinct cache identities.
 
 Adapters keep original projection names with the `lora_unet` prefix. The project
 family/architecture metadata identifies FLUX.3; no undocumented third-party

@@ -171,10 +171,19 @@ const setNestedValue = (obj: any, path: string[], value: any): any => {
 // 2. Rules 专用组件 (AdapterRule 列表)
 const RulesEditor: React.FC<{
   value: any[];
+  algorithms: string[];
+  english: boolean;
   learningRateReason?: string;
   onChange: (val: any[]) => void;
-}> = ({ value = [], learningRateReason, onChange }) => {
+}> = ({ value = [], algorithms, english, learningRateReason, onChange }) => {
   const { t } = useTranslation();
+  const options = [
+    { value: '', label: t('train.inherit') },
+    ...algorithms.map(value => ({
+      value,
+      label: value === 'none' ? (english ? 'Exclude' : '排除') : configOptionLabel('adapter.algo', value, english),
+    })),
+  ];
   const addRule = () => {
     onChange([
       ...value,
@@ -214,7 +223,8 @@ const RulesEditor: React.FC<{
             className="flex-1 min-w-[140px] px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
           <StudioSelect aria-label={`${t('train.algo', '算法')} ${idx+1}`} value={rule.algo ?? ''} onValueChange={value => updateRule(idx,'algo',value || null)}
-            options={[{value:'',label:t('train.inherit')},...['none','lora','lokr','loha','full'].map(value=>({value,label:value}))]}/>
+            fallbackLabel={rule.algo ? configOptionLabel('adapter.algo', rule.algo, english) : undefined}
+            options={options}/>
 
           <input
             type="text"
@@ -923,6 +933,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
   const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', image_fit: 'crop', ...value.dataset } };
   const weights = modelFamilyWeights(family, english);
+  const allowedAdapterAlgorithms = familyParameterOptions(family, 'adapter.algo');
+  const hasTLoRARule = allowedAdapterAlgorithms?.includes('tlora') &&
+    Array.isArray(value.adapter?.rules) &&
+    value.adapter.rules.some((rule: { algo?: string; match?: string } | null) =>
+      rule?.algo === 'tlora' && typeof rule.match === 'string' && rule.match.trim());
   const fieldContext: FieldContext = { family, config: value, english, nativeBatchingVersion: nativeBatchingVersion === undefined && preset ? value.dataset?.native_batch_mode === 'area' ? 3 : 2 : nativeBatchingVersion };
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
@@ -987,7 +1002,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !revealOutputName && !adaptiveIssue) return null;
     const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
     const incompatibleInfoNoise = infonoiseField && conditionValue.model.family !== 'anima' && !!value.objective?.infonoise_enabled;
-    if (ui.show_when && !incompatiblePredictionLoss && !incompatibleFamilyLoss && !incompatibleInfoNoise && !adaptiveIssue) {
+    const sharedTLoRASetting = hasTLoRARule && parentPath[0] === 'adapter' && key.startsWith('tlora_');
+    if (ui.show_when && !sharedTLoRASetting && !incompatiblePredictionLoss && !incompatibleFamilyLoss && !incompatibleInfoNoise && !adaptiveIssue) {
       try {
         const previewConditions = fullPathKey === 'loop.ema_decay'
           ? {...conditionValue,loop:{...value.loop,ema:true}}
@@ -1030,6 +1046,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         const note = option === 'full'
           ? (english ? 'not yet available for this model' : '当前模型尚未接入')
           : (english ? 'not supported by this model' : '当前模型不支持');
+        return { value: option, label: `${label} (${note})`, displayLabel: label, disabled: true };
+      }
+      if (fullPathKey === 'adapter.dora_compute_mode' && option === 'standard_fused'
+        && (value.memory?.compile || Number(value.loop?.gpu_count ?? 1) > 1 || value.loop?.distributed_strategy === 'fsdp')) {
+        const note = value.memory?.compile
+          ? (english ? 'turn off model compilation first' : '请先关闭编译模型')
+          : (english ? 'single-device training only' : '仅支持单卡训练');
         return { value: option, label: `${label} (${note})`, displayLabel: label, disabled: true };
       }
       const reason = unavailableOptions?.[option];
@@ -1101,9 +1124,17 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     }
     // 2. 专用控件判断
     else if (ui.control === 'rules' || key === 'rules') {
+      const ruleSchema = prop.items?.$ref ? resolveRef(schema, prop.items.$ref) : prop.items;
+      const algorithmSchema: SchemaProperty | undefined = ruleSchema?.properties?.algo;
+      const algorithmValues = algorithmSchema?.enum ?? algorithmSchema?.anyOf?.find(option => option.enum)?.enum;
+      const algorithms = (algorithmValues ?? ['none', 'lora', 'lokr', 'loha', 'ortho', 'full']).filter(
+        option => option === 'none' || (allowedAdapterAlgorithms ? allowedAdapterAlgorithms.includes(option) : option !== 'tlora'),
+      );
       control = (
         <RulesEditor
           value={fieldValue || []}
+          algorithms={algorithms}
+          english={english}
           learningRateReason={optimizerManagedReason(schema, value, 'adapter.rules.lr', english)}
           onChange={(val) => onChange(setNestedValue(value, path, val))}
         />
@@ -1418,7 +1449,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         : (english ? 'One magnitude per output channel; not A1111, and Forge and ComfyUI render it differently, possibly badly distorted.' : '每个输出通道一个幅度；A1111 不支持，Forge 与 ComfyUI 出图不一致，可能严重失真。')
       : fullPathKey === 'adapter.dora_compute_mode' ? fieldValue === 'comfyui'
         ? (english ? 'Reduces computation differences before and after weight export.' : '减少权重导出前后的计算差异。')
-        : (english ? 'Computes DoRA in FP32 without accounting for precision changes after export.' : '使用 FP32 计算 DoRA，不考虑导出后的精度变化。')
+        : fieldValue === 'standard_fused'
+          ? (english ? 'Uses the standard FP32 norm with fused computation on supported CUDA linear layers.' : '保持标准 FP32 范数，在支持的 CUDA 线性层融合计算。')
+          : (english ? 'Computes DoRA in FP32 without accounting for precision changes after export.' : '使用 FP32 计算 DoRA，不考虑导出后的精度变化。')
       : fullPathKey === 'dataset.native_batch_mode' && value.checkpoint?.resume && !preset ? fieldContext.nativeBatchingVersion === 1 || fieldContext.nativeBatchingVersion === 3
         ? (english ? 'Keeps the recovery point’s area microbatches to save GPU memory.' : '沿用恢复点的面积拆分方式，可节省显存。')
         : (english ? 'Continues with the batch mode saved in the recovery point.' : '继续训练沿用恢复点的批次方式。')

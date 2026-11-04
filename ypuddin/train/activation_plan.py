@@ -91,7 +91,8 @@ def backbone_memory_layout(backbone, family, cfg, dtype, compute_dtype, device_t
     device = device_type or "cuda"
     math_attention = (device == "cpu" or (device == "mps" and attention != "metal_flash")
                       or (current_profile() == "linux-dtk" and cfg.loop.deterministic)
-                      or (device == "cuda" and compute_dtype == torch.float32 and attention in {"auto", "sdpa"}))
+                      or (device == "cuda" and compute_dtype == torch.float32
+                          and attention in {"auto", "sdpa", "flash_attn"}))
     groups = _sdxl_attention_groups(backbone) if spec.name == "sdxl" else ((1, int(heads), count),)
     condition_width = {"anima": 1024, "sdxl": 2048, "toy": 64}.get(spec.name, hidden)
     condition_layers, condition_dtype = 1, compute_dtype

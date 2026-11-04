@@ -10,6 +10,7 @@ from torch import Tensor
 from ypuddin.models.base import LatentPipeline
 from ypuddin.models.fingerprints import content_fingerprint
 from ypuddin.models.memory import release_model_memory
+from ypuddin.models.vae_tiling import tiled_latent_fingerprint
 
 from .autoencoder import AutoEncoder
 
@@ -17,12 +18,17 @@ from .autoencoder import AutoEncoder
 class Flux3Latent(LatentPipeline):
     channels, stride = 128, 16
 
-    def __init__(self, path: str | Path, *, device="cpu"):
+    def __init__(self, path: str | Path, *, device="cpu", vae_tiling=False, cache_encode_tiled=False):
         self.path = self.validate_path(path)
         self.device, self.dtype = torch.device(device), torch.float32
         self.vae = None
+        self.vae_tiling, self.cache_encode_tiled = vae_tiling, cache_encode_tiled
         self.fingerprint = content_fingerprint(
             [self.path], namespace="flux3-vae-mean-fp32-patch2-bn1e-4-v1",
+        )
+
+        self.fingerprint = tiled_latent_fingerprint(
+            self.fingerprint, vae_tiling=vae_tiling, cache_encode_tiled=cache_encode_tiled,
         )
 
     @staticmethod
@@ -67,7 +73,7 @@ class Flux3Latent(LatentPipeline):
             release_model_memory(self.device)
 
     @torch.no_grad()
-    def encode(self, pixels: Tensor) -> Tensor:
+    def _encode_full(self, pixels: Tensor) -> Tensor:
         if pixels.ndim != 4 or pixels.shape[1] != 3 or pixels.shape[0] < 1:
             raise ValueError("FLUX.3 VAE expects pixels shaped [batch, 3, height, width]")
         if min(pixels.shape[2:]) < self.stride or any(side % self.stride for side in pixels.shape[2:]):
@@ -81,7 +87,7 @@ class Flux3Latent(LatentPipeline):
             return model.bn(z)
 
     @torch.no_grad()
-    def decode(self, latents: Tensor) -> Tensor:
+    def _decode_full(self, latents: Tensor) -> Tensor:
         if latents.ndim != 4 or latents.shape[1] != self.channels or min(latents.shape) < 1:
             raise ValueError("FLUX.3 VAE expects latents shaped [batch, 128, height, width]")
         with torch.autocast(self.device.type, enabled=False):
@@ -93,3 +99,37 @@ class Flux3Latent(LatentPipeline):
             z = z.reshape(batch, self.channels // 4, 2, 2, height, width)
             z = z.permute(0, 1, 4, 2, 5, 3).reshape(batch, self.channels // 4, height * 2, width * 2)
             return model.decoder(z)
+
+    @torch.no_grad()
+    def encode(self, pixels: Tensor) -> Tensor:
+        from ypuddin.models.vae_tiling import VAE_TILE_PIXELS
+
+        return self._encode(pixels, tile=VAE_TILE_PIXELS if self.vae_tiling else None)
+
+    @torch.no_grad()
+    def encode_for_cache(self, pixels: Tensor) -> Tensor:
+        from ypuddin.models.vae_tiling import CACHE_TILE_PIXELS, CACHE_TILE_THRESHOLD
+
+        if self.cache_encode_tiled and pixels.shape[-2] * pixels.shape[-1] > CACHE_TILE_THRESHOLD:
+            return self._encode(pixels, tile=CACHE_TILE_PIXELS)
+        return self.encode(pixels)
+
+    def _encode(self, pixels: Tensor, *, tile: int | None) -> Tensor:
+        if tile is None:
+            return self._encode_full(pixels)
+        from ypuddin.models.vae_tiling import TILE_OVERLAP_PIXELS, spatial_tiled_apply
+
+        return spatial_tiled_apply(
+            pixels, self._encode_full, tile=tile, overlap=TILE_OVERLAP_PIXELS, scale_den=self.stride,
+        )
+
+    @torch.no_grad()
+    def decode(self, latents: Tensor) -> Tensor:
+        if not self.vae_tiling:
+            return self._decode_full(latents)
+        from ypuddin.models.vae_tiling import TILE_OVERLAP_PIXELS, VAE_TILE_PIXELS, spatial_tiled_apply
+
+        return spatial_tiled_apply(
+            latents, self._decode_full, tile=VAE_TILE_PIXELS // self.stride,
+            overlap=TILE_OVERLAP_PIXELS // self.stride, scale_num=self.stride,
+        )

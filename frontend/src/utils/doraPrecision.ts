@@ -7,7 +7,7 @@ const dtypeNames: Record<string, string> = {bf16: 'BF16', fp16: 'FP16', fp32: 'F
 export function readDoraPrecisionReport(value: unknown): DoraPrecisionReport | null {
   if (!value || typeof value !== 'object') return null;
   const report = value as Partial<DoraPrecisionReport>;
-  if (typeof report.active !== 'boolean' || !['standard', 'comfyui'].includes(report.compute_mode || '')
+  if (typeof report.active !== 'boolean' || !['standard', 'comfyui', 'standard_fused'].includes(report.compute_mode || '')
     || typeof report.confirmation_required !== 'boolean'
     || !['base_dtypes', 'merge_dtypes', 'auto_merge_dtypes', 'confirmation_reasons'].every(key => {
       const values = report[key as keyof DoraPrecisionReport];

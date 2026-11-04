@@ -71,7 +71,7 @@ LoRA、LoKr、LoHa 和 Full 使用对应的 Kohya / LyCORIS 键布局，Full 在
 
 MOSS-Image 始终记录 `ypuddin.family=moss_image`。关闭“保存训练元数据”时保留该系列标识和网络结构；开启后另写 `ss_base_model_version=moss_image`、`modelspec.implementation=ypuddin`，`modelspec.architecture` 记录主模型与算法，例如 LoRA 为 `moss-image-base/lora`。这些值是训练器记录的模型身份，不是通用出图软件的自动识别约定。
 
-MOSS-Image 的导出键使用 `lora_unet_` 加下划线分隔的原生模块路径，例如 `lora_unet_layers_0_proj_q`，保留融合的 `ffn_up_gate` 和文本细化层 `qkv`。在 ComfyUI 中加载时，需要官方 MOSS-Image 节点、匹配的 Base 与配套组件，以及能够将这些原生键映射到模型层的适配器加载器；可使用官方节点输出的 MODEL 接入内置 LoRA 加载器。各算法和 DoRA 的融合方向仍须由所用加载器支持。MOSS-Image 不导出文本编码器适配器，也不支持 T-LoRA。
+MOSS-Image 的导出键使用 `lora_unet_` 加下划线分隔的原生模块路径，例如 `lora_unet_layers_0_proj_q`，保留融合的 `ffn_up_gate` 和文本细化层 `qkv`。在 ComfyUI 中加载时，需要官方 MOSS-Image 节点、匹配的 Base 与配套组件，以及能够将这些原生键映射到模型层的适配器加载器；可使用官方节点输出的 MODEL 接入内置 LoRA 加载器。各算法和 DoRA 的融合方向仍须由所用加载器支持。MOSS-Image 支持全局或逐层设置 T-LoRA，不导出文本编码器适配器；FLUX.3 暂不支持 T-LoRA。
 
 “权重保存精度”控制导出权重及 DoRA 幅度的精度，默认 BF16；缩放用的 `alpha` 标量保留 FP32。该设置不改变训练参数、完整恢复点或外部工具的融合精度。
 
@@ -96,15 +96,26 @@ ComfyUI 的 [`weight_decompose`](https://github.com/Comfy-Org/ComfyUI/blob/20ca5
 
 “标准模式”在两种方向均使用 `W₀ + ΔW` 的范数，并在 FP32 中计算范数与归一化。“兼容模式”（`adapter.dora_compute_mode = "comfyui"`）在训练前向中按 `checkpoint.save_dtype` 重建导出的适配器，再按 `adapter.dora_merge_dtype` 进行 ComfyUI 动态加载的 DoRA 融合，两种方向的范数与上述 ComfyUI 相同。`auto` 使用底模实际浮点精度，也可明确选择 BF16、FP16 或 FP32。可训练参数仍按 `adapter.param_dtype` 保存和更新。训练预览和模型测试的 ComfyUI 采样模式同样采用这一融合规则；模型测试按文件中记录的融合精度融合兼容模式的 DoRA 文件，与训练预览相同。
 
+“标准融合”（`adapter.dora_compute_mode = "standard_fused"`）沿用标准模式的 FP32 范数与归一化，在适用的 NVIDIA CUDA 线性层上使用 Triton 融合内核。权重矩阵的两个维度均须在 1–4096 范围内；其他层或未安装 Triton 时，在训练准备阶段选择 PyTorch 标准计算。该模式仅用于单卡适配器训练，训练强度为 1，不能与“编译模型”同时使用。两种计算方向均可使用，按输入通道导出的文件仍可在 ComfyUI 中加载并调节强度；实际加载精度与训练计算可能不同，兼容模式仍用于对齐保存与融合精度。
+
 训练页面新建的配置使用 `comfyui`，打开缺少 `dora_compute_mode` 的配置时同样填入 `comfyui`。含 DoRA 设置但缺少该字段的旧预设，以及命令行读取的配置文件，按 `standard` 处理。继续训练时，DoRA 计算模式与方向须与原任务保持一致；兼容模式还须保持保存精度与融合精度。
+
+标准融合的完整恢复点另记录逐层计算后端及运行环境，精确续训沿用原后端。导出权重仍使用普通 DoRA 的因子与幅度布局，不携带训练内核；从导出权重开始新任务与恢复完整训练状态分别处理。
 
 可训练参数精度默认 FP32，权重保存精度默认 BF16，DoRA 融合精度默认自动（跟随底模），三者分别设置。
 
 ## 与 LyCORIS 的边界
 
+导出格式参考 [LyCORIS 4.1.3（7abd5709）](https://github.com/KohakuBlueleaf/LyCORIS/tree/7abd5709f74f9159246ff9c6cc83bc0d5118b639)。本项目使用自研适配器，不需要安装 LyCORIS。
+
 本项目训练线性层和卷积层（见上文“卷积层”），不实现 LyCORIS 的 Tucker 分解（`use_tucker`）和 DyLoRA，也不读取带 `lora_mid`、`lokr_t2`、`hada_t1` 的 Tucker 文件。卷积层的计算由本项目实现，LyCORIS 上游对卷积 bypass、融合内核因子分解、kernel dispatch 和 DyLoRA 梯度路由的修复不对应这里相同的执行路径。
 
-卷积层文件可由 LyCORIS 的 kohya 加载器、合并工具和 ComfyUI 直接读取，包括 LoKr 的各种拆分形式和带偏置的 LyCORIS Full；按输入通道的 DoRA，LyCORIS 的工具无法读取。
+LyCORIS 的 kohya 加载器可读取本项目导出的线性层、卷积层、LoKr 拆分因子和带偏置的 Full；4.1.3 已修复 Full 加载后的前向错误。通用加载器须将 `lora_prefix` 设为文件使用的前缀，主模型通常是 `lora_unet`。使用 LyCORIS 自带工具时还需注意：
+
+- LoKr / LoHa 的合并工具仍会重复乘一次 `alpha/rank`，有效缩放不为 1 时，合并结果与其前向不同。本项目的合并工具只应用一次缩放。
+- 单文本编码器文件使用 `lora_te` 前缀。传给 kohya 加载器时应传编码器本身；传单元素列表会让它查找 `lora_te1`，漏载文本层。双编码器使用 `lora_te1` / `lora_te2`。
+- 部分 LoKr 因子布局无法由上游加载器重建，例如宽度 96×256、`factor=64`；相同布局的上游自导出文件也受影响。
+- 按输入通道的 DoRA 无法由 LyCORIS 自带工具读取；按输出通道的 DoRA 可读取。
 
 Full 保留底层权重，前向通过合并权重计算，不依赖删除原层权重后再调用其前向。缩放由适配器统一计算，导出编码到 alpha 或因子中；本项目合并工具重建后应用一次增量，不再额外乘一次 alpha/rank。它们与上游历史问题的实现路径不同。
 
@@ -127,4 +138,4 @@ Loss 曲线还受数据顺序、噪声与时间步采样、损失加权、有效
 
 LyCORIS 4.x 的实验性加速使用 Triton / TileLang 融合内核，并提供 `torch.compile` 和普通 PyTorch 回退。覆盖 LoRA、LoKr、LoHa、DoRA、Full 等算法的部分路径；具体约束随形状、精度和计算模式变化。[官方后端说明](https://github.com/KohakuBlueleaf/LyCORIS/blob/main/docs/kernels/backends.md)
 
-本项目不使用这些内核，`LYCORIS_KERNEL_BACKEND` 不会改变内置适配器的执行方式。
+本项目不调用 LyCORIS 的后端选择器，`LYCORIS_KERNEL_BACKEND` 不会改变内置适配器的执行方式。“标准融合”DoRA 使用本地实现的 Triton 内核，保留标准计算的 epsilon 与反向求导规则，来源及差异见[内核说明](../ypuddin/adapters/DORA_FUSED_NOTICE.md)。LoRA、LoKr、LoHa 的因子运算继续使用各自已有的 PyTorch 计算路径。

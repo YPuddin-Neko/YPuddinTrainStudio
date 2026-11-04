@@ -81,6 +81,8 @@ class BlockSwapper:
         self._stream = torch.cuda.Stream(device=self.device) if self.device.type == "cuda" else None
         self._handles: list[torch.utils.hooks.RemovableHandle] = []
         self.forward_only = False
+        self._backward = False
+        self._prefetched: int | None = None
         had_cuda_sources = False
         for i in self.swapped_idx:
             tensors = _swappable_tensors(self.blocks[i])
@@ -97,12 +99,17 @@ class BlockSwapper:
             # by PyTorch's allocator. CPU-loaded models do not need this flush.
             with torch.cuda.device(self.device):
                 torch.cuda.empty_cache()
-        self.bytes_per_block = (
-            sum(t.numel() * t.element_size() for t in self._masters[self.swapped_idx[0]])
-            if self.swapped_idx
-            else 0
-        )
+        self.block_bytes = {
+            i: sum(t.numel() * t.element_size() for t in values)
+            for i, values in self._masters.items()
+        }
+        self.bytes_per_block = self.block_bytes[self.swapped_idx[0]] if self.swapped_idx else 0
         self._install()
+
+    @property
+    def forward_staging_bytes(self) -> int:
+        """Frozen weights for the current forward block and its optional prefetch."""
+        return sum(sorted(self.block_bytes.values(), reverse=True)[:2 if self.prefetch else 1])
 
     # ----------------------------------------------------------------- moves
     def _fetch(self, i: int) -> None:
@@ -139,6 +146,17 @@ class BlockSwapper:
         self._fetch(i)
         self._wait(i)
 
+    def _consume_prefetch(self, i: int) -> None:
+        prefetched, self._prefetched = self._prefetched, None
+        if prefetched is not None and prefetched != i and prefetched not in self._deferred:
+            self._wait(prefetched)
+            self._release(prefetched)
+
+    def _prefetch(self, i: int) -> None:
+        if i in self._tensors and i not in self._resident:
+            self._fetch(i)
+            self._prefetched = i
+
     # ----------------------------------------------------------------- hooks
     def _install(self) -> None:
         for i in self.swapped_idx:
@@ -150,28 +168,28 @@ class BlockSwapper:
 
     def _make_fwd_pre(self, i: int):
         def hook(_m, _inputs):
+            if not self._backward:
+                self._consume_prefetch(i)
             self.ensure(i)
-            if self.prefetch and i + 1 in self._tensors:
-                self._fetch(i + 1)
+            if self.prefetch and not self._backward and i + 1 in self._tensors:
+                self._prefetch(i + 1)
 
         return hook
 
     def _make_fwd_post(self, i: int):
         def hook(_m, _inputs, _output):
-            if self.forward_only or not torch.is_grad_enabled():
-                self._release(i)
-            # during training the block stays resident until its backward finished (or is evicted
-            # by the next fetch when memory is tight — see release_all_but)
-            elif len(self._resident) > 2:
+            if self.forward_only or not torch.is_grad_enabled() or not self._backward:
                 self._release(i)
 
         return hook
 
     def _make_bwd_pre(self, i: int):
         def hook(_m, _grad_output):
+            self._backward = True
+            self._consume_prefetch(i)
             self.ensure(i)
             if self.prefetch and i - 1 in self._tensors:
-                self._fetch(i - 1)
+                self._prefetch(i - 1)
 
         return hook
 
@@ -208,6 +226,8 @@ class BlockSwapper:
         for i in list(self._resident):
             self._release(i)
         self._deferred.clear()
+        self._backward = False
+        self._prefetched = None
 
     def remove(self) -> None:
         """Bring every block back to the device permanently and remove hooks."""

@@ -190,6 +190,8 @@ class VaeMemory:
     query_chunking: bool = False
     tiling: bool = False
     cache_tiling: bool = False
+    # KL tiling is currently implemented by MOSS and FLUX.3 wrappers.
+    kl_tiling_available: bool = False
     # Whether VAE attention chunking applies to this runtime at all (Qwen VAE on HIP).
     chunking_available: bool = False
     # CUDA 2.11 probes use the fused safe-softmax implementation; HIP/MPS retain the older envelope.
@@ -249,6 +251,7 @@ def vae_memory(
     else:
         backend = attention_backend_probe(device, vae_dtype, channels, profile)
     qwen = kind == "qwen"
+    kl_tiling = family in {"flux3", "moss_image"}
     return VaeMemory(
         kind=kind,
         dtype=vae_dtype,
@@ -256,8 +259,9 @@ def vae_memory(
         attention_channels=channels,
         attention_backend=backend,
         query_chunking=qwen and hip and cfg.memory.vae_attention_chunking,
-        tiling=qwen and cfg.memory.vae_tiling,
-        cache_tiling=qwen and cfg.memory.cache_encode_tiled,
+        tiling=(qwen or kl_tiling) and cfg.memory.vae_tiling,
+        cache_tiling=(qwen or kl_tiling) and cfg.memory.cache_encode_tiled,
+        kl_tiling_available=kl_tiling,
         chunking_available=qwen and hip,
         math_score_bytes=_SCORE_BYTES if hip or device_type == "mps" else _CUDA_SCORE_BYTES,
         latent_channels=16 if qwen else 32 if family in {"flux2", "flux3", "moss_image"} else 4,
@@ -298,12 +302,17 @@ def _invocation(vae: VaeMemory, decode: bool, width: int, height: int, batch: in
         if decode else batch * width * height * 3 * (4 + (element if tile and vae.kind == "qwen" else 0))
     )
     reserved = _reserved_workspace_floor(vae, decode, w * h, b)
-    allocated_workspace = resident + max(conv, attention)
-    reserved_workspace = resident + max(conv * _FRAGMENTATION, attention, reserved)
+    # CPU blending returns the complete tensor; MOSS's final clamp also owns a full output.
+    output = 0
+    if tile and vae.kl_tiling_available:
+        output = (2 * batch * width * height * 3 * 4 if decode
+                  else batch * (width // 8) * (height // 8) * channels * 4)
+    allocated_workspace = resident + max(conv, attention, output)
+    reserved_workspace = resident + max(conv * _FRAGMENTATION, attention, reserved, output)
     capacity_workspace = resident + max(
         conv * _FRAGMENTATION + _MARGIN_MB * 2**20,
         capacity_attention + _MARGIN_MB * 2**20,
-        reserved,
+        reserved, output,
     )
     if not decode and element == 4 and (
         vae.kind == "kl" and (vae.attention_backend != "fused" or channels == 4)
@@ -377,7 +386,7 @@ def _phase(vae: VaeMemory, decode: bool, shapes: dict[tuple[int, int], int], til
 
 def _alternatives(vae: VaeMemory, *, caching: bool, shapes: dict[tuple[int, int], int]):
     """Settings that change this VAE's workspace here, each with the VAE as it would then run."""
-    if vae.kind != "qwen":
+    if vae.kind != "qwen" and not vae.kl_tiling_available:
         return []
     options = []
     if vae.chunking_available and vae.attention_backend != "fused" and not vae.query_chunking:

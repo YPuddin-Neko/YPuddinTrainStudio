@@ -663,6 +663,11 @@ class Trainer:
             else:
                 self.adapters = components["backbone"]
             self._report_kept_dora_layers()
+            if cfg.adapter.dora and cfg.adapter.dora_compute_mode == "standard_fused":
+                from ypuddin.adapters.dora_fused import prepare
+
+                backend = prepare(self.adapters, self.device, resume=cfg.checkpoint.resume)
+                log.info("DoRA backend: %s", backend)
             if cfg.adapter.resume_weights:
                 from ypuddin.adapters import load_adapter_file
 
@@ -1076,7 +1081,11 @@ class Trainer:
             if self.device.type != "cuda":
                 self.emit("warning", message="memory.compile is only applied on CUDA; running eagerly")
                 return 0
-            compile_fn = torch.compile
+            compile_fn = (
+                (lambda block: torch.compile(block, dynamic=True))
+                if self.cfg.model.family in {"flux3", "moss_image"}
+                else torch.compile
+            )
         blocks = self.family.memory_layout(self.loaded).blocks
         by_id = {id(m): n for n, m in self.loaded.backbone.named_modules()}
         n = 0
@@ -2241,6 +2250,9 @@ class Trainer:
             loss, _, _ = self.compute_loss(batch)
             if not torch.isfinite(loss):
                 self._resolve_timestep_observation(False)
+                if self.swapper is not None:
+                    self.swapper.release_all()
+                del loss
                 self.progress.nan_skips += 1
                 self.emit(
                     "warning", code="loss.nonfinite", step=self.progress.step, skips=self.progress.nan_skips
@@ -2698,11 +2710,7 @@ class Trainer:
             with self._autocast():
                 pair = self.family.sampling_prediction_pair(
                     self.loaded, predict, cond, uncond, cfg=cfg_scale, noise=scfg.noise,
-                    reserve_memory=(
-                        self.swapper.bytes_per_block
-                        * min(len(self.swapper.swapped_idx), 2 if self.swapper.prefetch else 1)
-                        if self.swapper else 0
-                    ),
+                    reserve_memory=self.swapper.forward_staging_bytes if self.swapper else 0,
                 )
 
             def on_step(done: int, n: int, idx: int = i, prompts_total: int = len(prompts)) -> None:

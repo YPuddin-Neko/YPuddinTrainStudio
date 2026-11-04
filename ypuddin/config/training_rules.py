@@ -5,7 +5,7 @@ from .optimizer_rules import optimizer_key, optimizer_policy
 FULL_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "moss_image", "flux3", "toy"})
 FULL_TEXT_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "toy"})
 TEXT_ADAPTER_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2"})
-NOISE_SHAPE_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "flux3"})
+NOISE_SHAPE_FAMILIES = frozenset({"anima", "krea2", "sdxl", "flux2", "flux3", "moss_image"})
 _ANIMA_LR_FIELDS = frozenset({"llm_adapter_lr", "self_attn_lr", "cross_attn_lr", "mlp_lr", "modulation_lr"})
 _FULL_LR_FIELDS = ("backbone_lr", "text_encoder_lr", "text_encoder_2_lr", *sorted(_ANIMA_LR_FIELDS))
 
@@ -27,16 +27,16 @@ def training_capabilities(family: str) -> dict:
         result.update(
             adapter_algorithms=["lora", "lokr", "loha", "full", "ortho"],
             model_dtypes=["auto", "bf16", "fp32"],
-            base_precisions=["auto", "bf16", "fp32"],
+            base_precisions=["auto", "bf16", "fp32", "fp8_e4m3", "fp8_e5m2"],
             mixed_precisions=["no", "bf16"],
             distributed_strategies=["ddp"],
             gpu_counts=[1],
         )
     elif family == "moss_image":
         result.update(
-            adapter_algorithms=["lora", "lokr", "loha", "full", "ortho"],
+            adapter_algorithms=["lora", "lokr", "loha", "full", "ortho", "tlora"],
             model_dtypes=["auto", "bf16", "fp32"],
-            base_precisions=["auto", "bf16", "fp32"],
+            base_precisions=["auto", "bf16", "fp32", "fp8_e4m3", "fp8_e5m2"],
             mixed_precisions=["no", "bf16"],
             distributed_strategies=["ddp"],
             gpu_counts=[1],
@@ -68,11 +68,11 @@ def _caption_noise_errors(cfg) -> list[dict[str, str]]:
         ),
         (
             cfg.objective.noise_offset > 0 and cfg.model.family not in NOISE_SHAPE_FAMILIES,
-            "objective.noise_offset", "噪声偏移仅适用于 Anima、Krea 2、SDXL 和 Klein",
+            "objective.noise_offset", "当前模型不支持噪声偏移",
         ),
         (
             cfg.objective.multires_noise_iterations > 0 and cfg.model.family not in NOISE_SHAPE_FAMILIES,
-            "objective.multires_noise_iterations", "多分辨率噪声仅适用于 Anima、Krea 2、SDXL 和 Klein",
+            "objective.multires_noise_iterations", "当前模型不支持多分辨率噪声",
         ),
         (
             cfg.objective.noise_offset > 0 and cfg.objective.multires_noise_iterations > 0,
@@ -132,22 +132,40 @@ def training_errors(cfg) -> list[dict[str, str]]:
         if selection.resume_weights:
             reject("training.resume_weights", "全量模型权重不能作为适配器权重加载")
         adapter = cfg.adapter
+        if adapter.dora and adapter.dora_compute_mode == "standard_fused":
+            if cfg.memory.compile:
+                reject("memory.compile", "DoRA 标准融合模式暂不支持编译，请关闭编译")
+            if cfg.loop.gpu_count > 1 or cfg.loop.distributed_strategy == "fsdp":
+                reject("adapter.dora_compute_mode", "DoRA 标准融合模式暂仅支持单卡训练")
         # OrthoLoRA and orthogonal T-LoRA start from their own orthonormal factors.
-        orthogonal = adapter.algo == "ortho" or adapter.algo == "tlora" and adapter.tlora_ortho
+        algorithms = {adapter.algo, *(rule.algo or adapter.algo for rule in adapter.rules)}
+        orthogonal = "ortho" in algorithms or "tlora" in algorithms and adapter.tlora_ortho
+        if "tlora" in algorithms and adapter.mode == "merged":
+            reject(
+                "adapter.mode",
+                "T-LoRA 按每张图的噪声强度调整秩，不能合并权重后计算，请选择自动或分开计算",
+            )
         if adapter.algo == "tlora":
             if adapter.dora:
                 reject("adapter.dora", "T-LoRA 按每张图的噪声强度调整秩，需要分开计算，不能与 DoRA 同时使用")
-            if adapter.mode == "merged":
-                reject(
-                    "adapter.mode",
-                    "T-LoRA 按每张图的噪声强度调整秩，不能合并权重后计算，请选择自动或分开计算",
-                )
             if (
                 isinstance(adapter.rank, int)
                 and adapter.tlora_min_rank
                 and adapter.tlora_min_rank > adapter.rank
             ):
                 reject("adapter.tlora_min_rank", "最小秩不能大于 Rank")
+        for index, rule in enumerate(adapter.rules):
+            if (rule.algo or adapter.algo) != "tlora":
+                continue
+            ranks = [adapter.rank if rule.rank is None else rule.rank]
+            if rule.rank is None and adapter.conv_rank is not None and trains_conv_adapters(cfg):
+                ranks.append(adapter.conv_rank)
+            # A rule can match linear or convolution layers; resolution selects the inherited rank.
+            numeric_ranks = [rank for rank in ranks if isinstance(rank, int)]
+            if not numeric_ranks:
+                reject(f"adapter.rules.{index}.rank", "T-LoRA 的 Rank 请选择正整数")
+            elif adapter.tlora_min_rank and adapter.tlora_min_rank > max(numeric_ranks):
+                reject(f"adapter.rules.{index}.rank", "该规则的 Rank 不能小于 T-LoRA 最小秩")
         if adapter.algo == "full" and adapter.dora:
             reject("adapter.dora", "LyCORIS Full 直接训练完整权重，不能与 DoRA 同时使用")
         if orthogonal and adapter.init == "scalar":

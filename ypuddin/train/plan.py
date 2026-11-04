@@ -1192,8 +1192,9 @@ def plan(
                     n_swap = min(cfg.memory.blocks_to_swap, len(layout.blocks))
                     block_sizes = [_frozen_storage_bytes(block) / 2**20 for block in layout.blocks[-n_swap:]]
                     swapped_mb = sum(block_sizes)
-                    # Current block plus the prefetched next block can coexist.
-                    swap_staging_mb = sum(sorted(block_sizes, reverse=True)[:2])
+                    # Text/condition chain starts can defer release until backward completes.
+                    staging_blocks = {"moss_image": 3, "flux3": 4}.get(family.spec.name, 2)
+                    swap_staging_mb = sum(sorted(block_sizes, reverse=True)[:staging_blocks])
                 dequant_mb = max(
                     (
                         2 * m.weight.numel() * DTYPE_BYTES[effective_dtype] / 2**20
