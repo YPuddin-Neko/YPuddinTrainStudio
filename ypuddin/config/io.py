@@ -127,7 +127,7 @@ _LEGACY_VALUES: dict[str, dict[str, Any]] = {
         "metadata_usage_hint": "", "metadata_trigger_phrase": "",
     },
     "logging": {"output_dir": None},
-    "training": {"backbone_lr": None, "text_encoder_lr": None, "text_encoder_2_lr": None, "llm_adapter_lr": None, "self_attn_lr": None, "cross_attn_lr": None, "mlp_lr": None, "modulation_lr": None},
+    "training": {"task": "standard", "backbone_lr": None, "text_encoder_lr": None, "text_encoder_2_lr": None, "llm_adapter_lr": None, "self_attn_lr": None, "cross_attn_lr": None, "mlp_lr": None, "modulation_lr": None},
     "optimizer": {
         "cpu_offload": False, "exclude_bias_norm_from_weight_decay": False,
         "momentum": 0.95, "nesterov": True, "ns_steps": 5, "aux_lr_ratio": 0.005,
@@ -243,6 +243,18 @@ def _fingerprint(
 ) -> dict[str, Any]:
     """The hashed form: legacy settings at their legacy value are left out, except ``kept`` ones."""
     data = project_legacy_intervals(config.to_dict() if isinstance(config, TrainConfig) else config)
+    task = data.get("training", {}).get("task", "standard")
+    slider_mode = data.get("slider", {}).get("mode", "text")
+    text_slider = task == "slider" and slider_mode == "text"
+    companion = "reference_dir" if task == "edit" else "pair_path" if task == "slider" and slider_mode == "image" else None
+    if task != "slider":
+        data.pop("slider", None)
+    sampling = data.get("sampling")
+    if isinstance(sampling, Mapping) and "prompts" in sampling:
+        data["sampling"] = {**sampling, "prompts": [
+            {k: v for k, v in prompt.items() if k != "reference_images" or v}
+            for prompt in sampling["prompts"]
+        ]}
     dataset = data.get("dataset")
     if isinstance(dataset, Mapping) and (
         dataset.get("resolution_mode", "bucket") != "native"
@@ -283,6 +295,13 @@ def _fingerprint(
                     for source in value["sources"]
                 ]
             data[section] = value
+    for section in ("dataset", "validation"):
+        if isinstance(data.get(section), Mapping) and "sources" in data[section]:
+            data[section]["sources"] = [] if text_slider else [
+                {k: v for k, v in source.items()
+                 if k not in {"pair_path", "reference_dir"} or k == companion and v is not None}
+                for source in data[section]["sources"]
+            ]
     # Checkpoints from before the DoRA axis option trained the output axis; without DoRA it does nothing.
     adapter = data.get("adapter")
     if isinstance(adapter, Mapping) and (
@@ -318,11 +337,14 @@ def absolute_paths(config: TrainConfig) -> TrainConfig:
         (cfg.logging, "output_dir"),
         *((src, "path") for src in cfg.dataset.sources),
         *((src, "path") for src in cfg.validation.sources),
+        *((src, name) for src in [*cfg.dataset.sources, *cfg.validation.sources] for name in ("pair_path", "reference_dir")),
     ]
     for obj, name in fields:
         value = getattr(obj, name)
         if value:
             setattr(obj, name, str(Path(value).expanduser().resolve()))
+    for prompt in cfg.sampling.prompts:
+        prompt.reference_images = [str(Path(path).expanduser().resolve()) for path in prompt.reference_images]
     return cfg
 
 

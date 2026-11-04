@@ -3331,6 +3331,10 @@
                   "caption_ext": {
                     "type": "string",
                     "default": "auto"
+                  },
+                  "folder_name": {
+                    "type": "string",
+                    "default": ""
                   }
                 }
               }
@@ -4009,6 +4013,16 @@
               "type": "string",
               "default": "filename",
               "title": "Sort"
+            }
+          },
+          {
+            "name": "include_edit_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Edit Status"
             }
           }
         ],
@@ -13412,6 +13426,54 @@
         }
       }
     },
+    "/api/projects/{pid}/versions/{vid}/regularization/options": {
+      "get": {
+        "summary": "Options",
+        "operationId": "options_api_projects__pid__versions__vid__regularization_options_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegularizationModelOptions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{pid}/versions/{vid}/regularization/plan": {
       "post": {
         "summary": "Plan",
@@ -15562,6 +15624,14 @@
             "title": "Model",
             "default": "anime-head-detector-v2"
           },
+          "detectors": {
+            "items": {
+              "$ref": "#/components/schemas/MaskDetectorOptions"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "title": "Detectors"
+          },
           "confidence": {
             "type": "number",
             "maximum": 0.99,
@@ -16768,6 +16838,15 @@
             ],
             "title": "Format",
             "default": "toml"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "config",
+              "preset"
+            ],
+            "title": "Kind",
+            "default": "config"
           }
         },
         "type": "object",
@@ -17062,6 +17141,12 @@
           "path": {
             "type": "string",
             "title": "Path"
+          },
+          "folder_name": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Folder Name",
+            "default": ""
           },
           "repeats": {
             "type": "integer",
@@ -17638,6 +17723,22 @@
             "type": "boolean",
             "title": "Has Mask"
           },
+          "saved_edit_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "modified",
+                  "unmodified",
+                  "unknown"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved Edit Status"
+          },
           "training_enabled": {
             "anyOf": [
               {
@@ -17648,6 +17749,35 @@
               }
             ],
             "title": "Training Enabled"
+          },
+          "pair_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair Path"
+          },
+          "reference_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reference Paths"
+          },
+          "pairing_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pairing Error"
           }
         },
         "additionalProperties": true,
@@ -17887,6 +18017,28 @@
             "type": "string",
             "title": "Path"
           },
+          "pair_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair Path"
+          },
+          "reference_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Dir"
+          },
           "repeats": {
             "type": "integer",
             "title": "Repeats"
@@ -17952,6 +18104,38 @@
       },
       "DatasetSourceConfig": {
         "properties": {
+          "pair_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair Path",
+            "description": "图片滑块的负向图片目录，按相对路径去除扩展名后与训练图片一一配对。",
+            "x-ui": {
+              "control": "path",
+              "order": 0
+            }
+          },
+          "reference_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Dir",
+            "description": "编辑训练的参考图片目录，按相对路径去除扩展名后与目标图片一一配对。",
+            "x-ui": {
+              "control": "path",
+              "order": 0
+            }
+          },
           "excluded_files": {
             "items": {
               "type": "string"
@@ -20982,6 +21166,32 @@
           "feather_y": {
             "type": "integer",
             "title": "Feather Y"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id",
+            "default": "anime-head-detector-v2"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "head",
+              "torso",
+              "legs",
+              "foot"
+            ],
+            "title": "Kind",
+            "default": "head"
+          },
+          "class_id": {
+            "type": "integer",
+            "title": "Class Id",
+            "default": 0
+          },
+          "class_name": {
+            "type": "string",
+            "title": "Class Name",
+            "default": "head"
           }
         },
         "type": "object",
@@ -23304,6 +23514,35 @@
         },
         "type": "object",
         "title": "LoraUpstream"
+      },
+      "MaskDetectorOptions": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "kinds": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "head",
+                "torso",
+                "legs",
+                "foot"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Kinds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "kinds"
+        ],
+        "title": "MaskDetectorOptions"
       },
       "MaskInfo": {
         "properties": {
@@ -26654,6 +26893,17 @@
       },
       "Plan": {
         "properties": {
+          "concept_samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Concept Samples"
+          },
           "ok": {
             "type": "boolean",
             "title": "Ok"
@@ -29581,6 +29831,97 @@
         ],
         "title": "RegularizationMatchPlan"
       },
+      "RegularizationModelOption": {
+        "properties": {
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "family": {
+            "type": "string",
+            "title": "Family"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purpose"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "family",
+          "name",
+          "variant",
+          "purpose",
+          "available",
+          "reason"
+        ],
+        "title": "RegularizationModelOption"
+      },
+      "RegularizationModelOptions": {
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/RegularizationModelOption"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/RegularizationModelOption"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current",
+          "models"
+        ],
+        "title": "RegularizationModelOptions"
+      },
       "RegularizationPlan": {
         "properties": {
           "signature": {
@@ -29756,6 +30097,18 @@
               }
             ]
           },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
           "prompt": {
             "type": "string",
             "maxLength": 8000,
@@ -29845,9 +30198,9 @@
           "seed": {
             "type": "integer",
             "maximum": 9.223372036854776e+18,
-            "minimum": 0.0,
+            "minimum": -1.0,
             "title": "Seed",
-            "default": 0
+            "default": -1
           },
           "repeats": {
             "type": "integer",
@@ -30103,6 +30456,28 @@
           "can_cancel": {
             "type": "boolean",
             "title": "Can Cancel"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "requested_seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Seed"
           }
         },
         "type": "object",
@@ -30254,6 +30629,15 @@
             "type": "string",
             "title": "Prompt"
           },
+          "reference_images": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1,
+            "title": "Reference Images",
+            "description": "原生编辑预览使用的参考图片。"
+          },
           "negative": {
             "type": "string",
             "title": "Negative",
@@ -30262,7 +30646,8 @@
           "seed": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": -1.0
               },
               {
                 "type": "null"
@@ -30546,9 +30931,10 @@
           },
           "seed": {
             "type": "integer",
+            "minimum": -1.0,
             "title": "Seed",
-            "description": "预览初始噪声种子，默认 0：每次训练开始时随机生成一个种子，本次训练的所有预览都使用它，续训沿用同一个。手动输入种子值会固定训练时使用的种子。未单独设种子的第 i 条提示词使用该种子 + i（从 0 计）。与训练随机种子独立。",
-            "default": 0,
+            "description": "预览初始噪声种子，默认 -1：每次训练开始时随机生成一次，续训沿用记录值。0 和正数为固定种子。单条提示词留空使用全局种子 + 序号（从 0 计），设为 -1 则单独随机一次。与训练随机种子独立。",
+            "default": -1,
             "x-ui": {
               "advanced": true,
               "group": "sampling",
@@ -31826,6 +32212,144 @@
         ],
         "title": "SiteTagSuggestion"
       },
+      "SliderConfig": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image"
+            ],
+            "title": "Mode",
+            "description": "文字模式使用概念两端提示词；图片模式使用严格配对的两端图片。",
+            "default": "text",
+            "x-ui": {
+              "control": "select",
+              "group": "slider",
+              "order": 0,
+              "show_when": "training.task == 'slider'"
+            }
+          },
+          "neutral_prompt": {
+            "type": "string",
+            "title": "Neutral Prompt",
+            "description": "不包含变化属性的基础提示词。",
+            "default": "",
+            "x-ui": {
+              "control": "textarea",
+              "group": "slider",
+              "order": 10,
+              "show_when": "training.task == 'slider' && slider.mode == 'text'"
+            }
+          },
+          "positive_prompt": {
+            "type": "string",
+            "title": "Positive Prompt",
+            "description": "正向滑块对应的提示词。",
+            "default": "",
+            "x-ui": {
+              "control": "textarea",
+              "group": "slider",
+              "order": 20,
+              "show_when": "training.task == 'slider' && slider.mode == 'text'"
+            }
+          },
+          "negative_prompt": {
+            "type": "string",
+            "title": "Negative Prompt",
+            "description": "负向滑块对应的提示词。",
+            "default": "",
+            "x-ui": {
+              "control": "textarea",
+              "group": "slider",
+              "order": 30,
+              "show_when": "training.task == 'slider' && slider.mode == 'text'"
+            }
+          },
+          "guidance": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Guidance",
+            "description": "文字两端预测差的训练倍率。",
+            "default": 3.0,
+            "x-ui": {
+              "group": "slider",
+              "order": 40,
+              "show_when": "training.task == 'slider' && slider.mode == 'text'"
+            }
+          },
+          "anchor_prompts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Anchor Prompts",
+            "description": "需要保持底模表现的提示词。",
+            "x-ui": {
+              "advanced": true,
+              "control": "tags",
+              "group": "slider",
+              "order": 50,
+              "show_when": "training.task == 'slider' && slider.mode == 'text'"
+            }
+          },
+          "anchor_weight": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Anchor Weight",
+            "description": "保持提示词损失的权重。",
+            "default": 1.0,
+            "x-ui": {
+              "advanced": true,
+              "group": "slider",
+              "order": 60,
+              "show_when": "training.task == 'slider' && slider.mode == 'text'"
+            }
+          },
+          "samples_per_epoch": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Samples Per Epoch",
+            "description": "每轮使用的基础模型概念样本数。",
+            "default": 16,
+            "x-ui": {
+              "group": "slider",
+              "order": 70,
+              "show_when": "training.task == 'slider' && slider.mode == 'text'"
+            }
+          },
+          "resolution": {
+            "type": "integer",
+            "maximum": 8192.0,
+            "minimum": 32.0,
+            "title": "Resolution",
+            "description": "基础概念样本的正方形边长。",
+            "default": 512,
+            "x-ui": {
+              "group": "slider",
+              "order": 80,
+              "show_when": "training.task == 'slider' && slider.mode == 'text'"
+            }
+          },
+          "sampling_steps": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Sampling Steps",
+            "description": "任务开始时生成基础概念样本的采样步数。",
+            "default": 20,
+            "x-ui": {
+              "advanced": true,
+              "group": "slider",
+              "order": 90,
+              "show_when": "training.task == 'slider' && slider.mode == 'text'"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SliderConfig"
+      },
       "SourceRole": {
         "properties": {
           "path": {
@@ -32265,6 +32789,15 @@
             ],
             "title": "Rel Paths"
           },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "selection",
+              "dataset"
+            ],
+            "title": "Scope",
+            "default": "selection"
+          },
           "add": {
             "items": {
               "type": "string"
@@ -32278,12 +32811,30 @@
             },
             "type": "array",
             "title": "Remove"
+          },
+          "position": {
+            "type": "string",
+            "enum": [
+              "start",
+              "end"
+            ],
+            "title": "Position",
+            "default": "end"
+          },
+          "replace": {
+            "items": {
+              "$ref": "#/components/schemas/TagReplacement"
+            },
+            "type": "array",
+            "title": "Replace"
+          },
+          "deduplicate": {
+            "type": "boolean",
+            "title": "Deduplicate",
+            "default": false
           }
         },
         "type": "object",
-        "required": [
-          "hashes"
-        ],
         "title": "TagBatch"
       },
       "TagBatchResult": {
@@ -32299,6 +32850,24 @@
           "changed"
         ],
         "title": "TagBatchResult"
+      },
+      "TagReplacement": {
+        "properties": {
+          "old": {
+            "type": "string",
+            "title": "Old"
+          },
+          "new": {
+            "type": "string",
+            "title": "New"
+          }
+        },
+        "type": "object",
+        "required": [
+          "old",
+          "new"
+        ],
+        "title": "TagReplacement"
       },
       "TaggingOptions": {
         "properties": {
@@ -33057,6 +33626,9 @@
           "training": {
             "$ref": "#/components/schemas/TrainingConfig"
           },
+          "slider": {
+            "$ref": "#/components/schemas/SliderConfig"
+          },
           "model": {
             "$ref": "#/components/schemas/ModelConfig"
           },
@@ -33582,6 +34154,22 @@
       },
       "TrainingConfig": {
         "properties": {
+          "task": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "slider",
+              "edit"
+            ],
+            "title": "Task",
+            "description": "普通训练、双向滑块 LoRA，或带参考图片的原生编辑 LoRA。",
+            "default": "standard",
+            "x-ui": {
+              "control": "select",
+              "group": "training",
+              "order": 1
+            }
+          },
           "mode": {
             "type": "string",
             "enum": [
@@ -39167,6 +39755,12 @@
             "maxLength": 32,
             "title": "Caption Ext",
             "default": "auto"
+          },
+          "folder_name": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Folder Name",
+            "default": ""
           }
         },
         "additionalProperties": false,
@@ -39810,6 +40404,35 @@
         ],
         "title": "VisionCatalog"
       },
+      "VisionClass": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "head",
+              "torso",
+              "legs",
+              "foot"
+            ],
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind"
+        ],
+        "title": "VisionClass"
+      },
       "VisionDownload": {
         "properties": {
           "status": {
@@ -39908,7 +40531,8 @@
             "type": "string",
             "enum": [
               "tagger",
-              "head_detector"
+              "head_detector",
+              "mask_detector"
             ],
             "title": "Role"
           },
@@ -39946,6 +40570,28 @@
             },
             "type": "array",
             "title": "Categories",
+            "default": []
+          },
+          "mask_kinds": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "head",
+                "torso",
+                "legs",
+                "foot"
+              ]
+            },
+            "type": "array",
+            "title": "Mask Kinds",
+            "default": []
+          },
+          "classes": {
+            "items": {
+              "$ref": "#/components/schemas/VisionClass"
+            },
+            "type": "array",
+            "title": "Classes",
             "default": []
           },
           "thresholds": {
@@ -40662,6 +41308,14 @@
             "type": "boolean",
             "title": "Complete",
             "default": false
+          },
+          "references": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "References"
           }
         },
         "type": "object",
@@ -40692,6 +41346,16 @@
             ],
             "title": "Training Mode",
             "default": "adapter"
+          },
+          "training_task": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "slider",
+              "edit"
+            ],
+            "title": "Training Task",
+            "default": "standard"
           },
           "defaults": {
             "additionalProperties": true,
@@ -40779,6 +41443,14 @@
             "title": "Negative",
             "default": ""
           },
+          "reference_images": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1,
+            "title": "Reference Images"
+          },
           "width": {
             "type": "integer",
             "maximum": 2048.0,
@@ -40810,7 +41482,7 @@
           "seed": {
             "type": "integer",
             "exclusiveMaximum": 9.223372036854776e+18,
-            "minimum": 0.0,
+            "minimum": -1.0,
             "title": "Seed",
             "default": 1
           },

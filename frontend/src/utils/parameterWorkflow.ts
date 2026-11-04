@@ -1,6 +1,7 @@
 /** One name per group: the workflow rail and the section heading read the same label. */
 export const PARAMETER_FLOW: Array<{ group: string; label: [string, string] }> = [
   { group: 'model', label: ['基础模型', 'Base model'] },
+  { group: 'slider', label: ['滑块训练', 'Slider training'] },
   { group: 'dataset', label: ['数据与分桶', 'Data and buckets'] },
   { group: 'caption', label: ['标签处理', 'Captions'] },
   { group: 'loop', label: ['训练循环', 'Training loop'] },

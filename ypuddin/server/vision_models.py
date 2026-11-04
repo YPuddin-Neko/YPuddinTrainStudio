@@ -332,15 +332,17 @@ def _iou(box: np.ndarray, boxes: np.ndarray) -> np.ndarray:
     return overlap / np.maximum(area + areas - overlap, 1e-9)
 
 
-def decode_detections(output: np.ndarray, confidence: float, iou_threshold: float) -> list[list[float]]:
-    """YOLOv8 output ``[1, 5, anchors]`` -> boxes ``[x1, y1, x2, y2, score]`` in input pixels."""
+def decode_detections(
+    output: np.ndarray, confidence: float, iou_threshold: float, *, class_id: int | None = None,
+) -> list[list[float]]:
+    """YOLO output to boxes in input pixels; NMS is independent for each requested class."""
     raw = np.asarray(output, dtype=np.float32)
     if raw.ndim == 3:
         raw = raw[0]
     if raw.shape[0] < raw.shape[1]:
         raw = raw.T  # [anchors, 4 + classes]
     boxes = raw[:, :4]
-    scores = raw[:, 4:].max(axis=1)
+    scores = raw[:, 4:].max(axis=1) if class_id is None else raw[:, 4 + class_id]
     keep = scores > confidence
     boxes, scores = boxes[keep], scores[keep]
     if not len(boxes):
@@ -530,11 +532,13 @@ def _worker(kind: str, images: list[str], options: dict, events: Any, working_di
             return
         session = _session(options["model_path"], provider, options.get("device_index", 0))
         inputs = session.get_inputs()
-        if len(inputs) != 1 or list(inputs[0].shape[1:2]) != [3]:
-            raise ValueError("this head detector needs a 3×640×640 input")
+        if len(inputs) != 1 or list(inputs[0].shape[1:]) != [3, 640, 640]:
+            raise ValueError("this detector needs a 3×640×640 input")
         outputs = session.get_outputs()
         if not outputs:
-            raise ValueError("this head detector has no output")
+            raise ValueError("this detector has no output")
+        classes = options.get("classes") or [{"id": 0, "name": "head", "kind": "head"}]
+        selected = [item for item in classes if item["kind"] in options.get("kinds", ["head"])]
         results = []
         for index, path in enumerate(images):
             try:
@@ -551,23 +555,26 @@ def _worker(kind: str, images: list[str], options: dict, events: Any, working_di
                 )
                 continue
             raw = session.run([outputs[0].name], {inputs[0].name: pixels})[0]
-            boxes = detector_restore(
-                decode_detections(raw, options.get("confidence", 0.413), options.get("iou_threshold", 0.7)),
-                scale,
-                offset,
-            )
-            boxes = [box for box in boxes if box[2] - box[0] >= 1 and box[3] - box[1] >= 1]
-            results.append(
-                {
-                    "regions": detector_regions(
-                        boxes,
-                        size,
-                        padding=options.get("padding", 0.10),
-                        feather=options.get("feather", 0.03),
-                    ),
-                    "size": list(size),
-                }
-            )
+            if np.asarray(raw).shape != (1, 4 + len(classes), 8400):
+                raise ValueError("detector output does not match its catalog classes")
+            regions = []
+            for item in selected:
+                boxes = detector_restore(
+                    decode_detections(
+                        raw, options.get("confidence", 0.413), options.get("iou_threshold", 0.7),
+                        class_id=item["id"],
+                    ), scale, offset,
+                )
+                boxes = [box for box in boxes if box[2] - box[0] >= 1 and box[3] - box[1] >= 1]
+                for region in detector_regions(
+                    boxes, size, padding=options.get("padding", 0.10), feather=options.get("feather", 0.03),
+                ):
+                    regions.append({
+                        **region, "index": len(regions),
+                        "model_id": options.get("model_id", "anime-head-detector-v2"),
+                        "kind": item["kind"], "class_id": item["id"], "class_name": item["name"],
+                    })
+            results.append({"regions": regions, "size": list(size)})
             events.put(
                 {"type": "progress", "done": index + 1, "total": len(images), "message": Path(path).name}
             )
@@ -711,6 +718,9 @@ def detect_heads(
     device_index: int = 0,
     progress: Callable[[int, int, str], None] = lambda *_: None,
     cancel: threading.Event | None = None,
+    model_id: str = "anime-head-detector-v2",
+    classes: list[dict[str, Any]] | None = None,
+    kinds: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Detect heads in each image; returns one ``{"regions": [...], "size": [w, h]}`` per image."""
     options = {
@@ -721,6 +731,9 @@ def detect_heads(
         "feather": feather,
         "provider": provider,
         "device_index": device_index,
+        "model_id": model_id,
+        "classes": classes,
+        "kinds": kinds or ["head"],
     }
     return _run("detector", [str(p) for p in images], options, progress, cancel or threading.Event())[
         "detections"

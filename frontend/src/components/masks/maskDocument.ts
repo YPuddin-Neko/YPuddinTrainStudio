@@ -16,6 +16,8 @@ export function paintSegment(pixels: Uint8Array, width: number, height: number, 
   }
 }
 
+export interface MaskDocumentState { operations: MaskOperation[]; position: number; savedPosition: number }
+
 export class MaskDocument {
   readonly width: number;
   readonly height: number;
@@ -33,6 +35,11 @@ export class MaskDocument {
   get canRedo() { return this.position < this.operations.length; }
   get coverage() { return this.pixels.reduce((sum, value) => sum + value, 0) / (this.pixels.length * 255); }
   markSaved() { this.savedPosition = this.position; }
+  exportState(): MaskDocumentState { return structuredClone({ operations: this.operations, position: this.position, savedPosition: this.savedPosition }); }
+  restoreState(state: MaskDocumentState) {
+    this.operations = structuredClone(state.operations); this.position = state.position; this.savedPosition = state.savedPosition;
+    this.rebuild();
+  }
   apply(operation: MaskOperation, alreadyPainted = false) {
     if (this.savedPosition > this.position) this.savedPosition = -1;
     this.operations = this.operations.slice(0, this.position);

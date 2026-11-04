@@ -9,10 +9,12 @@ export interface SamplingValues {
   seed: number; sampler: string; scheduler: string; noise: string; shift: number | null; guidance: number | null;
   adapter_merge_dtype?: 'auto' | 'bf16' | 'fp16' | 'fp32';
   adapter_scale: number; checkpoint_id: string | null; sampling_model_id: string | null;
+  reference_images?: string[];
 }
 export interface XyzRequest extends SamplingValues { gpu_devices?: string[]; name?: string; x: XyzAxis; y?: XyzAxis | null; z?: XyzAxis | null }
 export interface XyzOptions {
   source_job_id?: string | null; family: string; training_mode?: 'adapter' | 'full'; defaults: SamplingValues;
+  training_task?: 'standard' | 'slider' | 'edit';
   axes: { key: AxisKey; label: string; values?: AxisValue[] }[];
   /** Products of every training run in the version that samples on the same base model, the source's first. */
   checkpoints: { id: string; name: string; step: number; job_id?: string; job_name?: string }[];

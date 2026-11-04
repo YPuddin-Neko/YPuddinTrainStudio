@@ -7,7 +7,7 @@ import { formatApiError } from '../../utils/errors';
 import { ApiError } from '../../api/types';
 import { MaskDocument, imagePoint, paintSegment, type MaskOperation } from './maskDocument';
 import { PaintDocument, type PaintStroke } from './paintDocument';
-import { loadPaint, restorePaint, savePaint, type PaintInfo } from './paintApi';
+import { loadPaint, restorePaint, savePaint, invalidatePaintCache, type PaintInfo } from './paintApi';
 import './image-editor.css';
 import { SlidingIndicator } from '../motion';
 import { LoadingNote } from '../Loading';
@@ -15,15 +15,33 @@ import OverflowStrip from '../OverflowStrip';
 import { useConfirmation } from '../useConfirmation';
 import { useImageViewport } from './useImageViewport';
 import Dialog from '../Dialog';
+import { paintDraftDirty, paintDraftKey, type PaintDraftStore, type PaintEditorState } from './paintWorkspaceState';
 
 type Mode = 'paint' | 'mask';
 type Tool = 'brush' | 'erase' | 'maskErase' | 'pan' | 'pick';
 const maskStrokeValues = { brush: 255, erase: 0, maskErase: 255 } as const;
 export type ImageEditorIdentity = { datasetId: string; imageId: string; relPath: string };
 export type ImageEditorNavigationTarget = ImageEditorIdentity & { position: number; total: number };
+type NavigationChoice = -1 | 1 | ImageEditorNavigationTarget;
+export interface ImageEditorHandle {
+  requestImage: (target: ImageEditorNavigationTarget) => void;
+  isDirty: () => boolean;
+  beforeLeave: () => Promise<boolean>;
+  prepareForOperation: () => Promise<boolean>;
+  saveCurrent: () => Promise<void>;
+  saveAll: () => Promise<void>;
+  undo: () => void;
+  redo: () => void;
+  discard: () => Promise<void>;
+  restore: () => Promise<void>;
+}
 interface Props {
+  inline?: boolean; readOnly?: boolean; refreshKey?: string; gallery?: React.ReactNode;
+  drafts?: PaintDraftStore; onDraftsChange?: () => void; onStateChange?: (state: PaintEditorState) => void;
+
   datasetId: string; imageId: string; relPath: string;
-  onClose: () => void; onSaved: (info?: PaintInfo, signal?: AbortSignal) => void | Promise<void>;
+  onClose: () => void; onSaved: (info?: PaintInfo, signal?: AbortSignal, datasetId?: string, batch?: boolean) => void | Promise<void>;
+  onBatchSaved?: () => Promise<void>;
   navigation?: {
     position: number; total: number;
     resolve: (direction: -1 | 1, current: ImageEditorIdentity, signal: AbortSignal) => Promise<ImageEditorNavigationTarget | null>;
@@ -33,11 +51,11 @@ interface Props {
   navigationError?: string;
   onReloadList?: () => void;
 }
-export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,onEnableTraining,navigation,navigationError,onReloadList}:Props) {
+const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,onEnableTraining,navigation,navigationError,onReloadList,inline=false,readOnly=false,refreshKey,gallery,drafts,onDraftsChange,onStateChange,onBatchSaved}:Props, ref) {
   const text = useWorkspaceText();
   const { confirm, confirmation } = useConfirmation();
-  const [mode,setMode] = React.useState<Mode>('paint');
-  const [tool,setTool] = React.useState<Tool>('brush');
+  const [mode,setMode] = React.useState<Mode>(inline ? 'mask' : 'paint');
+  const [tool,setTool] = React.useState<Tool>(inline ? 'erase' : 'brush');
   const [color,setColor] = React.useState('#ffffff');
   const [diameter,setDiameter] = React.useState(24);
   const [opacity,setOpacity] = React.useState(.5);
@@ -49,13 +67,16 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
   const [verified,setVerified] = React.useState(false);
   const [saving,setSaving] = React.useState(false);
   const [switching,setSwitching] = React.useState(false);
-  const [pendingDirection,setPendingDirection] = React.useState<-1|1|null>(null);
+  const [pendingSwitch,setPendingSwitch] = React.useState<NavigationChoice|null>(null);
   const [switchError,setSwitchError] = React.useState('');
   const [error,setError] = React.useState('');
   const [requiresReopen,setRequiresReopen] = React.useState(false);
   const [message,setMessage] = React.useState('');
   const [revision,redraw] = React.useReducer((value:number)=>value+1,0);
   const [reload,setReload] = React.useState(0);
+  const timeline=React.useRef<{modes:Mode[];position:number}>({modes:[],position:0});
+  const recordOperation=(mode:Mode)=>{if(inline){timeline.current.modes=timeline.current.modes.slice(0,timeline.current.position);timeline.current.modes.push(mode);timeline.current.position++;}};
+  const baseline = React.useRef<PaintInfo|null>(null);
   const paint = React.useRef<PaintDocument|null>(null);
   const mask = React.useRef<MaskDocument|null>(null);
   const identity = React.useRef({imageId,relPath});
@@ -64,9 +85,9 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
   const readController = React.useRef<AbortController|null>(null);
   const pendingSync = React.useRef<PaintInfo|null>(null);
   const savedCallback = React.useRef(onSaved);savedCallback.current=onSaved;
-  const pendingChoice = React.useRef<-1|1|null>(null);
+  const pendingChoice = React.useRef<NavigationChoice|null>(null);
   const switchSequence = React.useRef(0);
-  const busy = saving || switching || pendingDirection!==null;
+  const busy = saving || switching || pendingSwitch!==null;
   const unavailable = loading || !verified;
   const canvas = React.useRef<HTMLCanvasElement>(null);
   const viewport = React.useRef<HTMLDivElement>(null);
@@ -102,30 +123,46 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
     context.putImageData(output,0,0);
   },[mode,opacity,maskOnly]);
   const schedule=()=>{if(frame.current===null)frame.current=requestAnimationFrame(()=>{frame.current=null;renderView();});};
-  const install=(loaded:Awaited<ReturnType<typeof loadPaint>>)=>{
+  const draftConflictMessage=text('文件已变化，草稿仍保留。请先解决冲突再保存。','The file changed. The draft is retained; resolve the conflict before saving.');
+  const capture = React.useCallback(() => {
+    if (!inline || !drafts || !baseline.current || !paint.current || !mask.current) return;
+    const key = paintDraftKey(datasetId, baseline.current.rel_path);
+    const paintState = paint.current.exportState(), maskState = mask.current.exportState();
+    if (paintState.operations.length || maskState.operations.length) drafts.set(key, {datasetId, info: baseline.current, paint: paintState, mask: maskState,history:[...timeline.current.modes],historyPosition:timeline.current.position});
+    else drafts.delete(key);
+    onDraftsChange?.();
+  }, [inline, drafts, datasetId, onDraftsChange]);
+  const install=React.useCallback((loaded:Awaited<ReturnType<typeof loadPaint>>, preserveDraft=inline)=>{
+    const savedDraft = preserveDraft ? drafts?.get(paintDraftKey(datasetId, loaded.info.rel_path)) : undefined;
+    if (savedDraft && savedDraft.info.revision !== loaded.info.revision) throw new ApiError(409, {code:'paint.conflict', message:draftConflictMessage});
     if(frame.current!==null){cancelAnimationFrame(frame.current);frame.current=null;}
     stroke.current=null;
     paint.current=new PaintDocument(loaded.info.width,loaded.info.height,loaded.pixels);
     mask.current=new MaskDocument(loaded.info.width,loaded.info.height,loaded.mask);
+    if (savedDraft) { paint.current.restoreState(savedDraft.paint); mask.current.restoreState(savedDraft.mask); }
+    timeline.current=savedDraft?{modes:[...savedDraft.history],position:savedDraft.historyPosition}:{modes:[],position:0};
+    baseline.current=loaded.info;
     identity.current={imageId:loaded.info.image_id,relPath:loaded.info.rel_path};
     setInfo(loaded.info);setVerified(true);redraw();
-  };
+  },[inline,drafts,datasetId,draftConflictMessage]);
   React.useEffect(()=>{
     mounted.current=true;
     const previous=document.activeElement as HTMLElement|null;
-    closeButton.current?.focus();
-    return()=>{mounted.current=false;readController.current?.abort();previous?.focus();if(frame.current!==null)cancelAnimationFrame(frame.current);};
-  },[]);
+    if(!inline)closeButton.current?.focus();
+    return()=>{mounted.current=false;readController.current?.abort();if(!inline)previous?.focus();if(frame.current!==null)cancelAnimationFrame(frame.current);};
+  },[inline]);
+  React.useEffect(()=>{if(refreshKey)invalidatePaintCache(datasetId);},[datasetId,refreshKey]);
   React.useEffect(()=>{
-    const controller=new AbortController();setLoading(true);setError('');setRequiresReopen(false);
+    const controller=new AbortController();readController.current=controller;setLoading(true);setError('');setRequiresReopen(false);
     void loadPaint(datasetId,identity.current.imageId,identity.current.relPath,controller.signal).then(async loaded=>{
       if(controller.signal.aborted)return;
       install(loaded);
       if(pendingSync.current){await savedCallback.current(loaded.info,controller.signal);if(!controller.signal.aborted)pendingSync.current=null;}
     }).catch(error=>{if(!controller.signal.aborted)reportError(error);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
-  },[datasetId,reload]);
+  },[datasetId,reload,refreshKey,install]);
   React.useEffect(()=>{renderView();},[revision,renderView,loading]);
+  React.useEffect(()=>{if(inline&&!loading&&verified)capture();},[revision,inline,loading,verified,capture]);
   React.useEffect(()=>{
     if(busy||returnFocus.current===null)return;
     const buttons=navigationControls.current?.querySelectorAll<HTMLButtonElement>('button');
@@ -156,22 +193,24 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
   const reloadImage=async()=>{
     if(actionBusy.current)return;
     if(dirty()&&!await confirm({title:text('重新读取图片与遮罩','Reload image and mask'),message:text('重新读取会放弃未保存修改，继续？','Reload and discard unsaved changes?'),confirmLabel:text('放弃并重新读取','Discard and reload'),danger:true}))return;
+    drafts?.delete(paintDraftKey(datasetId,identity.current.relPath));onDraftsChange?.();
     setReload(value=>value+1);
   };
   const finishStroke=()=>{
     if(stroke.current){
-      if('color' in stroke.current)paint.current?.apply(stroke.current,true);else mask.current?.apply(stroke.current,true);
+      if('color' in stroke.current){paint.current?.apply(stroke.current,true);recordOperation('paint');}else{mask.current?.apply(stroke.current,true);recordOperation('mask');}
       stroke.current=null;setMessage('');redraw();
     }
   };
   const changeMode=(next:Mode)=>{
     finishStroke();setMode(next);
-    if(tool==='pick'||(next==='paint'&&tool==='maskErase'))setTool('brush');
+    if(inline&&tool!=='pan')setTool(next==='mask'?'erase':'brush');
+    else if(tool==='pick'||(next==='paint'&&tool==='maskErase'))setTool('brush');
   };
   const { panning, viewportEvents } = useImageViewport({ viewport, canvas, preview:cursor, zoom, setZoom, enabled:!!info&&!unavailable&&!busy, panTool:tool==='pan', isDrawing:()=>!!stroke.current, finishStroke });
   const point=(event:React.PointerEvent<HTMLCanvasElement>)=>imagePoint(event.clientX,event.clientY,event.currentTarget.getBoundingClientRect(),info!.width,info!.height);
   const pointerDown=(event:React.PointerEvent<HTMLCanvasElement>)=>{
-    if(!paint.current||!mask.current||actionBusy.current||unavailable||event.button!==0)return;
+    if(readOnly||!paint.current||!mask.current||actionBusy.current||unavailable||event.button!==0)return;
     event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);
     const at=point(event);
     if(mode==='paint'&&(tool==='pick'||event.altKey)){setColor(paint.current.colorAt(at));setTool('brush');return;}
@@ -193,10 +232,16 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
     stroke.current.points.push(at);schedule();
   };
   const current=mode==='paint'?paint.current:mask.current;
-  const history=(redo=false)=>{if(actionBusy.current||unavailable||stroke.current)return;if(redo)current?.redo();else current?.undo();setMessage('');redraw();};
-  const operation=(op:MaskOperation)=>{if(!actionBusy.current&&!stroke.current){mask.current?.apply(op);setMessage('');redraw();}};
+  React.useEffect(()=>{onStateChange?.({dirty:dirty(),canUndo:inline?timeline.current.position>0:!!current?.canUndo,canRedo:inline?timeline.current.position<timeline.current.modes.length:!!current?.canRedo,canRestore:!!info?.can_restore&&!unavailable&&!requiresReopen,busy:busy||loading,available:!!info&&!unavailable&&!requiresReopen,message:error||switchError||message});},[onStateChange,revision,busy,loading,info,unavailable,requiresReopen,error,switchError,message,current,inline]);
+
+  const history=(redo=false)=>{
+    if(readOnly||actionBusy.current||unavailable||stroke.current)return;
+    if(inline){const history=timeline.current;const at=redo?history.position:history.position-1;if(at<0||at>=history.modes.length)return;const document=history.modes[at]==='paint'?paint.current:mask.current;if(redo){document?.redo();history.position++;}else{document?.undo();history.position--;}}
+    else if(redo)current?.redo();else current?.undo();setMessage('');redraw();
+  };
+  const operation=(op:MaskOperation)=>{if(!readOnly&&!actionBusy.current&&!stroke.current){mask.current?.apply(op);recordOperation('mask');setMessage('');redraw();}};
   const persist=async(enable=false):Promise<boolean>=>{
-    if(!info||!paint.current||!mask.current||unavailable||requiresReopen)return false;
+    if(readOnly||!info||!paint.current||!mask.current||unavailable||requiresReopen)return false;
     finishStroke();setSaving(true);setError('');setMessage('');
     let committed:PaintInfo|undefined;
     let reloaded=false;
@@ -208,11 +253,13 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
         identity.current={imageId:committed.image_id,relPath:committed.rel_path};setInfo(committed);
         setVerified(false);
         paint.current.markSaved();mask.current.markSaved();pendingSync.current=committed;
+        drafts?.delete(paintDraftKey(datasetId,committed.rel_path));onDraftsChange?.();
         // Re-read encoded pixels (e.g. JPEG) so the next brush operation starts from the file actually saved.
         const controller=new AbortController();readController.current=controller;
         const loaded=await loadPaint(datasetId,committed.image_id,committed.rel_path,controller.signal);
         if(!mounted.current||controller.signal.aborted)return false;
-        install(loaded);
+        drafts?.delete(paintDraftKey(datasetId,committed.rel_path));onDraftsChange?.();
+        install(loaded,false);
         reloaded=true;
       }
       if(pendingSync.current){await onSaved(pendingSync.current,readController.current?.signal);if(!mounted.current)return false;pendingSync.current=null;}
@@ -232,18 +279,58 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
     actionBusy.current=true;
     try{await persist(enable);}finally{actionBusy.current=false;}
   };
+  const saveAll = async () => {
+    if(readOnly||actionBusy.current||!drafts)return;
+    finishStroke();capture();
+    const pending=[...drafts.entries()].filter(([,draft])=>paintDraftDirty(draft));
+    if(!pending.length)return;
+    actionBusy.current=true;setSaving(true);setError('');setMessage('');
+    const failures:string[]=[],refreshFailures:string[]=[];let saved=0;
+    try{
+      for(const [key,draft] of pending){
+        if(!mounted.current)break;
+        let committed=false;
+        try{
+          const controller=new AbortController();readController.current=controller;
+          const loaded=await loadPaint(draft.datasetId,draft.info.image_id,draft.info.rel_path,controller.signal);
+          if(loaded.info.revision!==draft.info.revision)throw new ApiError(409,{code:'paint.conflict',message:text('文件已变化，草稿仍保留','The file changed; the draft is retained')});
+          const imageDoc=new PaintDocument(loaded.info.width,loaded.info.height,loaded.pixels);imageDoc.restoreState(draft.paint);
+          const maskDoc=new MaskDocument(loaded.info.width,loaded.info.height,loaded.mask);maskDoc.restoreState(draft.mask);
+          const result=await savePaint(draft.datasetId,draft.info,imageDoc.dirty?imageDoc.pixels:undefined,maskDoc.dirty?maskDoc.pixels:undefined);
+          committed=true;drafts.delete(key);saved++;onDraftsChange?.();
+          const active=draft.datasetId===datasetId&&draft.info.rel_path===identity.current.relPath;
+          if(active){
+            identity.current={imageId:result.image_id,relPath:result.rel_path};setInfo(result);
+            paint.current?.markSaved();mask.current?.markSaved();pendingSync.current=result;
+            setVerified(false);setLoading(true);
+          }
+          try{await onSaved(result,controller.signal,draft.datasetId,true);if(active)pendingSync.current=null;}
+          finally{if(active){
+            const fresh=await loadPaint(datasetId,result.image_id,result.rel_path,controller.signal);
+            if(mounted.current&&!controller.signal.aborted){install(fresh,false);setLoading(false);}
+          }}
+          if(!mounted.current)break;
+        }catch(failure){(committed?refreshFailures:failures).push(`${draft.info.rel_path}: ${formatApiError(failure)}`);}
+      }
+      if(saved)try{await onBatchSaved?.();}catch(failure){refreshFailures.push(formatApiError(failure));}
+      if(mounted.current){
+        setMessage(text(`已保存 ${saved} 张图片`,`Saved ${saved} images`));
+        if(failures.length||refreshFailures.length)setError([...(failures.length?[text(`有 ${failures.length} 张保存失败，草稿已保留。`,`Failed to save ${failures.length} images; drafts retained.`),...failures]:[]),...(refreshFailures.length?[text('文件已保存，但刷新失败：','Files saved, but refresh failed:'),...refreshFailures]:[])].join('\n'));
+      }
+    }finally{actionBusy.current=false;if(mounted.current){setSaving(false);redraw();}}
+  };
   const cancelSwitch=()=>{
     if(saving)return;
     readController.current?.abort();switchSequence.current++;
     actionBusy.current=false;setSwitching(false);
   };
-  const performSwitch=async(direction:-1|1,saveFirst:boolean)=>{
+  const performSwitch=async(choice:NavigationChoice,saveFirst:boolean)=>{
     if(!navigation)return;
     const sequence=++switchSequence.current;
-    setPendingDirection(null);setSwitching(true);setSwitchError('');
+    setPendingSwitch(null);setSwitching(true);setSwitchError('');
     const controller=new AbortController();readController.current=controller;
     try{
-      const target=await navigation.resolve(direction,{datasetId,...identity.current},controller.signal);
+      const target=typeof choice==='number' ? await navigation.resolve(choice,{datasetId,...identity.current},controller.signal) : choice;
       if(!mounted.current||controller.signal.aborted||!target)return;
       // Resolve before saving: modified-time sorting can move the current image after a write.
       if(saveFirst&&!await persist())return;
@@ -256,8 +343,9 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
       readController.current=controller;
       const loaded=await loadPaint(target.datasetId,target.imageId,target.relPath,controller.signal);
       if(!mounted.current||controller.signal.aborted)return;
+      install(loaded);
       navigation.onNavigated({...target,imageId:loaded.info.image_id,relPath:loaded.info.rel_path});
-      install(loaded);setZoom(1);viewport.current?.scrollTo(0,0);
+      setZoom(1);viewport.current?.scrollTo(0,0);
       if(cursor.current)cursor.current.style.visibility='hidden';
       setMessage('');setError('');setRequiresReopen(false);pendingSync.current=null;
     }catch(error){
@@ -267,21 +355,22 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
       if(sequence===switchSequence.current){actionBusy.current=false;if(mounted.current)setSwitching(false);}
     }
   };
-  const requestSwitch=(direction:-1|1)=>{
+  const requestSwitch=(choice:NavigationChoice)=>{
     if(actionBusy.current||unavailable||!info||!navigation)return;
-    returnFocus.current=direction;
+    returnFocus.current=typeof choice==='number' ? choice : null;
     finishStroke();actionBusy.current=true;
-    if(dirty()){pendingChoice.current=direction;setPendingDirection(direction);}
-    else void performSwitch(direction,false);
+    if(inline){capture();void performSwitch(choice,false);}
+    else if(dirty()){pendingChoice.current=choice;setPendingSwitch(choice);}
+    else void performSwitch(choice,false);
   };
-  const cancelPending=()=>{pendingChoice.current=null;setPendingDirection(null);actionBusy.current=false;};
+  const cancelPending=()=>{pendingChoice.current=null;setPendingSwitch(null);actionBusy.current=false;};
   const confirmSwitch=(saveFirst:boolean)=>{
     const direction=pendingChoice.current;if(direction===null)return;
     pendingChoice.current=null;
     void performSwitch(direction,saveFirst);
   };
   const restore=async()=>{
-    if(!info||actionBusy.current||unavailable)return;
+    if(readOnly||!info||actionBusy.current||unavailable)return;
     if(!await confirm({title:text('恢复上次保存前','Restore previous save'),message:text('恢复最近一次保存前的图片和遮罩？当前未保存修改也会放弃。','Restore the image and mask from before the latest save? Unsaved edits will also be discarded.'),confirmLabel:text('恢复文件','Restore files'),danger:true}))return;
     if(actionBusy.current||!mounted.current)return;
     actionBusy.current=true;setSaving(true);setError('');
@@ -289,12 +378,13 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
       const restored=await restorePaint(datasetId,info);if(!mounted.current)return;
       identity.current={imageId:restored.image_id,relPath:restored.rel_path};setInfo(restored);setVerified(false);
       paint.current?.markSaved();mask.current?.markSaved();pendingSync.current=restored;
+      drafts?.delete(paintDraftKey(datasetId,restored.rel_path));onDraftsChange?.();
       setLoading(true);setReload(value=>value+1);setMessage(text('已恢复保存前的文件。','Restored the files from before that save.'));
     }catch(error){if(mounted.current)reportError(error);}finally{actionBusy.current=false;if(mounted.current)setSaving(false);}
   };
   const keyDown=(event:React.KeyboardEvent)=>{
-    if(!(event.target instanceof Element)||event.target.closest('[role="dialog"]')!==dialog.current)return;
-    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}
+    if(!(event.target instanceof Element)||(inline ? !!event.target.closest('[role="dialog"]') : event.target.closest('[role="dialog"]')!==dialog.current))return;
+    if(!inline&&event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}
     const formField=event.target instanceof HTMLInputElement;
     if(event.target instanceof HTMLElement&&event.target.getAttribute('role')==='tab'&&['ArrowLeft','ArrowRight','Home','End'].includes(event.key)&&!busy){
       event.preventDefault();
@@ -304,56 +394,95 @@ export default function ImageEditor({datasetId,imageId,relPath,onClose,onSaved,o
     }
     if(!formField&&(event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();history(event.shiftKey);}
     if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();void save();}
-    if(event.key==='Tab'){
+    if(!inline&&event.key==='Tab'){
       const controls=dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),canvas[tabindex]');
       if(!controls?.length)return;const first=controls[0],last=controls[controls.length-1];
       if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
       else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
     }
   };
-  return createPortal(<><div className="image-editor-backdrop" onClick={()=>void close()}>
-    <section className="image-editor" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialog} onKeyDown={keyDown} onClick={event=>event.stopPropagation()}>
-      <header><div className="image-editor-heading"><h2 id={titleId}>{text('涂抹与遮罩','Paint and mask')}</h2><p title={identity.current.relPath}>{identity.current.relPath}{info&&` · ${info.width} × ${info.height}`}</p></div><div className="image-editor-header-actions">
+  const beforeLeave=async()=>{
+    if(actionBusy.current)return false;
+    return !dirty()||await confirm({title:text('放弃未保存修改','Discard unsaved changes'),message:text('当前图片与遮罩尚未保存，放弃修改后继续？','Discard unsaved image and mask changes and continue?'),confirmLabel:text('放弃修改','Discard changes'),danger:true});
+  };
+  React.useImperativeHandle(ref,()=>({
+    isDirty:dirty,beforeLeave,
+    prepareForOperation:async()=>{
+      capture();
+      if(drafts&&[...drafts.values()].some(paintDraftDirty)){
+        if(!await confirm({title:text('先保存图片修改','Save image edits first'),message:text('自动遮罩会更新文件。先保存全部草稿再开始？','Automatic masks update files. Save all drafts before starting?'),confirmLabel:text('保存全部并继续','Save all and continue')}))return false;
+        await saveAll();return ![...drafts.values()].some(paintDraftDirty);
+      }
+      return await beforeLeave();
+    },
+    saveCurrent:()=>save(),saveAll,undo:()=>history(),redo:()=>history(true),discard:reloadImage,restore,
+    requestImage:target=>{if(target.datasetId===datasetId&&target.relPath===identity.current.relPath)return;if(switching&&!saving)cancelSwitch();requestSwitch(target);},
+  }));
+  const inlineTools=<>
+    <div className="image-editor-tool-group"><span>{text('模式','Mode')}</span><div className="ui-segmented" role="tablist" aria-label={text('编辑模式','Editing mode')}>{(['paint','mask'] as const).map(value=><button key={value} type="button" role="tab" aria-selected={mode===value} disabled={busy} onClick={()=>changeMode(value)}>{value==='paint'?text('图像涂抹','Image paint'):text('训练遮罩','Training mask')}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div></div>
+    <div className="image-editor-tool-group"><span>{text('工具','Tools')}</span><div className={`image-editor-inline-tools${mode==='paint'?' is-paint':''}`} role="group" aria-label={text('绘制工具','Drawing tools')}>
+      <button type="button" className="ui-btn ui-btn-sm" aria-pressed={tool===(mode==='mask'?'erase':'brush')} title={mode==='mask'?text('画笔涂黑的区域不参与训练','Paint ignored areas black'):text('使用所选颜色涂抹原图','Paint with the selected color')} disabled={readOnly||busy||unavailable} onClick={()=>setTool(mode==='mask'?'erase':'brush')}><Brush size={13}/>{text('画笔','Brush')}</button>
+      <button type="button" className="ui-btn ui-btn-sm" aria-pressed={tool===(mode==='mask'?'maskErase':'erase')} title={mode==='mask'?text('擦除遮罩，恢复参与训练','Erase the mask to include the area in training'):text('擦回本次编辑前的原图','Restore pixels from before this edit')} disabled={readOnly||busy||unavailable} onClick={()=>setTool(mode==='mask'?'maskErase':'erase')}><Eraser size={13}/>{text('橡皮擦','Eraser')}</button>
+      <button type="button" className="ui-btn ui-btn-sm" aria-pressed={tool==='pan'} disabled={busy||unavailable} onClick={()=>setTool('pan')}><Hand size={13}/>{text('移动','Pan')}</button>
+      {mode==='paint'&&<button type="button" className="ui-btn ui-btn-sm" aria-pressed={tool==='pick'} disabled={busy||unavailable} onClick={()=>setTool('pick')}><Pipette size={13}/>{text('取色','Pick')}</button>}
+    </div></div>
+    <div className="image-editor-tool-group"><span>{text('笔刷','Brush')}</span>
+      <label className="image-editor-control-row"><span>{text('大小','Size')}</span><input aria-label={text('笔刷直径','Brush diameter')} type="range" min={1} max={1024} value={diameter} disabled={busy} onChange={event=>setDiameter(Number(event.target.value))}/><input aria-label={text('笔刷像素','Brush pixels')} type="number" min={1} max={1024} value={diameter} disabled={busy} onChange={event=>setDiameter(Math.max(1,Math.min(1024,Number(event.target.value)||1)))}/><small>px</small></label>
+      {mode==='paint'&&<label className="image-editor-color-row"><span>{text('颜色','Color')}</span><input type="color" aria-label={text('涂抹颜色','Paint color')} value={color} disabled={busy||unavailable} onChange={event=>setColor(event.target.value)}/></label>}
+    </div>
+    <div className="image-editor-tool-group"><span>{text('显示与缩放','Display and zoom')}</span>
+      {mode==='mask'&&<><label className="image-editor-control-row"><span>{text('叠加','Overlay')}</span><input aria-label={text('叠加透明度','Overlay opacity')} type="range" min={0} max={1} step={.05} value={opacity} disabled={busy} onChange={event=>setOpacity(Number(event.target.value))}/><input aria-label={text('叠加透明度百分比','Overlay opacity percent')} type="number" min={0} max={100} step={5} value={Math.round(opacity*100)} disabled={busy} onChange={event=>setOpacity(Math.max(0,Math.min(100,Number(event.target.value)||0))/100)}/><small>%</small></label><Switch disabled={busy} checked={maskOnly} onCheckedChange={setMaskOnly}>{text('仅看遮罩','Mask only')}</Switch></>}
+      <div className="image-editor-zoom-row"><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('缩小','Zoom out')} disabled={busy} onClick={()=>setZoom(value=>Math.max(.25,value/1.5))}><ZoomOut size={14}/></button><button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={()=>{setZoom(1);viewport.current?.scrollTo(0,0);}}>{text('适应','Fit')} {Math.round(scale*100)}%</button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('放大','Zoom in')} disabled={busy} onClick={()=>setZoom(value=>Math.min(8,value*1.5))}><ZoomIn size={14}/></button></div>
+    </div>
+    <div className="image-editor-tool-group image-editor-mask-actions">{mode==='mask'?<><button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>operation({kind:'fill',value:255})}>{text('全白','All white')}</button><button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>operation({kind:'fill',value:0})}>{text('全黑','All black')}</button><button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>operation({kind:'invert'})}>{text('反转','Invert')}</button></>:<button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>{paint.current?.apply({kind:'clear'});recordOperation('paint');setMessage('');redraw();}}>{text('清除本次涂抹','Clear session paint')}</button>}</div>
+  </>;
+  const content=<section className={`image-editor${inline?' is-inline':''}`} role={inline?'region':'dialog'} aria-modal={inline?undefined:true} aria-labelledby={inline?undefined:titleId} aria-label={inline?text('图像与遮罩编辑器','Image and mask editor'):undefined} ref={dialog} onKeyDown={keyDown} onClick={event=>event.stopPropagation()}>
+      {!inline&&<header><div className="image-editor-heading"><h2 id={titleId}>{text('涂抹与遮罩','Paint and mask')}</h2><p title={identity.current.relPath}>{identity.current.relPath}{info&&` · ${info.width} × ${info.height}`}</p>{inline&&<span className="image-editor-inline-status" role="status">{saving?text('保存中…','Saving…'):dirty()?text('未保存','Unsaved'):message?text('已保存','Saved'):''}</span>}</div><div className="image-editor-header-actions">
         {navigation&&<div ref={navigationControls} className="image-editor-navigation" role="group" aria-label={text('切换图片','Switch image')}>
           <button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一张','Previous image')} title={text('上一张','Previous image')} disabled={busy||unavailable||navigation.position<=1} onClick={()=>requestSwitch(-1)}><ChevronLeft size={15}/></button>
           <span aria-live="polite">{navigation.position} / {navigation.total}</span>
           <button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一张','Next image')} title={text('下一张','Next image')} disabled={busy||unavailable||navigation.position>=navigation.total} onClick={()=>requestSwitch(1)}><ChevronRight size={15}/></button>
           {switching&&<button type="button" className="ui-btn ui-btn-sm" disabled={saving} onClick={cancelSwitch}>{text('取消切换','Cancel switch')}</button>}
         </div>}
-        <button ref={closeButton} type="button" className="ui-btn ui-btn-quiet ui-btn-icon" aria-label={text('关闭图片编辑器','Close image editor')} disabled={busy} onClick={close}><X size={17}/></button></div></header>
-      <div className="image-editor-tools">
+        {inline&&<><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('撤销','Undo')} title={text('撤销','Undo')} disabled={readOnly||busy||unavailable||!current?.canUndo} onClick={()=>history()}><Undo2 size={14}/></button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('重做','Redo')} title={text('重做','Redo')} disabled={readOnly||busy||unavailable||!current?.canRedo} onClick={()=>history(true)}><Redo2 size={14}/></button><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" disabled={busy||unavailable||!dirty()} onClick={()=>void reloadImage()}>{text('放弃修改','Discard changes')}</button><button type="button" className="ui-btn ui-btn-primary ui-btn-sm" disabled={readOnly||busy||unavailable||requiresReopen||!info||!dirty()} onClick={()=>void save()}>{saving?text('保存中…','Saving…'):text('保存修改','Save changes')}</button></>}
+        {!inline&&<button ref={closeButton} type="button" className="ui-btn ui-btn-quiet ui-btn-icon" aria-label={text('关闭图片编辑器','Close image editor')} disabled={busy} onClick={close}><X size={17}/></button>}</div></header>}
+      {inline&&gallery&&<div className="image-editor-gallery">{gallery}</div>}
+      <aside className="image-editor-toolbox">{inline?inlineTools:<><div className="image-editor-tools">
         <div className="ui-segmented" role="tablist" aria-label={text('编辑模式','Editing mode')}>{(['paint','mask'] as const).map(value=><button key={value} type="button" role="tab" aria-selected={mode===value} disabled={busy} onClick={()=>changeMode(value)}>{value==='paint'?text('图像涂抹','Image paint'):text('训练遮罩','Training mask')}{(value==='paint'?paint.current?.dirty:mask.current?.dirty)?' *':''}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div>
         <OverflowStrip className="ui-segmented" containerClassName="image-editor-tool-strip" role="group" label={text('绘制工具','Drawing tools')} activeKey={tool}>
-          <button type="button" aria-pressed={tool==='brush'} disabled={busy||unavailable} onClick={()=>setTool('brush')}><Brush size={14}/>{mode==='paint'?text('画笔','Brush'):text('参与训练','Include')}</button>
-          <button type="button" aria-pressed={tool==='erase'} disabled={busy||unavailable} onClick={()=>setTool('erase')}><Eraser size={14}/>{mode==='paint'?text('擦回原图','Erase paint'):text('忽略区域','Ignore')}</button>
-          {mode==='mask'&&<button type="button" aria-pressed={tool==='maskErase'} title={text('擦除遮罩，恢复为参与训练区域','Erase mask to include this area in training')} disabled={busy||unavailable} onClick={()=>setTool('maskErase')}><Eraser size={14}/>{text('橡皮擦','Eraser')}</button>}
+          <button type="button" aria-pressed={tool==='brush'} disabled={readOnly||busy||unavailable} onClick={()=>setTool('brush')}><Brush size={14}/>{mode==='paint'?text('画笔','Brush'):text('参与训练','Include')}</button>
+          <button type="button" aria-pressed={tool==='erase'} disabled={readOnly||busy||unavailable} onClick={()=>setTool('erase')}><Eraser size={14}/>{mode==='paint'?text('擦回原图','Erase paint'):text('忽略区域','Ignore')}</button>
+          {mode==='mask'&&<button type="button" aria-pressed={tool==='maskErase'} title={text('擦除遮罩，恢复为参与训练区域','Erase mask to include this area in training')} disabled={readOnly||busy||unavailable} onClick={()=>setTool('maskErase')}><Eraser size={14}/>{text('橡皮擦','Eraser')}</button>}
           <button type="button" aria-pressed={tool==='pan'} disabled={busy||unavailable} onClick={()=>setTool('pan')}><Hand size={14}/>{text('移动','Pan')}</button>
           {mode==='paint'&&<button type="button" aria-pressed={tool==='pick'} disabled={busy||unavailable} onClick={()=>setTool('pick')}><Pipette size={14}/>{text('取色','Pick color')}</button>}
           <SlidingIndicator className="ui-segmented-thumb"/>
         </OverflowStrip>
         {mode==='paint'&&<label>{text('颜色','Color')}<input type="color" aria-label={text('涂抹颜色','Paint color')} value={color} disabled={busy||unavailable} onChange={event=>setColor(event.target.value)}/></label>}
-        <button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('撤销','Undo')} title={text('撤销','Undo')} disabled={busy||unavailable||!current?.canUndo} onClick={()=>history()}><Undo2 size={14}/></button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('重做','Redo')} title={text('重做','Redo')} disabled={busy||unavailable||!current?.canRedo} onClick={()=>history(true)}><Redo2 size={14}/></button>
-        {mode==='paint'?<button type="button" className="ui-btn ui-btn-sm" disabled={busy||unavailable} onClick={()=>{paint.current?.apply({kind:'clear'});setMessage('');redraw();}}>{text('清除本次涂抹','Clear session paint')}</button>:<><button type="button" className="ui-btn ui-btn-sm" disabled={busy||unavailable} onClick={()=>operation({kind:'fill',value:255})}>{text('全白','All white')}</button><button type="button" className="ui-btn ui-btn-sm" disabled={busy||unavailable} onClick={()=>operation({kind:'fill',value:0})}>{text('全黑','All black')}</button><button type="button" className="ui-btn ui-btn-sm" disabled={busy||unavailable} onClick={()=>operation({kind:'invert'})}>{text('反转','Invert')}</button></>}
+        <button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('撤销','Undo')} title={text('撤销','Undo')} disabled={readOnly||busy||unavailable||!current?.canUndo} onClick={()=>history()}><Undo2 size={14}/></button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('重做','Redo')} title={text('重做','Redo')} disabled={readOnly||busy||unavailable||!current?.canRedo} onClick={()=>history(true)}><Redo2 size={14}/></button>
+        {mode==='paint'?<button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>{paint.current?.apply({kind:'clear'});setMessage('');redraw();}}>{text('清除本次涂抹','Clear session paint')}</button>:<><button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>operation({kind:'fill',value:255})}>{text('全白','All white')}</button><button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>operation({kind:'fill',value:0})}>{text('全黑','All black')}</button><button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>operation({kind:'invert'})}>{text('反转','Invert')}</button></>}
       </div>
       <div className="image-editor-tools"><label>{text('笔刷直径','Brush diameter')}<input aria-label={text('笔刷直径','Brush diameter')} type="range" min={1} max={1024} value={diameter} disabled={busy} onChange={event=>setDiameter(Number(event.target.value))}/><input aria-label={text('笔刷像素','Brush pixels')} type="number" min={1} max={1024} value={diameter} disabled={busy} onChange={event=>setDiameter(Math.max(1,Math.min(1024,Number(event.target.value)||1)))}/>px</label>
         {mode==='mask'&&<><label>{text('叠加透明度','Overlay opacity')}<input aria-label={text('叠加透明度','Overlay opacity')} type="range" min={0} max={1} step={.05} value={opacity} disabled={busy} onChange={event=>setOpacity(Number(event.target.value))}/></label><Switch disabled={busy} checked={maskOnly} onCheckedChange={setMaskOnly}>{text('仅看遮罩','Mask only')}</Switch></>}
         <button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('缩小','Zoom out')} title={text('缩小','Zoom out')} disabled={busy} onClick={()=>setZoom(value=>Math.max(.25,value/1.5))}><ZoomOut size={14}/></button><button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={()=>{setZoom(1);viewport.current?.scrollTo(0,0);}}>{text('适应','Fit')} {Math.round(scale*100)}%</button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('放大','Zoom in')} title={text('放大','Zoom in')} disabled={busy} onClick={()=>setZoom(value=>Math.min(8,value*1.5))}><ZoomIn size={14}/></button>
       </div>
       <p className="image-editor-hint">{text('滚轮缩放，中键拖动。','Scroll to zoom; drag with the middle mouse button.')} {mode==='paint'?text('Alt + 点击取色；擦回原图可恢复本次编辑前的像素。','Alt + click picks a color. Erase restores pixels from before this editing session.'):text('白色参与训练，黑色忽略；红色为忽略区域。无独立遮罩时使用图片透明度。','White trains, black is ignored; red marks ignored areas. Without a separate mask, image transparency is used.')}</p>
+      </>}</aside><div className="image-editor-canvas-area">
       {error&&<p className="image-editor-status" role="alert">{error} {requiresReopen?<><span>{text('图片身份或文件已变化，请刷新列表后重新打开。','The image identity or files changed. Refresh the list and reopen the image.')}</span><button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={()=>void closeAndRefresh()}>{text('关闭并刷新列表','Close and refresh list')}</button></>:<button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={()=>void reloadImage()}>{text('重新读取','Reload')}</button>}</p>}
       {switching&&<LoadingNote className="image-editor-status" label={text('正在切换图片…','Switching images…')}/>}
       {switchError&&<p className="image-editor-status" role="alert">{switchError}</p>}
       {navigationError&&<p className="image-editor-status" role="alert">{navigationError}</p>}
-      {loading?<LoadingNote className="image-editor-status" label={text('正在读取图片与遮罩…','Loading image and mask…')}/>:info&&<div ref={viewport} {...viewportEvents} className="image-editor-viewport" data-testid="paint-viewport" style={{cursor:panning?'grabbing':tool==='pan'?'grab':undefined}}><div className="image-editor-stage" style={{width:Math.max(1,info.width*scale),height:Math.max(1,info.height*scale)}}><canvas ref={canvas} aria-label={text('图像与遮罩绘制画布','Image and mask drawing canvas')} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={finishStroke} onPointerCancel={finishStroke} onLostPointerCapture={finishStroke} onPointerLeave={()=>{if(cursor.current)cursor.current.style.visibility='hidden';}} style={{cursor:panning?'grabbing':tool==='pan'?'grab':tool==='pick'?'copy':'crosshair'}}/><div ref={cursor} aria-hidden="true" className="image-editor-cursor" style={{visibility:'hidden',width:diameter*scale,height:diameter*scale}}/></div></div>}
-      {message&&<p role="status" className="image-editor-status">{message}</p>}
-      <footer><small>{dirty()?text('有未保存修改','Unsaved changes'):text('已同步','Up to date')} · {text('Ctrl/Cmd + Z 撤销，Ctrl/Cmd + S 保存','Ctrl/Cmd + Z to undo, Ctrl/Cmd + S to save')}</small><div className="image-editor-footer-actions"><button type="button" className="ui-btn" disabled={busy||unavailable||requiresReopen||!info?.can_restore} onClick={()=>void restore()}>{text('恢复上次保存前','Restore previous save')}</button><button type="button" className="ui-btn" disabled={busy} onClick={close}>{text('返回图片列表','Back to images')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={busy||unavailable||requiresReopen||!info||!dirty()} onClick={()=>void save()}>{saving?text('保存中…','Saving…'):text('保存修改','Save changes')}</button>{mode==='mask'&&onEnableTraining&&<button type="button" className="ui-btn" disabled={busy||unavailable||requiresReopen||!info} onClick={()=>void save(true)}>{text('保存并启用遮罩训练','Save and enable masked training')}</button>}</div></footer>
-    </section>
-  </div>{confirmation}{pendingDirection!==null&&<Dialog nested title={text('未保存修改','Unsaved changes')} onClose={cancelPending}>
+      {loading&&(!inline||!info)?<LoadingNote className="image-editor-status" label={text('正在读取图片与遮罩…','Loading image and mask…')}/>:info&&<div ref={viewport} {...viewportEvents} className="image-editor-viewport" data-testid="paint-viewport" style={{cursor:panning?'grabbing':tool==='pan'?'grab':undefined}}><div className="image-editor-stage" style={{width:Math.max(1,info.width*scale),height:Math.max(1,info.height*scale)}}><canvas ref={canvas} aria-label={text('图像与遮罩绘制画布','Image and mask drawing canvas')} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={finishStroke} onPointerCancel={finishStroke} onLostPointerCapture={finishStroke} onPointerLeave={()=>{if(cursor.current)cursor.current.style.visibility='hidden';}} style={{cursor:panning?'grabbing':tool==='pan'?'grab':tool==='pick'?'copy':'crosshair'}}/><div ref={cursor} aria-hidden="true" className="image-editor-cursor" style={{visibility:'hidden',width:diameter*scale,height:diameter*scale}}/></div></div>}
+      {inline&&info&&<div className="image-editor-canvas-info"><span title={identity.current.relPath}>{identity.current.relPath}</span><span>{info.width} × {info.height}</span>{loading&&<LoadingNote label={text('读取中…','Loading…')}/>}</div>}
+      {!inline&&message&&<p role="status" className="image-editor-status">{message}</p>}
+      </div>{!inline&&<footer><small>{dirty()?text('有未保存修改','Unsaved changes'):text('已同步','Up to date')} · {text('Ctrl/Cmd + Z 撤销，Ctrl/Cmd + S 保存','Ctrl/Cmd + Z to undo, Ctrl/Cmd + S to save')}</small><div className="image-editor-footer-actions"><button type="button" className="ui-btn" disabled={readOnly||busy||unavailable||requiresReopen||!info?.can_restore} onClick={()=>void restore()}>{text('恢复上次保存前','Restore previous save')}</button>{!inline&&<button type="button" className="ui-btn" disabled={busy} onClick={close}>{text('返回图片列表','Back to images')}</button>}<button type="button" className="ui-btn ui-btn-primary" disabled={readOnly||busy||unavailable||requiresReopen||!info||!dirty()} onClick={()=>void save()}>{saving?text('保存中…','Saving…'):text('保存修改','Save changes')}</button>{mode==='mask'&&onEnableTraining&&<button type="button" className="ui-btn" disabled={readOnly||busy||unavailable||requiresReopen||!info} onClick={()=>void save(true)}>{text('保存并启用遮罩训练','Save and enable masked training')}</button>}</div></footer>}
+    </section>;
+  return <>{inline?content:createPortal(<div className="image-editor-backdrop" onClick={()=>void close()}>{content}</div>,document.body)}{confirmation}{pendingSwitch!==null&&<Dialog nested title={text('未保存修改','Unsaved changes')} onClose={cancelPending}>
     <p className="workspace-confirm-message">{text('保存当前图片和遮罩的修改后再切换？','Save changes to the current image and mask before switching?')}</p>
     <div className="workspace-confirm-actions image-editor-switch-actions">
       <button type="button" className="ui-btn" onClick={cancelPending}>{text('取消','Cancel')}</button>
       <button type="button" className="ui-btn ui-btn-danger" onClick={()=>confirmSwitch(false)}>{text('放弃修改并切换','Discard and switch')}</button>
       <button type="button" className="ui-btn ui-btn-primary" onClick={()=>confirmSwitch(true)}>{text('保存并切换','Save and switch')}</button>
     </div>
-  </Dialog>}</>,document.body);
-}
+  </Dialog>}</>;
+});
+export default ImageEditor;

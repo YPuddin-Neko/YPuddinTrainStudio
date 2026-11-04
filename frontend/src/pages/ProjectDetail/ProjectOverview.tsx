@@ -113,6 +113,8 @@ export default function ProjectOverview({ project, version, versionId, config: s
   const inactiveReason = inactiveTrainingReason(config, english);
   const baseModel = fileName(config.model?.dit_path);
   const hasTrainingImages = stats.training !== null && stats.training > 0;
+  const textSlider = config.training?.task === 'slider' && config.slider?.mode === 'text';
+  const textDirectionsReady = ['neutral_prompt', 'positive_prompt', 'negative_prompt'].every(key => config.slider?.[key]?.trim());
   const indexing = datasets.some(row => row.index_status === 'indexing');
   const failedIndex = datasets.some(row => row.index_status === 'failed' || row.stats?.error);
   const missingCaptions = stats.training !== null && stats.captions !== null ? Math.max(0, stats.training - stats.captions) : null;
@@ -127,21 +129,23 @@ export default function ProjectOverview({ project, version, versionId, config: s
   const versionName = version?.name || text('当前版本', 'Current version');
 
   const checks: ReadinessCheck[] = [
-    { key: 'images', label: text('训练图片', 'Training images'), href: dataUrl,
+    textSlider ? { key: 'directions', label: text('文字方向', 'Text directions'), href: `${trainUrl}?tab=train&group=slider`,
+      state: textDirectionsReady ? 'done' : 'todo', detail: textDirectionsReady ? text('已填写两端与中性提示词', 'Neutral and both direction prompts set') : text('提示词尚未填完整', 'Complete the direction prompts') } : { key: 'images', label: text('训练图片', 'Training images'), href: dataUrl,
       state: hasTrainingImages && !failedIndex ? 'done' : 'todo',
       detail: failedIndex ? text('数据集索引失败，需要检查', 'A dataset failed to index') : indexing || (!stats.ready && datasets.length) ? text('正在索引…', 'Indexing…') : hasTrainingImages ? text(`${stats.training} 张`, `${stats.training} images`) : text('尚未导入', 'None imported') },
     { key: 'model', label: text('训练底模', 'Base model'), href: modelsUrl,
       state: baseModel && !inactiveReason ? 'done' : 'todo',
       detail: inactiveReason ? text('模型类型已停用', 'Model type retired') : baseModel || text('尚未选择', 'Not selected') },
-    { key: 'captions', label: text('标签', 'Captions'), href: captionsUrl,
+    ...(!textSlider ? [{ key: 'captions', label: text('标签', 'Captions'), href: captionsUrl,
       state: missingCaptions === null || !hasTrainingImages ? 'todo' : missingCaptions > 0 ? 'warn' : 'done',
-      detail: missingCaptions === null ? text('等待索引', 'Waiting for index') : !hasTrainingImages ? text('导入图片后检查', 'Check after import') : missingCaptions > 0 ? text(`${missingCaptions} 张没有标签`, `${missingCaptions} without captions`) : text('全部已标注', 'All captioned') },
-    ...(config.dataset?.masked_loss ? [{ key: 'masks', label: text('遮罩', 'Masks'), href: masksUrl,
+      detail: missingCaptions === null ? text('等待索引', 'Waiting for index') : !hasTrainingImages ? text('导入图片后检查', 'Check after import') : missingCaptions > 0 ? text(`${missingCaptions} 张没有标签`, `${missingCaptions} without captions`) : text('全部已标注', 'All captioned') } as ReadinessCheck] : []),
+    ...(!textSlider && config.dataset?.masked_loss ? [{ key: 'masks', label: text('遮罩', 'Masks'), href: masksUrl,
       state: (stats.masks ?? 0) > 0 ? 'done' as const : 'warn' as const,
       detail: (stats.masks ?? 0) > 0 ? text(`${stats.masks} 个遮罩`, `${stats.masks} masks`) : text('已启用遮罩训练，但没有遮罩', 'Masked training on, no masks') }] : []),
   ];
   const ready = checks.every(check => check.state !== 'todo');
-  const next = !hasTrainingImages || failedIndex ? { href: dataUrl, label: text('整理训练数据', 'Prepare training data') }
+  const next = textSlider ? { href: textDirectionsReady ? trainUrl : `${trainUrl}?tab=train&group=slider`, label: textDirectionsReady ? text('检查参数并开始训练', 'Review and start training') : text('设置文字方向', 'Set text directions') }
+    : !hasTrainingImages || failedIndex ? { href: dataUrl, label: text('整理训练数据', 'Prepare training data') }
     : !baseModel || inactiveReason ? { href: modelsUrl, label: text('配置训练模型', 'Configure models') }
       : !stats.ready ? { href: dataUrl, label: text('查看数据集状态', 'View dataset status') }
         : { href: trainUrl, label: text('检查参数并开始训练', 'Review and start training') };
@@ -157,6 +161,7 @@ export default function ProjectOverview({ project, version, versionId, config: s
     ? <>{formatRateValue(rate)}<span className="overview-parameter-plain">{text(`（${plainRate}）`, ` (${plainRate})`)}</span></>
     : formatRateValue(rate);
   const parameters: [string, React.ReactNode][] = [
+    ...(config.training?.task && config.training.task !== 'standard' ? [[text('训练方式', 'Training mode'), configOptionLabel('training.task', config.training.task, english)] as [string, React.ReactNode]] : []),
     [text('算法', 'Algorithm'), full ? text('全量微调', 'Full fine-tuning') : config.adapter?.algo ? configOptionLabel('adapter.algo', String(config.adapter.algo), english) : '—'],
     full ? [text('训练组件', 'Trained parts'), [config.training?.train_backbone && 'UNet / DiT', config.training?.train_text_encoder && text('文本编码器', 'Text encoder')].filter(Boolean).join(' + ') || '—']
       : ['Rank / Alpha', config.adapter?.rank != null ? `${config.adapter.rank} / ${config.adapter.alpha ?? '—'}` : '—'],

@@ -140,7 +140,12 @@ def text_plan_inputs(cfg: TrainConfig, latent_spec: LatentSpec, layout: DataLayo
     train_text, val_text = {""}, {""}
     online_stochastic = False
     known = {"train": layout is not None, "validation": layout is not None, "prompt": True}
-    if layout is None:
+    text_slider = cfg.training.task == "slider" and cfg.slider.mode == "text"
+    if text_slider:
+        train_text = {"", cfg.slider.neutral_prompt, cfg.slider.positive_prompt, cfg.slider.negative_prompt, *cfg.slider.anchor_prompts}
+        train = [("_prompts", text) for text in sorted(train_text)]
+        known.update(train=True, validation=True)
+    elif layout is None:
         unknowns.append({"loc": "dataset.sources", "reason": "data_layout_unavailable"})
     if layout is not None:
         for label, items in (("train", layout.items), ("validation", layout.validation_items)):
@@ -186,7 +191,8 @@ def text_plan_inputs(cfg: TrainConfig, latent_spec: LatentSpec, layout: DataLayo
     result = {
         "cache_batch_size": batch_size,
         "prompt_cache_batch_size": int(separate and (bool(prompts) or not known["prompt"])),
-        "preview_items": [{"width": (prompt.width or cfg.sampling.width) // latent_spec.align * latent_spec.align,
+        "preview_items": [{**({"has_reference": True} if prompt.reference_images else {}),
+                           "width": (prompt.width or cfg.sampling.width) // latent_spec.align * latent_spec.align,
                            "height": (prompt.height or cfg.sampling.height) // latent_spec.align * latent_spec.align,
                            "prompt_steps": prompt.steps, "prompt_cfg": prompt.cfg,
                            "positive": {}, "negative": {}} for prompt in values] if known["prompt"] else None,

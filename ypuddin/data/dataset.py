@@ -66,6 +66,8 @@ class Item:
     crop_anchor: str = "center"
     # The image's name in the caches: its file name, with a content hash when another image shares it.
     cache_name: str = ""
+    pair: Item | None = None
+    reference: Item | None = None
 
     @property
     def max_scale(self) -> float | None:
@@ -451,6 +453,20 @@ class TrainDataset(Dataset):
             out["pixels"] = px
             if mask is not None:
                 out["mask"] = mask
+        for kind in ("pair", "reference"):
+            companion = getattr(item, kind)
+            if companion is None:
+                continue
+            out[f"{kind}_path"] = companion.record.path
+            value = self.cache.load(self.cache_key(companion, flip)) if self.cache is not None else None
+            if value is None:
+                pixels, mask = self.load_pixels(companion, flip, include_mask=kind == "pair")
+                out[f"{kind}_pixels"] = pixels
+            else:
+                out[f"{kind}_latents"] = value
+                mask = self.current_mask(companion, flip) if kind == "pair" else None
+            if mask is not None:
+                out[f"{kind}_mask"] = mask
         return out
 
 
@@ -481,6 +497,27 @@ def collate(samples: list[dict[str, Any]]) -> dict[str, Any]:
     if any("mask" in s for s in samples):
         reference = next(s["mask"] for s in samples if "mask" in s)
         batch["mask"] = torch.stack([s.get("mask", torch.ones_like(reference)) for s in samples])
+    for kind in ("pair", "reference"):
+        if not any(f"{kind}_path" in sample for sample in samples):
+            continue
+        if not all(f"{kind}_path" in sample for sample in samples):
+            raise ValueError("同一批次的每个样本都必须包含配对图片。")
+        batch[f"{kind}_paths"] = [sample[f"{kind}_path"] for sample in samples]
+        cached = [f"{kind}_latents" in sample for sample in samples]
+        if all(cached):
+            batch[f"{kind}_latents"] = torch.stack([s[f"{kind}_latents"] for s in samples])
+        elif not any(cached):
+            batch[f"{kind}_pixels"] = torch.stack([s[f"{kind}_pixels"] for s in samples])
+        else:
+            batch[f"partial_{kind}_latents"] = [s.get(f"{kind}_latents") for s in samples]
+            batch[f"{kind}_pixels"] = {
+                i: s[f"{kind}_pixels"] for i, s in enumerate(samples) if f"{kind}_pixels" in s
+            }
+        if any(f"{kind}_mask" in s for s in samples):
+            mask = next(s[f"{kind}_mask"] for s in samples if f"{kind}_mask" in s)
+            batch[f"{kind}_mask"] = torch.stack([
+                s.get(f"{kind}_mask", torch.ones_like(mask)) for s in samples
+            ])
     return batch
 
 
@@ -609,6 +646,24 @@ def prepare_data_layout(
     records = scan(ds.sources, "dataset.sources")
     if not records:
         raise DataConfigError("dataset.sources", "数据集目录中没有可读取的图片。")
+    task = getattr(getattr(cfg, "training", None), "task", "standard")
+    companion_field = (
+        "reference_dir" if task == "edit"
+        else "pair_path" if task == "slider" and getattr(getattr(cfg, "slider", None), "mode", "text") == "image" else None
+    )
+    companions = {}
+    if companion_field:
+        from .pairs import paired_records
+
+        for i, source in enumerate(sources):
+            try:
+                companions.update({
+                    (i, target): record
+                    for target, record in paired_records(source, companion_field, index_db=index_db).items()
+                })
+            except (ValueError, OSError) as error:
+                prefix = f"dataset.sources.{i}" if i < len(ds.sources) else f"validation.sources.{i - len(ds.sources)}"
+                raise DataConfigError(f"{prefix}.{companion_field}", str(error)) from error
     val_records: list[ImageRecord] = []
     if cfg.validation.enabled:
         priors = [record for record in records if sources[record.source_index].is_reg]
@@ -646,6 +701,16 @@ def prepare_data_layout(
             validation_items.append(item)
     if cfg.validation.max_images:
         validation_items = validation_items[: cfg.validation.max_images]
+    if companion_field:
+        names = cache_names([*records, *val_records, *companions.values()])
+        kind = "reference" if companion_field == "reference_dir" else "pair"
+        for item in [*items, *validation_items]:
+            peer = companions[(item.record.source_index, item.record.path)]
+            companion = replace(item, record=peer, cache_name=names[peer.path])
+            if kind == "reference":
+                companion = replace(companion, image_fit="pad", no_upscale=False, native_scale=None, crop_anchor="center")
+            setattr(item, kind, companion)
+            item.cache_name = names[item.record.path]
     return DataLayout(records, val_records, items, validation_items, sources, bm, resolved_pixels, auto_pixels)
 
 
@@ -754,6 +819,26 @@ def build_data(
         ),
         "validation_content": [item.record.content_hash for item in layout.validation_items],
     }
+    companion_items = [*items, *layout.validation_items]
+    if any(item.pair is not None or item.reference is not None for item in companion_items):
+        fingerprint_settings["companions"] = {
+            "version": 1,
+            "items": [
+                (index, item.record.source_index, kind,
+                 Path(item.record.path).relative_to(Path(layout.sources[item.record.source_index].path).expanduser()).as_posix(),
+                 Path(peer.record.path).relative_to(Path(getattr(
+                     layout.sources[item.record.source_index], "pair_path" if kind == "pair" else "reference_dir",
+                 )).expanduser()).as_posix(),
+                 *record_content_key(item.record), *record_content_key(replace(
+                    peer.record, caption_path=None,
+                    mask_path=peer.record.mask_path if kind == "pair" and ds.masked_loss else None,
+                )),
+                 peer.record.width, peer.record.height, peer.bucket.width, peer.bucket.height,
+                 peer.image_fit, peer.no_upscale, peer.crop_anchor)
+                for index, item in enumerate(companion_items) for kind in ("pair", "reference")
+                if (peer := getattr(item, kind)) is not None
+            ],
+        }
     fingerprints = _data_fingerprints(
         cfg, records + [item.record for item in layout.validation_items], layout.sources, fingerprint_settings,
     )
@@ -788,19 +873,23 @@ def cache_latents(
     def jobs() -> Iterator[tuple[CacheKey, dict[str, Tensor]]]:
         seen: set[CacheKey] = set()
         for ds in datasets:
-            for item in ds.items:
-                for flip in (False, True) if ds.flip else (False,):
-                    key = ds.cache_key(item, flip)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    if bundle.latent_cache.has(key):
-                        yield key, {}
-                        continue
-                    px, _mask = ds.load_pixels(item, flip, include_mask=False)
-                    yield key, {"pixels": px}
+            for main in ds.items:
+                for item in (main, *[peer for peer in (main.pair, main.reference) if peer is not None]):
+                    for flip in (False, True) if ds.flip else (False,):
+                        key = ds.cache_key(item, flip)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        if bundle.latent_cache.has(key):
+                            yield key, {}
+                            continue
+                        px, _mask = ds.load_pixels(item, flip, include_mask=False)
+                        yield key, {"pixels": px}
 
-    total = sum(len(ds.items) * (2 if ds.flip else 1) for ds in datasets)
+    total = sum(
+        sum(1 + int(item.pair is not None) + int(item.reference is not None) for item in ds.items)
+        * (2 if ds.flip else 1) for ds in datasets
+    )
     return build_latent_cache(
         jobs(),
         bundle.latent_cache,

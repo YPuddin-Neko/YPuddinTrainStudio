@@ -32,6 +32,7 @@ import RecoveryInterval from './RecoveryInterval';
 import FrequencyInput from './FrequencyInput';
 import ParameterToggleSection from './ParameterToggleSection';
 import { LoadingNote } from '../../components/Loading';
+import ReferenceImageInput from '../../components/ReferenceImageInput';
 
 interface SchemaProperty {
   type?: string;
@@ -376,7 +377,9 @@ const SourcesEditor: React.FC<{
   sourceRoles?: SourceRoleInfo[];
   section: string;
   versionSources?: boolean;
-}> = ({ value = [], onChange, sourceRoles = [], section, versionSources = false }) => {
+  pairedField?: 'pair_path' | 'reference_dir';
+  errors?: ValidationError[];
+}> = ({ value = [], onChange, sourceRoles = [], section, versionSources = false, pairedField, errors = [] }) => {
   const { t, i18n } = useTranslation();
   const text = (zh: string, en: string) => i18n.language.startsWith("en") ? en : zh;
   const [modalIndex, setModalIndex] = React.useState<number | null>(null);
@@ -425,7 +428,7 @@ const SourcesEditor: React.FC<{
           <div className="source-path-control flex min-w-0 gap-2">
             <input
               type="text"
-              aria-label={text(`图片目录 ${n}`, `Image folder ${n}`)}
+              aria-label={pairedField === 'reference_dir' ? text(`目标图片目录 ${n}`, `Target image folder ${n}`) : pairedField === 'pair_path' ? text(`正端图片目录 ${n}`, `Positive image folder ${n}`) : text(`图片目录 ${n}`, `Image folder ${n}`)}
               placeholder="/path/to/dataset"
               value={src.path || ''}
               onChange={(e) => updateSource(idx, 'path', e.target.value)}
@@ -440,8 +443,15 @@ const SourcesEditor: React.FC<{
               <span>{t('common.browse')}</span>
             </button>
           </div>
+          {(['pair_path', 'reference_dir'] as const).filter(field => field === pairedField).map(field => <div key={field} className="space-y-1">
+            <span>{field === 'reference_dir' ? text('参考图片目录', 'Reference image folder') : text('负端图片目录', 'Negative image folder')}</span>
+            <PathInput value={src[field] || ''} directoryOnly ariaLabel={field === 'reference_dir' ? text(`参考图片目录 ${n}`, `Reference image folder ${n}`) : text(`负端图片目录 ${n}`, `Negative image folder ${n}`)}
+              onChange={path => updateSource(idx, field, path || null)}/>
+            <p className="config-field-hint">{text('按相对路径的同名图片一一配对，每对计为一个训练样本。', 'Images match one-to-one by relative path and filename stem; each pair is one training sample.')}</p>
+          </div>)}
+          {errors.filter(error => error.loc?.startsWith(`${section}.sources.${idx}.`)).map(error => <p key={`${error.loc}:${error.msg}`} role="alert" className="config-field-error">{error.msg}</p>)}
           <div className="source-settings-grid">
-            <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮重复使用这组图片的次数。默认 1；20 张图重复 5 次计为 100 个样本。增加次数会增加训练占比和总步数，也可能过拟合。','Uses per image per epoch, default 1. Twenty images repeated five times count as 100 samples. More repeats increase their training share and total steps, with a risk of overfitting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${n}`,`Repeats ${n}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',event.target.value === '' ? '' : Number(event.target.value))}/></label>
+            <label><span>{t('dataset.repeats')}<ConfigHelp label={text('重复次数说明','Repeats help')}>{pairedField ? text('每对图片计一个样本。默认每轮使用 1 次；20 对图片重复 5 次计为 100 个样本。', 'Each image pair counts as one sample, used once per epoch by default. Twenty pairs repeated five times count as 100 samples.') : text('每轮重复使用这组图片的次数。默认 1；20 张图重复 5 次计为 100 个样本。增加次数会增加训练占比和总步数，也可能过拟合。','Uses per image per epoch, default 1. Twenty images repeated five times count as 100 samples. More repeats increase their training share and total steps, with a risk of overfitting.')}</ConfigHelp></span><input aria-label={text(`重复次数 ${n}`,`Repeats ${n}`)} type="number" min="1" step="1" value={src.repeats ?? 1} onChange={event=>updateSource(idx,'repeats',event.target.value === '' ? '' : Number(event.target.value))}/></label>
             {!role?.managed && !pending && <div className="source-purpose"><span>{text('用途','Purpose')}</span><StudioSelect aria-label={text(`用途 ${n}`,`Purpose ${n}`)} value={isReg ? 'reg' : 'train'} onValueChange={next=>updateSource(idx,'is_reg',next === 'reg')} options={[{value:'train',label:text('训练集','Training')},{value:'reg',label:text('正则集','Regularization')}]}/></div>}
             {isReg && <label><span>{text('正则损失权重','Regularization loss weight')}<ConfigHelp label={text('正则损失权重说明','Regularization loss weight help')}>{text('正则图片的损失乘数。默认 1；0.5 减半，0 不贡献训练梯度。','Multiplier for regularization-image loss. Default 1; 0.5 halves it, while 0 contributes no training gradient.')}</ConfigHelp></span><input aria-label={text(`正则损失权重 ${n}`,`Regularization loss weight ${n}`)} type="number" min="0" step="0.1" value={src.prior_weight ?? 1} onChange={event=>updateSource(idx,'prior_weight',event.target.value === '' ? '' : Number(event.target.value))}/></label>}
             <label><span>{text('无标签时的描述','Text for uncaptioned images')}<ConfigHelp label={text('无标签时的描述说明','Uncaptioned text help')}>{text('图片没有标签文件时，用这段文字作为标签。留空则不补充；不会创建或修改标签文件。','Used as the caption for images without a caption file. Leave empty to add nothing; caption files are not created or changed.')}</ConfigHelp></span><input aria-label={text(`无标签时的描述 ${n}`,`Text for uncaptioned images ${n}`)} value={src.class_prompt ?? ''} onChange={event=>updateSource(idx,'class_prompt',event.target.value || null)} placeholder={text('例如：a person','For example: a person')}/></label>
@@ -474,9 +484,11 @@ const SourcesEditor: React.FC<{
 const PromptsEditor: React.FC<{
   value: any[];
   inheritedValues?: Record<string, number | null | undefined>;
+  editing?: boolean;
   onChange: (val: any[]) => void;
-}> = ({ value = [], inheritedValues = {}, onChange }) => {
-  const { t } = useTranslation();
+}> = ({ value = [], inheritedValues = {}, editing = false, onChange }) => {
+  const { t, i18n } = useTranslation();
+  const text = (zh: string, en: string) => i18n.resolvedLanguage?.startsWith('en') ? en : zh;
   const addPrompt = () => {
     onChange([...value, { prompt: '', negative: '', seed: null, width: null, height: null, steps: null, cfg: null }]);
   };
@@ -510,6 +522,10 @@ const PromptsEditor: React.FC<{
             onChange={(e) => updatePrompt(idx, 'prompt', e.target.value)}
             className="w-full px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
           />
+          {(editing || p.reference_images?.length > 0) && <div className="space-y-1">
+            <span>{text('参考图片', 'Reference image')}</span>
+            <ReferenceImageInput value={p.reference_images || []} label={text(`预览参考图片 ${idx + 1}`, `Preview reference image ${idx + 1}`)} onChange={images => updatePrompt(idx, 'reference_images', images)}/>
+          </div>}
           <textarea
             rows={1}
             placeholder={t('train.negativePromptPlaceholder', '负面提示词（可选）')}
@@ -519,7 +535,7 @@ const PromptsEditor: React.FC<{
           />
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {[
-              { key: 'seed', label: t('job.seed'), step: 1 },
+              { key: 'seed', label: t('job.seed'), step: 1, min: -1 },
               { key: 'width', label: t('train.width'), step: 1, min: 32, max: 8192 },
               { key: 'height', label: t('train.height'), step: 1, min: 32, max: 8192 },
               { key: 'steps', label: t('train.sampleSteps'), step: 1, min: 1, max: 1000 },
@@ -652,6 +668,21 @@ function NumberListInput({value, onChange, label, placeholder}: {value: number[]
     onChange(tokens.length && tokens.every(token => token.trim() !== '' && Number.isFinite(Number(token))) ? tokens.map(Number) : raw);
   };
   return <input aria-label={label} inputMode="decimal" value={draft} onChange={event => update(event.target.value)} placeholder={placeholder}/>;
+}
+
+function PromptLinesInput({ value, label, onChange }: { value: string[]; label: string; onChange: (value: string[]) => void }) {
+  const encoded = value.join('\n');
+  const [draft, setDraft] = React.useState(encoded);
+  const emitted = React.useRef(encoded);
+  React.useEffect(() => {
+    if (encoded !== emitted.current) { emitted.current = encoded; setDraft(encoded); }
+  }, [encoded]);
+  return <textarea aria-label={label} rows={3} value={draft} onChange={event => {
+    setDraft(event.target.value);
+    const lines = event.target.value.split('\n').map(line => line.trim()).filter(Boolean);
+    emitted.current = lines.join('\n');
+    onChange(lines);
+  }}/>;
 }
 
 /** Two related numbers, each named inside its own box. */
@@ -933,7 +964,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
   const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', image_fit: 'crop', ...value.dataset } };
   const weights = modelFamilyWeights(family, english);
-  const allowedAdapterAlgorithms = familyParameterOptions(family, 'adapter.algo');
+  const allowedAdapterAlgorithms = value.training?.task === 'slider' ? ['lora'] : familyParameterOptions(family, 'adapter.algo');
   const hasTLoRARule = allowedAdapterAlgorithms?.includes('tlora') &&
     Array.isArray(value.adapter?.rules) &&
     value.adapter.rules.some((rule: { algo?: string; match?: string } | null) =>
@@ -944,6 +975,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const path = [...parentPath, key];
     const fullPathKey = path.join('.');
     const trainingMode = fullPathKey === 'training.mode';
+    if (fullPathKey === 'training.task') return null;
+    const taskChoice = fullPathKey === 'slider.mode';
+    const textSlider = value.training?.task === 'slider' && value.slider?.mode !== 'image';
+    if (textSlider && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale', 'dataset.image_fit', 'dataset.crop_anchor'].includes(fullPathKey)) return null;
+    if (parentPath[0] === 'slider' && value.training?.task !== 'slider') return null;
     const intervalRule = INTERVAL_FIELDS[fullPathKey];
     if (intervalFieldPath(fullPathKey) !== fullPathKey) return null;
     if (['checkpoint.save_state_every_epochs', 'dataset.native_max_pixels_mode'].includes(fullPathKey)) return null;
@@ -960,7 +996,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (ddpmModifier && family?.objective !== 'ddpm' && !incompatibleFamilyLoss) return null;
     if (fullPathKey === 'model.krea2_variant' && selectedModel?.variant && selectedModel.variant === value.model?.krea2_variant) return null;
     if (fullPathKey === 'model.text_encoder_2_path' && value.model?.family !== 'sdxl') return null;
-    if (!trainingMode && familyOptions?.length === 0) return null;
+    if (!trainingMode && !taskChoice && familyOptions?.length === 0) return null;
     if (family?.objective === 'ddpm' && ['sampling.shift', 'sampling.er_sde_order', 'sampling.er_sde_s_noise', 'objective.shift', 'objective.res_shift_tokens', 'objective.res_shift_mu', 'objective.mode_scale'].includes(fullPathKey)) return null;
     if (parentPath[0] === 'model' && key in MODEL_PATH_FIELDS && weights.length && !weightMeta && !(key === 'tokenizer_path' && family?.name === 'sdxl')) return null;
     if (family?.name === 'sdxl' && weightMeta?.required === false && !showAdvanced) return null;
@@ -990,9 +1026,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
     if (groupFilter && !groupFilter.includes(currentGroup) && !(compact && parentPath[0] === 'training' && groupFilter.includes('training'))) return null;
-    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${intervalRule ? `${fullPathKey}_enabled` : ''} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs checkpoint.save_state_every_epochs_enabled epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto auto_vram custom 自动 分辨率优先 显存优先 resolution first VRAM first 自定义' : fullPathKey === 'dataset.native_batch_mode' ? 'physical area 真实合批 按面积拆微批 microbatch' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
+    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${trainingMode ? 'training.task standard slider edit LoRA full 普通 滑块 编辑 全量' : ''} ${intervalRule ? `${fullPathKey}_enabled` : ''} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs checkpoint.save_state_every_epochs_enabled epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto auto_vram custom 自动 分辨率优先 显存优先 resolution first VRAM first 自定义' : fullPathKey === 'dataset.native_batch_mode' ? 'physical area 真实合批 按面积拆微批 microbatch' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
-    const errorItem = errors.find((e) => e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || intervalRule && e.loc === `${fullPathKey}_enabled` || fullPathKey === 'checkpoint.save_state_every_steps' && ['checkpoint.save_state_every_epochs', 'checkpoint.save_state_every_epochs_enabled'].includes(e.loc || '') || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode');
+    const errorItem = errors.find((e) => trainingMode && e.loc === 'training.task' || e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || intervalRule && e.loc === `${fullPathKey}_enabled` || fullPathKey === 'checkpoint.save_state_every_steps' && ['checkpoint.save_state_every_epochs', 'checkpoint.save_state_every_epochs_enabled'].includes(e.loc || '') || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode');
     const revealOutputName = versionSources && fullPathKey === 'checkpoint.name' && (editOutput === 'name' || !!errorItem || !!search.trim());
     if (versionSources && fullPathKey === 'checkpoint.name' && !revealOutputName) return null;
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
@@ -1037,11 +1073,18 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (unusedReason && hideUnusedSetting(fullPathKey, fieldValue, fieldContext)) return null;
     const schemaOptions = (ui.options ?? prop.enum)?.map(String);
     const supportedOptions = contextOptions(fullPathKey, fieldContext, familyOptions ?? schemaOptions, fieldValue) ?? familyOptions;
-    const offeredOptions = fullPathKey === 'model.attention' ? supportedOptions?.filter(option => option !== 'auto') : supportedOptions;
+    const offeredOptions = fullPathKey === 'model.attention' ? supportedOptions?.filter(option => option !== 'auto')
+      : taskChoice && fieldValue && supportedOptions && !supportedOptions.includes(String(fieldValue)) ? [...supportedOptions, String(fieldValue)] : supportedOptions;
     // A choice whose package this environment lacks stays listed, greyed out, so the reason is visible where it is chosen.
     const unavailableOptions = family?.unavailable_options?.[fullPathKey];
     const choice = (option: string): StudioSelectOption => {
       const label = configOptionLabel(fullPathKey, option, english, family?.name ?? value.model?.family);
+      if (taskChoice && supportedOptions && !supportedOptions.includes(option)) {
+        return { value: option, label: `${label} (${english ? 'not supported by this model' : '当前模型不支持'})`, displayLabel: label, disabled: true };
+      }
+      if (fullPathKey === 'adapter.algo' && value.training?.task === 'slider' && option !== 'lora') {
+        return { value: option, label: `${label} (${english ? 'slider training uses LoRA' : '滑块训练使用 LoRA'})`, displayLabel: label, disabled: true };
+      }
       if (trainingMode && supportedOptions && !supportedOptions.includes(option)) {
         const note = option === 'full'
           ? (english ? 'not yet available for this model' : '当前模型尚未接入')
@@ -1139,10 +1182,13 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           onChange={(val) => onChange(setNestedValue(value, path, val))}
         />
       );
+    } else if (fullPathKey === 'slider.anchor_prompts') {
+      control = <PromptLinesInput label={fieldLabel} value={fieldValue || []} onChange={next => onChange(setNestedValue(value, path, next))}/>;
     } else if (ui.control === 'prompts' || key === 'prompts') {
       control = (
         <PromptsEditor
           value={fieldValue || []}
+          editing={value.training?.task === 'edit'}
           inheritedValues={{
             ...value.sampling,
             steps: value.sampling?.steps ?? family?.sampling?.steps,
@@ -1159,6 +1205,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           sourceRoles={sourceRoles}
           section={parentPath[0] || 'dataset'}
           versionSources={versionSources}
+          pairedField={value.training?.task === 'edit' ? 'reference_dir' : value.training?.task === 'slider' && value.slider?.mode === 'image' ? 'pair_path' : undefined}
+          errors={errors}
         />
       );
     } else if (PAIR_NAMES[fullPathKey]) {
@@ -1271,6 +1319,18 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       control = <StudioSelect aria-label={fieldLabel} value={!fieldValue || fieldValue === 'auto' ? 'sdpa' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english, family?.name ?? value.model?.family)}
         onValueChange={next => onChange(setNestedValue(value, path, next))}
         options={attentionOptions.map(choice)}/>;
+    } else if (trainingMode) {
+      const familyTasks = familyParameterOptions(family, 'training.task') || ['standard'];
+      const tasks = contextOptions('training.task', fieldContext, familyTasks, value.training?.task) ?? familyTasks;
+      const currentTask = value.training?.task || 'standard';
+      const taskOptions = [...new Set([...tasks.filter(task => task !== 'standard'), ...(['slider', 'edit'].includes(currentTask) ? [currentTask] : [])])];
+      const selected = ['slider', 'edit'].includes(currentTask) ? currentTask : String(fieldValue || 'adapter');
+      control = <StudioSelect aria-label={fieldLabel} value={selected}
+        onValueChange={next => onChange({ ...value, training: { ...value.training, mode: next === 'full' ? 'full' : 'adapter', task: ['slider', 'edit'].includes(next) ? next : 'standard' } })}
+        options={[...(schemaOptions ?? ['adapter', 'full']).map(choice), ...taskOptions.map(task => {
+          const label = configOptionLabel('training.task', task, english);
+          return { value: task, label: tasks.includes(task) ? label : `${label} (${english ? 'not supported by this model' : '当前模型不支持'})`, displayLabel: label, disabled: !tasks.includes(task) };
+        })]}/>;
     } else if (supportedOptions) {
       control = <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english, family?.name ?? value.model?.family)}
         onValueChange={next => {
@@ -1278,7 +1338,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           onChange(fullPathKey === 'adapter.algo' && next !== 'lokr' && value.adapter?.rank === 'full'
             ? setNestedValue(updated, ['adapter', 'rank'], lastLowRank.current ?? 16) : updated);
         }}
-        options={(trainingMode ? schemaOptions ?? supportedOptions : supportedOptions).map(choice)}/>;
+        options={(taskChoice ? offeredOptions ?? supportedOptions : supportedOptions).map(choice)}/>;
     } else if (ui.options?.length) {
       control = <div className="space-y-2"><StudioSelect aria-label={fieldLabel} value={ui.options.includes(fieldValue) || !ui.allow_custom ? fieldValue || '' : '__custom__'} fallbackLabel={String(fieldValue || '')}
         onValueChange={next => onChange(setNestedValue(value,path,next === '__custom__' ? '' : next))}
@@ -1426,7 +1486,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       showAdvanced && selectedPreset?.exclude?.length && `${english ? 'Excluded layers' : '排除层'}：${selectedPreset.exclude.join(', ')}`,
     ].filter(Boolean).join('\n\n') : fullPathKey === 'model.tokenizer_path' && family?.name === 'sdxl' ? (english ? 'Optional root containing tokenizer/ and tokenizer_2/. Leave blank to use the model directory’s tokenizers, or the built-in CLIP-L / CLIP-G tokenizers when absent.' : '可选根目录，需同时包含 tokenizer/ 和 tokenizer_2/。留空自动读取模型目录；没有时使用内置 CLIP-L / CLIP-G 双分词器。')
       : ['model.text_encoder_path', 'model.tokenizer_path'].includes(fullPathKey) && family?.name === 'flux3' ? contextHelp(fullPathKey, fieldContext, offeredOptions)
-      : [weightMeta?.hint ? [configFieldHelp(fullPathKey, undefined, english), weightMeta.hint].filter(Boolean).join('\n') : contextHelp(fullPathKey, fieldContext, offeredOptions) || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree), dtkReproducibility].filter(Boolean).join('\n\n');
+      : [weightMeta?.hint ? [configFieldHelp(fullPathKey, undefined, english), weightMeta.hint].filter(Boolean).join('\n') : contextHelp(trainingMode && value.training?.task && value.training.task !== 'standard' ? 'training.task' : fullPathKey, fieldContext, offeredOptions) || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree), dtkReproducibility].filter(Boolean).join('\n\n');
     // Switches carry no standing description; a status or warning still shows beneath them.
     const statusHint = (fullPathKey === 'model.dit_path' && selectedModel ? [selectedModel.variant?.toUpperCase(), selectedModel.dtype?.toUpperCase()].filter(Boolean).join(' · ') : undefined)
       || (incompatibleFamilyLoss ? (english ? 'This loss option only supports SDXL. Turn it off or set it to zero before using this model.' : '此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。') : undefined)
@@ -1437,7 +1497,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       || (fullPathKey === 'loop.deterministic' ? trainingComputePolicyHint(activeComputePolicy, english) : undefined);
     const recoveryField = fullPathKey === 'checkpoint.save_state_every_steps';
     const describedHint = booleanField || recoveryField ? undefined
-      : fullPathKey === 'training.mode' ? value.training?.mode === 'full'
+      : fullPathKey === 'training.mode' ? value.training?.task === 'slider'
+        ? (english ? 'Trains a LoRA with negative and positive strengths.' : '训练可按正负强度切换方向的 LoRA。')
+        : value.training?.task === 'edit'
+        ? (english ? 'Trains a LoRA from reference images and editing instructions.' : '使用参考图片与编辑指令训练 LoRA。')
+        : value.training?.mode === 'full'
         ? (english ? 'Updates the selected model weights directly.' : '直接训练所选模型本身的权重。')
         : (english ? 'Trains LoRA weights while keeping the base model frozen.' : '只训练 LoRA 权重，底模保持不变。')
       : fullPathKey === 'model.dtype' ? modelPrecisionHint
@@ -1480,7 +1544,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       {compileHint && <span id={managedReason ? `${fieldId}-managed-reason` : `${fieldId}-hint`} className="sr-only">{compileHint}</span>}
       {hint && hint !== errorItem?.msg && <p id={managedReason ? `${fieldId}-managed-reason` : `${fieldId}-hint`} className="config-field-hint">{hint}</p>}
       {/* A reason Studio cannot phrase for this field stays in the preflight panel; the border still marks it. */}
-      {errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
+      {errorItem?.msg && !(fullPathKey.endsWith('.sources') && errorItem.loc?.startsWith(`${fullPathKey}.`)) && <p className="config-field-error">{errorItem.msg}</p>}
       {!errorItem && notices.filter(notice => notice.loc === fullPathKey).map(notice => <p key={notice.msg} className="config-field-notice">
         <span>{notice.msg}</span>
         {notice.fix && !readOnly && <button type="button" className="ui-link" disabled={infoNoiseParameterDisabled} onClick={() => onChange(setNestedValue(value, path, notice.fix!.value))}>{notice.fix.label}</button>}

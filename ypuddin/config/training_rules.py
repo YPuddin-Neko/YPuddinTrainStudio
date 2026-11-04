@@ -13,6 +13,9 @@ _FULL_LR_FIELDS = ("backbone_lr", "text_encoder_lr", "text_encoder_2_lr", *sorte
 def training_capabilities(family: str) -> dict:
     supported = family in FULL_FAMILIES
     result = {
+        "tasks": ["standard", "slider", "edit"] if family in {"flux2", "flux3"} else ["standard", "slider"] if supported else ["standard"],
+        "slider_modes": ["text", "image"] if supported else [],
+        "max_reference_images": 1 if family in {"flux2", "flux3"} else 0,
         "modes": ["adapter", "full"] if supported else ["adapter"],
         "full_backbone": supported,
         "full_text_encoder": family in FULL_TEXT_FAMILIES,
@@ -117,12 +120,57 @@ def _full_optimizer_errors(cfg) -> list[dict[str, str]]:
     return [{"loc": loc, "msg": message} for failed, loc, message in checks if failed]
 
 
-def training_errors(cfg) -> list[dict[str, str]]:
+def training_errors(cfg, *, preset: bool = False) -> list[dict[str, str]]:
     selection = cfg.training
     errors = _caption_noise_errors(cfg) + _full_optimizer_errors(cfg)
 
     def reject(loc, msg):
         errors.append({"loc": loc, "msg": msg})
+
+    task = selection.task
+    if task != "standard":
+        if selection.mode != "adapter":
+            reject("training.mode", "滑块和编辑训练请选择适配器训练")
+        if selection.train_text_encoder:
+            reject("training.train_text_encoder", "滑块和编辑训练需要冻结文本编码器")
+        if cfg.loop.gpu_count != 1 or cfg.loop.distributed_strategy == "fsdp":
+            reject("loop.gpu_count", "滑块和编辑训练目前支持单卡")
+        if task == "edit" and cfg.model.family not in {"flux2", "flux3"}:
+            reject("training.task", "当前模型不支持原生参考图编辑训练")
+        if task == "edit" and cfg.model.family == "flux2" and cfg.model.flux2_variant == "dev":
+            reject("model.flux2_variant", "编辑训练请选择 FLUX.2 Klein Base 4B 或 9B")
+        if task == "slider":
+            if cfg.model.family not in FULL_FAMILIES:
+                reject("training.task", "当前模型不支持滑块训练")
+            if cfg.adapter.algo != "lora":
+                reject("adapter.algo", "滑块训练需要普通 LoRA")
+            if cfg.adapter.dora:
+                reject("adapter.dora", "滑块训练需要关闭 DoRA")
+            for index, rule in enumerate(cfg.adapter.rules):
+                if rule.algo not in {None, "none", "lora"}:
+                    reject(f"adapter.rules.{index}.algo", "滑块训练的目标层只能使用 LoRA 或排除")
+            if cfg.objective.infonoise_enabled:
+                reject("objective.infonoise_enabled", "滑块训练不支持 InfoNoise")
+            if cfg.slider.mode == "text":
+                for field in ("neutral_prompt", "positive_prompt", "negative_prompt"):
+                    if not getattr(cfg.slider, field).strip():
+                        reject(f"slider.{field}", "请填写滑块提示词")
+                if cfg.validation.enabled:
+                    reject("validation.enabled", "文字滑块不使用图片验证集，请关闭图片验证")
+                if cfg.dataset.resolution_mode != "bucket":
+                    reject("dataset.resolution_mode", "文字滑块使用滑块分辨率，请选择分桶模式")
+                if cfg.memory.blocks_to_swap:
+                    reject("memory.blocks_to_swap", "文字滑块的基础样本生成暂不支持块换出")
+        field = "reference_dir" if task == "edit" else "pair_path" if cfg.slider.mode == "image" else None
+        if field:
+            for index, source in enumerate(cfg.dataset.sources):
+                if not getattr(source, field):
+                    reject(f"dataset.sources.{index}.{field}", "请设置一一配对的图片目录")
+    for index, prompt in enumerate(cfg.sampling.prompts):
+        if prompt.reference_images and cfg.model.family not in {"flux2", "flux3"}:
+            reject(f"sampling.prompts.{index}.reference_images", "当前模型不支持参考图预览")
+        if not preset and task == "edit" and cfg.sampling.enabled and not prompt.reference_images:
+            reject(f"sampling.prompts.{index}.reference_images", "编辑训练的预览需要一张参考图")
 
     if not selection.train_backbone and not selection.train_text_encoder:
         reject("training", "至少选择主模型或文本编码器参与训练")

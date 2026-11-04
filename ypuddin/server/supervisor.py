@@ -756,6 +756,7 @@ class JobSupervisor:
         masked = all(d.startswith("cuda:") for d in devices)
         worker_device = "cuda:0" if masked else devices[0]
         env = dict(os.environ, PYTHONUNBUFFERED="1")
+        env.pop("YPUDDIN_JOB_PREVIEW_SEEDS", None)
         env.pop("YPUDDIN_LEGACY_CUDA_RNG_INDEX", None)
         if masked:
             env = worker_device_environment(devices, env)
@@ -816,6 +817,7 @@ class JobSupervisor:
             env["PYTHONPATH"] = os.pathsep.join(filter(None, (source, env.get("PYTHONPATH"))))
         else:
             payload = json.loads(job["config_json"])
+            env["YPUDDIN_JOB_PREVIEW_SEEDS"] = json.dumps(self._job_preview_seeds(job))
             # New queue snapshots include the switch. Existing immutable jobs
             # predate it and must resume with their original calculation mode.
             payload.setdefault("loop", {}).setdefault("deterministic", False)
@@ -1150,6 +1152,7 @@ class JobSupervisor:
                     "total_steps": ev.get("total_steps"),
                     "steps_per_epoch": ev.get("steps_per_epoch"),
                     "preparing": False,
+                    **({"preview_seeds": ev["preview_seeds"]} if isinstance(ev.get("preview_seeds"), dict) else {}),
                 },
             )
             self._publish(
@@ -1480,6 +1483,27 @@ class JobSupervisor:
         )
         return str(states[-1]) if states else None
 
+    def _job_preview_seeds(self, job: dict[str, Any]) -> dict[str, Any]:
+        """Keep explicit runtime records; old queue snapshots used zero as random."""
+        keys = {"preview_seed_version", "preview_seed", "preview_prompt_seed_nonce", "preview_prompt_seeds"}
+        state: dict[str, Any] = {"preview_seed_version": 1}
+        recorded = json.loads(job.get("progress_json") or "{}").get("preview_seeds")
+        if isinstance(recorded, dict):
+            state.update({key: value for key, value in recorded.items() if key in keys})
+        config = json.loads(job.get("config_json") or "{}")
+        checkpoint = (job.get("resume_from") or config.get("checkpoint", {}).get("resume")
+                      or self._latest_state(state_directory(job)))
+        if checkpoint:
+            try:
+                metadata = json.loads((Path(checkpoint) / "state.json").read_text(encoding="utf-8"))
+                extra = metadata["progress"]["extra"]
+                if any(key in extra for key in keys):
+                    state["preview_seed_version"] = extra.get("preview_seed_version", 1)
+                    state.update({key: value for key, value in extra.items() if key in keys})
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                pass
+        return state
+
     def _control_file(self, job: dict[str, Any], name: str) -> None:
         ctl = Path(job["run_dir"]) / "control"
         ctl.mkdir(parents=True, exist_ok=True)
@@ -1571,6 +1595,10 @@ class JobSupervisor:
             cfg["logging"]["level"] = "debug"
         cfg.setdefault("sampling", {})["output_dir"] = str(samples_dir)
         manifests = nullcontext()
+        if job["type"] == "xyz":
+            from .xyz import clone_reference_inputs
+
+            manifests = clone_reference_inputs(cfg, run_dir)
         if job["type"] == "tts_train":
             from .routes_tts import cloned_manifests
 
@@ -1597,6 +1625,7 @@ class JobSupervisor:
                                 "estimated_peak_mb"
                             ),
                             "estimated_host_mb": json.loads(job.get("progress_json") or "{}").get("estimated_host_mb"),
+                            **({"preview_seeds": self._job_preview_seeds(job)} if job["type"] in {"train", "cache"} else {}),
                         }
                     ),
                     "latest_json": "{}",

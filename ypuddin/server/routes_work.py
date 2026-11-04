@@ -22,7 +22,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from starlette.background import BackgroundTask
 
 from ypuddin.config import DatasetSourceConfig, TrainConfig, deep_merge
@@ -804,11 +812,19 @@ def patch_version(pid: str, vid: str, body: VersionPatch, c: ServiceContext = De
 class DatasetBody(BaseModel):
     version_id: str | None = None
     path: str
+    folder_name: str = Field("", max_length=100)
     repeats: int = Field(1, ge=1, le=1_000_000)
     caption_ext: str = "auto"
     is_reg: bool = False
     prior_weight: float = Field(1.0, ge=0)
     class_prompt: str | None = None
+
+    @field_validator("folder_name")
+    @classmethod
+    def valid_folder_name(cls, value: str) -> str:
+        from .dataset_uploads import import_folder_name
+
+        return import_folder_name(value)
 
 
 def _dataset_config(
@@ -828,6 +844,21 @@ def _same_source(path: Any, expected: str) -> bool:
     return isinstance(path, str) and Path(path).expanduser().resolve() == Path(expected).resolve()
 
 
+def _check_dataset_companions(c: ServiceContext, source: dict, field: str) -> tuple[str, dict[str, str]]:
+    from ypuddin.data.pairs import paired_paths
+
+    path = Path(source[field]).expanduser()
+    if not c.is_allowed(path):
+        raise ApiError("配对图片目录不在允许访问的范围内。", code="fs.forbidden", status=403)
+    if path.is_symlink():
+        raise ApiError("配对图片目录不能是符号链接。", code="dataset.pairing", status=422)
+    source[field] = str(path.resolve())
+    try:
+        return field, paired_paths(DatasetSourceConfig.model_validate(source), field)
+    except (ValueError, OSError) as error:
+        raise ApiError(str(error), code="dataset.pairing", status=422) from error
+
+
 def _register_dataset(
     c: ServiceContext,
     pid: str,
@@ -843,7 +874,7 @@ def _register_dataset(
     p = Path(body.path).expanduser().resolve()
     if not p.is_dir():
         raise NotFound(f"directory not found: {p}", code="fs.not_found")
-    source = body.model_dump(exclude={"version_id"}) | {"path": str(p)}
+    source = body.model_dump(exclude={"version_id", "folder_name"}) | {"path": str(p)}
     did = did or new_id("d")
     with c.db.lock:
         version = c.resolve_version(pid, version_id or body.version_id)
@@ -867,7 +898,7 @@ def _register_dataset(
         if not matching:
             sources.append(source)
         else:
-            explicit = body.model_dump(exclude={"version_id"}, exclude_unset=True) | {"path": str(p)}
+            explicit = body.model_dump(exclude={"version_id", "folder_name"}, exclude_unset=True) | {"path": str(p)}
             for item in matching:
                 item.update(explicit)  # Preserve each source's role and all unedited advanced settings.
             source = {key: matching[0].get(key, value) for key, value in source.items()}
@@ -896,7 +927,7 @@ def _register_dataset(
                     "project_id": pid,
                     "version_id": version["id"],
                     "origin_path": origin_path,
-                    **{key: value for key, value in source.items() if key != "caption"},
+                    **{key: value for key, value in source.items() if key not in {"caption", "pair_path", "reference_dir"}},
                     "is_reg": int(source["is_reg"]),
                     "created_at": now(),
                     "index_status": "indexing",
@@ -906,6 +937,9 @@ def _register_dataset(
             _write_project_config(c, pid, config, version["id"])
             written = True
             c.db.update("projects", pid, {"updated_at": now()})
+            from .dataset_edit_status import register_baseline
+
+            register_baseline(c, did)
             c.db.execute("COMMIT")
         except BaseException:
             c.db.execute("ROLLBACK")
@@ -925,7 +959,12 @@ def _register_upload(
     version_id: str | None = None,
     progress: ImportProgress | None = None,
 ) -> list[str]:
+    from .dataset_edit_status import image_paths, register_baseline
+
     with c.versions.mutation(pid, version_id) as version:
+        prior_paths = {row["id"]: image_paths(row["path"]) for row in c.db.fetchall(
+            "SELECT id,path FROM datasets WHERE version_id=?", (version["id"],)
+        )}
         with staged_upload(
             c.version_dir(pid, version["id"]),
             batch,
@@ -1022,7 +1061,7 @@ def _register_upload(
                         prior_weight=batch.prior_weight,
                         class_prompt=batch.class_prompt,
                         caption_ext=batch.caption_ext,
-                    ).model_dump(exclude={"version_id"})
+                    ).model_dump(exclude={"version_id", "folder_name"})
                     if matching:
                         source.update({key: matching[0][key] for key in source if key in matching[0]})
                         source["path"] = str(source_path)
@@ -1035,7 +1074,7 @@ def _register_upload(
                         "project_id": pid,
                         "version_id": version["id"],
                         "origin_path": None,
-                        **source,
+                        **{key: value for key, value in source.items() if key not in {"pair_path", "reference_dir"}},
                         "is_reg": int(source["is_reg"]),
                         "created_at": now(),
                         "index_status": "indexing",
@@ -1055,6 +1094,8 @@ def _register_upload(
                     _write_project_config(c, pid, config, version["id"])
                     written = True
                     c.db.update("projects", pid, {"updated_at": now()})
+                    for did, row in selected.items():
+                        register_baseline(c, did, rel_paths=image_paths(row["path"]) - prior_paths.get(did, set()))
                     c.db.execute("COMMIT")
                 except BaseException:
                     c.db.execute("ROLLBACK")
@@ -1215,6 +1256,8 @@ def _dataset_row(c: ServiceContext, r: dict[str, Any], *, include_cache: bool = 
         "is_reg": role[0] if role is not None else bool(r["is_reg"]),
         "prior_weight": r["prior_weight"],
         "class_prompt": r["class_prompt"],
+        "pair_path": exact.get("pair_path") if exact else None,
+        "reference_dir": exact.get("reference_dir") if exact else None,
         "created_at": r["created_at"],
     }
     from .dataset_refresh import refresher
@@ -1292,6 +1335,22 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
         )
         items = expand_items(recs, ds.sources, ds, bm)
         cache_root = c.cache_dir(r["project_id"], r.get("version_id"))
+        if cfg.training.task == "edit" or cfg.training.task == "slider" and cfg.slider.mode == "image":
+            from ypuddin.data.dataset import prepare_data_layout
+            from ypuddin.data.index import IndexDB
+
+            field = "reference_dir" if cfg.training.task == "edit" else "pair_path"
+            for source in ds.sources:
+                path = getattr(source, field)
+                if path and not c.is_allowed(Path(path)):
+                    raise ValueError("配对图片目录不在允许访问的范围内。")
+            local_cfg = cfg.model_copy(deep=True)
+            local_cfg.validation.enabled = False
+            index = IndexDB(cache_root / "index.sqlite")
+            try:
+                items = prepare_data_layout(local_cfg, family.spec.latent, index_db=index).items
+            finally:
+                index.close()
         import torch
 
         from ypuddin.models.fingerprints import fingerprint_cache
@@ -1317,7 +1376,8 @@ def _cache_stats(c: ServiceContext, r: dict[str, Any]) -> dict[str, Any]:
 
         keys = {
             item_latent_key(it, latent_identity, flip)
-            for it in items
+            for main in items
+            for it in (main, *[peer for peer in (main.pair, main.reference) if peer is not None])
             for flip in ((False, True) if ds.flip else (False,))
         }
         cached = sum(1 for k in keys if lc.has(k))
@@ -1393,6 +1453,7 @@ async def dataset_import_progress(pid: str, progress_id: str, request: Request) 
                             "prior_weight": {"type": "number", "minimum": 0, "default": 1},
                             "class_prompt": {"type": "string"},
                             "caption_ext": {"type": "string", "default": "auto"},
+                            "folder_name": {"type": "string", "default": ""},
                         },
                     }
                 }
@@ -1520,6 +1581,7 @@ def delete_upload_session(pid: str, sid: str, c: ServiceContext = Depends(ctx)) 
 
 
 def _append_upload(c: ServiceContext, did: str, batch: UploadBatch, progress: ImportProgress | None) -> dict:
+    from .dataset_edit_status import image_paths, register_baseline
     from .source_roles import managed_source_role
 
     original = _get_dataset(c, did)
@@ -1530,6 +1592,7 @@ def _append_upload(c: ServiceContext, did: str, batch: UploadBatch, progress: Im
         if not role or root.absolute() != root.resolve() or not root.is_dir():
             raise ApiError("只能向当前版本内的数据集添加图片。", code="dataset.unmanaged", status=409)
         batch.caption_ext = row["caption_ext"]
+        prior_paths = image_paths(root)
         protected = tuple(
             Path(item["path"]).resolve()
             for item in c.db.fetchall(
@@ -1544,6 +1607,7 @@ def _append_upload(c: ServiceContext, did: str, batch: UploadBatch, progress: Im
             with c.db.lock:
                 c.db.update("datasets", did, {"index_status": "indexing"})
                 c.db.update("projects", row["project_id"], {"updated_at": now()})
+                register_baseline(c, did, rel_paths=image_paths(root) - prior_paths)
         _index_dataset(c, did)
         return _dataset_row(c, _get_dataset(c, did), include_cache=False)
 
@@ -1665,12 +1729,27 @@ def _current_caption_path(
 
 
 def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
-    from ypuddin.data.caption_json import StructuredCaption, load_caption_structure, render, unique
+    from ypuddin.data.caption_json import StructuredCaption, load_caption_structure, render
     from ypuddin.data.captions import read_training_caption
+    from ypuddin.data.tag_edits import caption_tags
 
     from .routes_dataset_management import included, source_states
     states = source_states(c, row)
+    config = get_project_config(row["project_id"], c, row.get("version_id")) if row.get("project_id") else {}
+    task = config.get("training", {}).get("task", "standard")
+    field = ("reference_dir" if task == "edit"
+             else "pair_path" if task == "slider" and config.get("slider", {}).get("mode", "text") == "image"
+             else None)
     root = Path(row["path"])
+    companion_maps = []
+    for source_root, _excluded, _prefixes, source in states:
+        if not field or not source.get(field):
+            continue
+        try:
+            _, paths = _check_dataset_companions(c, dict(source), field)
+            companion_maps.append((source_root, field, paths, None))
+        except ApiError as error:
+            companion_maps.append((source_root, None, {}, str(error)))
     items = []
     directory_cache = {}
     seen = set()
@@ -1680,6 +1759,17 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
         if r["path"] in seen or not _image_in_source(row, r):
             continue
         seen.add(r["path"])
+        pairing = {}
+        for source_root, field, paths, pairing_error in companion_maps:
+            if not Path(r["path"]).resolve().is_relative_to(source_root):
+                continue
+            path = paths.get(r["path"])
+            pairing = {
+                "pair_path": path if field == "pair_path" else None,
+                "reference_paths": [path] if path and field == "reference_dir" else [],
+                "pairing_error": pairing_error,
+            }
+            break
         error = None
         caption_path = None
         structure = None
@@ -1692,11 +1782,7 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
             # unsupported JSON exactly as training does instead of calling it empty.
             raw = read_training_caption(caption_path, require_known_format=True)
             cap = raw.text() if isinstance(raw, StructuredCaption) else raw
-            tokens = (
-                unique((raw.trigger, *raw.fixed, *raw.appearance, *raw.tags, *raw.environment))
-                if isinstance(raw, StructuredCaption)
-                else unique(raw.split(","))
-            )
+            tokens = caption_tags(caption_path)
             editable = render(tokens, "") if isinstance(raw, StructuredCaption) else raw
             description = raw.nl if isinstance(raw, StructuredCaption) else ""
             status = "captioned" if cap.strip() else "missing"
@@ -1721,6 +1807,7 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
                 "_tokens": tokens,
                 "has_mask": bool(r["mask_path"]),
                 "training_enabled": included(r["path"], states),
+                **pairing,
             }
         )
     return items
@@ -1761,6 +1848,7 @@ def list_images(
     caption_status: Literal["captioned", "missing", "invalid"] | None = None,
     membership: Literal["all", "training", "unused"] = "all",
     sort: Literal["filename", "folder", "modified"] = "filename",
+    include_edit_status: bool = False,
 ) -> dict[str, Any]:
     from .dataset_sort import sort_images
 
@@ -1778,7 +1866,14 @@ def list_images(
             continue
         item.pop("_tokens")
         items.append(item)
-    return _page(sort_images(items, row["path"], sort), page, page_size)
+    result = _page(sort_images(items, row["path"], sort), page, page_size)
+    if include_edit_status:
+        from .dataset_edit_status import saved_statuses
+
+        statuses = saved_statuses(c, row, [item["rel_path"] for item in result["items"]])
+        for item in result["items"]:
+            item["saved_edit_status"] = statuses[item["rel_path"]]
+    return result
 
 
 def _record_by_hash(c: ServiceContext, did: str, h: str, rel_path: str | None = None) -> dict[str, Any]:
@@ -1890,19 +1985,49 @@ def put_caption(
         return {"caption": read_caption(cap_path), "caption_structure": load_caption_structure(cap_path)}
 
 
+class TagReplacement(BaseModel):
+    old: str
+    new: str
+
+    @field_validator("old", "new")
+    @classmethod
+    def nonempty_tag(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("tag must not be empty")
+        return value
+
+
 class TagBatch(BaseModel):
-    hashes: list[str]
+    hashes: list[str] = Field(default_factory=list)
     rel_paths: list[str] | None = None
+    scope: Literal["selection", "dataset"] = "selection"
     add: list[str] = Field(default_factory=list)
     remove: list[str] = Field(default_factory=list)
+    position: Literal["start", "end"] = "end"
+    replace: list[TagReplacement] = Field(default_factory=list)
+    deduplicate: bool = False
+
+    @field_validator("add", "remove")
+    @classmethod
+    def nonempty_tags(cls, values: list[str]) -> list[str]:
+        return [TagReplacement.nonempty_tag(value) for value in values]
+
+    @model_validator(mode="after")
+    def distinct_scope_and_replacements(self):
+        if self.scope == "dataset" and (self.hashes or self.rel_paths):
+            raise ValueError("dataset scope cannot also name selected images")
+        keys = [item.old.casefold() for item in self.replace]
+        if len(keys) != len(set(keys)):
+            raise ValueError("each old tag may have only one replacement")
+        return self
 
 
 @router.post("/datasets/{did}/tags/batch", response_model=m.TagBatchResult, response_model_exclude_unset=True)
 def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> dict[str, int]:
     import os
 
-    from ypuddin.data.captions import caption_content, read_editable_caption
-    from ypuddin.data.index import caption_target
+    from ypuddin.data.tag_edits import edit_caption_tags
 
     from .dataset_refresh import image_entry, note_own_edit
 
@@ -1914,8 +2039,12 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
         # Images whose record gains a caption file; the stored folder signature follows them.
         selected: list[Path] = []
         wanted = set(body.hashes)
+        wanted_paths = set(body.rel_paths or [])
+        replacements = {item.old.casefold(): item.new for item in body.replace}
         recs = _records(c, did)
         updates: dict[Path, dict[str, Any]] = {}
+        unchanged: set[Path] = set()
+        seen_images: set[str] = set()
         caption_directories = {}
         staged_files: set[Path] = set()
         applied: list[dict[str, Any]] = []
@@ -1936,32 +2065,35 @@ def tags_batch(did: str, body: TagBatch, c: ServiceContext = Depends(ctx)) -> di
         try:
             # Parse and serialize every selected caption before changing even the first file.
             for r in recs:
-                if r["content_hash"] not in wanted or (body.rel_paths is not None and Path(r["path"]).relative_to(row["path"]).as_posix() not in body.rel_paths):
+                if r["path"] in seen_images or not _image_in_source(row, r):
                     continue
-                cap_path = (
-                    Path(r["caption_path"])
-                    if r["caption_path"]
-                    else caption_target(
-                        Path(r["path"]), row["caption_ext"], directory_cache=caption_directories
-                    )
-                )
+                seen_images.add(r["path"])
+                if body.scope == "selection":
+                    if not wanted and not wanted_paths:
+                        continue
+                    if wanted and r["content_hash"] not in wanted:
+                        continue
+                    if body.rel_paths is not None and Path(r["path"]).relative_to(row["path"]).as_posix() not in wanted_paths:
+                        continue
+                cap_path = _current_caption_path(row, r, caption_directories, create=True)
+                if cap_path in unchanged:
+                    continue
                 if cap_path not in updates:
                     original = cap_path.read_bytes() if cap_path.exists() else None
-                    tags = [
-                        t.strip()
-                        for t in read_editable_caption(cap_path, row["class_prompt"]).split(",")
-                        if t.strip()
-                    ]
-                    tags = [t for t in tags if t not in body.remove]
-                    for tag in body.add:
-                        if tag not in tags:
-                            tags.append(tag)
+                    content = edit_caption_tags(
+                        cap_path, original, add=body.add, remove=body.remove,
+                        replacements=replacements, position=body.position, deduplicate=body.deduplicate,
+                        fallback=row["class_prompt"] or "",
+                    )
+                    if content is None:
+                        unchanged.add(cap_path)
+                        continue
                     updates[cap_path] = {
                         "path": cap_path,
                         "before": original,
-                        "after": caption_content(cap_path, ", ".join(tags)).encode("utf-8"),
+                        "after": content,
                     }
-                if not r["caption_path"]:
+                if r["caption_path"] != str(cap_path):
                     r["caption_path"] = str(cap_path)
                     created += 1
                     selected.append(Path(r["path"]))
@@ -2433,7 +2565,8 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
                 "run_dir": str(run_dir),
                 "samples_dir": str(samples_dir),
                 "config_json": json.dumps(cfg.to_dict()),
-                "progress_json": json.dumps({"estimated_peak_mb": estimated_peak_mb, "estimated_host_mb": estimated_host_mb}),
+                "progress_json": json.dumps({"estimated_peak_mb": estimated_peak_mb, "estimated_host_mb": estimated_host_mb,
+                                             "preview_seeds": {"preview_seed_version": 2}}),
                 "latest_json": "{}",
             },
         )

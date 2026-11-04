@@ -1,26 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation } from 'react-router-dom';
-import { FolderOpen, ImagePlus, Loader2, MemoryStick, RefreshCw, X } from 'lucide-react';
+import { FolderOpen, History, ImagePlus, Loader2, MemoryStick, RefreshCw, Upload, X } from 'lucide-react';
 import { apiClient } from '../../api/client';
-import type { FamilyInfo, ModelAsset } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatApiError } from '../../utils/errors';
-import { projectUrl, versionConfigUrl } from '../../utils/projectVersions';
-import { fillDefaultModels } from '../../utils/workspaceConfig';
-import { modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
+import { projectUrl } from '../../utils/projectVersions';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import { useEventStream } from '../../events/useEventStream';
 import StudioSelect from '../StudioSelect';
+import Dialog from '../Dialog';
 import ProjectDataImport from '../../pages/ProjectDetail/ProjectDataImport';
 import type { CredentialStates } from '../../pages/Settings/AccessKeys';
-import RegularizationModelFields, { type GenerationModel } from './RegularizationModelFields';
+import RegularizationModelFields, { type GenerationModels } from './RegularizationModelFields';
 import './regularization.css';
 
 type Source = 'ai' | 'danbooru' | 'gelbooru' | 'e621' | 'rule34';
 export type RegularizationTask = {
   id: string; source: Source; status: string; phase: string; done: number; total: number;
   logs: string[]; error: string | null; created_at: number; can_cancel: boolean;
+  seed?:number|null; requested_seed?:number|null;
   dataset_id: string | null; path: string | null; images: number; duplicates: number;
 };
 type MatchPlan = {source:string;sources:{id:string;path:string;name:string}[];source_images:number;captioned_images:number;missing_captions:number;invalid_captions:number;top_tags:{tag:string;count:number}[];search_tags:{tag:string;share:number}[];searchable_tags:number;unsearchable_tags:string[];aspect:{low:number;median:number;high:number};size:{width:number;height:number};existing_images:number;suggested_count:number;tag_limit:number|null;tag_limit_known:boolean};
@@ -34,6 +33,8 @@ const active = (task: RegularizationTask) => ['queued', 'running', 'cancelling']
 export default function RegularizationPanel({ projectId, versionId, readOnly = false, onChanged }: Props) {
   const text = useWorkspaceText();
   const location = useLocation();
+  const formId = useId();
+  const [dialog, setDialog] = useState<'history'|'import'|null>(null);
   const endpoint = `/projects/${projectId}/versions/${versionId}/regularization`;
   const [source, setSource] = useState<Source>('ai');
   const [prompt, setPrompt] = useState('');
@@ -47,14 +48,14 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
   const [height, setHeight] = useState(1024);
   const [stepsOverride, setSteps] = useState<number | null>(null);
   const [cfgOverride, setCfg] = useState<number | null>(null);
-  const [seed, setSeed] = useState(0);
+  const [seed, setSeed] = useState(-1);
   const [negative, setNegative] = useState('');
   const [weight, setWeight] = useState(1);
   const [repeats, setRepeats] = useState(1);
   const [excluded, setExcluded] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [releasing, setReleasing] = useState(false);
-  const [modelDraft, setModelDraft] = useState<{scope: string; value: GenerationModel} | null>(null);
+  const [modelDraft, setModelDraft] = useState<{scope: string; id: string} | null>(null);
   const [error, setError] = useState('');
   const notified = useRef(new Set<string>());
   const loaded = useRef(false);
@@ -67,24 +68,21 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     queryFn: () => apiClient.get<Snapshot>(endpoint, {silent:true}),
     refetchInterval: q => q.state.data?.operations.some(active) ? 1200 : false,
   });
-  const modelQuery = useQuery({ queryKey: ['regularization-model', projectId, versionId], enabled: source === 'ai',
-    queryFn: async ({signal}) => {
-      const [config, families, assets] = await Promise.all([
-        apiClient.get<{model?: GenerationModel}>(versionConfigUrl(projectId, versionId), {silent:true, signal}),
-        apiClient.get<FamilyInfo[]>('/families', {silent:true, signal}),
-        apiClient.get<ModelAsset[]>('/models', {silent:true, signal}),
-      ]);
-      const model = fillDefaultModels({ model: config.model || {family:'anima' as const, dtype:'auto' as const} }, assets).model;
-      return {model, families, assets};
-    },
+  const modelQuery = useQuery({ queryKey: ['regularization-model-options', projectId, versionId], enabled: source === 'ai',
+    queryFn: ({signal}) => apiClient.get<GenerationModels>(`${endpoint}/options`, {silent:true,signal}),
   });
-  const generationModel = modelDraft?.scope === endpoint ? modelDraft.value : modelQuery.data?.model;
-  const generationFamily = modelQuery.data?.families.find(item => item.name === generationModel?.family);
-  const familySamplingDefaults = ['flux3', 'moss_image'].includes(generationModel?.family ?? '');
-  const steps = stepsOverride ?? (familySamplingDefaults ? generationFamily?.sampling.steps ?? 50 : 25);
-  const cfg = cfgOverride ?? (familySamplingDefaults ? generationFamily?.sampling.cfg ?? (generationModel?.family === 'moss_image' ? 3 : 3.5) : 4);
-  const modelReady = !!generationModel && !!generationFamily && !modelQuery.error && trainingFamilyOptions(modelQuery.data?.families || [], false, generationModel.family).some(item => item.value === generationModel.family)
-    && modelFamilyWeights(generationFamily).every(weight => !weight.required || !!generationModel[weight.field as keyof GenerationModel]?.toString().trim());
+  const modelId = modelDraft?.scope === endpoint ? modelDraft.id : '';
+  const generationModel = modelId ? modelQuery.data?.models.find(model => model.model_id === modelId) : modelQuery.data?.current;
+  const modelReady = !!generationModel?.available && !modelQuery.error;
+  const refreshModels = modelQuery.refetch;
+  useEffect(() => {
+    const refresh = () => { if (source === 'ai') void refreshModels(); };
+    window.addEventListener('studio-models-changed', refresh);
+    return () => window.removeEventListener('studio-models-changed', refresh);
+  }, [source, refreshModels]);
+  useEventStream<{status?:string}>(EVENT_TYPES.MODEL_DOWNLOAD, event => {
+    if (source === 'ai' && ['completed','failed','cancelled'].includes(event.status || '')) void refreshModels();
+  });
   const credentials = useQuery({ queryKey: ['credentials'], enabled: source !== 'ai',
     queryFn: () => apiClient.get<CredentialStates>('/credentials', { silent: true }), staleTime: 0,
   });
@@ -103,20 +101,22 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
     loaded.current = true;
   }, [query.data]);
   const current = query.data?.operations.find(active);
+  const lastFinished=query.data?.operations[0];
   const locked = readOnly || submitting || releasing || !!current;
   const credentialsBlocked = source !== 'ai' && (credentials.isPending || !!credentials.error || (['gelbooru', 'rule34'].includes(source) && !credentials.data?.[source]?.configured));
   const fromTraining = source === 'ai' && promptSource === 'training_tags';
   const matching = source !== 'ai' && siteMode === 'training_tags';
   const manualSite = source !== 'ai' && siteMode === 'manual';
-  const requestBody = {source,prompt:prompt.trim(),count,width,height,steps,cfg,seed,negative,prior_weight:weight,repeats,
+  const requestBody = {source,prompt:prompt.trim(),count,width,height,seed,negative,prior_weight:weight,repeats,
+    ...(stepsOverride == null ? {} : {steps:stepsOverride}), ...(cfgOverride == null ? {} : {cfg:cfgOverride}),
     excluded_tags:excluded.split(',').map(value=>value.trim()).filter(Boolean),
     prompt_source:fromTraining || matching?'training_tags':'manual',source_ids:sourceRange?[sourceRange]:[],generation_scope:generationScope,
-    ...(source === 'ai' && generationModel ? {model:generationModel} : {})};
+    ...(source === 'ai' ? {model_id:modelId || null} : {})};
   const requestKey = JSON.stringify(requestBody);
   const [plannedRequest, setPlannedRequest] = useState(requestKey);
   useEffect(() => { const timer=setTimeout(()=>setPlannedRequest(requestKey),250); return ()=>clearTimeout(timer); },[requestKey]);
   const completedBatches = query.data?.operations.filter(task=>task.status==='completed').map(task=>task.id).join(',') || '';
-  const plan = useQuery<GenerationPlan>({queryKey:['regularization-plan',endpoint,plannedRequest,completedBatches],enabled:fromTraining && plannedRequest===requestKey && !current,
+  const plan = useQuery<GenerationPlan>({queryKey:['regularization-plan',endpoint,plannedRequest,completedBatches],enabled:fromTraining && modelReady && plannedRequest===requestKey && !current,
     placeholderData:(previous,previousQuery)=>previousQuery?.queryKey[1]===endpoint?previous:undefined,
     refetchOnWindowFocus:false,
     queryFn:({signal})=>apiClient.post<GenerationPlan>(`${endpoint}/plan`,JSON.parse(plannedRequest),{silent:true,signal})});
@@ -222,22 +222,42 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
   };
 
   return <section className="regularization-panel" aria-label={text('正则图','Regularization images')}>
-    <div className="reg-heading"><div><h3>{text('正则图','Regularization images')}</h3><p>{text('可选，用于保持底模对通用类别的表现。','Optional images that preserve general class knowledge.')}</p></div><span className="reg-count">{text(`已有 ${query.data?.images ?? 0} 张`,`${query.data?.images ?? 0} images`)}</span></div>
-    {query.data?.path && <div className="reg-path"><FolderOpen size={14}/><code>{query.data.path}</code></div>}
-    {(error || query.error) && <div role="alert" className="reg-error">{error || formatApiError(query.error)}{query.error && <button type="button" className="ui-btn ui-btn-sm" onClick={()=>void query.refetch()}><RefreshCw size={13}/>{text('重试','Retry')}</button>}</div>}
-    {query.isPending ? <p role="status" className="reg-note"><Loader2 size={14}/>{text('读取正则集…','Loading regularization data…')}</p> : <>
-    <form onSubmit={event=>void start(event)}>
-      <div className="reg-form-grid">
+    <div className="reg-heading"><div className="reg-title"><h3>{text('正则图','Regularization images')}</h3><span className="reg-count">{text(`已有 ${query.data?.images ?? '—'} 张`,`${query.data?.images ?? '—'} images`)}</span>{!current&&lastFinished&&<span className="reg-count">{statusName(lastFinished.status)}</span>}</div>
+      <div className="reg-action-buttons">
+        <Link className="ui-btn ui-btn-sm" to={`${projectUrl(projectId,versionId,'data')}&data_step=captions`}>{text('查看图片与标签','View images and captions')}</Link>
+        <button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||!!current} onClick={()=>setDialog('import')}><Upload size={14}/>{text('导入已有正则图','Import existing priors')}</button>
+        <button type="button" className="ui-btn ui-btn-sm" onClick={()=>setDialog('history')}><History size={14}/>{text('生成记录','History')}</button>
+        {current?.source==='ai'&&<button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||submitting||releasing||!current.can_cancel} title={text('停止当前生成并释放显存','Stop generation and free VRAM')} onClick={()=>void release()}>{releasing?<Loader2 size={14} className="animate-spin"/>:<MemoryStick size={14}/>} {releasing?text('释放中…','Releasing…'):text('释放显存','Free VRAM')}</button>}
+        {current?.can_cancel&&<button type="button" className="ui-btn ui-btn-sm" disabled={submitting||readOnly} onClick={()=>void cancel(current.id)}><X size={14}/>{text('取消','Cancel')}</button>}
+        <button type="submit" form={formId} className="ui-btn ui-btn-primary ui-btn-sm" disabled={!ready}>{submitting||current?<Loader2 size={14} className="animate-spin"/>:<ImagePlus size={14}/>} {source==='ai'?text('生成正则图','Generate images'):text('收集正则图','Collect images')}</button>
+      </div>
+    </div>
+    {current&&<div className="reg-current" role="status"><span>{statusName(current.status)} · {current.done} / {current.total}</span><progress value={current.done} max={Math.max(current.total,1)} aria-label={text('正则图进度','Regularization progress')}/></div>}
+    {!current&&lastFinished?.status==='failed'&&lastFinished.error&&<p className="reg-error" role="alert">{errorText(lastFinished.error)}</p>}
+    {(error||query.error)&&<div role="alert" className="reg-error">{error||formatApiError(query.error)}{query.error&&<button type="button" className="ui-btn ui-btn-sm" onClick={()=>void query.refetch()}><RefreshCw size={13}/>{text('重试','Retry')}</button>}</div>}
+    {query.isPending?<p role="status" className="reg-note"><Loader2 size={14}/>{text('读取正则集…','Loading regularization data…')}</p>:<form id={formId} onSubmit={event=>void start(event)}>
+      <div className="reg-field-grid">
         <label>{text('图片来源','Image source')}<StudioSelect aria-label={text('图片来源','Image source')} value={source} disabled={locked}
           onValueChange={value=>setSource(value as Source)}
           options={[{value:'ai',label:text('本地底模生成','Generate with base model')},{value:'danbooru',label:'Danbooru'},{value:'gelbooru',label:'Gelbooru'},{value:'e621',label:'e621'},{value:'rule34',label:'Rule34'}]}/></label>
-        <label>{fromTraining?text('本批最多生成','Maximum images this batch'):matching?text('本批最多收集','Maximum images this batch'):text('图片数量','Image count')}<input type="number" min={1} max={200} step={1} value={count} disabled={locked} onChange={event=>setCount(Number(event.target.value))}/></label>
-      </div>
-      {source === 'ai' && (modelQuery.error ? <div role="alert" className="reg-error">{formatApiError(modelQuery.error)}<button type="button" className="ui-btn ui-btn-sm" onClick={()=>void modelQuery.refetch()}>{text('重试', 'Retry')}</button></div>
-        : !modelQuery.data || !generationModel ? <p className="reg-note" role="status"><Loader2 size={14} className="animate-spin"/>{text('读取生成模型…', 'Loading generation models…')}</p>
-          : <RegularizationModelFields model={generationModel} families={modelQuery.data.families} assets={modelQuery.data.assets} disabled={locked} onChange={value=>setModelDraft({scope:endpoint,value})}/>)}
+      {source === 'ai' && <div className="reg-model-cell">{modelQuery.error ? <div role="alert" className="reg-error">{formatApiError(modelQuery.error)}<button type="button" className="ui-btn ui-btn-sm" onClick={()=>void modelQuery.refetch()}>{text('重试', 'Retry')}</button></div>
+        : !modelQuery.data ? <p className="reg-note" role="status"><Loader2 size={14} className="animate-spin"/>{text('读取生成模型…', 'Loading generation models…')}</p>
+          : <RegularizationModelFields options={modelQuery.data} value={modelId} disabled={locked} refreshing={modelQuery.isFetching} onChange={id=>setModelDraft({scope:endpoint,id})} onRefresh={()=>void modelQuery.refetch()}/>}</div>}
       {source === 'ai' ? <label>{text('提示词来源','Prompt source')}<StudioSelect aria-label={text('提示词来源','Prompt source')} value={promptSource} disabled={locked} onValueChange={value=>setPromptSource(value as 'manual'|'training_tags')} options={[{value:'manual',label:text('手动填写类别提示词','Enter class prompts')},{value:'training_tags',label:text('按训练图片标签逐张生成','One prior per training image caption')}]}/></label>
         : <label>{text('检索方式','Search method')}<StudioSelect aria-label={text('检索方式','Search method')} value={siteMode} disabled={locked} onValueChange={value=>setSiteMode(value as 'manual'|'training_tags')} options={[{value:'training_tags',label:text('按训练标签自动匹配','Follow the training tags')},{value:'manual',label:text('手动输入检索标签','Enter search tags')}]}/></label>}
+        <label>{fromTraining?text('本批最多生成','Maximum images this batch'):matching?text('本批最多收集','Maximum images this batch'):text('图片数量','Image count')}<input type="number" min={1} max={200} step={1} value={count} disabled={locked} onChange={event=>setCount(Number(event.target.value))}/></label>
+        {source === 'ai' && <>
+          <label>{text('宽度','Width')}<input type="number" min={64} max={2048} step={32} value={width} disabled={locked} onChange={event=>setWidth(Number(event.target.value))}/></label>
+          <label>{text('高度','Height')}<input type="number" min={64} max={2048} step={32} value={height} disabled={locked} onChange={event=>setHeight(Number(event.target.value))}/></label>
+          <label>{text('采样步数','Sampling steps')}<input type="number" min={1} max={100} value={stepsOverride ?? ''} placeholder={text('模型默认', 'Model default')} disabled={locked} onChange={event=>setSteps(event.target.value === '' ? null : Number(event.target.value))}/></label>
+          <label>CFG<input type="number" min={0} max={20} step={0.5} value={cfgOverride ?? ''} placeholder={text('模型默认', 'Model default')} disabled={locked} onChange={event=>setCfg(event.target.value === '' ? null : Number(event.target.value))}/></label>
+          <label>{text('种子（-1 随机）','Seed (-1 for random)')}<input aria-label={text('种子','Seed')} type="number" min={-1} value={seed} disabled={locked} onChange={event=>setSeed(Number(event.target.value))}/></label>
+        </>}
+
+          <label>{text('重复次数','Repeats')}<input type="number" min={1} max={100} value={repeats} disabled={locked} onChange={event=>setRepeats(Number(event.target.value))}/></label>
+          <label>{text('正则损失权重','Prior loss weight')}<input type="number" min={0} max={100} step={0.1} value={weight} disabled={locked} onChange={event=>setWeight(Number(event.target.value))}/></label>
+      </div>
+      <div className="reg-prompts">
       {!fromTraining && !matching && <>      <label className="reg-prompt">{source === 'ai' ? text('类别提示词','Class prompt') : text('站点检索标签','Site search tags')}
         <textarea rows={2} required maxLength={4000} value={prompt} disabled={locked} onChange={event=>setPrompt(event.target.value)} placeholder={source === 'ai' ? text('例如：a photo of a dog；不要写训练主体的触发词','For example: a photo of a dog; omit the subject’s trigger word') : text('例如：dog solo；用空格分隔站点标签','For example: dog solo; separate site tags with spaces')}/>
       </label>
@@ -245,6 +265,8 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
       {manualSite && !!requestBody.prompt && <p className="reg-note reg-estimate" role="status" aria-live="polite">{estimatePending ? <><Loader2 size={13} className="animate-spin reg-note-spinner" aria-hidden="true"/>{text('正在查询站点匹配数…','Checking matches on the site…')}</>
         : estimate.error ? <span className="reg-error">{formatApiError(estimate.error)}</span>
           : estimate.data && <span title={estimate.data.terms.join(' ')}>{estimate.data.count == null ? text('站点没有给出确切数量，通常是符合条件的图片很多','The site gave no exact count, usually because many images match') : text(`站点约有 ${estimate.data.count.toLocaleString()} 张符合条件的全年龄图片`,`About ${estimate.data.count.toLocaleString()} matching safe images on the site`)}{estimate.data.tag_limit != null && text(`；当前账号每次最多检索 ${estimate.data.tag_limit} 个标签（rating 等条件不计入）`,`; this account searches up to ${estimate.data.tag_limit} tags at a time (rating and similar conditions excluded)`)}{!!estimate.data.local_exclusions.length && text(`，另有 ${estimate.data.local_exclusions.length} 个排除标签超出上限，下载时逐张检查`,`; ${estimate.data.local_exclusions.length} more exclusions are checked on each image`)}</span>}</p>}
+      {source==='ai'?<label className="reg-prompt">{text('负面提示词','Negative prompt')}<textarea rows={2} value={negative} disabled={locked} onChange={event=>setNegative(event.target.value)}/></label>:manualSite&&<label className="reg-prompt">{text('排除标签','Excluded tags')}<textarea rows={2} value={excluded} disabled={locked} onChange={event=>setExcluded(event.target.value)} placeholder={text('用逗号分隔','Separate with commas')}/></label>}
+      </div>
       {matching && <div className="reg-training-plan">
         <label>{text('训练目录范围','Training folders')}<StudioSelect aria-label={text('训练目录范围','Training folders')} value={sourceRange} disabled={locked} onValueChange={setSourceRange} options={[{value:'',label:text('全部训练目录','All training folders')},...(match.data?.sources || []).map(item=>({value:item.id,label:`${item.name} · ${item.path}`,displayLabel:item.name}))]}/></label>
         <label>{text('排除标签','Excluded tags')}<input value={excluded} disabled={locked} onChange={event=>setExcluded(event.target.value)} placeholder={text('点击下方标签，或用逗号分隔输入','Select tags below or enter comma-separated tags')}/></label>
@@ -279,35 +301,21 @@ export default function RegularizationPanel({ projectId, versionId, readOnly = f
         </div>
       </div>}
       {source !== 'ai' && <p className="reg-note">{matching ? text('按训练标签的占比检索站点标记为全年龄的图片，优先挑选宽高比和尺寸接近训练图片的；不下载带排除标签的图片、训练图片本身和已收集过的图片。','Searches safe-rated images in proportion to the training tags, preferring shapes and sizes close to the training images; skips images with excluded tags, the training images themselves and images already collected.') : text('仅收集站点标记为全年龄的图片，保留原标签并去重；已收集过的图片不会重复下载。','Collects images rated safe by the site, keeps source tags and skips duplicates; images already collected are not downloaded again.')}</p>}
-      <details className="reg-options"><summary>{text('生成与训练选项','Generation and training options')}</summary><div className="reg-form-grid reg-grid-three">
-        {source === 'ai' && <>
-          <label>{text('宽度','Width')}<input type="number" min={64} max={2048} step={32} value={width} disabled={locked} onChange={event=>setWidth(Number(event.target.value))}/></label>
-          <label>{text('高度','Height')}<input type="number" min={64} max={2048} step={32} value={height} disabled={locked} onChange={event=>setHeight(Number(event.target.value))}/></label>
-          <label>{text('采样步数','Sampling steps')}<input type="number" min={1} max={100} value={steps} disabled={locked} onChange={event=>setSteps(Number(event.target.value))}/></label>
-          <label>CFG<input type="number" min={0} max={20} step={0.5} value={cfg} disabled={locked} onChange={event=>setCfg(Number(event.target.value))}/></label>
-          <label>{text('种子','Seed')}<input type="number" min={0} value={seed} disabled={locked} onChange={event=>setSeed(Number(event.target.value))}/></label>
-        </>}
-        <label>{text('正则损失权重','Prior loss weight')}<input type="number" min={0} max={100} step={0.1} value={weight} disabled={locked} onChange={event=>setWeight(Number(event.target.value))}/></label>
-        <label>{text('重复次数','Repeats')}<input type="number" min={1} max={100} value={repeats} disabled={locked} onChange={event=>setRepeats(Number(event.target.value))}/></label>
-      </div>
-        {source === 'ai' ? <label>{text('负面提示词','Negative prompt')}<input value={negative} disabled={locked} onChange={event=>setNegative(event.target.value)}/></label> : manualSite && <label>{text('排除标签','Excluded tags')}<input value={excluded} disabled={locked} onChange={event=>setExcluded(event.target.value)} placeholder={text('用逗号分隔','Separate with commas')}/></label>}
-        <p className="reg-note">{text('正则图不参与自动验证集划分。','Regularization images are excluded from automatic validation splits.')}</p>
-        <div className="reg-actions"><span>{readOnly ? text('当前版本只读','This version is read-only') : text('完成后自动加入正则集。','Added to regularization data when complete.')}</span><div className="reg-action-buttons">
-          {source === 'ai' && <button type="button" className="ui-btn" disabled={readOnly || submitting || releasing || current?.source !== 'ai' || !current.can_cancel} title={current?.source === 'ai' ? text('停止当前生成并释放显存', 'Stop the current generation and free VRAM') : text('当前没有正在生成的正则图', 'No regularization generation is running')} onClick={()=>void release()}>{releasing ? <Loader2 size={14} className="animate-spin"/> : <MemoryStick size={14}/>} {releasing ? text('释放中…', 'Releasing…') : text('释放显存', 'Free VRAM')}</button>}
-          <button type="submit" className="ui-btn ui-btn-primary" disabled={!ready}>{submitting || current ? <Loader2 size={14} className="animate-spin"/> : <ImagePlus size={14}/>} {source === 'ai' ? text('生成正则图','Generate images') : text('收集正则图','Collect images')}</button>
-        </div></div>
-      </details>
       {source !== 'ai' && <div className="reg-options"><p className="reg-note" role="status">{credentials.error ? text('无法读取站点密钥状态。','Could not load site-key status.') : credentials.isPending ? <><Loader2 size={13} className="animate-spin reg-note-spinner" aria-hidden="true"/>{text('读取站点密钥状态…','Loading site-key status…')}</> : credentials.data?.[source]?.configured ? text(`${source} 访问密钥已配置`,`${source} access keys configured`) : ['gelbooru', 'rule34'].includes(source) ? text(`${source === 'rule34' ? 'Rule34' : 'Gelbooru'} 需要先配置用户 ID 和 API Key。`, 'Configure the user ID and API key first.') : text(`${source === 'e621' ? 'e621' : 'Danbooru'} 将使用匿名访问。`, 'Anonymous access will be used.')}</p><Link className="ui-link" state={{ backgroundLocation: location.state?.backgroundLocation ?? location }} to={`/settings/environment?tab=credentials#credentials-${source}`}>{text('管理访问密钥','Manage access keys')}</Link>{credentials.error && <button type="button" className="ui-link ml-3" onClick={()=>void credentials.refetch()}>{text('重试','Retry')}</button>}</div>}
-    </form>
-    {query.data?.operations.slice(0,3).map(task=><article className="reg-task" key={task.id} aria-label={task.id}>
-      <div className="reg-task-heading"><strong>{task.source === 'ai' ? text('底模生成','Base model generation') : task.source}</strong><code>{task.id}</code><span className={task.status === 'failed' ? 'reg-failed' : ''}>{statusName(task.status)}</span>{task.can_cancel && <button type="button" className="ui-btn ui-btn-sm" disabled={submitting || readOnly} onClick={()=>void cancel(task.id)} aria-label={text(`取消 ${task.id}`,`Cancel ${task.id}`)}><X size={14}/>{text('取消','Cancel')}</button>}</div>
+    </form>}
+    {dialog==='import'&&<Dialog title={text('导入已有正则图','Import existing regularization images')} wide onClose={()=>setDialog(null)}><ProjectDataImport projectId={projectId} versionId={versionId} defaultIsReg onImported={()=>{void query.refetch();onChanged();}}/></Dialog>}
+    {dialog==='history'&&<Dialog title={text('正则图生成记录','Regularization history')} wide onClose={()=>setDialog(null)}>
+      {query.data?.path&&<details className="reg-location"><summary><FolderOpen size={14}/>{text('保存位置','Save location')}</summary><code>{query.data.path}</code></details>}
+      {!query.data?.operations.length&&<p className="reg-note">{text('暂无生成记录。','No generation history yet.')}</p>}
+    {query.data?.operations.map(task=><article className="reg-task" key={task.id} aria-label={task.id}>
+      <div className="reg-task-heading"><strong>{task.source === 'ai' ? text('底模生成','Base model generation') : task.source}</strong><span className={task.status === 'failed' ? 'reg-failed' : ''}>{statusName(task.status)}</span>{task.can_cancel && <button type="button" className="ui-btn ui-btn-sm" disabled={submitting || readOnly} onClick={()=>void cancel(task.id)} aria-label={text(`取消 ${task.id}`,`Cancel ${task.id}`)}><X size={14}/>{text('取消','Cancel')}</button>}</div>
       {active(task) && <><progress value={task.done} max={Math.max(task.total,1)} aria-label={text('正则图进度','Regularization progress')}/><p className="reg-note">{task.done} / {task.total}</p></>}
       {task.error && <p role="alert" className="reg-error">{errorText(task.error)}</p>}
       {task.status === 'completed' && <p className="reg-note">{text(`新增 ${task.images} 张图片`,`Added ${task.images} images`)}{task.duplicates ? text(`，跳过 ${task.duplicates} 张重复图片`,`, skipped ${task.duplicates} duplicates`) : ''}{task.source !== 'ai' && task.images < task.total ? text(`（目标 ${task.total} 张，站点上没有更多符合条件的图片）`,` (target ${task.total}; the site had no more matching images)`) : ''}</p>}
+      {task.seed!=null&&<p className="reg-note">{text('实际种子','Actual seed')}: {task.seed}{task.requested_seed===-1?text('（随机）',' (random)'):''}</p>}
       {task.dataset_id && <Link className="ui-link" to={`${projectUrl(projectId,versionId,'data')}&data_step=captions`}>{text('查看图片与标签','View images and captions')}</Link>}
-      {!!task.logs.length && <details><summary>{text('查看日志','View logs')}</summary><pre>{task.logs.map(logText).join('\n')}</pre></details>}
+      {!!task.logs.length && <details><summary>{text('查看日志','View logs')}</summary><code>{task.id}</code><pre>{task.logs.map(logText).join('\n')}</pre></details>}
     </article>)}
-    {!readOnly && !current && <details className="reg-options reg-existing"><summary>{text('导入已有正则图','Import existing regularization images')}</summary><ProjectDataImport projectId={projectId} versionId={versionId} defaultIsReg onImported={()=>{void query.refetch();onChanged();}}/></details>}
-    </>}
+    </Dialog>}
   </section>;
 }

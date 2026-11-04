@@ -19,6 +19,7 @@ export interface DatasetUploadOptions {
   target_dataset_id?: string;
   progress_id?: string;
   name?: string;
+  folder_name?: string;
   repeats?: number;
   is_reg?: boolean;
   prior_weight?: number;

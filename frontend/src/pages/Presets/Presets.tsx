@@ -215,7 +215,7 @@ function ImagePresets() {
   const goToIssue = (issue: ConfigIssue) => {
     setTab(issue.tab); setSearch(''); setAdvanced(true); setRevealVersion(version => version + 1);
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      let path = issue.path;
+      let path = issue.path === 'training.task' ? 'training.mode' : issue.path;
       let field = document.getElementById(`field-${path}`);
       while (!field && path.includes('.')) { path = path.slice(0, path.lastIndexOf('.')); field = document.getElementById(`field-${path}`); }
       field?.scrollIntoView?.({ block: 'center', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
@@ -265,7 +265,7 @@ function ImagePresets() {
         <ParameterModeToggle advanced={advanced} onChange={setAdvanced}/>
       </div>
       <div className="parameter-workspace-body">
-      <ParameterSections rootRef={parameterScrollRef} tab={tab} onTabChange={tab => {setTab(tab);setSearch('');}} issues={issues} preset hasTrainingMode={!!editorSchema?.properties?.training} fullTraining={draft.config.training?.mode === 'full'} onRevealAdvanced={() => setAdvanced(true)}/>
+      <ParameterSections rootRef={parameterScrollRef} tab={tab} onTabChange={tab => {setTab(tab);setSearch('');}} issues={issues} preset hasTrainingMode={!!editorSchema?.properties?.training} fullTraining={draft.config.training?.mode === 'full'} sliderTraining={draft.config.training?.task === 'slider'} onRevealAdvanced={() => setAdvanced(true)}/>
       <div className="parameter-scroll-region" ref={parameterScrollRef}>
       {search && <p className="presets-search-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
       {editorSchema && <div ref={parameterContent} id="preset-parameters" className="presets-schema" role="region" aria-label={search ? text('预设参数搜索结果', 'Preset parameter search results') : text('预设参数内容', 'Preset parameter fields')}><SchemaForm key={revealVersion} preset readOnly={busy || !!inactiveReason} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced || !!search} search={search} onClearSearch={clearSearch} family={family} families={families.data} errors={issues.map(issue => ({ loc: issue.path, msg: issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message }))}/></div>}

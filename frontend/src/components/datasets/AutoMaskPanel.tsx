@@ -1,85 +1,93 @@
-import { useState, type ReactNode } from 'react';
-import { Scan } from 'lucide-react';
-import MaskIcon from '../icons/MaskIcon';
-import { apiClient } from '../../api/client';
-import type { AutoMaskOptions, HeadSelection } from '../../api/types';
+import { useState } from 'react';
+import { Loader2, Scan, Undo2, X } from 'lucide-react';
+import type { AutoMaskOptions } from '../../api/types';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import VisionModelField, { VisionRuntimeNotice } from './VisionModelField';
-import { DeviceField, OperationResult, RangeField, ScopeField, SelectField } from './VisionPanelParts';
-import { useRememberedSettings, useScopeOptions, useVisionModels } from './visionHooks';
+import { VisionModelState, VisionRuntimeNotice } from './VisionModelField';
+import { DeviceField, RangeField, ScopeField } from './VisionPanelParts';
+import { ACTIVE_DOWNLOAD, useRememberedSettings, useScopeOptions, useVisionModels } from './visionHooks';
 import type { PipelineOperation } from './DatasetPipelinePanel';
-import HeadMaskReview from './HeadMaskReview';
+import Dialog from '../Dialog';
+import CheckboxSelect from '../CheckboxSelect';
+import { MASK_KINDS, maskKindLabel, modelMaskKinds, type MaskKind } from './maskPresentation';
 import './dataset-vision.css';
 
-type Settings = Required<Pick<AutoMaskOptions, 'confidence' | 'padding' | 'feather' | 'device'>> & { kind: MaskKind };
+type Settings = Required<Pick<AutoMaskOptions, 'confidence' | 'padding' | 'feather' | 'device'>> & { kind: MaskKind; kinds?: MaskKind[] };
 const DEFAULTS: Settings = { kind: 'head', confidence: 0.413, padding: 0.10, feather: 0.03, device: 'auto' };
-// What an automatic mask can leave out of training; each kind has its own detector.
-type MaskKind = 'head';
-const MASK_KINDS: { id: MaskKind; role: 'head_detector' }[] = [{ id: 'head', role: 'head_detector' }];
+const MODEL_IDS: Record<MaskKind, string> = { head: 'anime-head-detector-v2', torso: 'anime-body-detector-yolo11m', legs: 'anime-body-detector-yolo11m', foot: 'anime-foot-detector-v3' };
 
-export default function AutoMaskPanel({ projectId, versionId, locked, latest, detection, running, onStart, onUndo, onRefresh }: {
-  projectId: string; versionId: string; locked: boolean; latest?: PipelineOperation; detection?: PipelineOperation; running?: ReactNode;
-  onStart: (body: Record<string, unknown>) => Promise<void>; onUndo: (id: string) => void; onRefresh: () => void;
+export default function AutoMaskPanel({ projectId, versionId, locked, latest, running, onStart, onUndo, onCancel, beforeStart }: {
+  projectId: string; versionId: string; locked: boolean; latest?: PipelineOperation; running?: PipelineOperation;
+  onStart: (body: Record<string, unknown>) => Promise<void>; onUndo: (id: string) => void | Promise<void>;
+  onCancel?: () => void | Promise<void>; beforeStart?: () => Promise<boolean>;
 }) {
   const text = useWorkspaceText();
+  const english = text('zh', 'en') === 'en';
   const catalog = useVisionModels();
   const scopes = useScopeOptions(projectId, versionId);
   const [settings, update] = useRememberedSettings('studio.automask.settings', DEFAULTS);
   const [scope, setScope] = useState('');
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const chosenScope = scopes.options.some(option => option.value === scope) ? scope : scopes.first;
-  const kind = MASK_KINDS.find(item => item.id === settings.kind) || MASK_KINDS[0];
-  const kindText = { head: { name: text('头部', 'Heads'), hint: text('找出每张图片中的头部，头部区域不参与训练。', 'Finds every head; head areas are left out of training.'), padding: text('检测框向外扩大的比例，覆盖头发与头饰。', 'How far each box grows to cover hair and accessories.'), none: text('没有检测到头部。', 'No heads were found.') } }[kind.id];
-  const model = catalog.data?.models.find(item => item.role === kind.role);
+  const kinds = (settings.kinds ?? [settings.kind]).filter(kind => MASK_KINDS.includes(kind));
+  const modelFor = (kind: MaskKind) => catalog.data?.models.find(model => model.id === MODEL_IDS[kind] && modelMaskKinds(model).includes(kind));
+  const selected = kinds.map(kind => ({ kind, model: modelFor(kind) }));
+  const models = [...new Map(selected.flatMap(item => item.model ? [[item.model.id, item.model] as const] : [])).values()];
+  const missing = models.filter(model => !model.ready);
+  const detectors = models.map(model => ({ model: model.id, kinds: selected.filter(item => item.model?.id === model.id).map(item => item.kind) }));
   const cuda = !!catalog.data?.runtime.providers.includes('cuda');
-  const ready = !!model?.ready && !!catalog.data?.runtime.available;
-  const changed = latest?.result.changed_files ?? 0;
-  const stale = latest?.result.stale_images ?? 0;
-  const options = { model: model?.id, confidence: settings.confidence, padding: settings.padding, feather: settings.feather, device: cuda ? settings.device : 'cpu' };
-  // Heads are detected first and written only after review; the newer of the two runs is the one shown.
-  const newest = detection && (!latest || (detection.created_at ?? 0) > (latest.created_at ?? 0)) ? detection : latest;
-  const reviewing = !!detection && newest === detection && detection.status === 'completed' && !detection.result.applied_by && !detection.result.dismissed && (detection.result.heads ?? 0) > 0;
-  const detect = () => onStart({ action: 'detectheads', dataset_ids: scopes.ids(chosenScope), automask: options });
+  const ready = !!kinds.length && selected.every(item => item.model?.ready) && !!catalog.data?.runtime.available;
+  const legacyHead = selected.length === 1 && selected[0].kind === 'head' && selected[0].model?.role === 'head_detector';
+  const options = { ...(legacyHead ? { model: selected[0].model!.id } : { detectors }), confidence: settings.confidence, padding: settings.padding, feather: settings.feather, device: cuda ? settings.device : 'cpu' };
   const start = async () => {
-    setError('');
-    try { await detect(); } catch (e) { setError(formatApiError(e)); }
+    if (!ready || locked || submitting || !chosenScope) return;
+    setSubmitting(true); setError('');
+    try {
+      if (beforeStart && !await beforeStart()) return;
+      await onStart({ action: 'automask', dataset_ids: scopes.ids(chosenScope), automask: options });
+      setOpen(false);
+    } catch (failure) { setError(formatApiError(failure)); }
+    finally { setSubmitting(false); }
   };
-  const write = (selections: HeadSelection[]) => onStart({ action: 'automask', automask: { ...options, proposal_id: detection!.id, selections } });
-  const dismiss = async () => {
-    await apiClient.post(`/dataset-pipeline/operations/${detection!.id}/dismiss`, undefined, { silent: true });
-    onRefresh();
+  const undo = async () => {
+    if (!latest || locked || submitting) return;
+    if (beforeStart && !await beforeStart()) return;
+    await onUndo(latest.id);
   };
-  const written = changed ? text(`已为 ${changed} 张图片写入遮罩。`, `Masks written for ${changed} images.`)
-    : latest?.result.proposal_id ? text('选中的头部已在遮罩中。', 'The chosen heads were already masked.') : text('没有检测到需要遮罩的头部。', 'No heads needed masking.');
-  return <section className="vision-panel" aria-label={text('自动遮罩', 'Automatic masks')} data-testid="automask-panel">
-    <header className="vision-panel-head"><h3><MaskIcon size={16}/>{text('自动遮罩', 'Automatic masks')}</h3></header>
-    <VisionRuntimeNotice catalog={catalog}/>
-    <div className="vision-panel-body">
-      <div className="vision-row vision-row-quad vision-row-model">
-        <SelectField label={text('遮罩内容', 'Mask')} hint={text('选择要从训练中去掉的区域。', 'The areas to leave out of training.')} value={kind.id} disabled={locked}
-          options={MASK_KINDS.map(item => ({ value: item.id, label: { head: text('头部', 'Heads') }[item.id] }))} onChange={value => update({ kind: value as MaskKind })}/>
-        <VisionModelField role={kind.role} catalog={catalog} value={model?.id || ''} disabled={locked} label={text('检测模型', 'Detector')} hint={kindText.hint}/>
-      </div>
-      <div className="vision-row vision-row-quad">
-        <ScopeField scopes={scopes} value={chosenScope} onChange={setScope} disabled={locked} label={text('处理范围', 'Images')} hint={text('已有遮罩会保留，检测到的区域叠加进去。', 'Existing masks stay; detected areas are added to them.')}/>
-        <RangeField label={text('置信度', 'Confidence')} hint={text('越高误检越少，但可能漏掉较小的目标，常用 0.41。', 'Higher gives fewer false hits but can miss small ones; 0.41 is typical.')}
-          value={settings.confidence} min={0.05} max={0.95} step={0.01} disabled={locked} onChange={value => update({ confidence: value })}/>
-        <RangeField label={text('扩展比例', 'Padding')} hint={kindText.padding}
-          value={settings.padding} min={0} max={1} step={0.01} disabled={locked} onChange={value => update({ padding: value })}/>
-        <RangeField label={text('羽化比例', 'Feather')} hint={text('边缘渐变的宽度，0 为硬边。', 'Width of the soft edge; 0 is a hard edge.')}
-          value={settings.feather} min={0} max={0.5} step={0.01} disabled={locked} onChange={value => update({ feather: value })}/>
-        {cuda && <DeviceField value={settings.device} disabled={locked} onChange={device => update({ device })}/>}
-      </div>
-    </div>
-    {reviewing && !running ? <HeadMaskReview key={detection!.id} operation={detection!} locked={locked || !ready} onWrite={write} onDetectAgain={detect} onDismiss={dismiss}/>
-      : <footer className="vision-panel-actions">{running ? <div className="vision-running">{running}</div> : <>
-        <button type="button" className="ui-btn ui-btn-primary" disabled={locked || !ready || !chosenScope} onClick={() => void start()}><Scan size={15}/>{text('开始检测', 'Detect')}</button>
+  return <span className="automask-tools">
+    <button type="button" className="ui-btn ui-btn-sm ui-btn-icon automask-launcher" aria-label={text('自动遮罩', 'Automatic masks')} title={text('自动遮罩', 'Automatic masks')} disabled={locked || submitting} onClick={() => { setError(''); setOpen(true); }}>
+      {running ? <Loader2 size={15} className="animate-spin"/> : <Scan size={15}/>}
+    </button>
+    {running?.can_cancel && onCancel && <button type="button" className="ui-btn ui-btn-quiet ui-btn-icon" aria-label={text('取消自动遮罩', 'Cancel automatic masks')} title={text('取消自动遮罩', 'Cancel automatic masks')} onClick={() => void onCancel()}><X size={15}/></button>}
+    {!running && latest?.status === 'completed' && latest.can_undo && <button type="button" className="ui-btn ui-btn-quiet" disabled={locked || submitting} onClick={() => void undo()}><Undo2 size={14}/>{text('撤销自动遮罩', 'Undo automatic masks')}</button>}
+    {open && <Dialog title={text('自动遮罩', 'Automatic masks')} onClose={() => setOpen(false)} closeDisabled={submitting}>
+      <div className="vision-panel automask-settings" data-testid="automask-panel">
+        <VisionRuntimeNotice catalog={catalog}/>
+        <div className="vision-panel-body">
+          <div className="vision-row">
+            <div className="vision-field"><span className="vision-field-label">{text('遮罩内容', 'Mask')}</span>
+              <CheckboxSelect aria-label={text('遮罩内容', 'Mask')} disabled={locked || submitting} values={kinds} onValuesChange={next => update({ kinds: next as MaskKind[] })}
+                options={MASK_KINDS.map(kind => {
+                  const model = modelFor(kind), label = maskKindLabel(kind, english);
+                  return { value: kind, displayLabel: label, label: model?.ready ? label : `${label} · ${model ? ACTIVE_DOWNLOAD.includes(model.download?.status || '') ? text('下载中', 'downloading') : text('需下载', 'download required') : text('不可用', 'unavailable')}`, disabled: !model };
+                })}
+                footer={missing.length ? <div className="mask-part-downloads" aria-label={text('所选部位下载', 'Downloads for selected parts')}>{missing.map(model => <div key={model.id} className="mask-part-download"><span>{selected.filter(item => item.model?.id === model.id).map(item => maskKindLabel(item.kind, english)).join(text('、', ', '))}</span><VisionModelState model={model} disabled={locked || submitting}/></div>)}</div> : undefined}/>
+              <span className="vision-field-hint">{text('检测框区域不参与训练。', 'Detected box areas are left out of training.')}</span>
+            </div>
+            <ScopeField scopes={scopes} value={chosenScope} onChange={setScope} disabled={locked || submitting} label={text('处理范围', 'Images')} hint={text('已有遮罩会保留，检测到的区域叠加进去。', 'Existing masks stay; detected areas are added to them.')}/>
+          </div>
+          <div className="vision-row">
+            <RangeField label={text('置信度', 'Confidence')} hint={text('越高误检越少，但可能漏掉较小的目标，常用 0.41。', 'Higher gives fewer false hits but can miss small ones; 0.41 is typical.')} value={settings.confidence} min={0.05} max={0.95} step={0.01} disabled={locked || submitting} onChange={value => update({ confidence: value })}/>
+            <RangeField label={text('扩展比例', 'Padding')} hint={text('检测框向外扩大的比例。', 'How far each detection box grows.')} value={settings.padding} min={0} max={1} step={0.01} disabled={locked || submitting} onChange={value => update({ padding: value })}/>
+            <RangeField label={text('羽化比例', 'Feather')} hint={text('边缘渐变的宽度，0 为硬边。', 'Width of the soft edge; 0 is a hard edge.')} value={settings.feather} min={0} max={0.5} step={0.01} disabled={locked || submitting} onChange={value => update({ feather: value })}/>
+            {cuda && <DeviceField value={settings.device} disabled={locked || submitting} onChange={device => update({ device })}/>}
+          </div>
+        </div>
         {error && <p role="alert" className="vision-error">{error}</p>}
-        {newest === detection && detection?.status === 'completed' && !detection.result.heads && !detection.result.dismissed
-          ? <p role="status" className="vision-result">{kindText.none}{detection.result.unreadable ? text(` ${detection.result.unreadable} 张图片无法读取。`, ` ${detection.result.unreadable} images could not be read.`) : ''}</p>
-          : newest === latest && <OperationResult operation={latest} locked={locked} onUndo={onUndo} undoLabel={text('撤销本次遮罩', 'Undo these masks')}
-            done={written + (stale ? text(` ${stale} 张图片在检测后有改动，没有写入。`, ` ${stale} images changed after detection and were skipped.`) : '')}/>}
-      </>}</footer>}
-  </section>;
+      </div>
+      <div className="workspace-confirm-actions"><button type="button" className="ui-btn" disabled={submitting} onClick={() => setOpen(false)}>{text('取消', 'Cancel')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={locked || submitting || !ready || !chosenScope} onClick={() => void start()}>{submitting ? <Loader2 size={15} className="animate-spin"/> : <Scan size={15}/>} {text('开始处理', 'Run')}</button></div>
+    </Dialog>}
+  </span>;
 }

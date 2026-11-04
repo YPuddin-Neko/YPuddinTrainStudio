@@ -50,6 +50,7 @@ function useNow(active: boolean) {
 function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg = false, captionFormats, targetDataset, onBusyChange }: ProjectDataImportProps) {
   const text = useWorkspaceText();
   const repeatsId = React.useId();
+  const folderNameId = React.useId();
   // Site downloads run on, so coming back to this form within the session shows them again.
   const modeKey = `project-import-mode:${projectId}:${versionId || ''}:${targetDataset?.source.id || ''}`;
   const siteAllowed = !!versionId && !defaultIsReg && !targetDataset?.source.is_reg;
@@ -64,6 +65,7 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
   const [files, setFiles] = React.useState<DatasetUploadFile[]>([]);
   const [reading, setReading] = React.useState(false);
   const [path, setPath] = React.useState('');
+  const [destinationName, setDestinationName] = React.useState('');
   const [repeats, setRepeats] = React.useState(1);
   const isReg = defaultIsReg;
   const [captionExt, setCaptionExt] = React.useState(targetDataset?.source.caption_ext || 'auto');
@@ -94,7 +96,7 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
   React.useEffect(() => {
     if (upload?.phase !== 'completed' || upload.acknowledged || !upload.result) return;
     datasetUploads.acknowledge(upload.id);
-    setFiles([]); setError('');
+    setFiles([]); setError(''); setDestinationName('');
     if (fileInput.current) fileInput.current.value = '';
     if (folderInput.current) folderInput.current.value = '';
     setCreated(upload.result.datasets || [upload.result]);
@@ -152,7 +154,7 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
       const datasetName = targetDataset?.source.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
       datasetUploads.start({ projectId, versionId, isReg, datasetId: targetDataset?.source.id }, files, {
         version_id: versionId, target_dataset_id: targetDataset?.source.id,
-        ...(!targetDataset ? { name: autoName, repeats, is_reg: isReg, prior_weight: priorWeight, class_prompt: classPrompt.trim() } : {}),
+        ...(!targetDataset ? { name: autoName, repeats, is_reg: isReg, prior_weight: priorWeight, class_prompt: classPrompt.trim(), ...(destinationName.trim() ? { folder_name: destinationName.trim() } : {}) } : {}),
         caption_ext: captionExt,
       }, datasetName || autoName || files[0].relativePath);
       return;
@@ -164,9 +166,10 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
       const progressId = startProgress(mode);
       const result = await apiClient.post<DatasetInfo & { datasets?: DatasetInfo[] }>(`/projects/${projectId}/datasets`, {
         path: path.trim(), repeats, caption_ext: captionExt.trim(), is_reg: isReg, prior_weight: priorWeight, class_prompt: classPrompt.trim() || null,
+        ...(destinationName.trim() ? { folder_name: destinationName.trim() } : {}),
       }, { params: { version_id: versionId, progress_id: progressId }, silent: true });
       if (!current()) return;
-      setPath('');
+      setPath(''); setDestinationName('');
       finishProgress('completed');
       setCreatedElapsed(null);
       setCreated(result.datasets || [result]); setShowForm(false); onImported();
@@ -253,6 +256,7 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
     <div className="project-import-configuration">
       {!targetDataset && <details className="project-import-options"><summary>{text('导入选项', 'Import options')}</summary>
         <div className="project-import-fields">
+          <label className="project-import-field project-import-name" htmlFor={folderNameId}>{text('导入后的文件夹名称', 'Imported folder name')}<input id={folderNameId} className={inputClass} value={destinationName} disabled={locked} onChange={event => setDestinationName(event.target.value)} placeholder={text('留空使用原名称', 'Leave blank to keep the original name')}/></label>
           <label className="project-import-field project-import-caption">{text('标签格式', 'Caption format')}<CaptionFormatSelect value={captionExt} onChange={setCaptionExt} disabled={locked} formats={captionFormats}/></label>
           <div className="project-import-field project-import-repeats"><div className="project-import-field-label"><label htmlFor={repeatsId}>{text('每张图片重复次数', 'Repeats per image')}</label><ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮使用每张图片的次数，默认 1 次。次数越高，这组图片的训练占比越大；5_character 这样的目录名可自动识别为 5 次。','Times each image is used per epoch, default 1. More repeats increase this dataset’s share; a folder named 5_character suggests 5 repeats.')}</ConfigHelp></div><input id={repeatsId} className={inputClass} type="number" min="1" step="1" required value={repeats} onChange={event => setRepeats(Number(event.target.value))} disabled={locked}/></div>
         </div>

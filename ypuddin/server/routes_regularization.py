@@ -46,6 +46,7 @@ class RegularizationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: Literal["ai", "danbooru", "gelbooru", "e621", "rule34"] = "ai"
     model: ModelConfig | None = None
+    model_id: str | None = Field(None, min_length=1)
     prompt: str = Field("", max_length=8000)
     prompt_source: Literal["manual", "training_tags"] = "manual"
     source_ids: list[str] = Field(default_factory=list, max_length=200)
@@ -57,7 +58,7 @@ class RegularizationRequest(BaseModel):
     height: int = Field(1024, ge=32, le=2048)
     steps: int = Field(25, ge=1, le=100)
     cfg: float = Field(4.0, ge=0, le=20, allow_inf_nan=False)
-    seed: int = Field(0, ge=0, le=2**63 - 201)
+    seed: int = Field(-1, ge=-1, le=2**63 - 201)
     repeats: int = Field(1, ge=1, le=1000)
     prior_weight: float = Field(1.0, ge=0, le=100, allow_inf_nan=False)
     excluded_tags: list[str] = Field(default_factory=list, max_length=100)
@@ -86,12 +87,29 @@ class RegularizationTask(BaseModel):
     created_at: float
     finished_at: float | None
     can_cancel: bool
+    seed: int | None = None
+    requested_seed: int | None = None
 
 
 class RegularizationStatus(BaseModel):
     path: str
     images: int
     operations: list[RegularizationTask]
+
+
+class RegularizationModelOption(BaseModel):
+    model_id: str | None
+    family: str
+    name: str
+    variant: str | None
+    purpose: str | None
+    available: bool
+    reason: str | None
+
+
+class RegularizationModelOptions(BaseModel):
+    current: RegularizationModelOption
+    models: list[RegularizationModelOption]
 
 
 class RegularizationPlanSource(BaseModel):
@@ -182,6 +200,13 @@ def manager(request: Request):
 @router.get("/projects/{pid}/versions/{vid}/regularization", response_model=RegularizationStatus)
 def status(pid: str, vid: str, service=Depends(manager)):
     return service.snapshot(pid, vid)
+
+
+@router.get("/projects/{pid}/versions/{vid}/regularization/options", response_model=RegularizationModelOptions)
+def options(pid: str, vid: str, service=Depends(manager)):
+    from .regularization_models import model_options
+
+    return model_options(service.c, pid, vid)
 
 
 @router.post("/projects/{pid}/versions/{vid}/regularization/plan", response_model=RegularizationPlan)

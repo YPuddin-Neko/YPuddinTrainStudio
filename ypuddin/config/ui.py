@@ -14,6 +14,7 @@ from pydantic import Field
 GROUPS: tuple[str, ...] = (
     "model",
     "training",
+    "slider",
     "dataset",
     "caption",
     "adapter",

@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import threading
@@ -18,7 +19,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-from ypuddin.config import CaptionConfig, ModelConfig, SamplingConfig
+from ypuddin.config import CaptionConfig
 from ypuddin.data.index import iter_images
 
 from .booru import (
@@ -234,6 +235,7 @@ class RegularizationManager:
     def get(self, oid):
         row = self._row(oid)
         self.c.resolve_version(row["project_id"], row["version_id"])
+        payload = json.loads(row["request_json"]) if row["source"] == "ai" else {}
         return {
             **{
                 key: value
@@ -244,6 +246,8 @@ class RegularizationManager:
             "provider": None if row["source"] == "ai" else row["source"],
             "logs": json.loads(row["logs_json"]),
             "can_cancel": row["status"] not in TERMINAL and row["phase"] != "publishing",
+            "seed": payload.get("seed"),
+            "requested_seed": payload.get("requested_seed", payload.get("seed")),
         }
 
     def snapshot(self, pid, vid):
@@ -450,78 +454,25 @@ class RegularizationManager:
                         prompts=[entry["prompt"] for entry in entries], entries=entries, count=len(entries)
                     )
                 if request.source == "ai":
-                    from ypuddin.models import get_family
+                    from .regularization_models import resolve_model
 
-                    model = (
-                        request.model.model_copy(deep=True)
-                        if request.model is not None
-                        else ModelConfig.model_validate(config.get("model", {}))
+                    model, family, sampling = resolve_model(
+                        self.c, config, model_id=request.model_id, model=request.model
                     )
-                    # Prior generation uses the base model's SDPA path, independent of training adapters.
-                    model.attention = "auto"
-                    family = get_family(model.family)
                     if request.width % family.spec.latent.align or request.height % family.spec.latent.align:
                         raise ApiError(
                             f"Width and height must be multiples of {family.spec.latent.align}",
                             status=422,
                             code="regularization.dimensions",
                         )
-                    for field in (
-                        "dit_path",
-                        "text_encoder_path",
-                        "text_encoder_2_path",
-                        "vae_path",
-                        "tokenizer_path",
-                    ):
-                        path = getattr(model, field)
-                        if path and not self.c.is_allowed(Path(path)):
-                            raise ApiError(
-                                "Model path is outside permitted roots",
-                                status=403,
-                                code="regularization.path",
-                            )
-                    if request.model is not None and model.dit_path:
-                        from .routes_core import _model_row
-                        from .xyz import adopt_backbone_objective
-
-                        target = Path(model.dit_path).expanduser().resolve()
-                        for asset in self.c.db.fetchall(
-                            "SELECT * FROM models WHERE family=? AND kind='dit'", (model.family,)
-                        ):
-                            if Path(asset["path"]).expanduser().resolve() != target:
-                                continue
-                            projected = _model_row(asset, self.c)
-                            if projected.get("unsupported_reason"):
-                                raise ApiError(
-                                    projected["unsupported_reason"], status=422, code="regularization.models"
-                                )
-                            if model.family == "krea2" and projected.get("variant") in {"raw", "turbo"}:
-                                if (
-                                    "krea2_variant" in request.model.model_fields_set
-                                    and model.krea2_variant not in {"auto", projected["variant"]}
-                                ):
-                                    raise ApiError(
-                                        f"此 Krea 2 模型已登记为 {projected['variant'].title()}，请选择对应类型。",
-                                        status=422,
-                                        code="regularization.variant",
-                                    )
-                                model.krea2_variant = projected["variant"]
-                            break
-                        if not {"prediction_type", "zero_terminal_snr"} & request.model.model_fields_set:
-                            adopt_backbone_objective(model, target)
-                    issues = ([family.spec.retired_reason] if family.spec.retired_reason else [])
-                    issues.extend(family.validate_config(model))
-                    if issues:
-                        raise ApiError("; ".join(issues), status=422, code="regularization.models")
-                    sampling = (
-                        SamplingConfig(sampler=family.spec.sampling.sampler).model_dump(mode="json")
-                        if request.model is not None
-                        else config.get("sampling", {})
-                    )
                     devices = gpu_info() if model.family != "toy" else []
                     payload.update(
                         model=model.model_dump(mode="json"),
                         sampling=sampling,
+                        seed=secrets.randbelow(2**32) if request.seed == -1 else request.seed,
+                        requested_seed=request.seed,
+                        weighted_captions=model.family == "sdxl"
+                        and config.get("dataset", {}).get("caption", {}).get("weighted", False),
                         device=devices[0]["device"] if devices else "cpu",
                         fingerprint_cache=str(self.c.cache_dir(pid, version["id"]) / "fingerprints"),
                     )

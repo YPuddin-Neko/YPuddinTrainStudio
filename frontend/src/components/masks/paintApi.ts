@@ -10,6 +10,11 @@ export interface PaintInfo {
 export function paintEndpoint(datasetId: string, imageId: string, relPath: string, suffix = '') {
   return `/datasets/${encodeURIComponent(datasetId)}/images/${encodeURIComponent(imageId)}/paint${suffix}?rel_path=${encodeURIComponent(relPath)}`;
 }
+type LoadedPaint = { info: PaintInfo; pixels: Uint8ClampedArray; mask: Uint8Array };
+const decodedImages = new Map<string, { datasetId: string; relPath: string; value: LoadedPaint }>();
+export function invalidatePaintCache(datasetId: string, relPath?: string) {
+  for (const [key, item] of decodedImages) if (item.datasetId === datasetId && (!relPath || item.relPath === relPath)) decodedImages.delete(key);
+}
 async function decode(url: string, signal: AbortSignal, width: number, height: number) {
   const response = await fetch(apiUrl(url), { signal, cache: 'no-store' });
   if (!response.ok) {
@@ -32,16 +37,22 @@ async function decode(url: string, signal: AbortSignal, width: number, height: n
 export async function loadPaint(datasetId: string, imageId: string, relPath: string, signal: AbortSignal) {
   const infoUrl = paintEndpoint(datasetId, imageId, relPath, '/info');
   const info = await apiClient.get<PaintInfo>(infoUrl, {signal, silent:true});
-  const [pixels, maskRgba] = await Promise.all([
+  const key = JSON.stringify([datasetId, imageId, relPath, info.revision]);
+  const cached = decodedImages.get(key)?.value;
+  const [pixels, maskRgba] = cached ? [cached.pixels, null] : await Promise.all([
     decode(paintEndpoint(datasetId, imageId, relPath, '/source'), signal, info.width, info.height),
     decode(maskEndpoint(datasetId, imageId, relPath), signal, info.width, info.height),
   ]);
   // All three requests must describe the same snapshot, even when another client is editing.
   const checked = await apiClient.get<PaintInfo>(infoUrl, {signal, silent:true});
   if (checked.revision !== info.revision) throw new Error('Image or mask changed during loading; reload the editor');
-  const mask = new Uint8Array(info.width * info.height);
-  for (let i = 0; i < mask.length; i++) mask[i] = maskRgba[i * 4];
-  return {info, pixels, mask};
+  if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  const mask = cached?.mask ?? new Uint8Array(info.width * info.height);
+  if (maskRgba) for (let i = 0; i < mask.length; i++) mask[i] = maskRgba[i * 4];
+  const value = {info: checked, pixels, mask};
+  decodedImages.delete(key); decodedImages.set(key, {datasetId, relPath, value});
+  while (decodedImages.size > 3) decodedImages.delete(decodedImages.keys().next().value!);
+  return value;
 }
 export async function exportPaint(width: number, height: number, pixels: Uint8ClampedArray): Promise<Blob> {
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
@@ -56,8 +67,10 @@ export async function savePaint(datasetId: string, info: PaintInfo, pixels?: Uin
   const form = new FormData(); form.append('revision', info.revision);
   if (pixels) form.append('file', await exportPaint(info.width, info.height, pixels), 'paint.png');
   if (mask) form.append('mask', await exportMask(info.width, info.height, mask), 'mask.png');
-  return apiClient.put<PaintInfo>(paintEndpoint(datasetId, info.image_id, info.rel_path), form, {silent:true});
+  const saved = await apiClient.put<PaintInfo>(paintEndpoint(datasetId, info.image_id, info.rel_path), form, {silent:true});
+  invalidatePaintCache(datasetId, info.rel_path); return saved;
 }
-export function restorePaint(datasetId: string, info: PaintInfo) {
-  return apiClient.post<PaintInfo>(paintEndpoint(datasetId, info.image_id, info.rel_path, '/restore'), {revision:info.revision}, {silent:true});
+export async function restorePaint(datasetId: string, info: PaintInfo) {
+  const restored = await apiClient.post<PaintInfo>(paintEndpoint(datasetId, info.image_id, info.rel_path, '/restore'), {revision:info.revision}, {silent:true});
+  invalidatePaintCache(datasetId, info.rel_path); return restored;
 }

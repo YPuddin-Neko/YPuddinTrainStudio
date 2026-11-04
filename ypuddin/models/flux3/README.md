@@ -14,9 +14,15 @@ Text-to-image training supports adapters or the full DiT, with a frozen BF16 tex
 encoder and FP32 VAE. LoRA, LoKr, LoHa, Full-diff and Ortho adapters
 use the existing adapter runtime. Ortho export remains plain LoRA. T-LoRA,
 text encoder training, FP16 base conversion and
-multi-GPU training are rejected by the family configuration checks. Reference-image
-editing, bounding boxes, the prompt upsampler and distilled flow-map weights are
-outside this family entry.
+multi-GPU training are rejected by the family configuration checks.
+
+`training.task=edit` supports adapter training with one reference image per target,
+using the native `image_cond` branch and the target caption as the editing instruction.
+The reference stays clean and only target predictions contribute to the loss.
+This task uses a frozen text encoder and does not support full-DiT training.
+See [slider and native edit training](../../../docs/TRAINING_TASKS.md) for pairing,
+preview and model-test inputs. Bounding boxes, the prompt upsampler and distilled
+flow-map weights remain outside this family entry.
 
 Attention supports SDPA and FlashAttention 2 varlen for packed per-sample sequences.
 Auto selects SDPA. Explicit FA2 runs a forward/backward capability check before

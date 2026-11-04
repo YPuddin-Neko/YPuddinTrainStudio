@@ -5,12 +5,12 @@ import { useWorkspaceText } from '../utils/workspaceText';
 import { PARAMETER_FLOW as flow } from '../utils/parameterWorkflow';
 import { CONFIG_TAB_GROUPS, type ConfigTab, type ConfigIssue } from '../utils/configPresentation';
 
-export default function ParameterSections({ rootRef, tab, group, onTabChange, issues = [], checked = false, planChecked = false, preset = false, hasTrainingMode = false, fullTraining = false, onRevealAdvanced }: {
+export default function ParameterSections({ rootRef, tab, group, onTabChange, issues = [], checked = false, planChecked = false, preset = false, hasTrainingMode = false, fullTraining = false, sliderTraining = false, onRevealAdvanced }: {
   rootRef: React.RefObject<HTMLDivElement>; tab: ConfigTab; group?: string; onTabChange: (tab: ConfigTab, group?: string) => void;
-  issues?: ConfigIssue[]; checked?: boolean; planChecked?: boolean; preset?: boolean; hasTrainingMode?: boolean; fullTraining?: boolean; onRevealAdvanced: () => void;
+  issues?: ConfigIssue[]; checked?: boolean; planChecked?: boolean; preset?: boolean; hasTrainingMode?: boolean; fullTraining?: boolean; sliderTraining?: boolean; onRevealAdvanced: () => void;
 }) {
   const text = useWorkspaceText();
-  const items = flow.filter(item => item.group !== 'adapter' || !fullTraining);
+  const items = flow.filter(item => (item.group !== 'adapter' || !fullTraining) && (item.group !== 'slider' || sliderTraining));
   const issueGroup = (issue: ConfigIssue) => issue.path.startsWith('training.') ? (issue.path.endsWith('_lr') ? 'optimizer' : 'model') : issue.path === 'model.attention' ? 'memory' : ['dataset.batch_size', 'dataset.native_batch_mode'].includes(issue.path) ? 'loop' : issue.path.startsWith('dataset.caption.') ? 'caption' : issue.path.split('.')[0];
   const hasGlobalIssue = issues.some(issue => !flow.some(item => item.group === issueGroup(issue)));
   const completed = (group: string) => checked && !hasGlobalIssue && !issues.some(issue => issueGroup(issue) === group)

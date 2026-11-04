@@ -468,7 +468,9 @@ def dataset_fingerprint_variants(
     Versioning intentionally invalidates old checkpoints whose fingerprints ignored sidecars.
     """
     # Selection is already represented by the records; keep names out of resume identity.
-    semantic_sources = [s.model_dump(mode="json", exclude={"path", "excluded_files", "excluded_dirs"}) for s in sources]
+    semantic_sources = [s.model_dump(
+        mode="json", exclude={"path", "excluded_files", "excluded_dirs", "pair_path", "reference_dir"},
+    ) for s in sources]
 
     def legacy_caption_settings(values):
         result = dict(values)

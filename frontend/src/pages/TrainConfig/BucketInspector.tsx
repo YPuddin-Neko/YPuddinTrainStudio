@@ -55,7 +55,7 @@ function memoryFixes(memory: Plan['memory'], native: boolean, text: (zh: string,
   return fixes.filter((fix, index) => fixes.findIndex(item => item.path === fix.path) === index);
 }
 
-export default function BucketInspector({ plan, planCurrent = true, loading, onData, hasSources = false, indexed, onIssues, onField, error, onRetry, dataset, familyName }: { plan: Plan | null; planCurrent?: boolean; loading: boolean; onData: () => void; hasSources?: boolean; indexed?: { images: number; captioned: number }; onIssues?: () => void; onField?: (path: string) => void; error?:string; onRetry?:()=>void; dataset?: DatasetSizing; familyName?: string }) {
+export default function BucketInspector({ plan, planCurrent = true, loading, onData, hasSources = false, indexed, onIssues, onField, error, onRetry, dataset, familyName, textSlider = false, paired = false }: { plan: Plan | null; planCurrent?: boolean; loading: boolean; onData: () => void; hasSources?: boolean; indexed?: { images: number; captioned: number }; onIssues?: () => void; onField?: (path: string) => void; error?:string; onRetry?:()=>void; dataset?: DatasetSizing; familyName?: string; textSlider?: boolean; paired?: boolean }) {
   const text = useWorkspaceText();
   const routeId = useId();
   const [view, setView] = useState<'shape' | 'table'>('shape');
@@ -65,8 +65,9 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
   const areaNative = nativeVersion === 3;
   const nativeBatches = nativeVersion === 2 || areaNative;
   const legacyNative = nativeVersion === 1;
-  const nativeMode = dataset ? dataset.resolution_mode === 'native' : !!native;
-  const awaitingPlan = hasSources && !buckets.length && !plan?.ok;
+  const nativeMode = !textSlider && (dataset ? dataset.resolution_mode === 'native' : !!native);
+  const awaitingPlan = (hasSources || textSlider) && !buckets.length && !plan?.ok;
+  const batchUnit = textSlider || paired ? text('样本', 'samples') : text('张', 'images');
   const maxCount = Math.max(1, ...buckets.map(bucket => bucket.items));
   const groups = nativeMode ? [{ base: 0, buckets, items: 0 }] : groupByBase(buckets);
   const grouped = groups.length > 1;
@@ -136,7 +137,7 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
   const accumulation = effectiveBatch && perBatch ? Math.max(1, Math.round(effectiveBatch / (perBatch * gpus))) : null;
   const batchFormula = perBatch == null || accumulation == null ? ''
     : gpus > 1 ? text(`${perBatch}\u00a0张 × ${gpus}\u00a0卡 × 累积\u00a0${accumulation}`, `${perBatch} × ${gpus}\u00a0GPUs × ${accumulation}\u00a0accumulation`)
-      : accumulation > 1 ? text(`${perBatch}\u00a0张 × 累积\u00a0${accumulation}`, `${perBatch} × ${accumulation}\u00a0accumulation`) : areaNative ? text(`每逻辑批最多 ${perBatch}\u00a0张`, `Up to ${perBatch} per logical batch`) : nativeBatches ? text(`每批最多 ${perBatch}\u00a0张`, `Up to ${perBatch} per batch`) : nativeMode && !legacyNative ? text(`每卡批量 ${perBatch}`, `Batch size per GPU: ${perBatch}`) : text(`每批 ${perBatch}\u00a0张`, `${perBatch} per batch`);
+      : accumulation > 1 ? text(`${perBatch}\u00a0${batchUnit} × 累积\u00a0${accumulation}`, `${perBatch} × ${accumulation}\u00a0accumulation`) : areaNative ? text(`每逻辑批最多 ${perBatch}\u00a0张`, `Up to ${perBatch} per logical batch`) : nativeBatches ? text(`每批最多 ${perBatch}\u00a0张`, `Up to ${perBatch} per batch`) : nativeMode && !legacyNative ? text(`每卡批量 ${perBatch}`, `Batch size per GPU: ${perBatch}`) : text(`每批 ${perBatch}\u00a0张`, `${perBatch} per batch`);
   const areaRunScope = paddedNativeSync
     ? text('包含不计入损失的补齐计算。', 'Includes padding runs that carry no loss.')
     : emptyNativeSync ? text('不包含空同步批次。', 'Excludes empty synchronization batches.') : '';
@@ -146,7 +147,11 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
     ? text('每轮此尺寸的实际批次数，多卡时合计所有显卡。最终宽高相同的图片按每卡批量大小组批，尾批按实际图片数训练；图像面积上限分别约束每张画布。', 'Actual batches of this size per epoch, summed across GPUs. Images with the same final width and height are grouped by the per-GPU batch size; a short final batch uses its actual image count. The image area limit applies to each canvas.')
     : legacyNative ? text('每轮对这个尺寸运行模型的次数。同尺寸图片在不超过图像面积上限时合并为一次计算；单张已接近上限时逐张计算，因此常与样本数相同。', 'How many times the model runs on this size per epoch. Same-size images are combined while they fit the image area limit; images near the limit run one at a time, so this often equals the sample count.')
       : text('每轮对这个尺寸运行模型的次数。', 'How many times the model runs on this size per epoch.');
-  const effectiveBatchHelp = areaNative
+  const effectiveBatchHelp = textSlider
+    ? text('每次参数更新使用的概念样本数 = 批量大小 × 梯度累积。基础样本在任务开始时生成，每轮重复使用；不要求导入训练图片。', 'Concept samples per parameter update = batch size × gradient accumulation. Base samples are generated at task start and reused each epoch; no training images are required.')
+    : paired
+    ? text('每对图片计一个训练样本。每次参数更新使用的样本数由批量大小、梯度累积和设备数决定，参考图或负端图片不额外增加样本数。', 'Each image pair counts as one training sample. Batch size, gradient accumulation and device count determine the samples per update; reference or negative images add no extra samples.')
+    : areaNative
     ? text('每次参数更新最多使用的图片数 = 批量大小 × 梯度累积 × 显卡数。\n最终宽高相同的图片组成逻辑批次；按面积拆分微批不增加逻辑批次数或参数更新次数。\n各尺寸尾批或轮末累积不足时，按实际参与的图片数更新，不复制图片补齐。', 'Maximum images per parameter update = batch size × gradient accumulation × GPUs.\nImages with the same final width and height form logical batches; splitting them into area-based microbatches adds no logical batches or parameter updates.\nShort batches or incomplete accumulation at the end of an epoch use the actual image count, without repeated padding.')
     : nativeBatches
     ? text('每次参数更新最多使用的图片数 = 批量大小 × 梯度累积 × 显卡数。\n各尺寸尾批或轮末累积不足时，按实际参与的图片数更新，不复制图片补齐。', 'Maximum images per parameter update = batch size × gradient accumulation × GPUs.\nShort batches or incomplete accumulation at the end of an epoch use the actual image count, without repeated padding.')
@@ -214,16 +219,18 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
       {loading && <p role="status" className="inspector-calculation-status">{plan ? text('正在更新数据分布，以下为上次结果…','Updating dataset distribution; the previous results are shown below…') : text('正在计算数据分布…','Calculating dataset distribution…')}</p>}
       {error && <div role="alert" className="inspector-calculation-error"><strong>{text('数据分布计算失败','Dataset distribution could not be calculated')}</strong><p>{error}</p>{plan && <p>{text('以下为上次计算结果。','The previous calculation is shown below.')}</p>}{onRetry && <button type="button" className="ui-link" onClick={onRetry} disabled={loading}>{text('重新计算','Recalculate')}</button>}</div>}
       <dl className="dataset-metrics">
+        {textSlider ? <div><dt>{text('每轮概念样本', 'Concept samples / epoch')}</dt><dd>{awaitingPlan ? '—' : plan?.concept_samples ?? plan?.items ?? '—'}</dd></div> : <>
         <div><dt>{awaitingPlan && indexed ? text('已索引图片', 'Indexed images') : text('原始图片', 'Images')}</dt><dd>{awaitingPlan ? indexed?.images ?? '—' : plan?.images ?? '—'}</dd></div>
         <div><dt>{text('重复后样本', 'Repeated samples')}</dt><dd>{awaitingPlan ? '—' : plan?.items ?? '—'}</dd></div>
         <div><dt>{text('已配标签', 'Captioned')}</dt><dd>{awaitingPlan ? indexed?.captioned ?? '—' : plan?.captioned ?? '—'}</dd></div>
+        </>}
         <div><dt>{native ? text('独立尺寸', 'Distinct sizes') : text('分桶数量', 'Buckets')}</dt><dd>{awaitingPlan ? '—' : plan ? buckets.length : '—'}</dd></div>
       </dl>
       {maskLine && <p className="dataset-masks"><strong>{text('遮罩', 'Masks')}</strong><span>{maskLine}</span>{masks && !masks.enabled && onField && <button type="button" className="ui-link" onClick={() => onField('dataset.masked_loss')}>{text('开启遮罩加权训练', 'Turn on masked loss')}</button>}</p>}
-      <SourceBalance sources={plan?.source_balance} loading={loading} hasSources={hasSources}/>
+      {!textSlider && <SourceBalance sources={plan?.source_balance} loading={loading} hasSources={hasSources}/>}
       {!!native?.synchronization_groups && <p className="inspector-note">{emptyNativeSync ? text(`多卡每轮有 ${native.synchronization_groups} 个空同步批次，不执行图片计算，也不增加训练样本。`, `Multi-GPU training has ${native.synchronization_groups} empty synchronization batches per epoch; they run no images and add no training samples.`) : paddedNativeSync ? text(`多卡每轮额外 ${native.synchronization_groups} 次补齐计算，不计入损失，也不增加训练样本。`, `Multi-GPU training adds ${native.synchronization_groups} padding runs per epoch; they carry no loss and add no samples.`) : text(`多卡每轮有 ${native.synchronization_groups} 个同步批次，不增加训练样本。`, `Multi-GPU training has ${native.synchronization_groups} synchronization batches per epoch; they add no training samples.`)}</p>}
-      <div className="bucket-heading"><h4>{nativeMode ? text('实际训练尺寸', 'Training sizes') : text('分桶布局', 'Bucket layout')}</h4><div className="ui-segmented ui-segmented-sm" role="group" aria-label={text('分桶显示方式', 'Bucket view')}><button type="button" aria-label={text('分桶图形视图', 'Bucket shape view')} aria-pressed={view === 'shape'} onClick={() => setView('shape')}><Grid2X2 size={13} /></button><button type="button" aria-label={text('分桶明细表', 'Bucket table')} aria-pressed={view === 'table'} onClick={() => setView('table')}><BarChart3 size={13} /></button><SlidingIndicator className="ui-segmented-thumb"/></div></div>
-      {buckets.length === 0 ? <div className="bucket-empty"><Database size={23} /><p>{loading ? text('正在计算实际分桶…', 'Computing buckets…') : awaitingPlan ? text('请完成待配置项后计算。', 'Complete the pending settings to calculate.') : text('尚无训练图片。', 'No training images yet.')}</p><button type="button" className="ui-link" onClick={awaitingPlan && onIssues ? onIssues : onData}>{awaitingPlan && onIssues ? text('检查待配置项', 'Review pending settings') : text('配置训练数据', 'Configure dataset')}</button></div> : <>
+      <div className="bucket-heading"><h4>{textSlider ? text('概念样本尺寸', 'Concept sample size') : nativeMode ? text('实际训练尺寸', 'Training sizes') : text('分桶布局', 'Bucket layout')}</h4><div className="ui-segmented ui-segmented-sm" role="group" aria-label={text('分桶显示方式', 'Bucket view')}><button type="button" aria-label={text('分桶图形视图', 'Bucket shape view')} aria-pressed={view === 'shape'} onClick={() => setView('shape')}><Grid2X2 size={13} /></button><button type="button" aria-label={text('分桶明细表', 'Bucket table')} aria-pressed={view === 'table'} onClick={() => setView('table')}><BarChart3 size={13} /></button><SlidingIndicator className="ui-segmented-thumb"/></div></div>
+      {buckets.length === 0 ? <div className="bucket-empty"><Database size={23} /><p>{loading ? text('正在计算实际分桶…', 'Computing buckets…') : awaitingPlan ? text('请完成待配置项后计算。', 'Complete the pending settings to calculate.') : textSlider ? text('请先配置文字滑块方向。', 'Configure the text slider directions first.') : text('尚无训练图片。', 'No training images yet.')}</p><button type="button" className="ui-link" onClick={awaitingPlan && onIssues ? onIssues : onData}>{awaitingPlan && onIssues ? text('检查待配置项', 'Review pending settings') : text('配置训练数据', 'Configure dataset')}</button></div> : <>
         {view === 'shape' ? <div className="bucket-groups" data-testid="plan-buckets">{groups.map(group => grouped
           ? <section key={group.base} className="bucket-group" aria-label={baseLabel(group.base)}>
             <h5 className="bucket-group-heading"><span>{baseLabel(group.base)}</span><small>{text(`${group.buckets.length} 个分桶 · ${group.items} 样本`, `${group.buckets.length} buckets · ${group.items} samples`)}</small></h5>
@@ -232,7 +239,7 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
           : <ul key={group.base} className={gridClass} role="list">{group.buckets.map(tile)}</ul>)}</div>
           : <div className="bucket-table-wrap" data-testid="plan-buckets"><table className="bucket-table"><thead><tr>{grouped && <th>{text('分辨率', 'Resolution')}</th>}<th>{text('尺寸', 'Size')}</th><th>{text('样本', 'Items')}</th><th>{native ? <span className="bucket-column-help">{text('计算次数', 'Model runs')}<ConfigHelp label={text('计算次数说明', 'Model runs help')}>{sizeBatchHelp}</ConfigHelp></span> : text('批次', 'Batches')}</th></tr></thead><tbody>{buckets.map(bucket => <tr key={bucketKey(bucket)}>{grouped && <td>{bucket.base}</td>}<td>{bucket.w} × {bucket.h}</td><td>{bucket.items}</td><td>{bucket.batches ?? '—'}</td></tr>)}</tbody></table></div>}
       </>}
-      {plan?.image_fit && <div className="image-fit-summary">
+      {!textSlider && plan?.image_fit && <div className="image-fit-summary">
         <div className="image-fit-head">
           <strong>{plan.image_fit.mode==='pad'?text('完整画面保留','Whole image preserved'):text('裁切保留位置','Crop anchor') + ' · ' + configOptionLabel('dataset.crop_anchor',plan.image_fit.crop_anchor || 'center',text('zh','en') === 'en')}</strong>
           <span>{plan.image_fit.mode==='pad' ? text(`填充占比 ${(plan.image_fit.padding_fraction*100).toFixed(2)}%`, `Padding ${(plan.image_fit.padding_fraction*100).toFixed(2)}%`) : text(`裁切 ${plan.image_fit.cropped_images} 张`, `${plan.image_fit.cropped_images} cropped`)}</span>
@@ -242,7 +249,7 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
       </div>}
       <div className="estimate-block"><h4>{text('执行估算', 'Execution estimate')}</h4>
         <dl className="estimate-stats">
-          <div><dt>{text('等效批次', 'Effective batch')}<ConfigHelp label={text('等效批次说明', 'Effective batch help')}>{effectiveBatchHelp}</ConfigHelp></dt><dd>{effectiveBatch ? nativeBatches ? text(`最多 ${effectiveBatch} 张`, `Up to ${effectiveBatch}`) : text(`${effectiveBatch} 张`, `${effectiveBatch}`) : '—'}</dd>{batchFormula && <small>{batchFormula}</small>}</div>
+          <div><dt>{text('等效批次', 'Effective batch')}<ConfigHelp label={text('等效批次说明', 'Effective batch help')}>{effectiveBatchHelp}</ConfigHelp></dt><dd>{effectiveBatch ? nativeBatches ? text(`最多 ${effectiveBatch} ${batchUnit}`, `Up to ${effectiveBatch}`) : text(`${effectiveBatch} ${batchUnit}`, `${effectiveBatch}`) : '—'}</dd>{batchFormula && <small>{batchFormula}</small>}</div>
           <div><dt>{text('每轮步数', 'Steps / epoch')}</dt><dd>{plan?.steps_per_epoch ?? '—'}</dd>{stepSource && <small>{stepSource}</small>}</div>
           <div><dt>{text('总训练步数', 'Total steps')}</dt><dd>{plan?.total_steps ?? '—'}</dd>{totalSource && <small>{totalSource}</small>}</div>
         </dl>

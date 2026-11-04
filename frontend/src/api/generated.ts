@@ -3019,6 +3019,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{pid}/versions/{vid}/regularization/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Options */
+        get: operations["options_api_projects__pid__versions__vid__regularization_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{pid}/versions/{vid}/regularization/plan": {
         parameters: {
             query?: never;
@@ -3787,6 +3804,8 @@ export interface components {
              * @default anime-head-detector-v2
              */
             model: string;
+            /** Detectors */
+            detectors?: components["schemas"]["MaskDetectorOptions"][];
             /**
              * Confidence
              * @default 0.413
@@ -4270,6 +4289,12 @@ export interface components {
              * @enum {string}
              */
             format: "toml" | "json";
+            /**
+             * Kind
+             * @default config
+             * @enum {string}
+             */
+            kind: "config" | "preset";
         };
         /** ConfigInspection */
         ConfigInspection: {
@@ -4367,6 +4392,11 @@ export interface components {
             version_id?: string | null;
             /** Path */
             path: string;
+            /**
+             * Folder Name
+             * @default
+             */
+            folder_name: string;
             /**
              * Repeats
              * @default 1
@@ -4598,8 +4628,16 @@ export interface components {
             caption_status: "captioned" | "missing" | "invalid";
             /** Has Mask */
             has_mask: boolean;
+            /** Saved Edit Status */
+            saved_edit_status?: ("modified" | "unmodified" | "unknown") | null;
             /** Training Enabled */
             training_enabled?: boolean | null;
+            /** Pair Path */
+            pair_path?: string | null;
+            /** Reference Paths */
+            reference_paths?: string[];
+            /** Pairing Error */
+            pairing_error?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -4668,6 +4706,10 @@ export interface components {
             version_id?: string | null;
             /** Path */
             path: string;
+            /** Pair Path */
+            pair_path?: string | null;
+            /** Reference Dir */
+            reference_dir?: string | null;
             /** Repeats */
             repeats: number;
             /** Caption Ext */
@@ -4692,6 +4734,16 @@ export interface components {
         };
         /** DatasetSourceConfig */
         DatasetSourceConfig: {
+            /**
+             * Pair Path
+             * @description 图片滑块的负向图片目录，按相对路径去除扩展名后与训练图片一一配对。
+             */
+            pair_path?: string | null;
+            /**
+             * Reference Dir
+             * @description 编辑训练的参考图片目录，按相对路径去除扩展名后与目标图片一一配对。
+             */
+            reference_dir?: string | null;
             /**
              * Excluded Files
              * @description 暂不参与训练的相对文件路径
@@ -5918,6 +5970,27 @@ export interface components {
             feather_x: number;
             /** Feather Y */
             feather_y: number;
+            /**
+             * Model Id
+             * @default anime-head-detector-v2
+             */
+            model_id: string;
+            /**
+             * Kind
+             * @default head
+             * @enum {string}
+             */
+            kind: "head" | "torso" | "legs" | "foot";
+            /**
+             * Class Id
+             * @default 0
+             */
+            class_id: number;
+            /**
+             * Class Name
+             * @default head
+             */
+            class_name: string;
         };
         /**
          * HeadSelection
@@ -6604,6 +6677,13 @@ export interface components {
             head_date?: string | null;
             /** Error */
             error?: string | null;
+        };
+        /** MaskDetectorOptions */
+        MaskDetectorOptions: {
+            /** Model */
+            model: string;
+            /** Kinds */
+            kinds: ("head" | "torso" | "legs" | "foot")[];
         };
         /** MaskInfo */
         MaskInfo: {
@@ -7884,6 +7964,8 @@ export interface components {
         };
         /** Plan */
         Plan: {
+            /** Concept Samples */
+            concept_samples?: number | null;
             /** Ok */
             ok: boolean;
             /** Errors */
@@ -8956,6 +9038,29 @@ export interface components {
             /** Tag Limit Known */
             tag_limit_known: boolean;
         };
+        /** RegularizationModelOption */
+        RegularizationModelOption: {
+            /** Model Id */
+            model_id: string | null;
+            /** Family */
+            family: string;
+            /** Name */
+            name: string;
+            /** Variant */
+            variant: string | null;
+            /** Purpose */
+            purpose: string | null;
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason: string | null;
+        };
+        /** RegularizationModelOptions */
+        RegularizationModelOptions: {
+            current: components["schemas"]["RegularizationModelOption"];
+            /** Models */
+            models: components["schemas"]["RegularizationModelOption"][];
+        };
         /** RegularizationPlan */
         RegularizationPlan: {
             /** Signature */
@@ -9021,6 +9126,8 @@ export interface components {
              */
             source: "ai" | "danbooru" | "gelbooru" | "e621" | "rule34";
             model?: components["schemas"]["ModelConfig"] | null;
+            /** Model Id */
+            model_id?: string | null;
             /**
              * Prompt
              * @default
@@ -9074,7 +9181,7 @@ export interface components {
             cfg: number;
             /**
              * Seed
-             * @default 0
+             * @default -1
              */
             seed: number;
             /**
@@ -9182,6 +9289,10 @@ export interface components {
             finished_at: number | null;
             /** Can Cancel */
             can_cancel: boolean;
+            /** Seed */
+            seed?: number | null;
+            /** Requested Seed */
+            requested_seed?: number | null;
         };
         /** ResolutionCount */
         ResolutionCount: {
@@ -9237,6 +9348,11 @@ export interface components {
         SamplePrompt: {
             /** Prompt */
             prompt: string;
+            /**
+             * Reference Images
+             * @description 原生编辑预览使用的参考图片。
+             */
+            reference_images?: string[];
             /**
              * Negative
              * @default
@@ -9338,8 +9454,8 @@ export interface components {
             height: number;
             /**
              * Seed
-             * @description 预览初始噪声种子，默认 0：每次训练开始时随机生成一个种子，本次训练的所有预览都使用它，续训沿用同一个。手动输入种子值会固定训练时使用的种子。未单独设种子的第 i 条提示词使用该种子 + i（从 0 计）。与训练随机种子独立。
-             * @default 0
+             * @description 预览初始噪声种子，默认 -1：每次训练开始时随机生成一次，续训沿用记录值。0 和正数为固定种子。单条提示词留空使用全局种子 + 序号（从 0 计），设为 -1 则单独随机一次。与训练随机种子独立。
+             * @default -1
              */
             seed: number;
             /**
@@ -9852,6 +9968,69 @@ export interface components {
             /** Alias */
             alias: string | null;
         };
+        /** SliderConfig */
+        SliderConfig: {
+            /**
+             * Mode
+             * @description 文字模式使用概念两端提示词；图片模式使用严格配对的两端图片。
+             * @default text
+             * @enum {string}
+             */
+            mode: "text" | "image";
+            /**
+             * Neutral Prompt
+             * @description 不包含变化属性的基础提示词。
+             * @default
+             */
+            neutral_prompt: string;
+            /**
+             * Positive Prompt
+             * @description 正向滑块对应的提示词。
+             * @default
+             */
+            positive_prompt: string;
+            /**
+             * Negative Prompt
+             * @description 负向滑块对应的提示词。
+             * @default
+             */
+            negative_prompt: string;
+            /**
+             * Guidance
+             * @description 文字两端预测差的训练倍率。
+             * @default 3
+             */
+            guidance: number;
+            /**
+             * Anchor Prompts
+             * @description 需要保持底模表现的提示词。
+             */
+            anchor_prompts?: string[];
+            /**
+             * Anchor Weight
+             * @description 保持提示词损失的权重。
+             * @default 1
+             */
+            anchor_weight: number;
+            /**
+             * Samples Per Epoch
+             * @description 每轮使用的基础模型概念样本数。
+             * @default 16
+             */
+            samples_per_epoch: number;
+            /**
+             * Resolution
+             * @description 基础概念样本的正方形边长。
+             * @default 512
+             */
+            resolution: number;
+            /**
+             * Sampling Steps
+             * @description 任务开始时生成基础概念样本的采样步数。
+             * @default 20
+             */
+            sampling_steps: number;
+        };
         /** SourceRole */
         SourceRole: {
             /** Path */
@@ -10053,13 +10232,32 @@ export interface components {
         /** TagBatch */
         TagBatch: {
             /** Hashes */
-            hashes: string[];
+            hashes?: string[];
             /** Rel Paths */
             rel_paths?: string[] | null;
+            /**
+             * Scope
+             * @default selection
+             * @enum {string}
+             */
+            scope: "selection" | "dataset";
             /** Add */
             add?: string[];
             /** Remove */
             remove?: string[];
+            /**
+             * Position
+             * @default end
+             * @enum {string}
+             */
+            position: "start" | "end";
+            /** Replace */
+            replace?: components["schemas"]["TagReplacement"][];
+            /**
+             * Deduplicate
+             * @default false
+             */
+            deduplicate: boolean;
         };
         /** TagBatchResult */
         TagBatchResult: {
@@ -10067,6 +10265,13 @@ export interface components {
             changed: number;
         } & {
             [key: string]: unknown;
+        };
+        /** TagReplacement */
+        TagReplacement: {
+            /** Old */
+            old: string;
+            /** New */
+            new: string;
         };
         /** TaggingOptions */
         TaggingOptions: {
@@ -10330,6 +10535,7 @@ export interface components {
         /** TrainConfig */
         TrainConfig: {
             training?: components["schemas"]["TrainingConfig"];
+            slider?: components["schemas"]["SliderConfig"];
             model?: components["schemas"]["ModelConfig"];
             dataset?: components["schemas"]["DatasetConfig"];
             adapter?: components["schemas"]["AdapterConfig"];
@@ -10511,6 +10717,13 @@ export interface components {
         };
         /** TrainingConfig */
         TrainingConfig: {
+            /**
+             * Task
+             * @description 普通训练、双向滑块 LoRA，或带参考图片的原生编辑 LoRA。
+             * @default standard
+             * @enum {string}
+             */
+            task: "standard" | "slider" | "edit";
             /**
              * Mode
              * @description 适配器训练生成 LoRA/LoKr 等附加权重；全量微调直接更新所选组件的原始参数，保存模型组件。
@@ -12505,6 +12718,11 @@ export interface components {
              * @default auto
              */
             caption_ext: string;
+            /**
+             * Folder Name
+             * @default
+             */
+            folder_name: string;
         };
         /** UploadSessionError */
         UploadSessionError: {
@@ -12754,6 +12972,18 @@ export interface components {
             /** Models */
             models: components["schemas"]["VisionModel"][];
         };
+        /** VisionClass */
+        VisionClass: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "head" | "torso" | "legs" | "foot";
+        };
         /** VisionDownload */
         VisionDownload: {
             /** Status */
@@ -12786,7 +13016,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "tagger" | "head_detector";
+            role: "tagger" | "head_detector" | "mask_detector";
             /** Family */
             family: string;
             /** Label */
@@ -12806,6 +13036,16 @@ export interface components {
              * @default []
              */
             categories: string[];
+            /**
+             * Mask Kinds
+             * @default []
+             */
+            mask_kinds: ("head" | "torso" | "legs" | "foot")[];
+            /**
+             * Classes
+             * @default []
+             */
+            classes: components["schemas"]["VisionClass"][];
             thresholds?: components["schemas"]["VisionThresholds"] | null;
             /**
              * Token Required
@@ -13101,6 +13341,10 @@ export interface components {
              * @default false
              */
             complete: boolean;
+            /** References */
+            references?: {
+                [key: string]: unknown;
+            }[];
         };
         /** XyzOptions */
         XyzOptions: {
@@ -13114,6 +13358,12 @@ export interface components {
              * @enum {string}
              */
             training_mode: "adapter" | "full";
+            /**
+             * Training Task
+             * @default standard
+             * @enum {string}
+             */
+            training_task: "standard" | "slider" | "edit";
             /** Defaults */
             defaults: {
                 [key: string]: unknown;
@@ -13155,6 +13405,8 @@ export interface components {
              * @default
              */
             negative: string;
+            /** Reference Images */
+            reference_images?: string[];
             /**
              * Width
              * @default 512
@@ -15620,6 +15872,8 @@ export interface operations {
                     class_prompt?: string;
                     /** @default auto */
                     caption_ext?: string;
+                    /** @default  */
+                    folder_name?: string;
                 };
             };
         };
@@ -16026,6 +16280,7 @@ export interface operations {
                 caption_status?: ("captioned" | "missing" | "invalid") | null;
                 membership?: "all" | "training" | "unused";
                 sort?: "filename" | "folder" | "modified";
+                include_edit_status?: boolean;
             };
             header?: never;
             path: {
@@ -22931,6 +23186,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegularizationTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    options_api_projects__pid__versions__vid__regularization_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegularizationModelOptions"];
                 };
             };
             /** @description Validation Error */

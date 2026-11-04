@@ -161,3 +161,13 @@
 .vision-format-label { gap:8px; }
 .vision-format-label .config-help-trigger { margin:0 0 0 auto; }
 @media (pointer:coarse) { .vision-field-label { min-height:32px; } }
+
+.automask-tools { display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.automask-tools .automask-launcher { width:34px; height:34px; min-width:34px; min-height:34px; padding:0; }
+.vision-panel.automask-settings { border:0; border-radius:0; background:transparent; }
+.automask-settings .vision-panel-body { padding:0; gap:16px; }
+.automask-settings .vision-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.mask-part-downloads { display:grid; gap:10px; }
+.mask-part-download { display:grid; min-width:0; gap:5px; font-size:11px; color:var(--studio-dim); }
+.mask-part-download > .ui-btn { justify-content:center; width:100%; font-size:12px; }
+@media(max-width:540px) { .automask-settings .vision-row { grid-template-columns:minmax(0,1fr); } }

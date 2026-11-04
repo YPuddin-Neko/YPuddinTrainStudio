@@ -7,6 +7,8 @@ export function rgb(color: string): [number, number, number] {
   return [1, 3, 5].map(start => Number.parseInt(color.slice(start, start + 2), 16)) as [number, number, number];
 }
 /** Edits preserve source alpha; erasing restores the pixels loaded at this edit session. */
+export interface PaintDocumentState { operations: PaintOperation[]; position: number; savedPosition: number }
+
 export class PaintDocument {
   readonly pixels: Uint8ClampedArray;
   readonly base: Uint8ClampedArray;
@@ -21,6 +23,11 @@ export class PaintDocument {
   get canUndo() { return this.position > 0; }
   get canRedo() { return this.position < this.operations.length; }
   markSaved() { this.savedPosition = this.position; }
+  exportState(): PaintDocumentState { return structuredClone({ operations: this.operations, position: this.position, savedPosition: this.savedPosition }); }
+  restoreState(state: PaintDocumentState) {
+    this.operations = structuredClone(state.operations); this.position = state.position; this.savedPosition = state.savedPosition;
+    this.pixels.set(this.base); for (let i = 0; i < this.position; i++) this.render(this.operations[i]);
+  }
   colorAt({ x, y }: MaskPoint) {
     const offset = (Math.min(this.height - 1, Math.floor(y)) * this.width + Math.min(this.width - 1, Math.floor(x))) * 4;
     return `#${[0, 1, 2].map(channel => this.pixels[offset + channel].toString(16).padStart(2, '0')).join('')}`;

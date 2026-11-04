@@ -326,6 +326,7 @@ class VersionManager:
             return version_row(c, c.resolve_version(pid, vid))
 
     def _copy(self, pid: str, vid: str, source_id: str, config: dict, datasets: list, mode: str) -> None:
+        from .dataset_edit_status import register_baseline
         from .routes_work import _index_dataset, _records_path
 
         c = self.c
@@ -473,6 +474,7 @@ class VersionManager:
                     },
                 )
                 registered.append(did)
+                register_baseline(c, did)
                 _index_dataset(c, did)
                 if (
                     c.db.fetchone("SELECT index_status FROM datasets WHERE id=?", (did,))["index_status"]
@@ -506,6 +508,7 @@ class VersionManager:
             c.bus.publish("version.changed", {"project_id": pid, "version_id": vid})
 
     def import_directory(self, pid: str, vid: str, body: Any, *, progress: Any = None) -> str:
+        from .dataset_edit_status import image_paths, register_baseline
         from .dataset_uploads import merge_dataset_files
         from .routes_work import _register_dataset, get_project_config
 
@@ -552,7 +555,7 @@ class VersionManager:
             if root.is_symlink():
                 raise ApiError("managed dataset root cannot be a symbolic link", code="version.source_link")
             rows = c.db.fetchall("SELECT * FROM datasets WHERE version_id=?", (vid,))
-            target = root / dataset_directory_name(source)
+            target = root / (body.folder_name or dataset_directory_name(source))
             # A previous import may use an older managed name. Synchronize that
             # same source without moving existing user data or creating a duplicate.
             origin = next(
@@ -565,7 +568,7 @@ class VersionManager:
                 ),
                 None,
             )
-            if origin:
+            if origin and not body.folder_name:
                 target = Path(origin["path"])
             ancestors = [row for row in rows if target.resolve().is_relative_to(Path(row["path"]).resolve())]
             if len(ancestors) > 1 or (
@@ -584,6 +587,7 @@ class VersionManager:
                     status=409,
                 )
             registration = body.model_copy(update={"path": str(target), "is_reg": is_reg})
+            prior_paths = image_paths(existing["path"]) if existing else set()
             if existing:
                 caption_ext = existing["caption_ext"]
             else:
@@ -664,6 +668,7 @@ class VersionManager:
                     if existing:
                         did = existing["id"]
                         c.db.update("datasets", did, {"index_status": "indexing"})
+                        register_baseline(c, did, rel_paths=image_paths(existing["path"]) - prior_paths)
                     else:
                         _register_dataset(
                             c,

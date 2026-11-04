@@ -13,6 +13,11 @@ from pathlib import Path
 
 from ypuddin.models.precision import model_load_precision
 from ypuddin.sampling.decoding import decode_preview
+from ypuddin.sampling.references import (
+    encode_reference_latents,
+    reference_for_batch,
+    validate_reference_images,
+)
 
 from .xyz import (
     AXES,
@@ -21,6 +26,7 @@ from .xyz import (
     XyzRequest,
     checkpoint_signature,
     expand_cells,
+    frozen_reference_paths,
     full_checkpoint_model,
 )
 
@@ -317,9 +323,14 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
 
     torch.set_num_threads(min(torch.get_num_threads(), 2))
     request = XyzRequest.model_validate(payload["xyz"]["request"])
+    if request.seed < 0:
+        raise ValueError("Model-test seed must be resolved before sampling")
     model = ModelConfig.model_validate(payload["model"])
     memory = MemoryConfig.model_validate(payload["memory"])
     family = get_family(model.family)
+    validate_reference_images(model.family, payload.get("training", {}).get("task", "standard"),
+                              request.reference_images)
+    reference_paths = frozen_reference_paths(payload)
     cells = expand_cells(request)
     checkpoints = payload["xyz"]["checkpoints"]
     full = payload.get("training", {}).get("mode") == "full"
@@ -371,7 +382,8 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                     for value in axis.values
                 ],
             }
-    manifest = {"cells": [], "grids": [], "axes": axes, "complete": False}
+    manifest = {"cells": [], "grids": [], "axes": axes, "complete": False,
+                "references": payload["xyz"].get("references", [])}
     manifest_path = output / "manifest.json"
     _atomic_json(manifest_path, manifest)
     loaded, swapper, bindings = None, None, []
@@ -396,10 +408,11 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
 
     conditions = {}
     base_conditions = {}
+    reference_latents = None
     needs_uncond = getattr(family, "sampling_needs_uncond", lambda _loaded, cfg: cfg != 1)
 
     def load_selection(selected_model):
-        nonlocal loaded, model, dtype, conditions, base_conditions
+        nonlocal loaded, model, dtype, conditions, base_conditions, reference_latents
         check()
         model = selected_model
         dtype = (
@@ -431,6 +444,15 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
         base_conditions = dict(conditions)
         loaded.text.unload()
         check()
+        if reference_paths:
+            emit("phase.changed", phase="encoding_reference")
+            frozen_reference_paths(payload)
+            reference_latents = encode_reference_latents(
+                loaded, reference_paths, width=request.width, height=request.height, device=device, dtype=dtype
+            )
+            frozen_reference_paths(payload)
+            loaded.latent.to("cpu")
+            check()
         if not reused:
             family.materialize_backbone(loaded)
             # Sampling runs the backbone in the load precision (autocast on CUDA).
@@ -560,6 +582,7 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
                                 condition,
                                 inference=True,
                                 guidance=guidance_value,
+                                reference_latents=reference_for_batch(reference_latents, len(x)),
                             ).float()
 
                     with precision():

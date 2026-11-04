@@ -26,6 +26,7 @@ import { useGridImageFit } from './useGridImageFit';
 import './xyz-sampling.css';
 import { SlidingIndicator } from '../motion';
 import OverflowStrip from '../OverflowStrip';
+import ReferenceImageInput from '../ReferenceImageInput';
 
 const imageUrl = (url: string) => url.startsWith('/api/') ? apiUrl(url.slice(4)) : url;
 type AxisDraft = { key: AxisKey; raw: string };
@@ -33,7 +34,9 @@ const INITIAL_WEIGHTS = 12;
 const sourceRun = (options: XyzOptions) => options.source_job_id ?? options.checkpoints[0]?.job_id;
 /** The source run's own products; the other runs of its version are one level down in the picker. */
 const ownCheckpoints = (options: XyzOptions) => options.checkpoints.filter(cp => !cp.job_id || cp.job_id === sourceRun(options));
-const initialAxis = (options: XyzOptions): AxisDraft => ownCheckpoints(options).length > 1
+const initialAxis = (options: XyzOptions): AxisDraft => options.training_task === 'slider' && options.axes.some(axis => axis.key === 'adapter_scale')
+  ? { key: 'adapter_scale', raw: '-1, 0, 1' }
+  : ownCheckpoints(options).length > 1
   // The first dozen are ticked to start with; any number can be compared.
   ? { key: 'checkpoint', raw: ownCheckpoints(options).slice(0, INITIAL_WEIGHTS).map(cp => cp.id).join(', ') }
   : { key: 'steps', raw: [Math.max(1, options.defaults.steps - 5), options.defaults.steps, options.defaults.steps + 5].join(', ') };
@@ -75,7 +78,7 @@ function AxisEditor({ position, draft, onChange, options, used, disabled, weight
       if (!value) { onChange(null); return; }
       const key = value as AxisKey;
       const axis = options.axes.find(item => item.key === key);
-      const defaults = key === 'checkpoint' ? (weights.length > 1 ? weights : ownCheckpoints(options).slice(0, 3).map(cp => cp.id)) : (axis?.values && axisChoiceValues(key, axis.values, options.family).slice(0, 3)) || (key === 'steps' ? [8, 16, 24] : key === 'adapter_scale' ? [0.6, 0.8, 1] : key === 'cfg' ? [1, 3, 5] : key === 'seed' ? [42, 43, 44] : [1, 3]);
+      const defaults = key === 'checkpoint' ? (weights.length > 1 ? weights : ownCheckpoints(options).slice(0, 3).map(cp => cp.id)) : (axis?.values && axisChoiceValues(key, axis.values, options.family).slice(0, 3)) || (key === 'steps' ? [8, 16, 24] : key === 'adapter_scale' ? options.training_task === 'slider' ? [-1, 0, 1] : [0.6, 0.8, 1] : key === 'cfg' ? [1, 3, 5] : key === 'seed' ? [42, 43, 44] : [1, 3]);
       onChange({ key, raw: defaults.join(', ') });
     }} options={[...(position !== 'X' ? [{ value: '', label: text('不使用', 'Off') }] : []), ...options.axes.map(axis => ({ value: axis.key, label: name(axis.key),
       // Weights move to this axis from another one; they are chosen once, in the setup above.
@@ -97,6 +100,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const location = useLocation();
   const [options, setOptions] = React.useState<XyzOptions | null>(null);
   const [values, setValues] = React.useState<SamplingValues | null>(null);
+  const [seedDraft, setSeedDraft] = React.useState<string | null>(null);
   const [drafts, setDrafts] = React.useState<(AxisDraft | null)[]>([null, null, null]);
   const [history, setHistory] = React.useState<XyzTask[]>([]);
   const [selected, setSelected] = React.useState(initialTaskId || '');
@@ -114,6 +118,8 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const active = history.find(item => isActive(item) && !isWaiting(item)) || history.find(isActive);
   const locked = readOnly || submitting;
   const fullModel = options?.training_mode === 'full';
+  const editing = options?.training_task === 'edit';
+  const referenceMissing = editing && !(values?.reference_images?.length === 1 && values.reference_images[0].trim());
   const name = (key: AxisKey) => key === 'checkpoint' && fullModel ? text('模型检查点', 'Model checkpoint') : text(...axisNames[key]);
   const source = `/jobs/${encodeURIComponent(sourceJobId)}/xyz`;
   const displayValue = (axis: XyzAxis | null | undefined, value: string | number | null) => {
@@ -227,7 +233,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const update = <K extends keyof SamplingValues>(key: K, value: SamplingValues[K]) => setValues(previous => previous && { ...previous, [key]: value });
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!values || !axes[0] || axisInvalid || checkpointMissing || overLimit || locked || !gpuValid || active) return;
+    if (!values || !axes[0] || axisInvalid || checkpointMissing || overLimit || locked || !gpuValid || active || referenceMissing) return;
     setSubmitting(true); setError('');
     try {
       const request: XyzRequest = { ...values, name: text('模型测试', 'Model testing'), gpu_devices: gpuDevices, x: axes[0], y: axes[1], z: axes[2] };
@@ -291,6 +297,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
     const { x, y, z, gpu_devices, ...fixed } = request;
     setGpuDevices(gpu_devices || []);
     delete fixed.name;
+    setSeedDraft(null);
     // Comparisons from before the choice drew their noise the ComfyUI way.
     setValues(compatibleValues({ ...fixed, noise: fixed.noise || 'comfyui' }, options));
     setDrafts(compatibleDrafts([x, y, z].map(axis => axis ? { key: axis.key, raw: axis.values.join(', ') } : null), options));
@@ -329,10 +336,18 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
                 {!!options.excluded_jobs?.length && text(` ${options.excluded_jobs.map(job => `“${job.name}”`).join('、')}的底模或训练方式不同，没有列出。`, ` ${options.excluded_jobs.map(job => `“${job.name}”`).join(', ')} use another base model or training mode and are not listed.`)}</small>
             </div>
             <label><span>{text('提示词', 'Prompt')}</span><textarea aria-label={text('模型测试提示词', 'Model testing prompt')} required rows={3} value={values.prompt} onChange={event => update('prompt', event.target.value)}/></label>
+            {(editing || !!values.reference_images?.length) && <div className="xyz-weights">
+              <span>{text('参考图片', 'Reference image')}<ConfigHelp label={text('参考图片说明', 'Reference image help')}>{text('选择训练服务所在电脑上的一张图片，与编辑指令一起作为本次对比的输入。所有对比格使用同一张参考图。', 'Choose one image on the training server to use with the editing instruction. All comparison cells use the same reference image.')}</ConfigHelp></span>
+              <ReferenceImageInput value={values.reference_images || []} disabled={locked} onChange={images => update('reference_images', images)}/>
+            </div>}
           </fieldset>
           <div className="xyz-axes">{(['X', 'Y', 'Z'] as const).map((position, index) => <AxisEditor key={position} position={position} draft={drafts[index]} options={options} disabled={locked} weights={weights} used={drafts.filter((_, other) => other !== index).flatMap(draft => draft ? [draft.key] : [])} onChange={draft => changeAxis(index, draft)}/>)}</div>
-          <details className="xyz-settings"><summary>{text('固定参数', 'Fixed parameters')}<span>{values.width} × {values.height} · Seed {values.seed}</span></summary><fieldset className="xyz-fields" disabled={locked}>
-            {(['width', 'height', 'seed', 'steps', 'cfg', 'adapter_scale'] as const).filter(key => !fullModel || key !== 'adapter_scale').map(key => <label key={key}><span>{key === 'width' ? text('宽度', 'Width') : key === 'height' ? text('高度', 'Height') : name(key)}</span><input aria-label={`${text('固定', 'Fixed')} ${key}`} type="number" min={key === 'adapter_scale' ? -4 : key === 'cfg' || key === 'seed' ? 0 : 1} step={key === 'cfg' || key === 'adapter_scale' ? 0.1 : 1} required disabled={axes.some(axis => axis?.key === key)} value={values[key]} onChange={event => update(key, Number(event.target.value))}/></label>)}
+          <details className="xyz-settings"><summary>{text('固定参数', 'Fixed parameters')}<span>{values.width} × {values.height} · Seed {values.seed === -1 ? text('随机', 'Random') : values.seed}</span></summary><fieldset className="xyz-fields" disabled={locked}>
+            {(['width', 'height', 'seed', 'steps', 'cfg', 'adapter_scale'] as const).filter(key => !fullModel || key !== 'adapter_scale').map(key => <label key={key}><span>{key === 'width' ? text('宽度', 'Width') : key === 'height' ? text('高度', 'Height') : name(key)}{key === 'seed' && <ConfigHelp label={text('随机种子说明', 'Seed help')}>{text('填 -1 时，每次新任务随机一个种子，同一任务共用；种子比较轴使用各自填写的值。', 'Set -1 to randomize once per new task. All cells share it unless you compare seed values.')}</ConfigHelp>}</span><input aria-label={`${text('固定', 'Fixed')} ${key}`} type="number" min={key === 'adapter_scale' ? -4 : key === 'seed' ? -1 : key === 'cfg' ? 0 : 1} step={key === 'cfg' || key === 'adapter_scale' ? 0.1 : 1} required disabled={axes.some(axis => axis?.key === key)} value={key === 'seed' ? seedDraft ?? values.seed : values[key]} onChange={event => {
+              const raw = event.target.value;
+              if (key === 'seed') setSeedDraft(raw);
+              if (key !== 'seed' || raw !== '') update(key, Number(raw));
+            }}/></label>)}
             {(['sampler', 'scheduler', 'noise'] as const).map(key => <label key={key}><span>{name(key)}{key === 'noise' && <ConfigHelp label={text('采样兼容模式说明', 'Sampling compatibility help')}>{noiseHelp}</ConfigHelp>}</span><StudioSelect aria-label={`${text('固定', 'Fixed')} ${name(key)}`} disabled={locked || axes.some(axis => axis?.key === key)} value={values[key]} options={axisChoiceValues(key, options.axes.find(axis => axis.key === key)?.values || [values[key]], options.family, [values[key]]).map(value => ({ value: String(value), label: choiceLabel(key, value, english, options.family) }))} onValueChange={value => update(key, value)}/></label>)}
             {!fullModel && (values.noise === 'comfyui' || axes.some(axis => axis?.key === 'noise' && axis.values.includes('comfyui'))) && <label><span>{text('适配器融合精度', 'Adapter merge precision')}<ConfigHelp label={text('适配器融合精度说明', 'Adapter merge precision help')}>{text(...FIELD_HELP['sampling.adapter_merge_dtype'])}</ConfigHelp></span><StudioSelect aria-label={text('固定 适配器融合精度', 'Fixed Adapter merge precision')} disabled={locked} value={values.adapter_merge_dtype || 'auto'} options={['auto', 'bf16', 'fp16', 'fp32'].map(value => ({ value, label: text(configOptionLabel('sampling.adapter_merge_dtype', value), configOptionLabel('sampling.adapter_merge_dtype', value, true)) }))} onValueChange={value => update('adapter_merge_dtype', value as SamplingValues['adapter_merge_dtype'])}/></label>}
             <label className="xyz-span"><span>{text('负面提示词', 'Negative prompt')}</span><textarea rows={2} value={values.negative} onChange={event => update('negative', event.target.value)}/></label>
@@ -340,7 +355,7 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
         </div>
         <footer><p className={axisInvalid || checkpointMissing || overLimit ? 'xyz-invalid' : ''} aria-live="polite">{checkpointMissing ? (options.checkpoints.length ? text('请选择要测试的模型检查点', 'Choose a model checkpoint to test') : text('当前训练尚未保存模型检查点，保存后才能生成对比图', 'Save a model checkpoint before generating a comparison')) : axisInvalid ? text('请填写有效的轴取值', 'Enter valid axis values') : overLimit ? text(`一次最多 ${options.limits.max_cells} 张，请减少取值`, `Maximum ${options.limits.max_cells} cells per comparison`) : text(`${axes[0]?.values.length || 0} 列 × ${axes[1]?.values.length || 1} 行 × ${axes[2]?.values.length || 1} 页，共 ${count} 张`, `${count} images · ${axes[0]?.values.length || 0} columns × ${axes[1]?.values.length || 1} rows × ${axes[2]?.values.length || 1} pages`)}</p>
           {active ? <GenerateBusyButton task={active} cancelling={cancelling === active.id} disabled={readOnly} onCancel={() => void cancel(active)}/>
-            : <button className="ui-btn ui-btn-primary ui-btn-block" type="submit" disabled={locked || axisInvalid || checkpointMissing || overLimit || !gpuValid || !values.prompt.trim()}>{submitting ? <><Loader2 size={15} className="animate-spin"/>{text('提交中…', 'Submitting…')}</> : <><Play size={15}/>{text('生成对比图', 'Generate comparison')}</>}</button>}
+            : <button className="ui-btn ui-btn-primary ui-btn-block" type="submit" disabled={locked || axisInvalid || checkpointMissing || overLimit || !gpuValid || !values.prompt.trim() || referenceMissing}>{submitting ? <><Loader2 size={15} className="animate-spin"/>{text('提交中…', 'Submitting…')}</> : <><Play size={15}/>{text('生成对比图', 'Generate comparison')}</>}</button>}
         </footer>
       </form>
       <div className="xyz-results">
@@ -348,10 +363,11 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
           <header className="xyz-result-header">
             <div className="xyz-result-title"><span className="task-status" data-status={isActive(task) && !isWaiting(task) ? 'running' : task.status}><span className="task-status-dot" aria-hidden="true"/>{statusLabel(task.status)}</span>
               <strong>{formatTime(task.created_at)}</strong>
-              <span>{[`${request?.width} × ${request?.height}`, text(`${task.total} 张`, `${task.total} images`), request?.gpu_devices?.length ? request.gpu_devices.map(gpuDeviceLabel).join(', ') : ''].filter(Boolean).join(' · ')}</span></div>
+              <span>{[`${request?.width} × ${request?.height}`, text(`${task.total} 张`, `${task.total} images`), request && ![request.x, request.y, request.z].some(axis => axis?.key === 'seed') && `Seed ${request.seed}`, request?.gpu_devices?.length ? request.gpu_devices.map(gpuDeviceLabel).join(', ') : ''].filter(Boolean).join(' · ')}</span></div>
             <div className="xyz-result-actions"><button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={reuse}>{text('复用参数', 'Reuse settings')}</button>{grid && <a className="ui-btn ui-btn-sm" href={imageUrl(grid.url)} download target="_blank" rel="noopener noreferrer"><Download size={14}/>{text('下载本页网格', 'Download grid')}</a>}</div>
           </header>
           {task.output_dir && <details className="xyz-result-location"><summary>{text('图片保存位置', 'Image folder')}</summary><code>{task.output_dir}</code></details>}
+          {!!request?.reference_images?.length && <details className="xyz-result-location"><summary>{text('参考图片', 'Reference image')}</summary>{request.reference_images.map((path, index) => <code key={`${index}:${path}`}>{path}</code>)}</details>}
           {isActive(task) && <XyzProgress task={task}/>}
           {task.error && <p role="alert" className="xyz-task-error">{task.error}</p>}
           {request?.z && <OverflowStrip className="xyz-pages ui-tabs" containerClassName="xyz-pages-strip" role="navigation" label={text('Z 轴分页', 'Z axis pages')} activeKey={page}>{zValues.map((value, index) => <button key={index} type="button" aria-current={page === index ? 'page' : undefined} onClick={() => setPage(index)}>{name(request.z!.key)} · {displayValue(request.z, value)}</button>)}<SlidingIndicator className="ui-tabs-indicator"/></OverflowStrip>}

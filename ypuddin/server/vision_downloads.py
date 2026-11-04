@@ -122,6 +122,8 @@ class VisionModels:
                     "size": sum(size for _, size, _ in entry["files"].values()),
                     "recommended": bool(entry.get("recommended")),
                     "categories": list(entry.get("categories", ())),
+                    "mask_kinds": list(entry.get("mask_kinds", ())),
+                    "classes": list(entry.get("classes", ())),
                     "thresholds": entry.get("thresholds"),
                     "token_required": bool(entry.get("token_required")),
                     "token_configured": token,

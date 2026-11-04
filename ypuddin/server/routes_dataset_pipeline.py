@@ -83,8 +83,29 @@ class HeadSelection(BaseModel):
     regions: list[int] = Field(min_length=1, max_length=256)
 
 
+MaskKind = Literal["head", "torso", "legs", "foot"]
+
+
+class MaskDetectorOptions(BaseModel):
+    model: str
+    kinds: list[MaskKind] = Field(min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def supported_kinds(self):
+        from .model_catalog import VISION_MODELS
+
+        spec = VISION_MODELS.get(self.model, {})
+        if spec.get("role") not in {"head_detector", "mask_detector"}:
+            raise ValueError("请选择遮罩检测模型。")
+        if not set(self.kinds).issubset(spec["mask_kinds"]):
+            raise ValueError("所选模型不支持这些检测区域。")
+        self.kinds = list(dict.fromkeys(self.kinds))
+        return self
+
+
 class AutoMaskOptions(BaseModel):
     model: str = "anime-head-detector-v2"
+    detectors: list[MaskDetectorOptions] = Field(default_factory=list, max_length=16)
     confidence: float = Field(0.413, ge=0.01, le=0.99)
     padding: float = Field(0.10, ge=0, le=1)
     feather: float = Field(0.03, ge=0, le=0.5)
@@ -264,6 +285,10 @@ class HeadRegion(BaseModel):
     score: float
     feather_x: int
     feather_y: int
+    model_id: str = "anime-head-detector-v2"
+    kind: MaskKind = "head"
+    class_id: int = 0
+    class_name: str = "head"
 
 
 class HeadProposalImage(BaseModel):

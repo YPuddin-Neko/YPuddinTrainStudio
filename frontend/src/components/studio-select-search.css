@@ -15,6 +15,7 @@
 .checkbox-select-actions > span { margin-right:auto; font-variant-numeric:tabular-nums; }
 .checkbox-select-actions .ui-link { font-size:11px; }
 .checkbox-select-actions .ui-link:disabled { opacity:.45; cursor:default; }
+.checkbox-select-footer { flex:none; min-width:0; padding:8px 6px 4px; border-top:1px solid var(--studio-line); }
 .studio-select-option.checkbox-select-option { justify-content:flex-start; gap:8px; }
 .checkbox-select-option[aria-selected=true] { color:var(--studio-text); font-weight:400; }
 .checkbox-select-box { display:grid; place-items:center; flex:none; width:15px; height:15px; border:1px solid color-mix(in srgb, var(--studio-dim) 70%, transparent); border-radius:3px; background:var(--studio-panel); color:var(--studio-on-action, #fff); }

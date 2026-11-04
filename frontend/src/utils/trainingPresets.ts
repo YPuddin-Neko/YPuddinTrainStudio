@@ -38,6 +38,13 @@ export function reusableTrainingPreset(config: Record<string, any>): Record<stri
   for (const [group, field] of VERSION_FIELDS) {
     if (result[group] && typeof result[group] === 'object') delete result[group][field];
   }
+  if (Array.isArray(result.sampling?.prompts)) {
+    result.sampling.prompts = result.sampling.prompts.map((prompt: Record<string, unknown>) => {
+      const reusable = { ...prompt };
+      delete reusable.reference_images;
+      return reusable;
+    });
+  }
   if (result.model && typeof result.model === 'object') {
     for (const field of PRESET_MODEL_FIELDS) if (!result.model[field]) delete result.model[field];
   }

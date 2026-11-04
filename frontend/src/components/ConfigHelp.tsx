@@ -96,7 +96,7 @@ export default function ConfigHelp({ label, children, tone }: { label: string; c
       setPosition({
         width,
         maxHeight,
-        left: Math.max(bounds.left + INSET, Math.min(anchor.right - width, bounds.right - INSET - width)),
+        left: Math.max(bounds.left + INSET, Math.min(anchor.left + width <= bounds.right - INSET ? anchor.left : anchor.right - width, bounds.right - INSET - width)),
         top: Math.max(bounds.top + INSET, Math.min(top, bounds.bottom - INSET - height)),
         visibility: 'visible',
       });

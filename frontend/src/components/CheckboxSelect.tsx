@@ -23,6 +23,7 @@ interface Props {
   searchable?: boolean;
   placeholder?: string;
   className?: string;
+  footer?: React.ReactNode;
   'aria-label'?: string;
   'aria-describedby'?: string;
 }
@@ -31,7 +32,7 @@ interface Props {
  * A multi-select dropdown in the look of StudioSelect: the list stays open while options are ticked,
  * Space or Enter toggles the active one, and the trigger names the choice or counts it.
  */
-export default function CheckboxSelect({ values, options, onValuesChange, groups = [], disabled, max, searchable = false, placeholder, className = '', ...aria }: Props) {
+export default function CheckboxSelect({ values, options, onValuesChange, groups = [], disabled, max, searchable = false, placeholder, className = '', footer, ...aria }: Props) {
   const text = useWorkspaceText();
   const generatedId = React.useId();
   const triggerId = `checkbox-select-${generatedId}`;
@@ -110,7 +111,11 @@ export default function CheckboxSelect({ values, options, onValuesChange, groups
   };
   const keyDown = (event: React.KeyboardEvent) => {
     const typing = event.target instanceof HTMLInputElement && !!filter;
-    if (event.key === 'Tab') { setOpen(false); return; }
+    if (event.key === 'Tab') {
+      const action = !event.shiftKey && visible && footer ? list.current?.querySelector<HTMLElement>('.checkbox-select-footer button:not(:disabled),.checkbox-select-footer a[href]') : null;
+      if (action) { event.preventDefault(); action.focus(); } else setOpen(false);
+      return;
+    }
     if (event.key === 'Escape') { if (visible) { event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus(); } return; }
     if (visible && grouped && group != null && !needle && (event.key === 'ArrowLeft' || (event.key === 'Backspace' && !typing))) { event.preventDefault(); leave(); return; }
     if (atGroups && event.key === 'ArrowRight') { event.preventDefault(); enter(groups[activeGroup].value); return; }
@@ -139,7 +144,8 @@ export default function CheckboxSelect({ values, options, onValuesChange, groups
     </button>
     {visible && createPortal(<div ref={list} className="studio-select-menu checkbox-select-menu" style={position}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== trigger.current) setOpen(false); }}
-      onPointerDown={event => { if (!(event.target instanceof HTMLInputElement)) event.preventDefault(); }}>
+      onKeyDown={event => { if (event.key === 'Escape') keyDown(event); }}
+      onPointerDown={event => { if (!(event.target instanceof HTMLInputElement) && !(event.target as Element).closest('.checkbox-select-footer')) event.preventDefault(); }}>
       {searchable && <input ref={filterInput} type="search" role="searchbox" aria-label={`${aria['aria-label'] || text('选项', 'Options')} · ${text('搜索', 'Search')}`} placeholder={grouped ? text('搜索名称或任务…', 'Search names or runs…') : text('搜索名称…', 'Search names…')}
         value={filter} aria-controls={listId} aria-activedescendant={activeId} onKeyDown={keyDown}
         onChange={event => { setFilter(event.target.value); setActive(-1); }}/>}
@@ -169,6 +175,7 @@ export default function CheckboxSelect({ values, options, onValuesChange, groups
         </div>)}
       </div>}
       {!atGroups && !matches.length && <p role="status" className="studio-select-empty">{text('没有匹配的选项', 'No matching options')}</p>}
+      {footer && <div className="checkbox-select-footer">{footer}</div>}
     </div>, document.body)}
   </>;
 }

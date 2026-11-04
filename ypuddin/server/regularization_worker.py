@@ -11,6 +11,8 @@ from ypuddin.models.precision import model_load_precision
 
 
 def generate(request: dict, output: Path, emit, cancelled) -> None:
+    if type(request.get("seed")) is not int or request["seed"] < 0:
+        raise ValueError("Regularization generation requires a resolved non-negative seed")
     import torch
     from PIL import Image
 

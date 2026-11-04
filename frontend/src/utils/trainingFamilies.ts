@@ -2,6 +2,14 @@ import type { FamilyInfo } from '../api/types';
 import type { StudioSelectOption } from '../components/StudioSelect';
 import { MOSS_WEIGHT_COPY } from './fieldCopy';
 
+export type TrainingTask = 'standard' | 'slider' | 'edit';
+export interface TaskCapabilities {
+  tasks?: TrainingTask[];
+  slider_modes?: Array<'text' | 'image'>;
+  max_reference_images?: number;
+}
+export const familyTaskCapabilities = (family?: FamilyInfo) => family?.training_capabilities as TaskCapabilities | undefined;
+
 /** Keep retired engines out of entry points even when connected to an older service. */
 export function availableTrainingFamilies(families: FamilyInfo[]): FamilyInfo[] {
   return families.filter(family => family.name !== 'flux').map(family =>
@@ -82,6 +90,8 @@ const trainingCapabilityFields = {
 
 /** Missing capabilities preserve the schema choices for older services. */
 export function familyParameterOptions(family: FamilyInfo | undefined, path: string): string[] | undefined {
+  if (path === 'training.task') return familyTaskCapabilities(family)?.tasks || ['standard'];
+  if (path === 'slider.mode') return familyTaskCapabilities(family)?.slider_modes || [];
   const key = capabilityFields[path as keyof typeof capabilityFields];
   const trainingKey = trainingCapabilityFields[path as keyof typeof trainingCapabilityFields];
   const options = key ? family?.[key] : trainingKey ? family?.training_capabilities?.[trainingKey] : undefined;

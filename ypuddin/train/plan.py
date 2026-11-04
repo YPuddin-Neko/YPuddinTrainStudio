@@ -19,6 +19,7 @@ from ypuddin.config import DatasetConfig, LoopConfig, ModelConfig, TrainConfig, 
 from ypuddin.config.compute_policy import resolve_training_compute_config, validate_resume_compute_policy
 from ypuddin.config.issues import validation_issues
 from ypuddin.config.optimizer_rules import optimizer_key
+from ypuddin.config.schema import SliderConfig, TrainingConfig
 from ypuddin.data import BucketBatchSampler, IndexDB
 from ypuddin.data.dataset import DataConfigError, DataLayout, item_geometry, prepare_data_layout
 from ypuddin.data.native import NativeBatchSampler, microbatch_indices, native_size
@@ -292,6 +293,8 @@ class _LayoutInputs:
     dataset: DatasetConfig
     validation: ValidationConfig
     model: ModelConfig
+    training: TrainingConfig | None = None
+    slider: SliderConfig | None = None
 
 
 def _append_data_plan(
@@ -308,6 +311,27 @@ def _append_data_plan(
 ) -> dict[tuple[int, int], int]:
     """Share exact image selection and geometry between full plans and incomplete drafts."""
     ds = cfg.dataset
+    if getattr(cfg.training, "task", "standard") == "slider" and cfg.slider.mode == "text":
+        side = cfg.slider.resolution // latent.align * latent.align
+        count = cfg.slider.samples_per_epoch
+        batches = math.ceil(count / ds.batch_size)
+        steps = math.ceil(batches / loop.grad_accum) if loop is not None else 0
+        out.update(
+            images=0, captioned=0, items=count, concept_samples=count, validation_images=0,
+            source_balance=[], masks={"enabled": False, "files": 0, "alpha": 0},
+            buckets=[{"base": side, "w": side, "h": side, "items": count, "batches": batches}],
+        )
+        if loop is not None:
+            out.update(steps_per_epoch=steps, total_steps=min((loop.epochs or 10**9) * steps, loop.max_steps or 10**9), epochs=loop.epochs)
+            out["distributed"] = {
+                "world_size": 1, "strategy": "single", "parameter_storage": "replicated",
+                "gradient_storage": "replicated", "optimizer_storage": "replicated",
+                "per_device_batch_size": ds.batch_size, "effective_batch_size": ds.batch_size * loop.grad_accum,
+                "batches_per_rank": batches, "tail_policy": "keep", "dropped_samples": 0,
+            }
+        if image_shapes is not None:
+            image_shapes[(side, side)] = {"items": count, "images": set(), "validation": set(), "validation_items": 0}
+        return {(side, side): count}
     records = []
     items = []
     validation_images = 0
@@ -669,6 +693,11 @@ def _preview_invalid_config(
         )
     except ValidationError:
         seed = None
+    try:
+        fields["training"] = TrainingConfig.model_validate(raw.get("training", {}))
+        fields["slider"] = SliderConfig.model_validate(raw.get("slider", {}))
+    except ValidationError:
+        return
     _append_data_plan(
         out,
         _LayoutInputs(**fields, model=ModelConfig(family=family_name)),
@@ -1417,7 +1446,7 @@ def plan(
                 )
                 fixed_preview_inputs = []
                 preview_text_peak = preview_text_capacity = 0.0
-                for stage in preview_stages:
+                for stage, preview_item in zip(preview_stages, preview_items, strict=True):
                     text_capacity_unknown |= not stage["text_capacity_complete"]
                     vae_resident = vae.weights_mb if vae is not None and ds.cache_latents else 0.0
                     text_resident = preview_base_mb - (text_encoder_mb if text_mode == "online" else 0.0)
@@ -1431,6 +1460,9 @@ def plan(
                         phase = preview_decoding_phase(vae, {(stage["width"], stage["height"]): 1})
                         resident = preview_base_mb + vae_resident + stage["decoding_retained_mb"]
                         fixed_preview_inputs.append((phase, resident, unified_training_host_mb + evaluation_host_capacity_mb))
+                        if preview_item.get("has_reference"):
+                            reference_phase = online_encoding_phase(vae, {(stage["width"], stage["height"]): 1})
+                            fixed_preview_inputs.append((reference_phase, resident, unified_training_host_mb + evaluation_host_capacity_mb))
                 fixed_preview = _combined_vae_phase(fixed_preview_inputs)
                 activation_layout = backbone_memory_layout(
                     backbone, family, cfg, compute_dtype, activation_dtype, device_type or "cuda", layout=layout,
@@ -1442,7 +1474,7 @@ def plan(
                     dtype=activation_dtype, device_type=device_type or "cuda",
                     export_layout=evaluation_ops["export_layout"],
                     backbone_workspace=lambda width, height, batch, text_tokens: estimate_backbone_memory(
-                        activation_layout, width=width, height=height, batch_size=batch,
+                        activation_layout, width=width * (2 if cfg.training.task == "edit" or any(p.get("has_reference") for p in preview_items) else 1), height=height, batch_size=batch,
                         checkpointing="none", text_tokens=text_tokens, training=False,
                     )["forward_workspace_bytes"],
                 ) if preview_items else None
@@ -1464,11 +1496,17 @@ def plan(
                         preview_text_capacity = max(preview_text_capacity, text_resident + stage["text_capacity_mb"]
                                                     + (row["text_context_shared_mb"] + unified_training_host_mb + evaluation_host_capacity_mb
                                                        if device_type == "mps" else row["text_context_device_mb"]))
-                    fixed_preview_inputs = [
-                        (phase, resident + row["decode_context_device_mb"],
-                         host + (row["decode_context_host_mb"] if device_type == "mps" else 0.0))
-                        for (phase, resident, host), row in zip(fixed_preview_inputs, preview_profile["rows"], strict=False)
-                    ]
+                    if fixed_preview_inputs:
+                        preview_vae_rows = [
+                            row
+                            for row, item in zip(preview_profile["rows"], preview_items, strict=True)
+                            for _ in range(1 + bool(item.get("has_reference")))
+                        ]
+                        fixed_preview_inputs = [
+                            (phase, resident + row["decode_context_device_mb"],
+                             host + (row["decode_context_host_mb"] if device_type == "mps" else 0.0))
+                            for (phase, resident, host), row in zip(fixed_preview_inputs, preview_vae_rows, strict=True)
+                        ]
                     fixed_preview = _combined_vae_phase(fixed_preview_inputs)
 
                 def condition_tokens(phase):
@@ -1550,7 +1588,7 @@ def plan(
                                 )
                         for mode in act_by_mode:
                             estimate = estimate_backbone_memory(
-                                activation_layout, width=w, height=h, batch_size=forward_batch, checkpointing=mode,
+                                activation_layout, width=w * (2 if cfg.training.task == "edit" else 1), height=h, batch_size=forward_batch, checkpointing=mode,
                                 text_tokens=condition_tokens("cached_training" if text_mode == "cached" else "online"),
                             )
                             dynamic_mb = (estimate["activation_bytes"] + estimate["input_bytes"]) / 2**20 + fusion_mb[mode]
@@ -1573,7 +1611,7 @@ def plan(
                         batch = min(count, ds.batch_size,
                                     max(1, ds.native_max_pixels // (w * h)) if area_native else ds.batch_size)
                         estimate = estimate_backbone_memory(
-                            activation_layout, width=w, height=h, batch_size=batch, checkpointing="none",
+                            activation_layout, width=w * (2 if cfg.training.task == "edit" else 1), height=h, batch_size=batch, checkpointing="none",
                             text_tokens=condition_tokens("validation"), training=False,
                         )
                         live = (evaluation_base_mb + adaptive_device_mb

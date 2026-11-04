@@ -181,6 +181,8 @@ class CaptionConfig(_Strict):
 
 
 class DatasetSourceConfig(_Strict):
+    pair_path: str | None = F(None, help="图片滑块的负向图片目录，按相对路径去除扩展名后与训练图片一一配对。", ui_=ui(control="path"))
+    reference_dir: str | None = F(None, help="编辑训练的参考图片目录，按相对路径去除扩展名后与目标图片一一配对。", ui_=ui(control="path"))
     excluded_files: list[str] = F(default_factory=list, help="暂不参与训练的相对文件路径")
     excluded_dirs: list[str] = F(default_factory=list, help="由独立来源管理的相对子目录")
 
@@ -1509,8 +1511,9 @@ MAX_SIDE = 8192  # pixels; also the ceiling for dataset resolutions
 
 class SamplePrompt(_Strict):
     prompt: str
+    reference_images: list[str] = F(default_factory=list, max_length=1, help="原生编辑预览使用的参考图片。")
     negative: str = ""
-    seed: int | None = None
+    seed: int | None = F(None, ge=-1)
     width: int | None = F(None, ge=32, le=MAX_SIDE)
     height: int | None = F(None, ge=32, le=MAX_SIDE)
     steps: int | None = F(None, ge=1, le=1000)
@@ -1602,8 +1605,9 @@ class SamplingConfig(_IntervalConfig):
         ui_=ui("sampling", order=100, show_when="sampling.enabled == true"),
     )
     seed: int = F(
-        0,
-        help="预览初始噪声种子，默认 0：每次训练开始时随机生成一个种子，本次训练的所有预览都使用它，续训沿用同一个。手动输入种子值会固定训练时使用的种子。未单独设种子的第 i 条提示词使用该种子 + i（从 0 计）。与训练随机种子独立。",
+        -1,
+        ge=-1,
+        help="预览初始噪声种子，默认 -1：每次训练开始时随机生成一次，续训沿用记录值。0 和正数为固定种子。单条提示词留空使用全局种子 + 序号（从 0 计），设为 -1 则单独随机一次。与训练随机种子独立。",
         ui_=ui("sampling", advanced=True, order=110, show_when="sampling.enabled == true"),
     )
     noise: Literal["comfyui", "a1111"] = F(
@@ -1746,6 +1750,10 @@ class LoggingConfig(_Strict):
 
 # --------------------------------------------------------------------------- root
 class TrainingConfig(_Strict):
+    task: Literal["standard", "slider", "edit"] = F(
+        "standard", help="普通训练、双向滑块 LoRA，或带参考图片的原生编辑 LoRA。",
+        ui_=ui("training", order=1, control="select"),
+    )
     mode: Literal["adapter", "full"] = F(
         "adapter",
         help="适配器训练生成 LoRA/LoKr 等附加权重；全量微调直接更新所选组件的原始参数，保存模型组件。",
@@ -1808,8 +1816,22 @@ class TrainingConfig(_Strict):
     )
 
 
+class SliderConfig(_Strict):
+    mode: Literal["text", "image"] = F("text", help="文字模式使用概念两端提示词；图片模式使用严格配对的两端图片。", ui_=ui("slider", order=0, control="select", show_when="training.task == 'slider'"))
+    neutral_prompt: str = F("", help="不包含变化属性的基础提示词。", ui_=ui("slider", order=10, control="textarea", show_when="training.task == 'slider' && slider.mode == 'text'"))
+    positive_prompt: str = F("", help="正向滑块对应的提示词。", ui_=ui("slider", order=20, control="textarea", show_when="training.task == 'slider' && slider.mode == 'text'"))
+    negative_prompt: str = F("", help="负向滑块对应的提示词。", ui_=ui("slider", order=30, control="textarea", show_when="training.task == 'slider' && slider.mode == 'text'"))
+    guidance: float = F(3.0, ge=0, allow_inf_nan=False, help="文字两端预测差的训练倍率。", ui_=ui("slider", order=40, show_when="training.task == 'slider' && slider.mode == 'text'"))
+    anchor_prompts: list[str] = F(default_factory=list, help="需要保持底模表现的提示词。", ui_=ui("slider", order=50, control="tags", advanced=True, show_when="training.task == 'slider' && slider.mode == 'text'"))
+    anchor_weight: float = F(1.0, ge=0, allow_inf_nan=False, help="保持提示词损失的权重。", ui_=ui("slider", order=60, advanced=True, show_when="training.task == 'slider' && slider.mode == 'text'"))
+    samples_per_epoch: int = F(16, ge=1, help="每轮使用的基础模型概念样本数。", ui_=ui("slider", order=70, show_when="training.task == 'slider' && slider.mode == 'text'"))
+    resolution: int = F(512, ge=32, le=MAX_SIDE, help="基础概念样本的正方形边长。", ui_=ui("slider", order=80, show_when="training.task == 'slider' && slider.mode == 'text'"))
+    sampling_steps: int = F(20, ge=1, le=1000, help="任务开始时生成基础概念样本的采样步数。", ui_=ui("slider", order=90, advanced=True, show_when="training.task == 'slider' && slider.mode == 'text'"))
+
+
 class TrainConfig(_Strict):
     training: TrainingConfig = F(default_factory=TrainingConfig)
+    slider: SliderConfig = F(default_factory=SliderConfig)
     model: ModelConfig = F(default_factory=ModelConfig)
     dataset: DatasetConfig = F(default_factory=DatasetConfig)
     adapter: AdapterConfig = F(default_factory=AdapterConfig)
@@ -1824,7 +1846,7 @@ class TrainConfig(_Strict):
     logging: LoggingConfig = F(default_factory=LoggingConfig)
 
     @model_validator(mode="after")
-    def _cross(self) -> TrainConfig:
+    def _cross(self, info: ValidationInfo) -> TrainConfig:
         from ypuddin.config.training_rules import training_errors
 
         objective = self.objective
@@ -1858,7 +1880,7 @@ class TrainConfig(_Strict):
         for source in [*self.dataset.sources, *self.validation.sources]:
             if source.caption is not None:
                 object.__setattr__(source.caption, "weighted", self.dataset.caption.weighted)
-        mode_errors = training_errors(self)
+        mode_errors = training_errors(self, preset=bool(info.context and info.context.get("preset") is True))
         if mode_errors:
             raise ValueError("; ".join(f"{e['loc']}: {e['msg']}" for e in mode_errors))
         policy = optimizer_policy(self.optimizer.type, use_schedulefree=self.optimizer.use_schedulefree)

@@ -47,7 +47,7 @@ export function applySwitchLocks(config: Record<string, any>, family: FamilyInfo
 
 /** Apply only the dependent values required by an explicit component selection. */
 export function selectTrainingComponents(next: Record<string, any>, previous: Record<string, any>) {
-  if (JSON.stringify(next.training) === JSON.stringify(previous.training)) return next;
+  if (['train_backbone', 'train_text_encoder'].every(key => next.training?.[key] === previous.training?.[key])) return next;
   const result = structuredClone(next);
   if (result.training?.mode === 'full') {
     result.memory = {...result.memory, base_precision:'fp32', blocks_to_swap:0};

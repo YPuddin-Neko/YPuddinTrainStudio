@@ -14,8 +14,10 @@
 
 ## 功能介绍
 
-- **整理训练数据**：导入与筛选图片，使用 Tagger 或视觉大模型打标，编辑 TXT / JSON 标签，制作遮罩和准备正则图片。
+- **整理训练数据**：导入与筛选图片，使用 Tagger 或视觉大模型打标，准备正则图片；导入时可指定保存的文件夹名称。
+- **编辑标签与遮罩**：在工作区编辑 TXT / JSON 标签，批量添加、替换、删除和去重；逐图涂抹或修改遮罩，保存当前或全部修改。自动遮罩支持同时选择头部、躯干、腿部和脚部，在后台处理并直接显示遮罩。
 - **配置图像训练**：支持 LoRA、LoKr、LoHa、OrthoLoRA、T-LoRA、LyCORIS Full 与主模型全量微调；可选择分桶或原生分辨率，查看图片尺寸变化和显存估算。优化器包括 AdamW、Prodigy 系列和内置 Muon，具体选项随模型与训练方式提供。
+- **训练滑块与编辑 LoRA**：使用文字方向或配对图片训练双向滑块，为原生支持参考图编辑的 Klein 模型训练编辑 LoRA，见[数据与参数说明](docs/TRAINING_TASKS.md)。
 - **调整显存与计算**：按模型选择 FlashAttention 2、梯度检查点与内存卸载、冻结模型块换出、VAE 分块、FP8 底模存储和模型编译；DoRA 另提供标准融合计算。各项适用范围和组合限制见[训练配置](docs/TRAINING.md#精度与显存)与[注意力后端](docs/ATTENTION.md)。
 - **安排显卡与任务**：不同显卡可同时运行不同任务；图像训练可通过 DDP / FSDP 共同训练一个模型，支持暂停、保存恢复点和继续训练。
 - **查看训练过程**：实时日志、损失与硬件曲线、定期预览，以及按任务管理的权重和恢复点。
@@ -96,8 +98,8 @@ cd YPuddinTrainStudio
 1. 在“设置 → 模型权重”中下载或登记主模型、文本编码器和 VAE。
 2. 创建项目与版本，导入图片及同名标签文件。
 3. 在“数据集检查”中查看问题，在“数据集筛选”中确定参与训练的图片；打开数据集可设置每轮重复次数。
-4. 在“图片打标”中生成标签，在“标签编辑”中逐图修改。
-5. 配置模型文件、训练算法、分辨率、优化器和保存频率，检查训练计划后启动任务。
+4. 在“图片打标”中生成标签，在“标签编辑”中逐图或批量修改；需要排除部分画面时，在“数据集预处理”中制作遮罩，再开启训练参数中的“遮罩加权训练”。
+5. 选择训练方式，配置模型文件、训练算法、分辨率、优化器和保存频率；滑块或编辑 LoRA 按[对应指南](docs/TRAINING_TASKS.md)设置提示词或配对目录。检查训练计划后启动任务。
 6. 在任务页查看进度、日志与预览；在模型测试页比较保存的训练权重。
 
 训练过程自动生成缺少的缓存。暂停和恢复使用完整训练状态；导出的权重可用于推理，或作为新任务的初始权重。
@@ -123,7 +125,7 @@ VoxCPM 的检查点需保留 LoRA 权重和配置；GPT-SoVITS 的最终检查�
 
 - [安装与部署](docs/INSTALLATION.md) · [运行环境](docs/RUNTIME.md) · [海光 DTK](docs/RUNTIME_DTK.md)
 - [模型配置](docs/MODELS.md) · [数据集管理](docs/DATASETS.md) · [JSON 标签](docs/JSON_CAPTIONS.md)
-- [训练配置](docs/TRAINING.md) · [原生分辨率](docs/NATIVE_RESOLUTION.md) · [多卡训练](docs/MULTI_GPU.md)
+- [训练配置](docs/TRAINING.md) · [滑块与编辑 LoRA](docs/TRAINING_TASKS.md) · [原生分辨率](docs/NATIVE_RESOLUTION.md) · [多卡训练](docs/MULTI_GPU.md)
 - [语音训练](docs/TTS.md)
 - [注意力后端](docs/ATTENTION.md) · [模型测试](docs/MODEL_TESTING.md) · [存储与备份](docs/STORAGE.md)
 - [开发指南](docs/DEVELOPMENT.md) · [架构](docs/ARCHITECTURE.md) · [更新记录](CHANGELOG.md)

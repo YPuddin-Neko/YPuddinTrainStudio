@@ -385,6 +385,11 @@ def edited_content(
             ):
                 raise ValueError(f"Caption field {'/'.join(key)} must retain its string/array type")
             _assign(data, key, copy.deepcopy(value))
+            if by_path[key]["role"] == "character_full" and not _tokens(value, "/".join(key)):
+                for name in ("name", "variant"):
+                    present, alternate = _lookup(data, (*key[:-1], name))
+                    if present:
+                        _assign(data, (*key[:-1], name), [] if isinstance(alternate, list) else "")
     else:
         if text is not None:
             _replace_flat_tags(data, allowed, fmt, text)

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.datastructures import UploadFile
 
 from . import dataset_uploads as uploads
@@ -47,6 +47,12 @@ class UploadSessionBody(BaseModel):
     prior_weight: float = Field(1, ge=0, allow_inf_nan=False)
     class_prompt: str | None = Field(None, max_length=1024)
     caption_ext: str = Field("auto", max_length=32)
+    folder_name: str = Field("", max_length=100)
+
+    @field_validator("folder_name")
+    @classmethod
+    def valid_folder_name(cls, value: str) -> str:
+        return uploads.import_folder_name(value)
 
 
 class _StagedReader(io.RawIOBase):

@@ -61,6 +61,18 @@
 .ui-link:hover:not(:disabled) > svg:last-child:not(:first-child) { transform: translateX(2px); }
 .ui-link-danger { color: var(--studio-danger); }
 
+/* Native disclosure markers use the same chevron as the application's section controls. */
+:where(details:not(.plan-notes, .pipeline-check-scope, .trainer-install-log)) > summary:not(.ui-btn) { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::marker { content: ""; }
+:where(details:not(.plan-notes, .pipeline-check-scope, .trainer-install-log)) > summary:not(.ui-btn)::before {
+  content: ""; display: inline-block; width: 14px; height: 14px; vertical-align: -2px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: transform var(--motion-quick, 140ms) var(--motion-ease, ease-out);
+}
+:where(details[open]:not(.plan-notes, .pipeline-check-scope, .trainer-install-log)) > summary:not(.ui-btn)::before { transform: rotate(90deg); }
+
 /* Segmented toggles: one choice out of a few, with a thumb that slides to the choice. */
 .ui-segmented {
   position: relative; isolation: isolate; display: inline-flex; align-items: stretch; flex-shrink: 0; gap: 2px;

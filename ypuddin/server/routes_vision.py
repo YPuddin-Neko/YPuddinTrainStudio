@@ -38,9 +38,15 @@ class VisionThresholds(BaseModel):
     character: float
 
 
+class VisionClass(BaseModel):
+    id: int
+    name: str
+    kind: Literal["head", "torso", "legs", "foot"]
+
+
 class VisionModel(BaseModel):
     id: str
-    role: Literal["tagger", "head_detector"]
+    role: Literal["tagger", "head_detector", "mask_detector"]
     # Tagger series (wd, pixai, cl) or the kind of region a mask detector finds.
     family: str
     label: str
@@ -51,6 +57,8 @@ class VisionModel(BaseModel):
     recommended: bool
     # Label categories a tagger can write, and the thresholds its authors recommend.
     categories: list[str] = []
+    mask_kinds: list[Literal["head", "torso", "legs", "foot"]] = []
+    classes: list[VisionClass] = []
     thresholds: VisionThresholds | None = None
     # Gated on Hugging Face: downloads need a saved access token whose account accepted the terms.
     token_required: bool = False

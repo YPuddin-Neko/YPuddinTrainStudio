@@ -1,4 +1,4 @@
-"""FLUX 3 Image Klein Base text-to-image training."""
+"""FLUX 3 Image Klein Base training with optional reference-image conditioning."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def combine_conditions(conditions: list[TextCond]) -> TextCond:
     return TextCond({"embeds": torch.cat(batches), "lengths": torch.cat([c["lengths"] for c in conditions])})
 
 
-def pack_inputs(x_t, t, cond, dtype) -> Packed:
+def pack_inputs(x_t, t, cond, dtype, *, reference_latents=None) -> Packed:
     batch, channels, height, width = x_t.shape
     device = x_t.device
     lengths = [int(v) for v in cond["lengths"].detach().cpu().tolist()]
@@ -60,7 +60,7 @@ def pack_inputs(x_t, t, cond, dtype) -> Packed:
         "image_cond": torch.zeros(0, channels, device=device, dtype=dtype),
         "text": torch.cat([cond["embeds"][i, :length] for i, length in enumerate(lengths)]).to(device, dtype),
     }
-    return Packed(
+    packed = Packed(
         data=data,
         ids={"image": ids.reshape(tokens, 4).repeat(batch, 1),
              "image_cond": ids.new_zeros(0, 4), "text": torch.cat(text_ids)},
@@ -70,6 +70,18 @@ def pack_inputs(x_t, t, cond, dtype) -> Packed:
         mode_indices={"image": [(i * tokens, (i + 1) * tokens) for i in range(batch)],
                       "image_cond": [(0, 0)] * batch, "text": bounds},
     )
+    if reference_latents is not None:
+        if not isinstance(reference_latents, torch.Tensor) or reference_latents.shape != x_t.shape:
+            raise ValueError("FLUX.3 参考图潜变量须与目标潜变量的批次、通道和尺寸一致。")
+        packed.data["image_cond"] = reference_latents.flatten(2).transpose(1, 2).reshape(
+            batch * tokens, channels
+        ).to(device=device, dtype=dtype)
+        reference_ids = ids.reshape(tokens, 4).repeat(batch, 1)
+        reference_ids[:, 3] = -1
+        packed.ids["image_cond"] = reference_ids
+        packed.timesteps["image_cond"] = torch.zeros(batch * tokens, device=device, dtype=dtype)
+        packed.mode_indices["image_cond"] = [(i * tokens, (i + 1) * tokens) for i in range(batch)]
+    return packed
 
 
 class Flux3Family(ModelFamily):
@@ -219,7 +231,9 @@ class Flux3Family(ModelFamily):
         batch, channels, height, width = x_t.shape
         if channels != self.spec.latent.channels:
             raise ValueError("FLUX.3 需要 128 通道的归一化潜变量。")
-        prediction = loaded.backbone(pack_inputs(x_t, t, cond, loaded.dtype))
+        prediction = loaded.backbone(pack_inputs(
+            x_t, t, cond, loaded.dtype, reference_latents=extra.get("reference_latents")
+        ))
         return prediction.reshape(batch, height * width, channels).transpose(1, 2).reshape_as(x_t)
 
     def sampling_prediction_pair(self, loaded, forward, cond, uncond, *, cfg, noise,
@@ -262,9 +276,18 @@ class Flux3Family(ModelFamily):
         blocks = ("content_mode_blocks.image.*", "txt_mode_blocks.*", "single_blocks.*")
         attn = tuple(f"{prefix}.{{q_proj,k_proj,v_proj,attn_out}}" for prefix in blocks)
         mlp = tuple(f"{prefix}.{{mlp_in,mlp_out}}" for prefix in blocks)
+        reference_attn = ("content_mode_blocks.image_cond.*.{q_proj,k_proj,v_proj,attn_out}",)
+        reference_mlp = ("content_mode_blocks.image_cond.*.{mlp_in,mlp_out}",)
         return {
             "attn-only": TargetPreset("attn-only", attn, description="训练文生图分支的注意力投影。"),
             "attn-mlp": TargetPreset("attn-mlp", attn + mlp, description="训练文生图分支的注意力和前馈层。"),
+            "edit-attn-only": TargetPreset(
+                "edit-attn-only", attn + reference_attn, description="训练目标图、参考图和文本分支的注意力投影。"
+            ),
+            "edit-attn-mlp": TargetPreset(
+                "edit-attn-mlp", attn + reference_attn + mlp + reference_mlp,
+                description="训练目标图、参考图和文本分支的注意力和前馈层。"
+            ),
         }
 
     def memory_layout_meta(self, backbone):

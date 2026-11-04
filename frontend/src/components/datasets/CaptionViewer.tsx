@@ -1,3 +1,4 @@
+import PaintWorkspace, { type PaintWorkspaceProps } from './PaintWorkspace';
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -21,7 +22,7 @@ const datasetName = (path: string) => path.replace(/\\/g,'/').split('/').filter(
 type LocatedImage = { data:DatasetImagesPage; index:number };
 type EditorSession = { scope:string; datasetId:string; search:string; sort:ImageSort; page:number; controller:AbortController; target?:{ image:ImageEditorNavigationTarget; located:LocatedImage; signal:AbortSignal } };
 
-export default function CaptionViewer({projectId,versionId,readOnly=false,editing=false,initialDatasetId=''}: {projectId:string;versionId:string;readOnly?:boolean;editing?:boolean;initialDatasetId?:string}) {
+function CaptionViewerContent({projectId,versionId,readOnly=false,editing=false,initialDatasetId=''}: {projectId:string;versionId:string;readOnly?:boolean;editing?:boolean;initialDatasetId?:string}) {
   const text=useWorkspaceText();
   const queryClient=useQueryClient();
   const navigate=useNavigate();
@@ -232,4 +233,8 @@ export default function CaptionViewer({projectId,versionId,readOnly=false,editin
     </>}
     {editor&&<ImageEditor {...editor} navigation={{position:editor.position,total:editor.total,resolve:resolveImage,onNavigated:navigatedImage}} navigationError={editError} onClose={closeEditor} onSaved={savedImage} onReloadList={refresh} onEnableTraining={enableTraining}/>}
   </section>;
+}
+
+export default function CaptionViewer(props: PaintWorkspaceProps & {editing?:boolean}) {
+  return props.editing?<PaintWorkspace {...props}/>:<CaptionViewerContent {...props}/>;
 }

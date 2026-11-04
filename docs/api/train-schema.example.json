@@ -1334,6 +1334,40 @@
     "DatasetSourceConfig": {
       "additionalProperties": false,
       "properties": {
+        "pair_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "图片滑块的负向图片目录，按相对路径去除扩展名后与训练图片一一配对。",
+          "title": "Pair Path",
+          "x-ui": {
+            "control": "path",
+            "order": 0
+          }
+        },
+        "reference_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "编辑训练的参考图片目录，按相对路径去除扩展名后与目标图片一一配对。",
+          "title": "Reference Dir",
+          "x-ui": {
+            "control": "path",
+            "order": 0
+          }
+        },
         "excluded_files": {
           "description": "暂不参与训练的相对文件路径",
           "items": {
@@ -3213,6 +3247,15 @@
           "title": "Prompt",
           "type": "string"
         },
+        "reference_images": {
+          "description": "原生编辑预览使用的参考图片。",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 1,
+          "title": "Reference Images",
+          "type": "array"
+        },
         "negative": {
           "default": "",
           "title": "Negative",
@@ -3221,6 +3264,7 @@
         "seed": {
           "anyOf": [
             {
+              "minimum": -1,
               "type": "integer"
             },
             {
@@ -3515,8 +3559,9 @@
           }
         },
         "seed": {
-          "default": 0,
-          "description": "预览初始噪声种子，默认 0：每次训练开始时随机生成一个种子，本次训练的所有预览都使用它，续训沿用同一个。手动输入种子值会固定训练时使用的种子。未单独设种子的第 i 条提示词使用该种子 + i（从 0 计）。与训练随机种子独立。",
+          "default": -1,
+          "description": "预览初始噪声种子，默认 -1：每次训练开始时随机生成一次，续训沿用记录值。0 和正数为固定种子。单条提示词留空使用全局种子 + 序号（从 0 计），设为 -1 则单独随机一次。与训练随机种子独立。",
+          "minimum": -1,
           "title": "Seed",
           "type": "integer",
           "x-ui": {
@@ -3734,9 +3779,163 @@
       "title": "SchedulerConfig",
       "type": "object"
     },
+    "SliderConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "text",
+          "description": "文字模式使用概念两端提示词；图片模式使用严格配对的两端图片。",
+          "enum": [
+            "text",
+            "image"
+          ],
+          "title": "Mode",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "slider",
+            "order": 0,
+            "show_when": "training.task == 'slider'"
+          }
+        },
+        "neutral_prompt": {
+          "default": "",
+          "description": "不包含变化属性的基础提示词。",
+          "title": "Neutral Prompt",
+          "type": "string",
+          "x-ui": {
+            "control": "textarea",
+            "group": "slider",
+            "order": 10,
+            "show_when": "training.task == 'slider' && slider.mode == 'text'"
+          }
+        },
+        "positive_prompt": {
+          "default": "",
+          "description": "正向滑块对应的提示词。",
+          "title": "Positive Prompt",
+          "type": "string",
+          "x-ui": {
+            "control": "textarea",
+            "group": "slider",
+            "order": 20,
+            "show_when": "training.task == 'slider' && slider.mode == 'text'"
+          }
+        },
+        "negative_prompt": {
+          "default": "",
+          "description": "负向滑块对应的提示词。",
+          "title": "Negative Prompt",
+          "type": "string",
+          "x-ui": {
+            "control": "textarea",
+            "group": "slider",
+            "order": 30,
+            "show_when": "training.task == 'slider' && slider.mode == 'text'"
+          }
+        },
+        "guidance": {
+          "default": 3.0,
+          "description": "文字两端预测差的训练倍率。",
+          "minimum": 0,
+          "title": "Guidance",
+          "type": "number",
+          "x-ui": {
+            "group": "slider",
+            "order": 40,
+            "show_when": "training.task == 'slider' && slider.mode == 'text'"
+          }
+        },
+        "anchor_prompts": {
+          "description": "需要保持底模表现的提示词。",
+          "items": {
+            "type": "string"
+          },
+          "title": "Anchor Prompts",
+          "type": "array",
+          "x-ui": {
+            "advanced": true,
+            "control": "tags",
+            "group": "slider",
+            "order": 50,
+            "show_when": "training.task == 'slider' && slider.mode == 'text'"
+          }
+        },
+        "anchor_weight": {
+          "default": 1.0,
+          "description": "保持提示词损失的权重。",
+          "minimum": 0,
+          "title": "Anchor Weight",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "slider",
+            "order": 60,
+            "show_when": "training.task == 'slider' && slider.mode == 'text'"
+          }
+        },
+        "samples_per_epoch": {
+          "default": 16,
+          "description": "每轮使用的基础模型概念样本数。",
+          "minimum": 1,
+          "title": "Samples Per Epoch",
+          "type": "integer",
+          "x-ui": {
+            "group": "slider",
+            "order": 70,
+            "show_when": "training.task == 'slider' && slider.mode == 'text'"
+          }
+        },
+        "resolution": {
+          "default": 512,
+          "description": "基础概念样本的正方形边长。",
+          "maximum": 8192,
+          "minimum": 32,
+          "title": "Resolution",
+          "type": "integer",
+          "x-ui": {
+            "group": "slider",
+            "order": 80,
+            "show_when": "training.task == 'slider' && slider.mode == 'text'"
+          }
+        },
+        "sampling_steps": {
+          "default": 20,
+          "description": "任务开始时生成基础概念样本的采样步数。",
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Sampling Steps",
+          "type": "integer",
+          "x-ui": {
+            "advanced": true,
+            "group": "slider",
+            "order": 90,
+            "show_when": "training.task == 'slider' && slider.mode == 'text'"
+          }
+        }
+      },
+      "title": "SliderConfig",
+      "type": "object"
+    },
     "TrainingConfig": {
       "additionalProperties": false,
       "properties": {
+        "task": {
+          "default": "standard",
+          "description": "普通训练、双向滑块 LoRA，或带参考图片的原生编辑 LoRA。",
+          "enum": [
+            "standard",
+            "slider",
+            "edit"
+          ],
+          "title": "Task",
+          "type": "string",
+          "x-ui": {
+            "control": "select",
+            "group": "training",
+            "order": 1
+          }
+        },
         "mode": {
           "default": "adapter",
           "description": "适配器训练生成 LoRA/LoKr 等附加权重；全量微调直接更新所选组件的原始参数，保存模型组件。",
@@ -4135,6 +4334,9 @@
     "training": {
       "$ref": "#/$defs/TrainingConfig"
     },
+    "slider": {
+      "$ref": "#/$defs/SliderConfig"
+    },
     "model": {
       "$ref": "#/$defs/ModelConfig"
     },
@@ -4446,6 +4648,7 @@
   "x-ui-groups": [
     "model",
     "training",
+    "slider",
     "dataset",
     "caption",
     "adapter",

@@ -382,6 +382,9 @@ def _save(
             changed_files=len(changes),
             after_revision=_revision(image, mask),
         )
+        from .dataset_edit_status import operation_images
+
+        result["edit_images"] = operation_images(c, [did], changes)
         with c.db.lock:
             # Undo's completion and original-operation marker are one SQLite
             # transaction; restart must never roll back files but retain undone_by.
@@ -417,6 +420,9 @@ def _save(
             if changes:
                 _reindex(manager, did)
             result.update(changes=[], rolled_back=True)
+            from .dataset_edit_status import operation_images
+
+            result["edit_images"] = operation_images(c, [did], changes)
         except Exception as recovery_error:
             error += f". Recovery needs attention; backups retained: {recovery_error}"
             result.update(changes=changes, recovery_needed=True)

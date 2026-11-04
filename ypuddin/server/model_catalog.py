@@ -305,6 +305,40 @@ VISION_MODELS: dict[str, dict] = {
         },
         "modelscope": "deepghs/anime_head_detection",
         "recommended": True,
+        "mask_kinds": ["head"],
+        "classes": [{"id": 0, "name": "head", "kind": "head"}],
+    },
+    "anime-body-detector-yolo11m": {
+        "role": "mask_detector",
+        "family": "anime-body",
+        "folder": "mask/anime-body/yolo11m",
+        "repo": "laowanglaowang/yolov11m_anime_Image_segmentation",
+        "revision": "d32a6c90371041f933f8df7e88c0d3278d97c610",
+        "license": "AGPL-3.0",
+        "label": "Anime Body Detector YOLO11m",
+        "mask_kinds": ["head", "torso", "legs"],
+        "classes": [
+            {"id": 0, "name": "Head", "kind": "head"},
+            {"id": 1, "name": "Torso", "kind": "torso"},
+            {"id": 2, "name": "Legs", "kind": "legs"},
+        ],
+        "files": {"best.onnx": (
+            "model.onnx", 80434971, "57084e24be3b35f5f75159921cf42e4dac24d0a6e43e9f8040d7a5b71051c2b2",
+        )},
+    },
+    "anime-foot-detector-v3": {
+        "role": "mask_detector",
+        "family": "anime-foot",
+        "folder": "mask/anime-foot/v3",
+        "repo": "Claquasse/foot_anime_yolo",
+        "revision": "71406da2838c62818b048a93534fc8c40482ef87",
+        "license": "AGPL-3.0",
+        "label": "Anime Foot Detector v3",
+        "mask_kinds": ["foot"],
+        "classes": [{"id": 0, "name": "foot", "kind": "foot"}],
+        "files": {"foot_anime_yolo11m_v3.onnx": (
+            "model.onnx", 80428376, "f89f59a4b9773f97353dbc9f33054e7c160e73fedfa14525d27edaec76fa46e0",
+        )},
     },
 }
 DEFAULT_TAGGER = "wd-eva02-large-tagger-v3"

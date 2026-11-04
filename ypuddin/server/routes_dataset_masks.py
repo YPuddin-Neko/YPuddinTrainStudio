@@ -195,13 +195,18 @@ def _save(c: ServiceContext, did: str, h: str, rel_path: str | None, data: bytes
             raise ApiError(
                 "stop the project's active job before editing training masks", code="mask.busy", status=409
             )
-        _, previous = _load(image, target)
+        previous_mask, previous = _load(image, target)
         if revision != previous.revision:
             raise ApiError(
                 "mask changed since it was opened; reload before saving", code="mask.conflict", status=409
             )
         if gray.size != (previous.width, previous.height):
             raise ApiError(f"mask dimensions must be {previous.width}×{previous.height}", code="mask.size")
+        from .dataset_edit_status import _stat as edit_stat
+        from .dataset_edit_status import record_mask_save
+
+        changed = gray.tobytes() != previous_mask.tobytes()
+        before_stat = edit_stat(target)
         from .dataset_refresh import image_entry, note_own_edit
 
         records = _records(c, did)
@@ -240,6 +245,7 @@ def _save(c: ServiceContext, did: str, h: str, rel_path: str | None, data: bytes
         # The records are current again, so the next check of the folder finds nothing to re-index.
         if listed:
             note_own_edit(c, did, [before], [image_entry(row, listed)])
+        record_mask_save(c, row, image, changed=changed, before_stat=before_stat)
     c.bus.publish("dataset.changed", {
         "dataset_id": did, "project_id": row["project_id"], "version_id": row["version_id"], "reason": "mask",
     })

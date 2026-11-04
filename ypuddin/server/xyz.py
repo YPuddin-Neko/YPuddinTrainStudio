@@ -5,6 +5,9 @@ from __future__ import annotations
 import itertools
 import json
 import math
+import secrets
+import shutil
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -96,11 +99,12 @@ class XyzRequest(GpuSelection):
     name: str = Field("模型测试", min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=8000)
     negative: str = Field("", max_length=8000)
+    reference_images: list[str] = Field(default_factory=list, max_length=1)
     width: int = Field(512, ge=32, le=2048)
     height: int = Field(512, ge=32, le=2048)
     steps: int = Field(20, ge=1, le=100)
     cfg: float = Field(4, ge=0, le=30, allow_inf_nan=False)
-    seed: int = Field(1, ge=0, lt=2**63)
+    seed: int = Field(1, ge=-1, lt=2**63)
     sampler: str = "euler"
     scheduler: str = "uniform"
     noise: Literal["comfyui", "a1111"] = "comfyui"
@@ -134,6 +138,7 @@ class XyzManifest(BaseModel):
     grids: list[dict[str, Any]] = Field(default_factory=list)
     axes: dict[str, Any] = Field(default_factory=dict)
     complete: bool = False
+    references: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class XyzTask(BaseModel):
@@ -194,6 +199,7 @@ class XyzOptions(BaseModel):
     source_job_id: str | None = None
     family: str
     training_mode: Literal["adapter", "full"] = "adapter"
+    training_task: Literal["standard", "slider", "edit"] = "standard"
     defaults: dict[str, Any]
     axes: list[dict[str, Any]]
     # Products of every training run in the source's version that samples on the same base model,
@@ -210,7 +216,7 @@ def expand_cells(request: XyzRequest) -> list[dict[str, Any]]:
     axes = [request.x, request.y, request.z]
     ranges = [list(enumerate(axis.values)) if axis else [(0, None)] for axis in axes]
     for (zi, zv), (yi, yv), (xi, xv) in itertools.product(ranges[2], ranges[1], ranges[0]):
-        cell = request.model_dump(exclude={"name", "prompt", "negative", "x", "y", "z", "gpu_devices"})
+        cell = request.model_dump(exclude={"name", "prompt", "negative", "reference_images", "x", "y", "z", "gpu_devices"})
         for axis, value in zip(axes, (xv, yv, zv), strict=True):
             if axis:
                 cell["checkpoint_id" if axis.key == "checkpoint" else axis.key] = value
@@ -224,6 +230,84 @@ def expand_cells(request: XyzRequest) -> list[dict[str, Any]]:
 def file_signature(path: Path) -> list[int]:
     stat = path.stat()
     return [stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
+
+
+def _reference_path(value: str | Path) -> Path:
+    path = Path(value).expanduser().absolute()
+    if path.is_symlink() or any(parent.is_symlink() for parent in path.parents) or not path.is_file():
+        raise ValueError("参考图须为存在的普通图片文件，不能使用符号链接。")
+    return path
+
+
+@contextmanager
+def _reference_copies(paths: list[Path], run_dir: Path, *, previous=None):
+    """Own each queued comparison's inputs; failed publication removes only these copies."""
+    if not paths:
+        yield []
+        return
+    folder = run_dir / "inputs"
+    if folder.is_symlink() or any(parent.is_symlink() for parent in folder.parents):
+        raise ValueError("参考图保存目录不能使用符号链接。")
+    folder.mkdir(parents=True, exist_ok=False)
+    try:
+        from PIL import Image
+
+        records = []
+        for index, source in enumerate(paths):
+            source = _reference_path(source)
+            before = file_signature(source)
+            if previous and before != previous[index]["signature"]:
+                raise ValueError("冻结参考图已发生变化，不能重试此任务。")
+            target = folder / f"reference-{index}{source.suffix.lower()}"
+            with source.open("rb") as reader, target.open("xb") as writer:
+                shutil.copyfileobj(reader, writer, length=1024 * 1024)
+            if file_signature(_reference_path(source)) != before:
+                raise ValueError("参考图在读取时发生变化，请重新选择。")
+            with Image.open(target) as image:
+                size = list(image.size)
+                image.verify()
+            record = {"source_path": str(source), "source_signature": before,
+                      "path": str(target), "signature": file_signature(target), "image_size": size}
+            if previous:
+                old = previous[index]
+                record.update(source_path=old["source_path"], source_signature=old["source_signature"])
+            records.append(record)
+        yield records
+    except BaseException:
+        if folder.is_dir() and not folder.is_symlink():
+            shutil.rmtree(folder)
+        raise
+
+
+def frozen_reference_paths(payload: dict, *, check_root=True) -> list[str]:
+    snapshot = payload["xyz"]
+    records = snapshot.get("references", [])
+    requested = snapshot["request"].get("reference_images", [])
+    if not requested and not records:
+        return []
+    if len(requested) != 1 or len(records) != 1 or requested != [row.get("path") for row in records]:
+        raise ValueError("模型测试缺少完整的参考图冻结记录。")
+    root = Path(snapshot["reference_root"]).absolute()
+    if check_root and root != Path(payload["checkpoint"]["output_dir"]).absolute():
+        raise ValueError("参考图不属于此模型测试任务。")
+    for record in records:
+        path = _reference_path(record["path"])
+        if path.parent != root / "inputs":
+            raise ValueError("参考图不在此任务的输入目录中。")
+        if file_signature(path) != record["signature"]:
+            raise ValueError("冻结参考图已发生变化，不能继续此任务。")
+    return requested
+
+
+@contextmanager
+def clone_reference_inputs(payload: dict, run_dir: Path):
+    """Retry reads the old frozen input, never the source image that may since have changed."""
+    paths = [Path(path) for path in frozen_reference_paths(payload, check_root=False)]
+    with _reference_copies(paths, run_dir, previous=payload["xyz"].get("references")) as records:
+        if records:
+            payload["xyz"].update(references=records, reference_root=str(run_dir))
+            payload["xyz"]["request"]["reference_images"] = [row["path"] for row in records]
+        yield
 
 
 def checkpoint_signature(path: Path):
@@ -461,6 +545,7 @@ def options(context, source_id):
     defaults.update(
         prompt=prompt.prompt if prompt else "",
         negative=prompt.negative if prompt else "",
+        reference_images=list(prompt.reference_images) if prompt else [],
         seed=prompt.seed if prompt and prompt.seed is not None else 1,
         adapter_scale=1,
         # Products of other runs are offered, but the source's own latest one is the starting point.
@@ -501,6 +586,7 @@ def options(context, source_id):
         "source_job_id": source_id,
         "family": model.family,
         "training_mode": "full" if full else "adapter",
+        "training_task": config.get("training", {}).get("task", "standard"),
         "defaults": defaults,
         "axes": axes,
         "checkpoints": [{k: v for k, v in row.items() if k != "path"} for row in checkpoints],
@@ -521,6 +607,16 @@ def start(context, source_id: str, request: XyzRequest):
     context.supervisor._check_job_version(source)
     config = json.loads(source["config_json"])
     model = ModelConfig.model_validate(config["model"])
+    training_task = config.get("training", {}).get("task", "standard")
+    from ypuddin.sampling.references import validate_reference_images
+
+    try:
+        validate_reference_images(model.family, training_task, request.reference_images)
+        references = [_reference_path(value) for value in request.reference_images]
+    except (OSError, ValueError) as exc:
+        raise ApiError(str(exc), code="xyz.reference", status=422) from exc
+    if any(not context.is_allowed(path) for path in references):
+        raise ApiError("参考图不在允许访问的范围内。", code="xyz.path", status=403)
     full = config.get("training", {}).get("mode") == "full"
     cells = expand_cells(request)
     checkpoints = {row["id"]: row for row in _checkpoints(context, source_id, full=full)}
@@ -693,62 +789,75 @@ def start(context, source_id: str, request: XyzRequest):
     logs_dir = context.job_storage_dir(
         source["project_id"], source.get("version_id"), jid, "logs_dir", run_dir
     )
-    payload = {
-        "model": model.model_dump(mode="json"),
-        "memory": memory.model_dump(mode="json"),
-        "training": {"mode": "full" if full else "adapter"},
-        "xyz": {
-            "source_job_id": source_id,
-            "request": request.model_dump(mode="json"),
-            "checkpoints": resolved,
-        },
-        "checkpoint": {"output_dir": str(run_dir)},
-        "sampling": {"output_dir": str(samples_dir)},
-        "logging": {"events_path": str(logs_dir / "events.jsonl"), "output_dir": str(logs_dir)},
-    }
-    with context.db.lock:
-        # Header validation happens outside the queue lock. A deletion may have
-        # completed in that interval, so publish references only while their
-        # records and checkpoint files still exist under the same lock used by
-        # the deletion endpoints.
-        source = _source(context, source_id)
-        context.supervisor._check_job_version(source)
-        current_checkpoints = {row["id"]: row for row in _checkpoints(context, source_id, full=full)}
-        for checkpoint_id, checkpoint in resolved.items():
-            current = current_checkpoints.get(checkpoint_id)
-            try:
-                unchanged = (
-                    current is not None
-                    and current["path"] == checkpoint["path"]
-                    and checkpoint_signature(Path(current["path"])) == checkpoint["signature"]
+    if request.seed == -1:
+        # Freeze one seed for the whole comparison and any later replay.
+        request = request.model_copy(update={"seed": secrets.randbelow(2**32)})
+    if references and not context.is_allowed(run_dir):
+        raise ApiError("参考图保存目录不在允许访问的范围内。", code="xyz.path", status=403)
+    try:
+        with _reference_copies(references, run_dir) as reference_records:
+            if reference_records:
+                request = request.model_copy(update={"reference_images": [row["path"] for row in reference_records]})
+            payload = {
+                "model": model.model_dump(mode="json"),
+                "memory": memory.model_dump(mode="json"),
+                "training": {"mode": "full" if full else "adapter", "task": training_task},
+                "xyz": {
+                    "references": reference_records,
+                    "reference_root": str(run_dir),
+                    "source_job_id": source_id,
+                    "request": request.model_dump(mode="json"),
+                    "checkpoints": resolved,
+                },
+                "checkpoint": {"output_dir": str(run_dir)},
+                "sampling": {"output_dir": str(samples_dir)},
+                "logging": {"events_path": str(logs_dir / "events.jsonl"), "output_dir": str(logs_dir)},
+            }
+            with context.db.lock:
+                # Header validation happens outside the queue lock. A deletion may have
+                # completed in that interval, so publish references only while their
+                # records and checkpoint files still exist under the same lock used by
+                # the deletion endpoints.
+                source = _source(context, source_id)
+                context.supervisor._check_job_version(source)
+                current_checkpoints = {row["id"]: row for row in _checkpoints(context, source_id, full=full)}
+                for checkpoint_id, checkpoint in resolved.items():
+                    current = current_checkpoints.get(checkpoint_id)
+                    try:
+                        unchanged = (
+                            current is not None
+                            and current["path"] == checkpoint["path"]
+                            and checkpoint_signature(Path(current["path"])) == checkpoint["signature"]
+                        )
+                    except (OSError, ValueError):
+                        unchanged = False
+                    if not unchanged:
+                        raise ApiError(
+                            "A selected checkpoint changed or was removed; refresh the checkpoint list and try again",
+                            code="xyz.checkpoint",
+                            status=422,
+                        )
+                context.db.insert(
+                    "jobs",
+                    {
+                        "id": jid,
+                        "type": "xyz",
+                        "name": request.name,
+                        "project_id": source["project_id"],
+                        "version_id": source.get("version_id"),
+                        "status": "queued",
+                        "priority": 0,
+                        "gpu_devices_json": json.dumps(request.gpu_devices),
+                        "created_at": now(),
+                        "run_dir": str(run_dir),
+                        "samples_dir": str(samples_dir),
+                        "config_json": json.dumps(payload),
+                        "progress_json": json.dumps({"done": 0, "total": len(cells)}),
+                        "latest_json": "{}",
+                    },
                 )
-            except (OSError, ValueError):
-                unchanged = False
-            if not unchanged:
-                raise ApiError(
-                    "A selected checkpoint changed or was removed; refresh the checkpoint list and try again",
-                    code="xyz.checkpoint",
-                    status=422,
-                )
-        context.db.insert(
-            "jobs",
-            {
-                "id": jid,
-                "type": "xyz",
-                "name": request.name,
-                "project_id": source["project_id"],
-                "version_id": source.get("version_id"),
-                "status": "queued",
-                "priority": 0,
-                "gpu_devices_json": json.dumps(request.gpu_devices),
-                "created_at": now(),
-                "run_dir": str(run_dir),
-                "samples_dir": str(samples_dir),
-                "config_json": json.dumps(payload),
-                "progress_json": json.dumps({"done": 0, "total": len(cells)}),
-                "latest_json": "{}",
-            },
-        )
+    except (OSError, ValueError) as exc:
+        raise ApiError(str(exc), code="xyz.reference", status=422) from exc
     context.bus.publish("queue.changed", {})
     return task(context, jid)
 
@@ -780,7 +889,8 @@ def task(context, jid):
     snapshot = json.loads(row["config_json"])["xyz"]
     progress = json.loads(row["progress_json"] or "{}")
     path = result_root(context, row) / "manifest.json"
-    manifest = {"cells": [], "grids": [], "axes": {}, "complete": False}
+    manifest = {"cells": [], "grids": [], "axes": {}, "complete": False,
+                "references": snapshot.get("references", [])}
     if path.is_file() and not path.is_symlink():
         manifest = json.loads(path.read_text(encoding="utf-8"))
     for entry in manifest.get("cells", []) + manifest.get("grids", []):

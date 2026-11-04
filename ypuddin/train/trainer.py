@@ -254,6 +254,10 @@ class Trainer:
         self.config_hash = config_hash(cfg)
         self.model_identity = ""
         self.progress = Progress()
+        seed_state = os.environ.get("YPUDDIN_JOB_PREVIEW_SEEDS")
+        self._job_preview_seed_state = self._validate_preview_seed_state(json.loads(seed_state)) if seed_state else {}
+        if not cfg.checkpoint.resume:
+            self.progress.extra.update(deepcopy(self._job_preview_seed_state))
         self.family: ModelFamily
         self.loaded: LoadedModel
         self.adapters: AdapterSet | ComponentAdapterSet | FullTrainingSet
@@ -432,6 +436,7 @@ class Trainer:
         self.family = get_family(cfg.model.family)
         self._check_capabilities()
         resume_extra = self._read_resume_compute_metadata()
+        self._resume_extra = resume_extra
         self._preparing = True
         self._install_signal_handlers()
         self._seed_all()
@@ -503,12 +508,18 @@ class Trainer:
         self.loaded.latent.to(self.device)
 
         self.emit("phase.changed", phase="indexing")
-        self.bundle = build_data(
-            cfg,
-            replace(self.family.spec.latent, fingerprint=self.loaded.latent.fingerprint),
-            cache_root=cache_root,
-            progress=lambda k, d, t: self.emit("cache.progress", kind=k, done=d, total=t),
-        )
+        text_slider = cfg.training.task == "slider" and cfg.slider.mode == "text"
+        if text_slider:
+            from .slider_bank import build_slider_bank
+
+            self.bundle = build_slider_bank(self, cache_root)
+        else:
+            self.bundle = build_data(
+                cfg,
+                replace(self.family.spec.latent, fingerprint=self.loaded.latent.fingerprint),
+                cache_root=cache_root,
+                progress=lambda k, d, t: self.emit("cache.progress", kind=k, done=d, total=t),
+            )
         self.emit("data.plan", **self.bundle.plan.to_dict())
         if self.is_primary and not cfg.checkpoint.resume and cfg.dataset.resolution_mode == "native":
             (self._record_dir() / "data-plan.json").write_text(
@@ -525,7 +536,7 @@ class Trainer:
         )
         log.info("%s", training_layout_line(cfg.dataset.resolution_mode, data_plan.buckets))
 
-        if cfg.dataset.cache_latents:
+        if cfg.dataset.cache_latents and not text_slider:
             self.emit("phase.changed", phase="caching_latents")
             latent_log = self._cache_progress_log("VAE")
             from .vae_memory import EncodeMonitor
@@ -703,6 +714,11 @@ class Trainer:
                         missing_layers=len(missing),
                     )
         self.emit("adapters.injected", **self.adapters.summary())
+        if cfg.training.task == "slider":
+            from ypuddin.adapters.lora import LoRA
+
+            if any(type(layer.adapter) is not LoRA or layer.dora is not None for layer in self.adapters.layers.values()):
+                raise ValueError("滑块训练的实际目标层必须全部使用普通 LoRA，且关闭 DoRA")
         self._place_training_model()
         self._validate_training_compute_policy()
 
@@ -822,6 +838,12 @@ class Trainer:
         self.progress.extra[DORA_STATE_KEY] = compute_contract(self.adapters)
         self.progress.extra[TRAINING_FEATURE_STATE_KEY] = deepcopy(self._training_feature_contract)
         self.progress.extra["deterministic"] = cfg.loop.deterministic
+        self.progress.extra.setdefault("preview_seed_version", 1 if cfg.checkpoint.resume else 2)
+        # Checkpoints win; older states may predate the actual seeds recorded by the job.
+        for key, value in self._job_preview_seed_state.items():
+            self.progress.extra.setdefault(key, deepcopy(value))
+        if cfg.sampling.enabled:
+            self._prepare_preview_seeds()
         if cfg.dataset.resolution_mode == "native":
             self.progress.extra["native_max_pixels"] = self.bundle.plan.native_max_pixels
             self.progress.extra[NATIVE_BATCH_STATE_KEY] = deepcopy(self._native_batch_contract)
@@ -844,6 +866,7 @@ class Trainer:
             text_mode=self.text_mode,
             deterministic=cfg.loop.deterministic,
             compute_policy=self.compute_policy,
+            preview_seeds=self._preview_seed_state(),
         )
 
     def _prepare_attention(self) -> None:
@@ -1031,6 +1054,8 @@ class Trainer:
         caps = self.family.spec.capabilities
         cfg = self.cfg
         problems = []
+        if cfg.training.task != "standard" and getattr(getattr(self, "distributed", None), "world_size", 1) != 1:
+            problems.append("滑块和编辑训练目前支持单卡")
         if cfg.model.attention == "metal_flash" and cfg.model.attention not in self.family.spec.attention_backends:
             problems.append("Metal FlashAttention is not supported by this model family")
         if cfg.model.attention == "metal_flash" and self.device.type != "mps":
@@ -1111,6 +1136,11 @@ class Trainer:
         self.text_cache = TextCache(cache_root / "text")
         # Training dropout uses the training encoder; SDXL sampling has its own prompt grammar.
         captions = {(TextCache.PROMPTS, "")}
+        if self.cfg.training.task == "slider" and self.cfg.slider.mode == "text":
+            slider = self.cfg.slider
+            captions.update((TextCache.PROMPTS, text) for text in (
+                slider.neutral_prompt, slider.positive_prompt, slider.negative_prompt, *slider.anchor_prompts,
+            ))
         preview_captions = set()
         separate_prompts = callable(getattr(self.loaded.text, "encode_prompt", None))
         for ds in (self.bundle.train, self.bundle.validation):
@@ -1477,6 +1507,11 @@ class Trainer:
             include_training_metadata=self.cfg.checkpoint.save_training_metadata,
         )
         metadata.update(export_contract_metadata(self.adapters))
+        if self.cfg.training.task != "standard":
+            metadata["ypuddin.training_task"] = self.cfg.training.task
+            metadata["ypuddin.task_recipe_version"] = "1"
+            if self.cfg.training.task == "slider":
+                metadata["ypuddin.slider_mode"] = self.cfg.slider.mode
         metadata.update(user_modelspec_metadata(self.cfg.checkpoint))
         if self.cfg.checkpoint.save_training_metadata:
             from ypuddin.adapters.recipe import training_recipe_metadata
@@ -1920,6 +1955,112 @@ class Trainer:
 
                 validate_lokr_bypass_backbone(self.loaded.backbone)
 
+    def _companion_latents(self, batch: dict[str, Any], role: str) -> Tensor:
+        values = {}
+        for suffix in ("latents", "pixels"):
+            key = f"{role}_{suffix}"
+            if key in batch:
+                values[suffix] = batch[key]
+        partial_key = f"partial_{role}_latents"
+        if partial_key in batch:
+            values["partial_latents"] = batch[partial_key]
+        if not values:
+            raise ValueError(f"训练批次缺少 {role} 图片")
+        return self._latents(values)
+
+    def _slider_step(
+        self, batch: dict[str, Any], *, backward_scale: float | None = None,
+        generator: torch.Generator | None = None, t_override: Tensor | None = None,
+        quantile_override: float | None = None,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        from .sliders import adapter_multiplier, direction_loss, text_targets
+
+        gen = generator or self.gen
+        x0 = self._latents(batch)
+        tokens = self._num_tokens(x0)
+        if quantile_override is not None:
+            t_override = self.objective.sampler.icdf([quantile_override], num_tokens=tokens).expand(len(x0))
+        t = t_override.to(self.device) if t_override is not None else self.objective.sample_t(
+            len(x0), generator=gen, num_tokens=tokens, device=self.device,
+        )
+        noise_state = gen.get_state()
+        x_positive, target_positive, _ = self.objective.prepare(x0, t, generator=gen)
+        mask = batch.get("mask")
+        if mask is not None:
+            mask = torch.nn.functional.interpolate(mask[:, None].to(self.device), size=x0.shape[-2:], mode="area")[:, 0]
+        scope = partial(adapter_multiplier, self.adapters)
+        model_dtype = self.loaded.dtype if self.device.type != "cpu" else torch.float32
+
+        def predict(x, cond):
+            x = x.detach().to(model_dtype)
+            if torch.is_grad_enabled() and (self.swapper is not None or self.cfg.memory.activation_checkpointing != "none"):
+                x.requires_grad_(True)
+            with self._autocast():
+                prediction = self.family.forward(self.loaded, x, t, cond, geometry=batch.get("geometry"))
+            if not torch.is_grad_enabled() and self.swapper is not None:
+                self.swapper.release_all()
+            return prediction.float()
+
+        observed = [None]
+        active_mask = mask
+
+        def loss_fn(pred, target):
+            loss, values = self.objective.loss(pred, target, t, mask=active_mask, sample_weight=batch["weight"])
+            observed[0] = values.detach()
+            return loss
+
+        anchors = []
+        if self.cfg.slider.mode == "text":
+            settings = self.cfg.slider
+            neutral, positive, negative = [self._text_cond([text] * len(x0)) for text in (
+                settings.neutral_prompt, settings.positive_prompt, settings.negative_prompt,
+            )]
+            targets = text_targets(
+                lambda: predict(x_positive, neutral), lambda: predict(x_positive, positive),
+                lambda: predict(x_positive, negative), multiplier_scope=scope, guidance=settings.guidance,
+            )
+            directions = ((1, x_positive, neutral, targets.positive, mask), (-1, x_positive, neutral, targets.negative, mask))
+            if settings.anchor_weight:
+                for prompt in settings.anchor_prompts:
+                    cond = self._text_cond([prompt] * len(x0))
+                    with scope(0), torch.no_grad():
+                        target = predict(x_positive, cond).detach()
+                    anchors.append((cond, target))
+        else:
+            negative = self._companion_latents(batch, "pair")
+            if negative.shape != x0.shape:
+                raise ValueError("滑块配对图片的潜变量尺寸不一致")
+            shared_gen = torch.Generator(device=gen.device)
+            shared_gen.set_state(noise_state)
+            x_negative, target_negative, _ = self.objective.prepare(negative, t, generator=shared_gen)
+            cond = self._text_cond(batch["caption"], batch.get("cache_names"))
+            pair_mask = batch.get("pair_mask")
+            if pair_mask is not None:
+                pair_mask = torch.nn.functional.interpolate(pair_mask[:, None].to(self.device), size=x0.shape[-2:], mode="area")[:, 0]
+            directions = ((1, x_positive, cond, target_positive, mask), (-1, x_negative, cond, target_negative, pair_mask))
+
+        total = torch.zeros((), device=self.device)
+        per_sample = torch.zeros(len(x0), device=self.device)
+        for sign, x, cond, target, direction_mask in directions:
+            active_mask = direction_mask
+            entries = [(x, cond, target, 0.5)]
+            entries.extend((x_positive, c, a, 0.5 * self.cfg.slider.anchor_weight / len(anchors)) for c, a in anchors)
+            for current_x, current_cond, current_target, weight in entries:
+                with direction_loss(scope, sign, lambda x=current_x, cond=current_cond: predict(x, cond), current_target,
+                                    loss_fn=loss_fn, weight=weight) as direction:
+                    loss = direction.loss
+                    if not torch.isfinite(loss):
+                        if backward_scale is not None:
+                            self.optimizer.zero_grad(set_to_none=True)
+                        raise RuntimeError("滑块训练损失不是有限数值，当前更新已取消")
+                    if backward_scale is not None:
+                        self._backward(loss * backward_scale)
+                    total += loss.detach()
+                    per_sample += weight * observed[0]
+                    if self.swapper is not None:
+                        self.swapper.release_all()
+        return total, per_sample, t
+
     def compute_loss(
         self,
         batch: dict[str, Any],
@@ -1929,6 +2070,8 @@ class Trainer:
         quantile_override: float | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Returns ``(loss, per_sample_unweighted, t)``."""
+        if self.cfg.training.task == "slider":
+            return self._slider_step(batch, generator=generator, t_override=t_override, quantile_override=quantile_override)
         gen = generator or self.gen
         x0 = self._latents(batch)
         cond = self._text_cond(batch["caption"], batch.get("cache_names"))
@@ -1969,7 +2112,8 @@ class Trainer:
             x_in.requires_grad_(True)
         with self._autocast():
             pred = self.family.forward(
-                self.loaded, x_in, t.to(self.device), cond, geometry=batch.get("geometry")
+                self.loaded, x_in, t.to(self.device), cond, geometry=batch.get("geometry"),
+                **({"reference_latents": self._companion_latents(batch, "reference")} if self.cfg.training.task == "edit" else {}),
             )
         loss, per_sample = self.objective.loss(
             pred.float(), target, t, mask=mask, sample_weight=batch["weight"]
@@ -2062,12 +2206,9 @@ class Trainer:
                 world,
             )
         if cfg.sampling.enabled:
-            kept = self._stored_preview_seed() is not None
-            if not cfg.sampling.seed and not kept:
-                # Every rank keeps identical progress, so the first one picks the seed for all.
-                self.progress.extra["preview_seed"] = self._primary_call(_random_preview_seed)
+            kept = bool(cfg.checkpoint.resume) and self._stored_preview_seed() is not None
             seed = self._preview_seed()
-            if cfg.sampling.seed:
+            if not self._random_preview_requested():
                 log.info("preview seed %d", seed)
             elif kept:
                 log.info("preview seed %d (kept from the resume point)", seed)
@@ -2076,15 +2217,84 @@ class Trainer:
 
     def _stored_preview_seed(self) -> int | None:
         stored = self.progress.extra.get("preview_seed")
-        return stored if isinstance(stored, int) and not isinstance(stored, bool) and stored > 0 else None
+        return stored if type(stored) is int and stored >= 0 else None
+
+    def _preview_seed_version(self) -> int:
+        version = self.progress.extra.get("preview_seed_version", 1 if self.cfg.checkpoint.resume else 2)
+        if type(version) is not int or version not in {1, 2}:
+            raise ValueError("Invalid checkpoint preview seed version")
+        return version
+
+    @staticmethod
+    def _validate_preview_seed_state(state: dict) -> dict:
+        if not isinstance(state, dict) or type(state.get("preview_seed_version")) is not int or state["preview_seed_version"] not in {1, 2}:
+            raise ValueError("Invalid job preview seed state")
+        result = {"preview_seed_version": state["preview_seed_version"]}
+        for key in ("preview_seed", "preview_prompt_seed_nonce"):
+            if key in state:
+                if type(state[key]) is not int or state[key] < 0:
+                    raise ValueError("Invalid job preview seed state")
+                result[key] = state[key]
+        if "preview_prompt_seeds" in state:
+            seeds = state["preview_prompt_seeds"]
+            if not isinstance(seeds, dict) or any(not isinstance(key, str) or not key.isdecimal()
+                    or type(value) is not int or value < 0 for key, value in seeds.items()):
+                raise ValueError("Invalid job prompt seed state")
+            result["preview_prompt_seeds"] = dict(seeds)
+        return result
+
+    def _preview_seed_state(self) -> dict:
+        keys = ("preview_seed_version", "preview_seed", "preview_prompt_seed_nonce", "preview_prompt_seeds")
+        return {key: deepcopy(self.progress.extra[key]) for key in keys if key in self.progress.extra}
+
+    def _random_preview_requested(self) -> bool:
+        return self.cfg.sampling.seed == (0 if self._preview_seed_version() == 1 else -1)
+
+    def _prepare_preview_seeds(self) -> None:
+        # Preparation runs on every rank; DDP's sampling body runs only on rank zero.
+        def frozen():
+            state = {"preview_seed": self._preview_seed()}
+            if self._preview_seed_version() == 2:
+                nonce = self.progress.extra.get("preview_prompt_seed_nonce")
+                state["preview_prompt_seed_nonce"] = (
+                    nonce if type(nonce) is int and nonce >= 0 else _random_preview_seed()
+                )
+            return state
+
+        self.progress.extra.update(self._primary_call(frozen))
+        prompts = list(self.cfg.sampling.prompts)
+        if self.cfg.sampling.prompts_file:
+            prompts += _load_prompts_file(self.cfg.sampling.prompts_file)
+        for index, prompt in enumerate(prompts):
+            self._prompt_preview_seed(prompt.seed, index)
 
     def _preview_seed(self) -> int:
-        """sampling.seed 0 picks one random seed per run; resuming keeps it."""
-        if self.cfg.sampling.seed:
+        """Keep the saved run seed; legacy checkpoints retain their original zero semantics."""
+        if not self._random_preview_requested():
             return self.cfg.sampling.seed
         seed = self._stored_preview_seed()
         if seed is None:
             seed = self.progress.extra["preview_seed"] = _random_preview_seed()
+        return seed
+
+    def _prompt_preview_seed(self, requested: int | None, index: int) -> int:
+        if self._preview_seed_version() == 1:
+            return requested if requested else self._preview_seed() + index
+        if requested is None:
+            return self._preview_seed() + index
+        if requested != -1:
+            return requested
+        seeds = self.progress.extra.setdefault("preview_prompt_seeds", {})
+        key = str(index)
+        if key not in seeds:
+            nonce = self.progress.extra.get("preview_prompt_seed_nonce")
+            if type(nonce) is not int or nonce < 0:
+                # Direct, single-process sampling can be used before Trainer.run().
+                nonce = self.progress.extra["preview_prompt_seed_nonce"] = _random_preview_seed()
+            seeds[key] = random.Random(f"{nonce}:{index}").randrange(2**32)
+        seed = seeds[key]
+        if type(seed) is not int or seed < 0:
+            raise ValueError("Invalid saved prompt preview seed")
         return seed
 
     def _epoch_now(self) -> float | None:
@@ -2247,7 +2457,8 @@ class Trainer:
         for batch in self._training_iterator():
             self.progress.batch_in_epoch += 1
             self.progress.samples_seen += len(batch["caption"])
-            loss, _, _ = self.compute_loss(batch)
+            slider = cfg.training.task == "slider"
+            loss, _, _ = self._slider_step(batch, backward_scale=1 / accum) if slider else self.compute_loss(batch)
             if not torch.isfinite(loss):
                 self._resolve_timestep_observation(False)
                 if self.swapper is not None:
@@ -2261,7 +2472,8 @@ class Trainer:
                     raise RuntimeError(f"{self.progress.nan_skips} consecutive non-finite losses")
                 continue
             self._resolve_timestep_observation(True)
-            self._backward(loss / accum)
+            if not slider:
+                self._backward(loss / accum)
             if self.swapper is not None:
                 self.swapper.release_all()
             group_loss += loss.item() / accum
@@ -2321,7 +2533,8 @@ class Trainer:
             invalid = False
             for part in batch["microbatches"]:
                 count = len(part["caption"])
-                loss, _, _ = self.compute_loss(part)
+                slider = cfg.training.task == "slider"
+                loss, _, _ = self._slider_step(part, backward_scale=count / target) if slider else self.compute_loss(part)
                 if not torch.isfinite(loss):
                     self._discard_timestep_observations()
                     self.progress.nan_skips += 1
@@ -2340,7 +2553,8 @@ class Trainer:
                     invalid = True
                     break
                 self._resolve_timestep_observation(True)
-                self._backward(loss * (count / target))
+                if not slider:
+                    self._backward(loss * (count / target))
                 if self.swapper is not None:
                     self.swapper.release_all()
                 loss_sum += loss.item() * count
@@ -2659,6 +2873,11 @@ class Trainer:
         from PIL import Image
 
         from ypuddin.sampling.decoding import decode_preview
+        from ypuddin.sampling.references import (
+            encode_reference_latents,
+            reference_for_batch,
+            validate_reference_images,
+        )
 
         from .preview_compute import preview_linear_compute
 
@@ -2685,15 +2904,20 @@ class Trainer:
             shift = scfg.shift or self.family.sampling_shift_for_model(
                 self.loaded, (h // stride // patch) * (w // stride // patch), self.cfg.objective, steps=steps
             )
-            # A prompt without its own seed (or with 0) follows the run's preview seed.
-            seed = p.seed if p.seed else base_seed + i
+            seed = self._prompt_preview_seed(p.seed, i)
             cond = self._preview_text_cond(p.prompt)
             uncond = self._preview_text_cond(p.negative)
             shape = (1, self.family.spec.latent.channels, h // stride, w // stride)
             model_dtype = self.loaded.dtype if self.device.type != "cpu" else torch.float32
+            validate_reference_images(self.cfg.model.family, self.cfg.training.task, p.reference_images)
+            reference_latents = encode_reference_latents(
+                self.loaded, p.reference_images, width=w, height=h, device=self.device, dtype=model_dtype,
+            )
+            if reference_latents is not None:
+                self.loaded.latent.to("cpu")
 
             def predict(
-                x: Tensor, t: Tensor, c: TextCond = cond, dt: torch.dtype = model_dtype, g=guidance
+                x: Tensor, t: Tensor, c: TextCond = cond, dt: torch.dtype = model_dtype, g=guidance, refs=reference_latents
             ) -> Tensor:
                 preview_compute = (
                     nullcontext() if scfg.noise == "comfyui"
@@ -2701,7 +2925,8 @@ class Trainer:
                 )
                 with self._autocast(), preview_compute:
                     return self.family.forward(
-                        self.loaded, x.to(dt), t.to(self.device), c, inference=True, guidance=g
+                        self.loaded, x.to(dt), t.to(self.device), c, inference=True, guidance=g,
+                        **({"reference_latents": reference_for_batch(refs, len(x))} if refs is not None else {}),
                     ).float()
 
             def predict_uncond(x: Tensor, t: Tensor, c: TextCond = uncond) -> Tensor:
@@ -2762,6 +2987,7 @@ class Trainer:
                 loss=loss,
                 epoch=self._epoch_now(),
                 negative=p.negative,
+                **({"reference_images": p.reference_images} if p.reference_images else {}),
                 sampler=scfg.sampler,
                 scheduler=scfg.scheduler,
                 steps=steps,

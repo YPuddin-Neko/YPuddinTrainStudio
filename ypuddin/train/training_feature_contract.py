@@ -42,10 +42,26 @@ def training_feature_contract(cfg: TrainConfig) -> dict[str, Any]:
             "cache_encode_tiled": cfg.memory.cache_encode_tiled,
             "revision": _LATENT_REVISION,
         })
+    if cfg.training.task != "standard":
+        result["task_recipe"] = {
+            "task": cfg.training.task,
+            "revision": 1,
+            **({"slider": cfg.slider.model_dump(mode="json")} if cfg.training.task == "slider" else {"reference_preprocessing": "single-fit-edge-pad-target-v1"}),
+        }
+        result["version"] = 3
     return result
 
 
 def validate_training_feature_contract(expected: dict[str, Any], saved: Any) -> None:
+    expected_task = expected.get("task_recipe")
+    saved_task = saved.get("task_recipe") if isinstance(saved, dict) else None
+    if expected_task != saved_task:
+        raise ValueError("训练任务类型或滑块配方与恢复点不同，请恢复原设置或从导出权重开始新任务。")
+    if isinstance(saved, dict) and saved.get("version") == 3:
+        if not isinstance(saved_task, dict) or saved_task.get("revision") != 1:
+            raise ValueError("恢复点的训练任务配方无效")
+        saved = {key: value for key, value in saved.items() if key != "task_recipe"}
+        saved["version"] = 2 if "latent_encoding" in saved else 1
     previous_latent = None
     if saved is None:
         previous = _DEFAULTS

@@ -1,8 +1,8 @@
-"""FLUX.2 Klein base text-to-image adapter training (local weights only).
+"""FLUX.2 Klein base training with optional reference-image conditioning.
 
 The VAE produces normalized, already patchified BCHW latents (128 channels,
 stride 16). The transformer packs only the spatial axes and receives unit flow
-time. Editing/reference images and distilled Klein/KV models are not supported.
+time. Distilled Klein/KV models are not supported.
 """
 
 import logging
@@ -330,15 +330,28 @@ class Flux2Family(ModelFamily):
         if c != 128:
             raise ValueError("FLUX.2 expects normalized patchified 128-channel latents")
         embeds = cond["embeds"].to(x_t.device, loaded.dtype)
+        hidden = x_t.flatten(2).transpose(1, 2)
+        ids = image_ids(x_t)
+        reference = extra.get("reference_latents")
+        if reference is not None:
+            if not isinstance(reference, torch.Tensor) or reference.shape != x_t.shape:
+                raise ValueError("FLUX.2 参考图潜变量须与目标潜变量的批次、通道和尺寸一致。")
+            reference = reference.to(device=x_t.device, dtype=hidden.dtype)
+            reference_ids = image_ids(reference).clone()
+            reference_ids[:, :, 0] = 10
+            hidden = torch.cat([hidden, reference.flatten(2).transpose(1, 2)], dim=1)
+            ids = torch.cat([ids, reference_ids], dim=1)
         prediction = loaded.backbone(
-            hidden_states=x_t.flatten(2).transpose(1, 2),
+            hidden_states=hidden,
             encoder_hidden_states=embeds,
             timestep=t.to(x_t.device, torch.float32),
-            img_ids=image_ids(x_t),
+            img_ids=ids,
             txt_ids=text_ids(embeds),
             guidance=None,
             return_dict=False,
         )[0]
+        if reference is not None:
+            prediction = prediction[:, :h * w]
         return prediction.transpose(1, 2).reshape(b, c, h, w)
 
     def presets(self):

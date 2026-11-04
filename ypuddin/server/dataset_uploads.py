@@ -91,6 +91,7 @@ class UploadBatch:
     prior_weight: float = 1.0
     class_prompt: str | None = None
     caption_ext: str = "auto"
+    folder_name: str = ""
 
 
 @asynccontextmanager
@@ -120,7 +121,7 @@ async def read_upload(request: Request, progress: ImportProgress | None = None) 
                 raise _MultipartLimit("upload exceeds the 2 GiB request limit")
             yield chunk
 
-    parser = _UploadParser(request.headers, bounded_stream(), max_files=MAX_FILES, max_fields=6)
+    parser = _UploadParser(request.headers, bounded_stream(), max_files=MAX_FILES, max_fields=7)
     parser.progress = progress
     form = None
     try:
@@ -135,7 +136,7 @@ async def read_upload(request: Request, progress: ImportProgress | None = None) 
         except Exception as exc:
             raise ApiError("invalid or interrupted multipart upload", code="upload.invalid") from exc
         entries = form.multi_items()
-        fields = {"name", "repeats", "is_reg", "prior_weight", "class_prompt", "caption_ext"}
+        fields = {"name", "repeats", "is_reg", "prior_weight", "class_prompt", "caption_ext", "folder_name"}
         if any(key not in {"files", *fields} for key, _value in entries):
             raise ApiError("unknown upload field", code="upload.invalid")
         files = form.getlist("files")
@@ -169,6 +170,7 @@ async def read_upload(request: Request, progress: ImportProgress | None = None) 
                     "prior_weight": form.get("prior_weight", "1"),
                     "class_prompt": form.get("class_prompt") or None,
                     "caption_ext": form.get("caption_ext") or "auto",
+                    "folder_name": form.get("folder_name", ""),
                 }
             )
             _validate_caption_extension(options.caption_ext)
@@ -182,6 +184,7 @@ async def read_upload(request: Request, progress: ImportProgress | None = None) 
             prior_weight=options.prior_weight,
             class_prompt=options.class_prompt,
             caption_ext=options.caption_ext,
+            folder_name=options.folder_name,
         )
     finally:
         if form is not None:
@@ -221,6 +224,19 @@ def _path_message(name: str) -> str:
         f"文件路径无效：{name}。路径最长 240 个字符、16 层，文件名不能以点或空格结尾，"
         "不能包含 <>:\"|?* 等字符或使用 CON、NUL 等系统保留名称。"
     )
+
+
+def import_folder_name(value: str) -> str:
+    if not value.strip():
+        return ""
+    value = unicodedata.normalize("NFC", value)
+    try:
+        path = relative_upload_path(value)
+    except ApiError as error:
+        raise ValueError("请输入合法的文件夹名称，不要填写路径或系统保留名称。") from error
+    if len(path.parts) != 1 or len(value.encode("utf-8")) > 255:
+        raise ValueError("请输入单个文件夹名称，不要填写路径。")
+    return value
 
 
 def _ignored(path: Path) -> bool:
@@ -489,9 +505,12 @@ def staged_upload(
     root.mkdir(parents=True, exist_ok=True)
     if root.is_symlink() or not root.resolve().is_relative_to(project_dir.resolve()):
         raise ApiError("数据集目录必须位于项目内。", code="upload.path")
-    temporary = Path(tempfile.mkdtemp(prefix=".upload-", dir=root))
-    staging_root = temporary
+    staging_root = Path(tempfile.mkdtemp(prefix=".upload-", dir=root))
+    temporary = staging_root / "contents"
+    temporary.mkdir()
     try:
+        if append and batch.folder_name:
+            raise ApiError("添加图片时不能修改数据集文件夹名称。", code="upload.folder_name")
         names = [relative_upload_path(item.filename or "") for item in batch.files]
         zip_inputs = [i for i, path in enumerate(names) if path.suffix.lower() == ".zip"]
         budget = [0]
@@ -581,6 +600,17 @@ def staged_upload(
                 upload.file.seek(0)
                 _copy_file(upload.file, target(path), limit, budget, progress)
         _validate_files(paths, batch.caption_ext, progress)
+        if batch.folder_name:
+            name = import_folder_name(batch.folder_name)
+            relatives = [path.relative_to(temporary) for path in paths]
+            roots = {path.parts[0] for path in relatives}
+            single = len(roots) == 1 and all(len(path.parts) > 1 for path in relatives)
+            named = staging_root / "named"
+            named.mkdir()
+            source = temporary / next(iter(roots)) if single else temporary
+            source.rename(named / name)
+            paths = [named / name / (Path(*path.parts[1:]) if single else path) for path in relatives]
+            temporary = named
         if append and paths:
             # A folder/ZIP's single outer folder is the upload container, not a new dataset.
             roots = {path.relative_to(temporary).parts[0] for path in paths}

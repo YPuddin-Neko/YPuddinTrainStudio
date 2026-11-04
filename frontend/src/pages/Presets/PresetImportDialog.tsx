@@ -63,7 +63,7 @@ export default function PresetImportDialog({ schema, onClose, onImport }: { sche
         for (const field of PRESET_MODEL_FIELDS) if (defaults.model) delete defaults.model[field];
         configText = JSON.stringify(mergeConfig(defaults, normalizeOptimizerConfig(schema, normalizeLegacyIntervals(preservePresetDoraMode(config)))));
       }
-      const config = await apiClient.post<Record<string, any>>('/config/import', { text: configText, format: isJson ? 'json' : 'toml' }, { silent: true });
+      const config = await apiClient.post<Record<string, any>>('/config/import', { text: configText, format: isJson ? 'json' : 'toml', kind: 'preset' }, { silent: true });
       if (await onImport({ name, description, config })) onClose();
     } catch (failure) { setError(formatApiError(failure)); }
     finally { setBusy(false); }

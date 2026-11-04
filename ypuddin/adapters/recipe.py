@@ -52,6 +52,10 @@ def training_recipe_metadata(
     cfg: TrainConfig, bundle: DataBundle, progress: Progress, *, world_size: int = 1
 ) -> dict[str, str]:
     recipe = {section: _select(getattr(cfg, section), names) for section, names in _FIELDS.items()}
+    if cfg.training.task != "standard":
+        recipe["training"]["task"] = cfg.training.task
+        if cfg.training.task == "slider":
+            recipe["slider"] = _select(cfg.slider, "mode guidance anchor_weight samples_per_epoch resolution sampling_steps")
     if cfg.training.mode == "adapter":
         recipe["adapter"] = cfg.adapter.model_dump(mode="json", exclude={"resume_weights"})
     recipe["dataset"]["caption"] = _select(cfg.dataset.caption, _CAPTION_FIELDS)

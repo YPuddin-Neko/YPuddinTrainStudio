@@ -108,7 +108,7 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
               {canEdit && <button type="button" className="dataset-image-check" aria-label={`${text('选择图片','Select image')}: ${img.rel_path}`} aria-pressed={selected} disabled={busy} onClick={event => select(img.rel_path,event)}>{selected ? <CheckSquare size={18}/> : <Square size={18}/>}</button>}
               <div className="dataset-image-caption">
                 <strong title={img.rel_path}>{img.rel_path}</strong>
-                {!previewOnly && <span title={img.caption}>{img.has_mask && <Brush size={12} aria-label={text('已有遮罩', 'Mask saved')}/>} {img.width} × {img.height}{img.caption ? ` · ${img.caption}` : ''}</span>}
+                {!previewOnly && <span title={[img.caption, img.pairing_error, ...(img.reference_paths || []), img.pair_path].filter(Boolean).join('\n')}>{img.has_mask && <Brush size={12} aria-label={text('已有遮罩', 'Mask saved')}/>} {img.width} × {img.height}{img.pairing_error ? ` · ${text('配对失败', 'Pairing failed')}` : img.reference_paths?.length ? ` · ${text('参考图已配对', 'Reference matched')}` : img.pair_path ? ` · ${text('负端已配对', 'Negative matched')}` : ''}{img.caption ? ` · ${img.caption}` : ''}</span>}
               </div>
             </article>;
           })}

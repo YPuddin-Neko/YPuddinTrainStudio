@@ -1,5 +1,6 @@
 import type { FamilyInfo, FamilyPreset } from '../api/types';
 import { configFieldHelp, configFieldLabel, configOptionLabel, samplingSchedulerOptions, schedulerTypeHelp } from './configPresentation';
+import { familyTaskCapabilities } from './trainingFamilies';
 
 /**
  * Settings that depend on the selected model and on the machine the service runs on. A setting neither uses is
@@ -68,13 +69,21 @@ export function unusedSettingReason(path: string, { family, config, english }: F
   const modes = family.training_capabilities?.modes;
   const fullSaveDtypes = family.training_capabilities?.full_save_dtypes;
   switch (path) {
+    case 'training.task':
+      return config.training?.task && !(familyTaskCapabilities(family)?.tasks || ['standard']).includes(config.training.task)
+        ? text('当前模型不支持所选训练任务。', 'This model does not support the selected training task.') : undefined;
+    case 'adapter.dora':
+      return config.training?.task === 'slider' ? text('滑块训练需要关闭 DoRA。', 'Turn off DoRA for slider training.') : undefined;
     case 'training.mode':
+      if (config.training?.task && config.training.task !== 'standard' && config.training.mode === 'full') return text('滑块和编辑训练使用适配器训练。', 'Slider and editing tasks use adapter training.');
       return adapterOnlyModel && config.training?.mode === 'full' && !(Array.isArray(modes) && modes.includes('full')) ? text(`${adapterOnlyModel} 仅支持适配器训练，请切换训练方式。`, `${adapterOnlyModel} supports adapter training only. Change the training mode.`) : undefined;
     case 'loop.gpu_count':
+      if (config.training?.task && config.training.task !== 'standard' && Number(config.loop?.gpu_count ?? 1) !== 1) return text('滑块和编辑训练目前使用单卡。', 'Slider and editing tasks currently use one GPU.');
       return adapterOnlyModel && Number(config.loop?.gpu_count ?? 1) !== 1 ? text(`${adapterOnlyModel} 使用单卡训练，请将显卡数设为 1。`, `${adapterOnlyModel} trains on one GPU. Set the GPU count to 1.`) : undefined;
     case 'loop.distributed_strategy':
       return adapterOnlyModel && config.loop?.distributed_strategy === 'fsdp' ? text(`${adapterOnlyModel} 不支持显存分片，请切换为数据并行并将显卡数设为 1。`, `${adapterOnlyModel} does not support memory sharding. Select data parallelism and set the GPU count to 1.`) : undefined;
     case 'training.train_text_encoder':
+      if (config.training?.task && config.training.task !== 'standard') return text('滑块和编辑训练使用冻结的文本编码器。', 'Slider and editing tasks use frozen text encoders.');
       return adapterOnlyModel ? text(`${adapterOnlyModel} 使用冻结的文本编码器，请关闭文本编码器训练。`, `${adapterOnlyModel} uses a frozen text encoder. Turn off text encoder training.`) : undefined;
     case 'checkpoint.save_dtype':
       return config.training?.mode === 'full' && Array.isArray(fullSaveDtypes) && !fullSaveDtypes.includes(config.checkpoint?.save_dtype ?? 'bf16')
@@ -138,6 +147,8 @@ const multiGpu = (config: Record<string, any>) => Number(config.loop?.gpu_count 
 /** Options this model and machine can run, keeping the current value visible; undefined keeps the list as it is. */
 export function contextOptions(path: string, { family, config }: FieldContext, options: string[] | undefined, current: unknown): string[] | undefined {
   if (!options) return undefined;
+  if (path === 'training.task' && config.model?.family === 'flux2' && config.model?.flux2_variant === 'dev') return options.filter(option => option !== 'edit');
+  if (path === 'adapter.algo' && config.training?.task === 'slider') return options.filter(option => option === 'lora' || option === current);
   if (path === 'memory.base_precision' && config.training?.mode === 'full') return options.filter(option => option === 'auto' || option === 'fp32');
   if (path === 'checkpoint.save_dtype' && config.training?.mode === 'full') {
     const dtypes = family?.training_capabilities?.full_save_dtypes;
@@ -217,6 +228,11 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
   const name = modelName(family);
   const ddpm = family.objective === 'ddpm';
   switch (path) {
+    case 'training.task':
+      return context.config.training?.task === 'slider'
+        ? text('滑块训练使用普通 LoRA，关闭 DoRA，冻结文本编码器，并使用单个设备。', 'Slider training uses standard LoRA with DoRA off, a frozen text encoder and one device.')
+        : context.config.training?.task === 'edit'
+          ? text('用目标图片、对应参考图和编辑指令训练模型的原生图像编辑能力。每条样本使用一张参考图，指令取自目标图片的同名标签。', 'Train native image editing with target images, matching references and editing instructions. Each sample uses one reference; instructions come from the target image captions.') : undefined;
     case 'checkpoint.save_dtype':
       return context.config.training?.mode === 'full'
         ? text('导出完整模型权重的精度，不改变训练参数或完整恢复状态。BF16 文件更小，FP32 保留更多精度。', 'Precision of exported full-model weights; it does not change training parameters or full recovery states. BF16 files are smaller; FP32 preserves more precision.') : undefined;

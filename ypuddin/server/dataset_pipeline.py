@@ -130,7 +130,11 @@ class DatasetPipeline:
         ):
             if row["job_id"]:
                 continue
+            result = {}
             try:
+                result = json.loads(row["result_json"])
+                if not isinstance(result, dict):
+                    result = {}
                 journal = self.root(row["project_id"], row["version_id"]) / row["id"] / "journal.json"
                 if journal.exists():
                     changes = json.loads(journal.read_text())["changes"]
@@ -141,9 +145,16 @@ class DatasetPipeline:
                         "SELECT id FROM datasets WHERE version_id=?", (row["version_id"],)
                     ):
                         _index_dataset(self.c, dataset["id"])
+                    from .dataset_edit_status import operation_images
+
+                    dataset_ids = [item["id"] for item in self.c.db.fetchall(
+                        "SELECT id FROM datasets WHERE version_id=?", (row["version_id"],)
+                    )]
+                    result.update(rolled_back=True, edit_images=operation_images(self.c, dataset_ids, changes))
                 message = "Service stopped during preparation. Uncommitted file changes were rolled back; retry the operation."
             except Exception as exc:
                 message = f"Recovery requires attention: {exc}. Original backups were preserved."
+                result["recovery_needed"] = True
             self.c.db.update(
                 "dataset_pipeline_operations",
                 row["id"],
@@ -151,6 +162,7 @@ class DatasetPipeline:
                     "status": "failed",
                     "phase": "failed",
                     "error": message,
+                    "result_json": _dump(result),
                     "finished_at": now(),
                     "updated_at": now(),
                 },
@@ -983,6 +995,9 @@ class DatasetPipeline:
         }
 
     def _change(self, work: Path, target: Path, staged: Path | None) -> dict:
+        from .dataset_edit_status import _stat as edit_stat
+
+        before_stat = edit_stat(target)
         index = len(list((work / "backups").glob("*"))) if (work / "backups").exists() else 0
         backup = work / "backups" / str(index)
         backup.parent.mkdir(parents=True, exist_ok=True)
@@ -1001,6 +1016,7 @@ class DatasetPipeline:
             "staged": str(staged) if staged else None,
             "before": _digest(target) if exists else None,
             "after": _digest(staged) if staged else None,
+            "before_stat": before_stat,
         }
 
     def _rollback(self, changes: list[dict]) -> None:
@@ -1279,28 +1295,51 @@ class DatasetPipeline:
         return changes
 
     def _detect(self, oid: str, images: list[dict], options: dict) -> list[dict]:
-        """Head regions of each image, in order; an unreadable image comes back with ``error``."""
+        """Regions of each image, in order; each selected model runs once per image."""
+        from .model_catalog import VISION_MODELS
         from .vision_models import detect_heads
 
         if self.vision is None:
-            raise ApiError("head detection models are unavailable", code="vision.unavailable", status=503)
-        files = self.vision.files(options["model"])
+            raise ApiError("mask detection models are unavailable", code="vision.unavailable", status=503)
+        selected: dict[str, list[str]] = {}
+        for detector in options.get("detectors") or [{"model": options["model"], "kinds": ["head"]}]:
+            kinds = selected.setdefault(detector["model"], [])
+            kinds.extend(kind for kind in detector["kinds"] if kind not in kinds)
+        model_files = {model: self.vision.files(model) for model in selected}
         provider, device_index = self._vision_provider(options["device"])
-        self._progress(oid, "detecting", 0, len(images), f"Detecting heads in {len(images)} images")
-        return self._vision_call(
-            oid,
-            lambda: detect_heads(
-                [str(record["path"]) for record in images],
-                model_path=files["model.onnx"],
-                confidence=options["confidence"],
-                padding=options["padding"],
-                feather=options["feather"],
-                provider=provider,
-                device_index=device_index,
-                progress=lambda done, total, name: self._progress(oid, "detecting", done, total),
-                cancel=self.cancel_events.get(oid),
-            ),
-        )
+        total = len(images) * len(selected)
+        self._progress(oid, "detecting", 0, total, f"Detecting regions in {len(images)} images")
+        results = [{"regions": [], "size": None} for _ in images]
+        for model_index, (model, kinds) in enumerate(selected.items()):
+            self._cancelled(oid)
+            found = self._vision_call(
+                oid,
+                lambda model=model, kinds=kinds, model_index=model_index: detect_heads(
+                    [str(record["path"]) for record in images],
+                    model_path=model_files[model]["model.onnx"],
+                    model_id=model, classes=VISION_MODELS[model]["classes"], kinds=kinds,
+                    confidence=options["confidence"],
+                    padding=options["padding"],
+                    feather=options["feather"],
+                    provider=provider,
+                    device_index=device_index,
+                    progress=lambda done, count, name: self._progress(
+                        oid, "detecting", model_index * len(images) + done, total,
+                    ),
+                    cancel=self.cancel_events.get(oid),
+                ),
+            )
+            for combined, entry in zip(results, found, strict=True):
+                if entry.get("error"):
+                    combined.update(error=entry["error"], regions=[], size=None)
+                if combined.get("error"):
+                    continue
+                if combined["size"] is not None and combined["size"] != entry["size"]:
+                    raise ApiError("图片尺寸在检测时发生变化。", code="automask.image_changed", status=409)
+                combined["size"] = entry["size"]
+                for region in entry["regions"]:
+                    combined["regions"].append({**region, "index": len(combined["regions"])})
+        return results
 
     def _detectheads(self, oid: str, work: Path, images: list[dict], options: dict) -> dict:
         """Detect heads for review; no data file changes until chosen heads are written."""
@@ -1329,7 +1368,8 @@ class DatasetPipeline:
                 }
             )
         proposals = {
-            "parameters": {key: options[key] for key in ("model", "confidence", "padding", "feather")},
+            "parameters": {key: options[key] for key in ("model", "confidence", "padding", "feather")}
+            | {"detectors": options.get("detectors", [])},
             "images": entries,
         }
         staged = work / "proposals.json.tmp"
@@ -1337,9 +1377,18 @@ class DatasetPipeline:
         os.replace(staged, work / PROPOSALS)
         return {
             "images": len(entries),
-            "with_heads": sum(1 for entry in entries if entry["regions"]),
-            "heads": sum(len(entry["regions"]) for entry in entries),
+            **self._region_stats(entries),
             "unreadable": sum(1 for entry in entries if entry.get("error")),
+        }
+
+    @staticmethod
+    def _region_stats(entries: list[dict]) -> dict[str, int]:
+        return {
+            "with_heads": sum(any(region.get("kind", "head") == "head" for region in entry["regions"])
+                              for entry in entries),
+            "heads": sum(region.get("kind", "head") == "head" for entry in entries for region in entry["regions"]),
+            "with_regions": sum(bool(entry["regions"]) for entry in entries),
+            "regions": sum(len(entry["regions"]) for entry in entries),
         }
 
     def _chosen_heads(self, oid: str, images: list[dict], options: dict) -> tuple[list[dict], int]:
@@ -1389,6 +1438,7 @@ class DatasetPipeline:
             report = {"proposal_id": options["proposal_id"], "stale_images": stale}
         else:
             results = self._detect(oid, images, options)
+        report.update(self._region_stats(results))
         changes = []
         for index, (record, found) in enumerate(zip(images, results, strict=True)):
             self._cancelled(oid)
@@ -1403,7 +1453,7 @@ class DatasetPipeline:
             if current.size != tuple(found["size"]):
                 continue
             base = np.asarray(current, dtype=np.float32)
-            # Heads only ever leave training: a region the user already excluded stays excluded.
+            # A region the user already excluded stays excluded.
             combined = np.minimum(base, rasterize_regions(found["regions"], current.size))
             if np.array_equal(combined, base):
                 continue
@@ -1875,6 +1925,10 @@ class DatasetPipeline:
                 )
                 for did in dataset_ids:
                     _index_dataset(self.c, did)
+                if action in {"paint", "preprocess", "automask", "restore"}:
+                    from .dataset_edit_status import operation_images
+
+                    result["edit_images"] = operation_images(self.c, dataset_ids, changes)
                 result["inspection"] = self._inspect(oid, pid, vid)
                 self._cancelled(oid)
             if request["action"] == "prepare":
@@ -1972,6 +2026,9 @@ class DatasetPipeline:
                         _index_dataset(self.c, did)
                     result.pop("inspection", None)
                     result.update(changes=[], rolled_back=True)
+                    from .dataset_edit_status import operation_images
+
+                    result["edit_images"] = operation_images(self.c, dataset_ids, changes)
                 except Exception as rollback_error:
                     status = "failed"
                     error += (

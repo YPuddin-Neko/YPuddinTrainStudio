@@ -563,6 +563,7 @@ class PlanDora(_Out):
 
 
 class Plan(_Out):
+    concept_samples: int | None = None
     ok: bool
     errors: list[ConfigError]
     warnings: list[ConfigWarning]
@@ -815,6 +816,8 @@ class DatasetSource(_Out):
     project_id: str | None
     version_id: str | None = None
     path: str
+    pair_path: str | None = None
+    reference_dir: str | None = None
     repeats: int
     caption_ext: str
     is_reg: bool
@@ -926,7 +929,11 @@ class DatasetImage(_Out):
     caption_error: str | None = None
     caption_status: Literal["captioned", "missing", "invalid"] = "missing"
     has_mask: bool
+    saved_edit_status: Literal["modified", "unmodified", "unknown"] | None = None
     training_enabled: bool | None = None
+    pair_path: str | None = None
+    reference_paths: list[str] = Field(default_factory=list)
+    pairing_error: str | None = None
 
 
 class ImagePage(_Out):

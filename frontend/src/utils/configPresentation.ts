@@ -25,6 +25,10 @@ const labels: Record<string, string> = {
   'optimizer.cpu_offload': '优化器 CPU 卸载',
   'optimizer.exclude_bias_norm_from_weight_decay': '偏置与归一化不衰减',
   'training.mode': '训练方式', 'training.train_backbone': '训练主模型（UNet / DiT）', 'training.train_text_encoder': '训练文本编码器', 'training.resume_weights': '全量模型起始权重',
+  'training.task': '训练任务', 'slider.mode': '滑块数据方式',
+  'slider.neutral_prompt': '中性提示词', 'slider.positive_prompt': '正向提示词', 'slider.negative_prompt': '负向提示词',
+  'slider.guidance': '方向引导强度', 'slider.anchor_prompts': '锚定提示词', 'slider.anchor_weight': '锚定权重',
+  'slider.samples_per_epoch': '每轮样本数', 'slider.resolution': '生成分辨率', 'slider.sampling_steps': '生成步数',
   'model.vae_path': 'VAE', 'model.tokenizer_path': '分词器目录', 'model.dtype': '底模加载精度', 'model.attention': '注意力后端',
   'dataset.sources': '训练数据源', 'dataset.resolutions': '训练分辨率', 'dataset.aspect_ratio_limit': '最大长宽比',
   'dataset.resolution_mode': '分辨率模式', 'dataset.image_fit': '图片适配方式', 'dataset.crop_anchor': '裁切保留位置', 'dataset.native_max_pixels': '图像面积上限（等效边长 px）', 'dataset.native_max_pixels_mode': '图像面积上限模式',
@@ -109,6 +113,12 @@ const labels: Record<string, string> = {
 };
 
 export function configFieldLabel(path: string, fallback: string, english = false) {
+  if (english && path === 'training.task') return 'Training task';
+  if (english && path.startsWith('slider.')) return ({
+    mode: 'Slider data', neutral_prompt: 'Neutral prompt', positive_prompt: 'Positive prompt', negative_prompt: 'Negative prompt',
+    guidance: 'Direction guidance', anchor_prompts: 'Anchor prompts', anchor_weight: 'Anchor weight',
+    samples_per_epoch: 'Samples per epoch', resolution: 'Generation resolution', sampling_steps: 'Generation steps',
+  } as Record<string, string>)[path.slice(7)] || fallback;
   if (english && path === 'objective.resolution_reference_tokens') return 'Shift reference tokens';
   if (english && path.startsWith('objective.infonoise_')) return ({
     enabled: 'Enable InfoNoise', bins: 'Statistics bins', warmup_steps: 'Warmup updates', refresh_every: 'Distribution update interval',
@@ -362,6 +372,8 @@ export function configOptionLabel(path: string, option: string, english = false,
     'loop.mixed_precision': {bf16:['自动混合精度','BF16'],fp16:['自动混合精度','FP16'],no:['关闭自动混合精度','Off']},
     'loop.distributed_strategy': {ddp:['数据并行','DDP'],fsdp:['显存分片','FSDP']},
     'training.mode': {adapter:['LoRA','LoRA'],full:['全量微调','Full fine-tuning']},
+    'training.task': {standard:['普通训练','Standard training'],slider:['滑块 LoRA','Slider LoRA'],edit:['编辑 LoRA','Editing LoRA']},
+    'slider.mode': {text:['文字方向','Text directions'],image:['图片配对','Image pairs']},
     'memory.base_precision': {auto:['沿用加载精度','Auto'],fp32:['32 位','FP32'],bf16:['16 位','BF16'],fp16:['16 位','FP16'],fp8_e4m3:['启动时量化','FP8 E4M3'],fp8_e5m2:['启动时量化','FP8 E5M2']},
     'model.attention': {auto:['默认','PyTorch SDPA'],sdpa:['PyTorch SDPA','PyTorch SDPA'],xformers:['xFormers','xFormers'],flash_attn:['FlashAttention 2','FlashAttention 2'],metal_flash:['Metal FlashAttention · Apple','Metal FlashAttention · Apple'],sage:['仅采样','SageAttention']},
     'adapter.init': {default:['默认初始化','Default'],scalar:['随机权重，零值缩放','Scalar']},
@@ -391,14 +403,14 @@ export function configOptionLabel(path: string, option: string, english = false,
   };
   const label = options[path]?.[option];
   if (!label) return option;
-  if (path === 'adapter.dora_compute_mode') return label[english ? 1 : 0];
+  if (['adapter.dora_compute_mode', 'training.task', 'slider.mode'].includes(path)) return label[english ? 1 : 0];
   if (english || label[0] === label[1]) return label[1];
   return `${label[1]} (${label[0]})`;
 }
 
 export type ConfigTab = 'train' | 'data' | 'model' | 'advanced';
 export const CONFIG_TAB_GROUPS: Record<ConfigTab, string[]> = {
-  train: ['training', 'loop', 'adapter', 'optimizer', 'scheduler', 'memory'],
+  train: ['training', 'slider', 'loop', 'adapter', 'optimizer', 'scheduler', 'memory'],
   data: ['dataset', 'caption'],
   model: ['model', 'checkpoint'],
   advanced: ['objective', 'sampling', 'validation', 'logging'],
