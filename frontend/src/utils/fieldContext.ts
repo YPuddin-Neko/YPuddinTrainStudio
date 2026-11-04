@@ -97,7 +97,7 @@ export function unusedSettingReason(path: string, { family, config, english }: F
       if (!has(family, 'compile')) return text(`${name} 不支持编译模型，请关闭。`, `${name} does not support compiling the model. Turn it off.`);
       if (config.training?.mode !== 'full' && config.adapter?.dora && config.adapter?.dora_compute_mode === 'standard_fused') return text('DoRA 标准融合模式不能与编译模型同时使用。', 'Standard fused DoRA cannot be combined with compiling the model.');
       if (['flux3', 'moss_image'].includes(family.name) && (config.memory?.activation_checkpointing ?? 'none') !== 'none') return text('编译模型前，请先关闭梯度检查点。', 'Turn off activation checkpointing before compiling the model.');
-      return runtime === 'mps' || runtime === 'cpu' ? text('只有 NVIDIA / 海光显卡会编译模型，当前设备直接运行。', 'Only NVIDIA / DTK GPUs compile the model; this device runs it directly.') : undefined;
+      return runtime === 'mps' || runtime === 'cpu' ? text('当前设备不支持模型编译', 'This device does not support model compilation.') : undefined;
     case 'memory.blocks_to_swap':
       return has(family, 'block_swap') ? undefined : text(`${name} 不支持块换出，请设为 0。`, `${name} does not support block swapping. Set it to 0.`);
     case 'memory.offload_text_encoder':
@@ -118,8 +118,10 @@ export function unusedSettingReason(path: string, { family, config, english }: F
   }
 }
 
-/** An unused setting is hidden unless it is still switched on or set (or would stop training), so it can be reset. */
+/** Unused values stay visible for correction, except model compilation on unsupported devices. */
 export function hideUnusedSetting(path: string, value: unknown, { config, family }: FieldContext): boolean {
+  const runtime = runtimeOf(family);
+  if (path === 'memory.compile' && (runtime === 'cpu' || runtime === 'mps')) return true;
   if (path === 'memory.compile' && has(family, 'compile') && onGpu(runtimeOf(family)) && ['flux3', 'moss_image'].includes(family?.name ?? '')) return false;
   if (path === 'memory.compile' && has(family, 'compile') && config.training?.mode !== 'full' && config.adapter?.dora && config.adapter?.dora_compute_mode === 'standard_fused') return false;
   if (path === 'memory.offload_text_encoder') return !(value && config.training?.train_text_encoder);

@@ -1308,6 +1308,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <div className="config-toggle-control" data-state={fieldValue ? 'on' : 'off'}>
           {/* A switch whose package is missing cannot be turned on; one already on can still be turned off. */}
           <Switch id={fieldId} aria-label={fieldLabel} aria-invalid={!!errorItem} checked={!!fieldValue}
+            aria-describedby={fullPathKey === 'memory.compile' && (unusedReason || unavailableOptions?.true) ? `${fieldId}-hint` : undefined}
             disabled={!fieldValue && (!!unavailableOptions?.true || !!unusedReason)}
             onCheckedChange={checked => onChange(setNestedValue(value, path, checked))}>
           </Switch>
@@ -1467,13 +1468,16 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : fullPathKey === 'objective.shift' && family?.name === 'anima' && value.objective?.timestep_sampling === 'resolution_sqrt'
         ? (english ? 'Base shift; resolution correction adjusts it further for image size.' : '基础偏移大小；分辨率修正模式会再按图像大小调整。')
       : configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree, value.dataset);
-    const hint = statusHint || describedHint;
-    const duplicateHelp = !!help && !!hint && help.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
-    const helpButton = help && !duplicateHelp ? <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{help}</ConfigHelp> : null;
+    const compileHint = fullPathKey === 'memory.compile' ? statusHint : undefined;
+    const hint = compileHint ? undefined : statusHint || describedHint;
+    const helpContent = [compileHint, help].filter(Boolean).join('\n\n');
+    const duplicateHelp = !!helpContent && !!hint && helpContent.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
+    const helpButton = helpContent && !duplicateHelp ? <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{helpContent}</ConfigHelp> : null;
     if (recoveryField && React.isValidElement(control)) control = React.cloneElement(control as React.ReactElement<any>, {help:helpButton,error:errorItem?.msg});
     const infoNoiseParameterDisabled = infonoiseField && fullPathKey !== 'objective.infonoise_enabled' && !value.objective?.infonoise_enabled;
     const body = readOnly || infoNoiseParameterDisabled ? <fieldset disabled className="config-readonly-control">{control}</fieldset> : control;
     const footer = <div className="config-field-footer">
+      {compileHint && <span id={managedReason ? `${fieldId}-managed-reason` : `${fieldId}-hint`} className="sr-only">{compileHint}</span>}
       {hint && hint !== errorItem?.msg && <p id={managedReason ? `${fieldId}-managed-reason` : `${fieldId}-hint`} className="config-field-hint">{hint}</p>}
       {/* A reason Studio cannot phrase for this field stays in the preflight panel; the border still marks it. */}
       {errorItem?.msg && <p className="config-field-error">{errorItem.msg}</p>}
