@@ -8,7 +8,7 @@
 | [运行环境](RUNTIME.md) | 平台环境、PyTorch 版本、扩展与 LoRA 环境、打标与遮罩、下载源、代理与重启、硬件监控 |
 | [海光 DTK](RUNTIME_DTK.md) | DTK 安装指南、运行库、海光版 PyTorch 的来源、注意力扩展和可复现训练 |
 | [注意力后端](ATTENTION.md) | SDPA、CUDA 扩展和 Apple Metal FlashAttention |
-| [存储与备份](STORAGE.md) | 目录用途、路径变更、空间占用和备份内容 |
+| [存储与备份](STORAGE.md) | 目录用途、路径变更、项目与版本归档、永久删除、空间占用和备份内容 |
 
 ## 训练
 

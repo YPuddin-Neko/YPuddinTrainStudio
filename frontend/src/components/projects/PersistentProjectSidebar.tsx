@@ -25,7 +25,7 @@ export default function PersistentProjectSidebar({selection,beforeAction,refresh
   const versionsQuery = useQuery({
     queryKey:['project-versions',projectId],
     queryFn:({signal})=>apiClient.get<ProjectVersion[]>(`/projects/${projectId}/versions`,{params:{include_archived:true},signal,silent:true}),
-    enabled:refreshWhileAway && !!(selection.versionId || selection.project.active_version_id),
+    enabled:refreshWhileAway && !!(selection.versionId || selection.project.active_version_id || selection.project.version_count),
     placeholderData:selection.versions, retry:false,
     refetchInterval:query=>refreshWhileAway && query.state.data?.some(item=>item.status==='copying') ? 1200 : false,
   });
@@ -34,11 +34,11 @@ export default function PersistentProjectSidebar({selection,beforeAction,refresh
   React.useEffect(()=>{
     if(!refreshWhileAway)return;
     void refreshProject();
-    if(selection.versionId || selection.project.active_version_id)void refreshVersions();
-  },[location.key,refreshWhileAway,refreshProject,refreshVersions,selection.versionId,selection.project.active_version_id]);
+    if(selection.versionId || selection.project.active_version_id || selection.project.version_count)void refreshVersions();
+  },[location.key,refreshWhileAway,refreshProject,refreshVersions,selection.versionId,selection.project.active_version_id,selection.project.version_count]);
   const project = pageOwnsSelection ? selection.project : projectQuery.data || selection.project;
   const versions = pageOwnsSelection ? selection.versions : versionsQuery.data || selection.versions;
-  const versionId = !pageOwnsSelection && versionsQuery.isSuccess && selection.versionId && !versions.some(item=>item.id===selection.versionId)
+  const versionId = !pageOwnsSelection && versionsQuery.isSuccess && selection.versionId && !versions.some(item=>item.id===selection.versionId && !item.archived)
     ? project.active_version_id || undefined : selection.versionId;
   const current = versions.find(item=>item.id===(versionId || project.active_version_id)) || (pageOwnsSelection ? selection.current : undefined);
   const missing = !pageOwnsSelection && projectQuery.error instanceof ApiError && projectQuery.error.status === 404;

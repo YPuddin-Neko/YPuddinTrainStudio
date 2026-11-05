@@ -10,6 +10,8 @@
 .project-sidebar-actions { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; margin:5px 0 8px; }
 .project-sidebar-actions > .ui-btn { width:auto; min-width:0; color:var(--studio-dim); }
 .project-sidebar-actions > .ui-btn:hover:not(:disabled) { color:var(--studio-text); }
+.project-workspace-menu { position:relative; min-width:0; }
+.project-sidebar-actions > .project-workspace-menu > .ui-btn { width:100%; min-width:0; color:var(--studio-dim); }
 .project-sidebar-archived { display:flex; align-items:center; gap:5px; font-size:10px; color:var(--studio-dim); margin:2px 0 8px; }
 .project-sidebar-archived input { width:12px; height:12px; margin:0; }
 .project-sidebar .sidebar-project-stages { display:block; }

@@ -53,7 +53,14 @@ from .job_paths import event_file, log_file, owned_job_directories
 from .project_covers import cover_path, cover_url, read_cover_upload, remove_cover, replace_cover, thumbnail
 from .sample_events import read_events, samples_with_loss
 from .upload_sessions import CHUNK_BYTES, UploadSession, UploadSessionBody
-from .versions import ACTIVE_JOBS, assert_version_writable, version_row
+from .versions import (
+    ACTIVE_JOBS,
+    assert_not_deleting,
+    assert_version_writable,
+    reference_lease,
+    reject_deleting_references,
+    version_row,
+)
 
 router = APIRouter()
 
@@ -355,10 +362,7 @@ def _get_project(c: ServiceContext, pid: str) -> dict[str, Any]:
 
 
 def _assert_not_deleting(c: ServiceContext, pid: str) -> None:
-    from .project_deletion import deleting
-
-    if deleting(c, pid):
-        raise ApiError("这个项目正在删除。", code="project.deleting", status=409)
+    assert_not_deleting(c, pid)
 
 
 @router.get("/projects/{pid}", response_model=m.Project, response_model_exclude_unset=True)
@@ -376,6 +380,8 @@ def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)
     with c.db.lock:
         _get_project(c, pid)
         _assert_not_deleting(c, pid)
+        if body.archived is False:
+            assert_not_deleting(c, pid, _get_project(c, pid)["active_version_id"])
         if body.archived and _get_project(c, pid)["project_type"] == "tts" and c.db.fetchone(
             "SELECT id FROM tts_sources WHERE project_id=? AND state='checking'", (pid,)
         ):
@@ -395,7 +401,9 @@ def patch_project(pid: str, body: ProjectPatch, c: ServiceContext = Depends(ctx)
             assert_version_writable(c, pid, body.active_version_id)
         fields["updated_at"] = now()
         c.db.update("projects", pid, fields)
-        return _project_row(c, _get_project(c, pid))
+        result = _project_row(c, _get_project(c, pid))
+    c.bus.publish("projects.changed", {"project_id": pid})
+    return result
 
 
 @router.post(
@@ -511,9 +519,12 @@ def delete_project(
         c.db.execute("DELETE FROM jobs WHERE project_id=?", (pid,))
         c.db.execute("DELETE FROM artifacts WHERE project_id=?", (pid,))
         c.db.execute("DELETE FROM project_deletions WHERE project_id=?", (pid,))
+        c.db.execute("DELETE FROM version_deletions WHERE project_id=?", (pid,))
         c.db.delete("projects", pid)
     for record in records:
         record.unlink(missing_ok=True)
+    c.bus.publish("projects.changed", {"project_id": pid})
+    c.bus.publish("versions.changed", {"project_id": pid})
     return {"ok": True}
 
 
@@ -558,6 +569,7 @@ def put_project_config(
         from .source_roles import normalize_source_roles
 
         body = normalize_source_roles(c, pid, body, version["id"])
+        reject_deleting_references(c, body)
         configured = {}
         purposes = {}
         for section in ("dataset", "validation"):
@@ -708,13 +720,61 @@ class VersionPatch(BaseModel):
     display_family: Literal["anima", "krea2", "sdxl", "flux2", "flux3", "moss_image", "toy"] | None = None
 
 
+@router.get("/archived-versions", response_model=list[m.ArchivedProjectVersion] | m.ArchivedVersionPage)
+def archived_versions(
+    q: str = Query("", max_length=500),
+    project_id: str | None = None,
+    project_type: Literal["image", "tts"] | None = None,
+    sort: Literal["updated", "created", "name"] = "updated",
+    page: int | None = Query(None, ge=1),
+    page_size: int = Query(24, ge=1, le=200),
+    c: ServiceContext = Depends(ctx),
+) -> list[dict] | dict:
+    where, values = ["v.archived=1"], []
+    if project_id is not None:
+        where.append("v.project_id=?")
+        values.append(project_id)
+    if project_type is not None:
+        where.append("p.project_type=?")
+        values.append(project_type)
+    if q.strip():
+        columns = ("v.name", "v.id", "v.note", "p.name", "p.id")
+        where.append("(" + " OR ".join(f"{column} LIKE ? ESCAPE '\\'" for column in columns) + ")")
+        pattern = "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        values.extend([pattern] * len(columns))
+    source = " FROM project_versions v JOIN projects p ON p.id=v.project_id WHERE " + " AND ".join(where)
+    order = {"updated": "v.updated_at DESC", "created": "v.created_at DESC", "name": "lower(v.name),v.name"}[sort]
+    with c.db.lock:
+        total = c.db.fetchone("SELECT count(*) n" + source, tuple(values))["n"]
+        rows = c.db.fetchall(
+            "SELECT v.*" + source + f" ORDER BY {order},v.id" + (" LIMIT ? OFFSET ?" if page is not None else ""),
+            tuple(values) + ((page_size, (page - 1) * page_size) if page is not None else ()),
+        )
+        projects = {}
+        items = []
+        for row in rows:
+            pid = row["project_id"]
+            if pid not in projects:
+                projects[pid] = _get_project(c, pid)
+            project = projects[pid]
+            items.append({
+                **version_row(c, row),
+                "project_name": project["name"],
+                "project_archived": bool(project["archived"]),
+                "project_category": project["category"],
+                "project_cover_url": cover_url(c, project),
+            })
+        return {"items": items, "total": total, "page": page, "page_size": page_size} if page is not None else items
+
+
 @router.get("/projects/{pid}/versions", response_model=list[m.ProjectVersion])
 def list_versions(pid: str, include_archived: bool = True, c: ServiceContext = Depends(ctx)) -> list[dict]:
-    _get_project(c, pid)
-    sql = "SELECT * FROM project_versions WHERE project_id=?" + (
-        "" if include_archived else " AND archived=0"
-    )
-    return [version_row(c, r) for r in c.db.fetchall(sql + " ORDER BY created_at", (pid,))]
+    with c.db.lock:
+        _get_project(c, pid)
+        sql = "SELECT * FROM project_versions WHERE project_id=?" + (
+            "" if include_archived else " AND archived=0"
+        )
+        return [version_row(c, r) for r in c.db.fetchall(sql + " ORDER BY created_at", (pid,))]
 
 
 @router.post(
@@ -743,7 +803,27 @@ def create_version(pid: str, body: VersionBody, c: ServiceContext = Depends(ctx)
 
 @router.get("/projects/{pid}/versions/{vid}", response_model=m.ProjectVersion)
 def get_version(pid: str, vid: str, c: ServiceContext = Depends(ctx)) -> dict:
-    return version_row(c, c.resolve_version(pid, vid))
+    with c.db.lock:
+        return version_row(c, c.resolve_version(pid, vid))
+
+
+@router.get("/projects/{pid}/versions/{vid}/delete-preview", response_model=m.ProjectStorage)
+def version_delete_preview(pid: str, vid: str, c: ServiceContext = Depends(ctx)) -> dict:
+    from .project_deletion import deletions
+
+    return deletions(c).storage(pid, version_id=vid)
+
+
+@router.delete("/projects/{pid}/versions/{vid}", status_code=202, response_model=m.ProjectDeletionStarted)
+def delete_version(
+    pid: str,
+    vid: str,
+    skip: list[str] = Query([], description="Listed locations to keep."),
+    c: ServiceContext = Depends(ctx),
+) -> dict:
+    from .project_deletion import deletions
+
+    return {"ok": True, "task_id": deletions(c).start(pid, skip, version_id=vid)}
 
 
 @router.patch(
@@ -753,14 +833,15 @@ def get_version(pid: str, vid: str, c: ServiceContext = Depends(ctx)) -> dict:
 def patch_version(pid: str, vid: str, body: VersionPatch, c: ServiceContext = Depends(ctx)) -> dict:
     with c.db.lock:
         row = c.resolve_version(pid, vid)
+        assert_not_deleting(c, pid, vid)
         if "project_type" in body.model_fields_set:
             raise ApiError("版本类型由项目决定。", code="project.type_immutable", status=422)
         project = _get_project(c, pid)
+        if project["archived"]:
+            raise ApiError("项目已归档，请先恢复项目再修改版本。", code="project.archived", status=409)
         if project["project_type"] == "tts":
             if "display_family" in body.model_fields_set:
                 raise ApiError("语音版本不能设置图像模型类型。", code="project.type_mismatch", status=409)
-            if project["archived"]:
-                raise ApiError("项目已归档，请先恢复项目再修改版本。", code="project.archived", status=409)
         if row["busy"] or row["status"] == "copying":
             raise ApiError("wait for version copy to finish", code="version.busy", status=409)
         fields = {
@@ -788,7 +869,8 @@ def patch_version(pid: str, vid: str, body: VersionPatch, c: ServiceContext = De
             if _get_project(c, pid)["active_version_id"] == vid:
                 fallback = c.db.fetchone(
                     "SELECT id FROM project_versions WHERE project_id=? AND id<>? AND archived=0 "
-                    "AND status='ready' AND busy IS NULL ORDER BY created_at DESC LIMIT 1",
+                    "AND status='ready' AND busy IS NULL "
+                    "AND id NOT IN (SELECT version_id FROM version_deletions) ORDER BY created_at DESC LIMIT 1",
                     (pid, vid),
                 )
                 if not fallback:
@@ -806,7 +888,10 @@ def patch_version(pid: str, vid: str, body: VersionPatch, c: ServiceContext = De
         except BaseException:
             c.db.execute("ROLLBACK")
             raise
-    return version_row(c, c.resolve_version(pid, vid))
+        result = version_row(c, c.resolve_version(pid, vid))
+    c.bus.publish("projects.changed", {"project_id": pid, "version_id": vid})
+    c.bus.publish("versions.changed", {"project_id": pid, "version_id": vid})
+    return result
 
 
 class DatasetBody(BaseModel):
@@ -878,6 +963,7 @@ def _register_dataset(
     did = did or new_id("d")
     with c.db.lock:
         version = c.resolve_version(pid, version_id or body.version_id)
+        reject_deleting_references(c, source)
         if not internal:
             assert_version_writable(c, pid, version["id"], data=True)
         if any(
@@ -2354,6 +2440,12 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         config = get_project_config(body.project_id, c, vid)
     if config is None:
         raise ApiError("config is required", code="job.no_config")
+    with reference_lease(c, config):
+        return _create_image_job(body, c, version, config)
+
+
+def _create_image_job(body: JobBody, c: ServiceContext, version: dict | None, config: dict) -> dict:
+    vid = version["id"] if version else None
     from ypuddin.train.native_resolution import clear_native_vram_resolution, resolve_native_vram_config
 
     checkpoint = config.get("checkpoint")
@@ -2548,6 +2640,7 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
     with c.db.lock:
         if version:
             assert_version_writable(c, body.project_id, vid)
+        reject_deleting_references(c, cfg.to_dict())
         status = "scheduled" if body.scheduled_at and body.scheduled_at > now() else "queued"
         c.db.insert(
             "jobs",
@@ -2623,6 +2716,8 @@ def patch_job(jid: str, body: JobPatch, c: ServiceContext = Depends(ctx)) -> dic
                                gpu_devices=devices, environment=payload.get("tts_environment"))
     with c.db.lock:
         job = _get_job(c, jid)
+        if job.get("project_id"):
+            assert_not_deleting(c, job["project_id"], job.get("version_id"))
         if inspected is not None and any(job.get(key) != inspected.get(key) for key in ("config_json", "gpu_devices_json", "status", "archived_at")):
             raise ApiError("任务在显卡检查期间发生变化，请重新操作。", code="job.changed", status=409)
         if jid in deleting_jobs:
@@ -2685,19 +2780,26 @@ def _jobs_using(
     owner_id: str,
     folders: list[Path],
     *,
-    owner_type: Literal["job", "project"] = "job",
+    owner_type: Literal["job", "project", "version"] = "job",
 ) -> list[dict[str, Any]]:
     """Unfinished jobs whose saved paths point into these folders, such as a resume from them."""
-    roots = [str(folder) for folder in folders]
+    roots = [folder.resolve() for folder in folders]
 
     def uses(value: Any) -> bool:
         if isinstance(value, str):
-            return any(value == root or value.startswith(root + os.sep) for root in roots)
+            try:
+                path = Path(value).expanduser()
+                if not path.is_absolute():
+                    return False
+                path = path.resolve()
+            except (OSError, ValueError, RuntimeError):
+                return False
+            return any(path == root or path.is_relative_to(root) for root in roots)
         if isinstance(value, dict):
             return any(uses(item) for item in value.values())
         return isinstance(value, list) and any(uses(item) for item in value)
 
-    column = "project_id" if owner_type == "project" else "id"
+    column = {"project": "project_id", "version": "version_id", "job": "id"}[owner_type]
     rows = c.db.fetchall(
         "SELECT id, name, config_json, resume_from FROM jobs"
         f" WHERE ({column} IS NULL OR {column}!=?) AND status IN {ACTIVE_JOBS[:-1]},'paused','interrupted')",
@@ -2707,11 +2809,13 @@ def _jobs_using(
     rows += [
         row for row in c.db.fetchall(
             "SELECT id, name, config_json, resume_from FROM jobs"
-            f" WHERE ({column} IS NULL OR {column}!=?) AND type IN ('tts_train','tts_sample')", (owner_id,)
+            f" WHERE ({column} IS NULL OR {column}!=?)", (owner_id,)
         )
         if row["id"] not in known and c.supervisor.is_running(row["id"])
     ]
-    return [row for row in rows if uses(row["resume_from"]) or uses(json.loads(row["config_json"] or "{}"))]
+    from .xyz import file_reference_config
+
+    return [row for row in rows if uses(row["resume_from"]) or uses(file_reference_config(json.loads(row["config_json"] or "{}")))]
 
 
 def _folder_size(folder: Path) -> tuple[int, int]:
@@ -2791,6 +2895,8 @@ def delete_job(jid: str, delete_files: bool = False, c: ServiceContext = Depends
         reject_job_file_references(c, folders)
     with c.db.lock:
         r = _get_job(c, jid)
+        if r.get("project_id"):
+            assert_not_deleting(c, r["project_id"], r.get("version_id"))
         if r["type"] in {"tts_train", "tts_sample"}:
             from .tts_job_actions import assert_action
 

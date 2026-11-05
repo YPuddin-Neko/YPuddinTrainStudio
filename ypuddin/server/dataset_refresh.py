@@ -135,6 +135,7 @@ class DatasetRefresher:
         self._checked: dict[str, float] = {}
         self._pending: set[str] = set()
         self._refreshing: set[str] = set()
+        self._reading: dict[str, tuple[str | None, str | None]] = {}
         self._index_locks: dict[str, threading.Lock] = {}
         self._idle = threading.Condition(self._lock)
         self._closed = False
@@ -168,6 +169,13 @@ class DatasetRefresher:
     def refreshing(self, did: str) -> bool:
         with self._lock:
             return did in self._refreshing
+
+    def active_datasets(self, project_id: str, version_id: str | None = None) -> list[str]:
+        with self.c.db.lock:
+            return [
+                did for did, (pid, vid) in self._reading.items()
+                if pid == project_id and (version_id is None or vid == version_id)
+            ]
 
     @contextmanager
     def index_lock(self, did: str) -> Iterator[None]:
@@ -204,9 +212,11 @@ class DatasetRefresher:
         from .routes_work import _index_dataset, _records_path
 
         try:
-            row = self.c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
-            if row is None or row["index_status"] == "indexing" or not self._may_refresh(row):
-                return
+            with self.c.db.lock:
+                row = self.c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,))
+                if row is None or row["index_status"] == "indexing" or not self._may_refresh(row):
+                    return
+                self._reading[did] = (row.get("project_id"), row.get("version_id"))
             signature, listing = dataset_signature(row)
             self.checked(did)
             stats = json.loads(row["stats_json"] or "{}")
@@ -244,6 +254,8 @@ class DatasetRefresher:
         except Exception:  # noqa: BLE001 - checks must never break the reading page
             log.exception("dataset check failed")
         finally:
+            with self.c.db.lock:
+                self._reading.pop(did, None)
             self._done(did)
 
     def _may_refresh(self, row: dict) -> bool:
@@ -255,9 +267,13 @@ class DatasetRefresher:
             if version is None or version["busy"] or version["status"] != "ready":
                 return False
         if row.get("project_id"):
-            from .project_deletion import deleting
+            from .errors import ApiError
+            from .versions import assert_not_deleting, reject_deleting_references
 
-            if deleting(self.c, row["project_id"]):
+            try:
+                assert_not_deleting(self.c, row["project_id"], row.get("version_id"))
+                reject_deleting_references(self.c, row["path"])
+            except ApiError:
                 return False
         return True
 

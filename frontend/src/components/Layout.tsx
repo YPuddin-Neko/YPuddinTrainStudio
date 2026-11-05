@@ -189,7 +189,7 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
               to={item.to}
               icon={item.icon}
               label={item.label}
-              active={location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to))}
+              active={location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to)) || item.to === '/projects' && location.pathname === '/archive'}
             />
             {item.to === '/projects' && <div ref={setProjectSidebarTarget} className="project-sidebar-slot" data-testid="project-sidebar-slot">{projectSelection && <PersistentProjectSidebar key={projectSelection.project.id} selection={projectSelection} beforeAction={beforeProjectAction} refreshPage={refreshProjectPage}/>}</div>}
             </React.Fragment>

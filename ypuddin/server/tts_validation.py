@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from pathlib import Path
 from typing import Any
 
 from ypuddin.tts.core import UPSTREAM_REVISION
@@ -366,6 +367,29 @@ def _issues(
     )
 
 
+def validation_busy(c: Any, *, project_id: str | None = None, version_id: str | None = None) -> dict | None:
+    """Return an active validation owner while deletion holds the same admission lock."""
+    with c.db.lock:
+        for lease in getattr(c, "_tts_validation_leases", {}).values():
+            pid, vid = lease["project_id"], lease["version_id"]
+            if (project_id is None or pid == project_id) and (version_id is None or vid == version_id):
+                return {"project_id": pid, "version_id": vid}
+    return None
+
+
+def validation_references(c: Any, targets: list[Path], *, excluding_project_id: str | None = None,
+                          excluding_version_id: str | None = None) -> list[dict]:
+    """Retain inputs already read by validation when an external manifest is edited."""
+    roots = [path.resolve() for path in targets]
+    with c.db.lock:
+        leases = tuple(getattr(c, "_tts_validation_leases", {}).values())
+    return [reference for lease in leases
+            if lease["project_id"] != excluding_project_id and lease["version_id"] != excluding_version_id
+            for reference in lease["references"]
+            if any(Path(reference["path"]).resolve() == root or Path(reference["path"]).resolve().is_relative_to(root)
+                   for root in roots)]
+
+
 def validate_version(c: Any, pid: str, vid: str, revision: int, data_revision: int, *, gpu_devices: list[str] | None = None) -> TtsValidationReport:
     from .tts_gpu import invalidate
 
@@ -373,6 +397,25 @@ def validate_version(c: Any, pid: str, vid: str, revision: int, data_revision: i
     with c.db.lock:
         captured = capture_validation_state(c, pid, vid, revision, data_revision)
         expected_sources = copy.deepcopy(c.tts_sources.snapshot_identity(pid, vid))
+        leases = getattr(c, "_tts_validation_leases", None)
+        if leases is None:
+            leases = c._tts_validation_leases = {}
+        references = [{"source_id": source["id"], "project_id": pid, "version_id": vid, "path": item["path"]}
+                      for source in c.db.fetchall(
+                          "SELECT id,identities_json FROM tts_sources WHERE version_id=? AND state IN ('valid','invalid')", (vid,))
+                      for item in json.loads(source["identities_json"])]
+        token = object()
+        leases[token] = {"project_id": pid, "version_id": vid, "references": references}
+    try:
+        return _validate_version(c, pid, vid, revision, data_revision, captured, expected_sources,
+                                 gpu_devices=gpu_devices)
+    finally:
+        with c.db.lock:
+            del leases[token]
+
+
+def _validate_version(c: Any, pid: str, vid: str, revision: int, data_revision: int,
+                      captured: TtsConfigResponse, expected_sources: dict, *, gpu_devices: list[str] | None) -> TtsValidationReport:
     inputs = c.tts_sources.validation_inputs(pid, vid, recheck=True)
     with c.db.lock:
         _assert_sources(c, pid, vid, captured, expected_sources)

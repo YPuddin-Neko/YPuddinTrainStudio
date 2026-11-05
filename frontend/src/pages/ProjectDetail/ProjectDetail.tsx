@@ -44,7 +44,7 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
   const projectQuery = useQuery({ queryKey: ['project', id], queryFn: () => apiClient.get<VersionedProject>(`/projects/${id}`, {silent:true}), enabled: !!id });
   const project = projectQuery.data || null;
   const versions = useProjectVersions(project, versionId);
-  const archived = !!versions.current?.archived;
+  const archived = !!project?.archived || !!versions.current?.archived;
   const scopedReady = !versions.enabled || versions.current?.status === 'ready';
   const configQuery = useQuery({
     queryKey:['project-workspace-config',id,versionId],enabled:!!project && scopedReady,
@@ -142,7 +142,7 @@ function ProjectDetailContent({projectId: id, versionId}: {projectId: string; ve
   const activeJob = jobs.find(job => ['running','pausing','cancelling'].includes(job.status));
   const unavailable = versions.enabled && !versions.loading && !versions.current;
   return <div className="project-workspace" data-step={step} data-testid="project-detail-page">
-    <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active={step} refresh={versions.refresh} error={versions.error} title={step === 'overview' ? project.name : undefined} titleBadge={step === 'overview' && project.archived ? <span className="workspace-title-badge">{text('已归档','Archived')}</span> : undefined} status={step === 'data' && datasetsQuery.data !== undefined ? <ProjectDataSummary datasets={datasets}/> : undefined}/>
+    <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active={step} refresh={versions.refresh} error={versions.error} title={step === 'overview' ? project.name : undefined} status={step === 'data' && datasetsQuery.data !== undefined ? <ProjectDataSummary datasets={datasets}/> : undefined}/>
     {unavailable && <div role="alert" className="workspace-message error">{text('该版本不存在或不属于当前项目。','This version does not belong to this project.')}<Link className="ui-link" to={projectUrl(id)}>{text('返回当前版本','Return to current version')}</Link></div>}
     {scopedReady && [{key:'config',query:configQuery,label:text('版本配置读取失败','Version configuration could not be loaded')},{key:'datasets',query:datasetsQuery,label:text('数据集列表读取失败','Dataset list could not be loaded')},{key:'jobs',query:jobsQuery,label:text('活动任务读取失败','Active jobs could not be loaded')}].map(item=>item.query.error && <div key={item.key} role="alert" className="workspace-message error">{item.label}: {formatApiError(item.query.error)}<button type="button" className="ui-btn ui-btn-sm" aria-label={`${text('重试','Retry')} · ${item.label}`} onClick={()=>{ if (item.key === 'datasets') void refreshDatasets(); else void item.query.refetch(); }}>{t('common.retry')}</button></div>)}
     {activeJob && step !== 'overview' && <Link to={`/jobs/${activeJob.id}`} className="version-run-status"><JobStatus status={activeJob.status}/><strong>{activeJob.name}</strong>{activeJob.progress?.total_steps ? <><ProgressBar className="version-run-progress" label={text('训练进度','Training progress')} value={activeJob.progress.step ?? 0} max={activeJob.progress.total_steps}/><span className="tabular-nums">{activeJob.progress.step ?? 0} / {activeJob.progress.total_steps}</span></> : null}<span className="run-status-action">{text('查看训练监控','View training monitor')}<ArrowRight size={14}/></span></Link>}

@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { GitBranch, Plus, Settings2, GitCompare, FolderOpen, Loader2, Copy, AlertCircle } from 'lucide-react';
+import { GitBranch, Plus, Settings2, GitCompare, FolderOpen, Loader2, Copy, AlertCircle, Archive } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { FamilyInfo } from '../../api/types';
 import { ttsApi, type TtsConfigResponse, type TtsEngine } from '../../api/tts';
@@ -11,15 +11,16 @@ import { inactiveTrainingReason, trainingFamilyOptions } from '../../utils/train
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { ttsEngineLabel } from '../../utils/ttsEngines';
 import { formatApiError } from '../../utils/errors';
-import { activateProjectVersion, configDifferences, projectUrl, versionConfigUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
+import { activateProjectVersion, archiveUrl, configDifferences, projectUrl, versionConfigUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import { type WorkspaceStep, ProjectWorkflow } from '../ProjectWorkflow';
 import Dialog from '../Dialog';
 import StudioSelect from '../StudioSelect';
 import { useWorkspaceHeight } from './useWorkspaceHeight';
 import { ProjectSidebarContext } from './ProjectSidebarContext';
 import '../../styles/project-sidebar.css';
-import Switch from '../Switch';
 import TopbarBreadcrumb from '../TopbarBreadcrumb';
+import ProjectDeleteDialog from '../../pages/Projects/ProjectDeleteDialog';
+import ProjectCardMenu from '../../pages/Projects/ProjectCardMenu';
 
 interface Props {
   project: VersionedProject; versionId?: string; versions: ProjectVersion[]; current?: ProjectVersion;
@@ -41,7 +42,7 @@ function ImageWorkspaceHeader(props: Props) {
 function WorkspaceHeader({ project, versionId, versions, current, active, refresh, beforeAction, status, error: loadError, title: customTitle, titleBadge, breadcrumbTrail, sidebarOnly = false, workflowActive = true, families, familiesError }: Props & { families: FamilyInfo[]; familiesError: boolean }) {
   const text = useWorkspaceText();
   const speech = project.project_type === 'tts';
-  const ownerArchived = speech && !!project.archived;
+  const ownerArchived = !!project.archived;
   const ownerArchivedRef = React.useRef(ownerArchived); ownerArchivedRef.current = ownerArchived;
   const ownerArchivedReason = ownerArchived ? text('项目已归档，请先恢复项目。', 'Restore the archived project before making changes.') : undefined;
   const navigationRef = useWorkspaceHeight('--workspace-head-height', !sidebarOnly);
@@ -55,6 +56,8 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
     return registerSidebar({project,versionId,versions,current,active,routeKey:location.key,pathname:location.pathname},beforeAction,refresh);
   },[sidebarOnly,registerSidebar,project,versionId,versions,current,active,location.key,location.pathname,beforeAction,refresh]);
   const [dialog, setDialog] = React.useState<'create' | 'edit' | 'compare' | 'paths' | null>(null);
+  const [deleting, setDeleting] = React.useState<ProjectVersion | null>(null);
+  const [deletingVersionId, setDeletingVersionId] = React.useState<string | null>(null);
   const [name, setName] = React.useState('');
   const [note, setNote] = React.useState('');
   const [source, setSource] = React.useState('');
@@ -62,7 +65,6 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
   const [mode, setMode] = React.useState<'copy' | 'empty'>('copy');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
-  const [showArchived, setShowArchived] = React.useState(false);
   const [compareTo, setCompareTo] = React.useState('');
   const [comparison, setComparison] = React.useState<ReturnType<typeof configDifferences> | null>(null);
   const [engineConfig, setEngineConfig] = React.useState<TtsConfigResponse | null>(null);
@@ -77,8 +79,45 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
   const engineUnavailable = !engineOptions.some(item => item.value === nextEngine);
   const engineWriteBlocked = engineChanged && (engineUnavailable || !!current?.busy || current?.status !== 'ready');
   const archivedActivations = React.useRef(new Set<string>());
-  const supported = !!project.active_version_id || !!versionId;
+  const supported = !!project.active_version_id || !!versionId || !!project.version_count;
   const selectedId = versionId || project.active_version_id || undefined;
+  const readWrittenVersions = React.useCallback(async () => {
+    await Promise.all([
+      queryClient.cancelQueries({ queryKey: ['project', project.id], exact: true }),
+      queryClient.cancelQueries({ queryKey: ['project-versions', project.id], exact: true }),
+    ]);
+    return Promise.all([
+      queryClient.fetchQuery({ queryKey: ['project', project.id], queryFn: ({ signal }) => apiClient.get<VersionedProject>(`/projects/${project.id}`, { signal, silent: true }), staleTime: 0 }),
+      queryClient.fetchQuery({ queryKey: ['project-versions', project.id], queryFn: ({ signal }) => apiClient.get<ProjectVersion[]>(`/projects/${project.id}/versions`, { params: { include_archived: true }, signal, silent: true }), staleTime: 0 }),
+    ]);
+  }, [queryClient, project.id]);
+  React.useEffect(() => {
+    if (!deletingVersionId) return;
+    const remaining = versions.find(item => item.id === deletingVersionId);
+    if (remaining && remaining.deletion?.state !== 'failed') return;
+    setDeletingVersionId(null);
+    if (remaining) {
+      setError(remaining.deletion?.error || text('版本删除失败，请重试。', 'Version deletion failed. Try again.'));
+      setBusy(false);
+      return;
+    }
+    void readWrittenVersions().then(([owner, nextVersions]) => {
+      const fallback = nextVersions.find(item => item.id === owner.active_version_id && item.status === 'ready' && !item.deletion && (owner.archived || !item.archived));
+      navigate(fallback ? projectUrl(project.id, fallback.id, active) : archiveUrl(owner.archived ? 'projects' : 'versions', project.id), { replace: true });
+      sidebar?.closeNavigation();
+      void queryClient.invalidateQueries({ queryKey: ['archived-versions'] });
+      void queryClient.invalidateQueries({ queryKey: ['archive-projects'] });
+    }).catch(failure => setError(formatApiError(failure))).finally(() => setBusy(false));
+  }, [deletingVersionId, versions, readWrittenVersions, navigate, project.id, active, sidebar, queryClient, text]);
+  const deletionStarted = () => {
+    if (!deleting) return;
+    setDeletingVersionId(deleting.id); setDeleting(null); setBusy(true); setError('');
+    void Promise.all([
+      queryClient.cancelQueries({ queryKey: ['project', project.id], exact: true }),
+      queryClient.cancelQueries({ queryKey: ['project-versions', project.id], exact: true }),
+    ]).then(() => queryClient.fetchQuery({ queryKey: ['project-versions', project.id], queryFn: ({ signal }) => apiClient.get<ProjectVersion[]>(`/projects/${project.id}/versions`, { params: { include_archived: true }, signal, silent: true }), staleTime: 0 }))
+      .catch(failure => { setError(formatApiError(failure)); setBusy(false); });
+  };
   React.useEffect(() => {
     if (sidebarOnly || busy || ownerArchived || !versionId || archivedActivations.current.has(versionId) || current?.status !== 'ready' || current.archived || current.busy || project.active_version_id === versionId) return;
     let active = true;
@@ -184,12 +223,20 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
     if (!current || busy || ownerArchived) return;
     setBusy(true); setError('');
     try {
+      if (!current.archived) await beforeAction?.();
       const updated = await apiClient.patch<ProjectVersion>(`/projects/${project.id}/versions/${current.id}`, { archived: !current.archived }, { silent: true });
       // The mutation can finish before query observers render the new version.
       if (updated.archived) archivedActivations.current.add(current.id);
       else archivedActivations.current.delete(current.id);
       queryClient.setQueryData<ProjectVersion[]>(['project-versions', project.id], previous => previous?.map(item => item.id === updated.id ? updated : item));
-      await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ['project', project.id] })]); setDialog(null);
+      const [owner, nextVersions] = await readWrittenVersions();
+      void queryClient.invalidateQueries({ queryKey: ['archived-versions'] });
+      setDialog(null);
+      if (updated.archived) {
+        const fallback = nextVersions.find(item => item.id === owner.active_version_id && !item.archived && item.status === 'ready');
+        navigate(fallback ? projectUrl(project.id, fallback.id, active) : archiveUrl('versions', project.id), { replace: true });
+        sidebar?.closeNavigation();
+      } else await refresh();
     } catch (error) { setError(formatApiError(error)); }
     finally { setBusy(false); }
   };
@@ -230,27 +277,26 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
     <Link className="project-sidebar-identity" to={projectUrl(project.id, selectedId, 'overview')} title={project.note || project.name}><strong title={project.name}>{project.name}</strong><small title={project.id}>{project.id}</small></Link>
     {supported && <>
       <div className="project-sidebar-version-heading"><span>{text('当前版本', 'Current version')}</span>{current && <span className={`project-sidebar-version-state status-${current.status}`} title={current.error || current.note || versionState(current)}>{current.status === 'copying' && <Loader2 size={11} className="animate-spin"/>}{versionState(current)}</span>}</div>
-      <StudioSelect searchable aria-label={text('项目版本', 'Project versions')} value={selectedId || ''} disabled={busy || !versions.length} icon={<GitBranch size={13}/>} onValueChange={value => void switchVersion(value)} options={versions.filter(item => showArchived || !item.archived || item.id === selectedId).map(item => ({value:item.id,label:`${item.name}${item.archived || item.status !== 'ready' ? ` · ${versionState(item)}` : ''}`}))}/>
+      <StudioSelect searchable aria-label={text('项目版本', 'Project versions')} value={selectedId || ''} fallbackLabel={current ? `${current.name} · ${versionState(current)}` : undefined} disabled={busy || !versions.some(item => !item.archived)} icon={<GitBranch size={13}/>} onValueChange={value => void switchVersion(value)} options={versions.filter(item => !item.archived).map(item => ({value:item.id,label:`${item.name}${item.status !== 'ready' ? ` · ${versionState(item)}` : ''}`}))}/>
       <div className="project-sidebar-model">{text('模型类型', 'Model type')} · {speech ? engineLabel : familyLabel(current?.display_family ?? current?.family)}</div>
       {speech && <div className="project-sidebar-model">{audioSummary(current)}</div>}
       <div className="project-sidebar-actions" aria-label={text('版本操作', 'Version actions')}>
         <button type="button" className="ui-btn ui-btn-icon" onClick={() => void begin('create')} disabled={busy || ownerArchived || versions.some(item => item.status === 'copying')} title={ownerArchivedReason || text('新版本', 'New version')} aria-label={text('新版本', 'New version')}><Plus size={14}/></button>
         <button type="button" className="ui-btn ui-btn-icon" onClick={() => void begin('compare')} disabled={!current || readyVersions.length < 2 || busy} title={text('比较版本参数', 'Compare version parameters')} aria-label={text('比较', 'Compare')}><GitCompare size={14}/></button>
         <button type="button" className="ui-btn ui-btn-icon" onClick={() => void begin('paths')} disabled={!current || busy} title={text('查看本版本目录', 'View version folders')} aria-label={text('查看本版本目录', 'View version folders')}><FolderOpen size={14}/></button>
-        <button type="button" className="ui-btn ui-btn-icon" onClick={() => void begin('edit')} disabled={!current || current.status === 'copying' || busy || ownerArchived} title={ownerArchivedReason || text('版本设置', 'Version settings')} aria-label={text('版本设置', 'Version settings')}><Settings2 size={14}/></button>
+        {current && (ownerArchived || current.archived) ? <ProjectCardMenu workspace scope="version" name={current.name} archived busy={busy || !!deletingVersionId || current.deletion?.state === 'deleting'} onArchive={() => void archive()} onDelete={() => { setError(''); setDeleting(current); }} parentArchiveUrl={ownerArchived ? archiveUrl('projects', project.id) : undefined}/> : <button type="button" className="ui-btn ui-btn-icon" onClick={() => void begin('edit')} disabled={!current || current.status === 'copying' || busy || ownerArchived} title={ownerArchivedReason || text('版本设置', 'Version settings')} aria-label={text('版本设置', 'Version settings')}><Settings2 size={14}/></button>}
       </div>
-      {versions.some(item => item.archived) && <Switch className="project-sidebar-archived studio-switch-small" checked={showArchived} onCheckedChange={setShowArchived}>{text('显示已归档版本', 'Show archived versions')}</Switch>}
+      <Link className="project-sidebar-archived" to={archiveUrl('versions', project.id)}><Archive size={12}/>{text('归档版本', 'Archived versions')}</Link>
     </>}
     <ProjectWorkflow projectId={project.id} versionId={selectedId} projectType={project.project_type} active={workflowActive ? active : undefined} sidebar/>
   </section>;
   return <>
     {sidebarOnly ? projectControls : sidebar?.register ? null : sidebar ? sidebar.target && createPortal(projectControls, sidebar.target) : <div className="project-sidebar-fallback">{projectControls}</div>}
-    {!sidebarOnly && <header className="workspace-navigation workspace-page-heading" ref={navigationRef}><div className="workspace-heading-main"><TopbarBreadcrumb><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}><Link to="/projects">{text('项目', 'Projects')}</Link><span aria-hidden="true">/</span><Link to={projectUrl(project.id, selectedId, 'overview')}>{project.name}</Link>{current && <><span aria-hidden="true">/</span><span>{current.name}</span></>}{breadcrumbTrail && <><span aria-hidden="true">/</span>{breadcrumbTrail}</>}</nav></TopbarBreadcrumb><div className="workspace-heading-title"><h1 title={title}>{title}</h1>{titleBadge}</div></div>{status && <div className="project-heading-status">{status}</div>}</header>}
+    {!sidebarOnly && <header className="workspace-navigation workspace-page-heading" ref={navigationRef}><div className="workspace-heading-main"><TopbarBreadcrumb><nav className="workspace-breadcrumb" aria-label={text('当前位置', 'Current location')}><Link to="/projects">{text('项目', 'Projects')}</Link><span aria-hidden="true">/</span><Link to={projectUrl(project.id, selectedId, 'overview')}>{project.name}</Link>{current && <><span aria-hidden="true">/</span><span>{current.name}</span></>}{breadcrumbTrail && <><span aria-hidden="true">/</span>{breadcrumbTrail}</>}</nav></TopbarBreadcrumb><div className="workspace-heading-title"><h1 title={title}>{title}</h1>{titleBadge}{(ownerArchived || current?.archived) && <span className="workspace-title-badge" role="status" aria-label={text('归档状态', 'Archive status')}>{ownerArchived ? text('项目已归档 · 只读', 'Project archived · Read only') : text('版本已归档 · 只读', 'Version archived · Read only')}</span>}</div></div>{status && <div className="project-heading-status">{status}</div>}</header>}
     {problem && !dialog && <div role="alert" className="workspace-message error">{problem}<button type="button" className="ui-btn ui-btn-sm" onClick={() => {setError(''); void refresh();}}>{text('重试', 'Retry')}</button></div>}
-    {!sidebarOnly && ownerArchived && <div className="workspace-message" role="status"><AlertCircle size={16}/><div><strong>{text('此项目已归档 · 只读', 'This project is archived · Read only')}</strong><p>{text('请在项目列表恢复项目后继续修改。', 'Restore the project from the project list to make changes.')}</p></div></div>}
-    {!sidebarOnly && !ownerArchived && current?.archived && <div className="workspace-message" role="status"><AlertCircle size={16}/><div><strong>{text('此版本已归档 · 只读', 'This version is archived · Read only')}</strong><p>{text('恢复版本后可继续编辑与训练。', 'Restore the version to edit or train.')}</p></div><button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={() => void archive()}>{busy ? text('正在恢复…', 'Restoring…') : text('恢复版本', 'Restore version')}</button></div>}
     {!sidebarOnly && current?.status === 'copying' && <div className="workspace-message" role="status"><Loader2 size={16} className="animate-spin"/><div><strong>{text('正在建立独立版本', 'Creating an independent version')}</strong><p>{speech ? text('正在准备版本文件，完成后即可编辑；原版本保持不变。', 'Preparing version files. The original version is preserved.') : text('复制图片、标签与遮罩，完成后即可编辑；原版本保持不变。', 'Copying images, captions and masks. The original version is preserved.') }</p><progress max={Math.max(1,current.progress?.files_total || 0)} value={current.progress?.files_done || 0}/><span>{current.progress?.files_done || 0} / {current.progress?.files_total || '…'} {text('个文件', 'files')}</span></div></div>}
     {!sidebarOnly && current?.status === 'failed' && <div className="workspace-message error" role="alert"><AlertCircle size={16}/><div><strong>{text('版本准备失败', 'Version preparation failed')}</strong><p>{current.error}</p><p>{text('原版本数据仍然保留。修正原因后，可从原版本重新创建。', 'Original data is preserved. Resolve the issue and create again from the source version.')}</p></div></div>}
+    {deleting && <ProjectDeleteDialog project={project} version={deleting} onClose={() => setDeleting(null)} onStarted={deletionStarted}/>}
     {dialog && <Dialog title={dialog === 'create' ? text('新建实验版本', 'New experiment version') : dialog === 'edit' ? text('版本设置', 'Version settings') : dialog === 'compare' ? text('比较版本', 'Compare versions') : text('本版本的文件位置', 'Files in this version')} onClose={() => { if (!busy) {setDialog(null);setError('');} }} closeDisabled={busy} wide={dialog === 'compare' || dialog === 'paths'}>
       {error && <div role="alert" className="workspace-message error">{error}</div>}
       {ownerArchived && (dialog === 'create' || dialog === 'edit') && <p role="status" className="version-copy-note">{ownerArchivedReason}</p>}

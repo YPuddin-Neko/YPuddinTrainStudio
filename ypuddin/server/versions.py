@@ -19,12 +19,72 @@ from .family_config import change_config_family, initial_family_config, version_
 ACTIVE_JOBS = "('queued','scheduled','running','pausing','cancelling')"
 
 
+def assert_not_deleting(c: Any, pid: str, vid: str | None = None) -> None:
+    from .project_deletion import deletion_state
+
+    if deletion_state(c, pid):
+        raise ApiError("项目尚未完成删除，请重试删除。", code="project.deleting", status=409)
+    if vid and deletion_state(c, pid, version_id=vid):
+        raise ApiError("版本尚未完成删除，请重试删除。", code="version.deleting", status=409)
+    if c.db.fetchone("SELECT name FROM sqlite_master WHERE type='table' AND name='version_deletions'") and c.db.fetchone(
+        "SELECT version_id FROM version_deletions WHERE project_id=? AND state='deleting'", (pid,)
+    ):
+        raise ApiError("项目中有版本正在删除，请等待删除完成。", code="version.deleting", status=409)
+
+
+def reference_paths(value: Any) -> list[Path]:
+    if isinstance(value, (str, Path)):
+        try:
+            path = Path(value).expanduser()
+            return [path.resolve()] if path.is_absolute() else []
+        except (OSError, ValueError, RuntimeError):
+            return []
+    if isinstance(value, dict):
+        return [path for item in value.values() for path in reference_paths(item)]
+    if isinstance(value, (list, tuple)):
+        return [path for item in value for path in reference_paths(item)]
+    return []
+
+
+def reject_deleting_references(c: Any, value: Any) -> None:
+    from .tts_references import reject_deleting_references as reject
+
+    reject(c, reference_paths(value))
+
+
+@contextmanager
+def reference_lease(c: Any, value: Any) -> Iterator[None]:
+    """Keep source files available while a copy or preflight runs outside the DB lock."""
+    paths = reference_paths(value)
+    token = new_id("reference")
+    with c.db.lock:
+        reject_deleting_references(c, paths)
+        if not hasattr(c, "file_reference_leases"):
+            c.file_reference_leases = {}
+        c.file_reference_leases[token] = paths
+    try:
+        yield
+    finally:
+        with c.db.lock:
+            c.file_reference_leases.pop(token, None)
+
+
+def active_references(c: Any, targets: list[Path]) -> bool:
+    roots = [target.resolve() for target in targets]
+    return any(
+        path == root or path.is_relative_to(root) or root.is_relative_to(path)
+        for paths in getattr(c, "file_reference_leases", {}).values()
+        for path in paths for root in roots
+    )
+
+
 def dataset_directory_name(source: Path) -> str:
     return source.name or "dataset"
 
 
 def assert_version_writable(c: Any, pid: str, vid: str | None, *, data: bool = False) -> dict:
     row = c.resolve_version(pid, vid)
+    assert_not_deleting(c, pid, row["id"])
     project = c.db.fetchone("SELECT archived FROM projects WHERE id=?", (pid,))
     if project is None or project["archived"]:
         raise ApiError("项目已归档，请先恢复项目再修改配置或创建任务。", code="project.archived", status=409)
@@ -56,8 +116,8 @@ def assert_version_writable(c: Any, pid: str, vid: str | None, *, data: bool = F
     return row
 
 
-def _failed_speech_paths(c: Any, row: dict) -> dict[str, str]:
-    """A failed copy remains readable even if its destination was replaced externally."""
+def _unavailable_version_paths(c: Any, row: dict, *, is_tts: bool) -> dict[str, str]:
+    """Keep failed copies and deletions readable without following a redirected directory."""
     pid, vid = row["project_id"], row["id"]
     modern = c.project_layout(pid) >= 2
     label = f"v{row['number']}" if modern else vid
@@ -66,17 +126,21 @@ def _failed_speech_paths(c: Any, row: dict) -> dict[str, str]:
     output = Path(configured["output_dir"]) / pid / label if configured["output_mode"] == "custom" else root / ("output" if modern else "runs")
     cache = Path(configured["cache_dir"])
     cache = cache / pid / vid if cache.resolve() != (c.data_root / "cache").resolve() else root / "cache"
-    data = root / ("traindata" if modern else "datasets")
-    return {"root": str(root), "config": str(root / "tts-config.json"), "datasets": str(data),
+    legacy = row["legacy_layout"] and not is_tts
+    data = c.project_dir(pid) / "datasets" if legacy else root / ("traindata" if modern else "datasets")
+    config = root / "tts-config.json" if is_tts else (c.project_dir(pid) if legacy else root) / "config.json"
+    return {"root": str(c.project_dir(pid) if legacy else root), "config": str(config), "datasets": str(data),
             "traindata": str(data), "runs": str(output), "output": str(output), "cache": str(cache),
             "reg": str(root / "reg"), "samples": str(root / "samples"), "jobs": str(root / "jobs")}
 
 
 def version_row(c: Any, row: dict) -> dict:
     from .artifact_inventory import artifact_count
+    from .project_deletion import public_state
     from .tts_projects import version_engine
 
     pid, vid = row["project_id"], row["id"]
+    deletion = public_state(c, pid, version_id=vid)
     project = c.db.fetchone("SELECT project_type FROM projects WHERE id=?", (pid,))
     if project is None:
         raise NotFound("project not found", code="project.not_found")
@@ -88,12 +152,19 @@ def version_row(c: Any, row: dict) -> dict:
     datasets = [] if is_tts else c.db.fetchall(
         "SELECT id,stats_json FROM datasets WHERE version_id=? ORDER BY created_at", (vid,)
     )
-    failed_paths = _failed_speech_paths(c, row) if is_tts and row["status"] == "failed" else None
-    data_root = Path(failed_paths["root"]) if failed_paths else c.project_dir(pid) if row["legacy_layout"] and not is_tts else c.version_dir(pid, vid)
+    failed_paths = _unavailable_version_paths(c, row, is_tts=is_tts) if deletion or is_tts and row["status"] == "failed" else None
+    try:
+        data_root = Path(failed_paths["root"]) if failed_paths else c.project_dir(pid) if row["legacy_layout"] and not is_tts else c.version_dir(pid, vid)
+    except ApiError as error:
+        if error.code != "version.path":
+            raise
+        failed_paths = _unavailable_version_paths(c, row, is_tts=is_tts)
+        data_root = Path(failed_paths["root"])
     return {
         **{k: v for k, v in row.items() if k not in {"progress_json", "legacy_layout", "busy", "tts_engine", "tts_variant"}},
         "archived": bool(row["archived"]),
-        "busy": bool(row["busy"]),
+        "busy": bool(row["busy"]) or deletion is not None,
+        "deletion": deletion,
         "project_type": project["project_type"],
         "engine": engine,
         "variant": row.get("tts_variant") if engine == "gpt-sovits-v5" else None,
@@ -518,7 +589,7 @@ class VersionManager:
             raise NotFound(f"directory not found: {source}", code="fs.not_found")
         if not c.is_allowed(source):
             raise ApiError("source is outside allowed roots", code="fs.forbidden", status=403)
-        with self.mutation(pid, vid):
+        with self.mutation(pid, vid), reference_lease(c, source):
             did = new_id("d")
             is_reg = body.is_reg
             config = get_project_config(pid, c, vid)

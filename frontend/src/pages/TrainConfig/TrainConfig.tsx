@@ -1,6 +1,6 @@
 import React from 'react';
 import { ResourceActivityContext } from '../../api/resourcePolicy';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useNavigate, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { SchemaForm, ValidationError, SourceRoleInfo, OutputBindingInfo, type NativeAreaEstimate } from '../../schema/SchemaForm/SchemaForm';
@@ -147,11 +147,12 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const parameterScrollRef = React.useRef<HTMLDivElement>(null);
   const [inspectorOpen, setInspectorOpen] = React.useState(false);
   const clearSearch = () => { setSearch(''); searchRef.current?.focus(); };
-  const [project, setProject] = React.useState<VersionedProject | null>(null);
+  const projectQuery = useQuery({ queryKey: ['project', projectId], queryFn: ({ signal }) => apiClient.get<VersionedProject>(`/projects/${projectId}`, { signal, silent: true }), enabled: !!projectId });
+  const project = projectQuery.data || null;
   const versions = useProjectVersions(project, versionId);
   const versionStatus = versions.current?.status;
-  const archived = !!versions.current?.archived;
-  const editorVisible = !versionId || (versionStatus === 'ready' && !archived);
+  const archived = !!project?.archived || !!versions.current?.archived;
+  const editorVisible = !archived && (!versionId || versionStatus === 'ready');
   const toolbarRef = useWorkspaceHeight('--training-toolbar-height', editorVisible);
   const launchBarRef = useWorkspaceHeight('--training-launch-height', editorVisible);
   const [datasets, setDatasets] = React.useState<DatasetInfo[]>([]);
@@ -368,7 +369,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
 
   React.useEffect(() => {
-    if (versionId && (versionStatus !== 'ready' || archived)) return;
+    if (archived || versionId && versionStatus !== 'ready') return;
     let active = true;
     datasetRefreshController.current?.abort();
     datasetRefreshBlocked.current = false;
@@ -455,7 +456,6 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   React.useEffect(() => {
     if (!projectId) return;
     let active = true;
-    void apiClient.get<VersionedProject>(`/projects/${projectId}`, { silent: true }).then(value => { if (active) setProject(value); }).catch(() => {});
     void apiClient.get<DatasetInfo[]>(`/projects/${projectId}/datasets`, { params: { version_id: versionId, include_cache: false }, silent: true }).then(value => { if (active) setDatasets(value); }).catch(() => {});
     return () => { active = false; };
   }, [projectId, versionId]);
@@ -783,9 +783,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const familyBadge = familyLabel ? <span className="family-chip" data-testid="training-family-badge" title={familyLabel}>{familyLabel}</span> : null;
   const savingDraft = savingNavigation || draftSaveState === 'saving';
   const draftStatus = loaded && (savingDraft || dirty || savedAt) ? <span className="draft-indicator" role="status" aria-label={text('配置保存状态', 'Configuration save status')} data-testid={savedAt && !dirty && !savingDraft && draftSaveState !== 'failed' ? 'draft-saved' : undefined}>{savingDraft ? <><Loader2 size={12} className="animate-spin"/>{text('保存中…', 'Saving…')}</> : dirty && draftSaveState === 'failed' ? <>{text('自动保存失败', 'Autosave failed')}<button type="button" className="ui-link" onClick={() => void saveDraftNow()}>{text('重试保存', 'Retry save')}</button></> : dirty ? text('等待保存…', 'Waiting to save…') : savedAt ? <><Check size={12} aria-hidden="true"/>{text(`已保存 ${savedAt}`, `Saved ${savedAt}`)}</> : null}</span> : null;
-  if (versionId && (versions.current?.status !== 'ready' || archived)) return <div className="training-studio project-workspace">
-    {project && <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} titleBadge={familyBadge} error={versions.error}/>}
-    {archived && <Link className="workspace-message" to={projectUrl(projectId || '', versionId, 'results')}>{text('查看此版本的训练结果', 'View this version’s training results')}</Link>}
+  if (archived || versionId && versions.current?.status !== 'ready') return <div className="training-studio project-workspace">
+    {project && <ProjectWorkspaceHeader project={project} versionId={versionId} versions={versions.versions} current={versions.current} active="train" refresh={versions.refresh} titleBadge={familyBadge} error={versions.error} status={archived ? <Link className="ui-link" to={projectUrl(projectId || '', versionId, 'results')}>{text('查看此版本的训练结果', 'View this version’s training results')}</Link> : undefined}/>}
     {!versions.current && (versions.loading ? <LoadingNote block label={text('正在读取版本…', 'Loading version…')}/> : <p className="workspace-message">{text('此版本不存在或不可访问。', 'This version does not exist or is unavailable.')}</p>)}
   </div>;
   return <div className="training-studio project-workspace parameter-workspace" aria-busy={savingNavigation}>

@@ -2,7 +2,7 @@ import React from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { FolderPlus, Archive, Search, FolderOpen, SearchX, ChevronLeft, ChevronRight, RefreshCw, LayoutGrid, List } from 'lucide-react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { apiClient } from '../../api/client';
 import type { FamilyInfo } from '../../api/types';
 import StudioSelect from '../../components/StudioSelect';
@@ -19,14 +19,14 @@ import { useEventStream } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
 import '../../styles/project-workspace.css';
 import './projects.css';
-import Switch from '../../components/Switch';
 import { SlidingIndicator } from '../../components/motion';
 import PageLocation from '../../components/PageLocation';
+import { archiveUrl } from '../../utils/projectVersions';
 
 const PAGE_SIZE = 24;
 const ACTIVE = ['running', 'pausing', 'cancelling'];
 
-export default function Projects() {
+export default function Projects({ archivedOnly = false, archiveTabs }: { archivedOnly?: boolean; archiveTabs?: React.ReactNode }) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
@@ -44,10 +44,12 @@ export default function Projects() {
   const search = params.get('q') || '';
   const category = params.get('category') || '';
   const uncategorized = params.get('uncategorized') === 'true';
-  const showArchived = params.get('archived') === '1';
+  const legacyArchived = params.get('archived') === '1';
+  const projectFilter = archivedOnly ? params.get('project') || '' : '';
   const view = params.get('view') === 'list' ? 'list' : 'grid';
   const sort = params.get('sort') === 'name' ? 'name' : params.get('sort') === 'created' ? 'created' : 'updated';
   const requestedPage = Math.max(1, Math.floor(Number(params.get('page')) || 1));
+  const archiveEntryParams = new URLSearchParams(params); archiveEntryParams.delete('page');
   const changeFilter = (patch: Record<string, string | null>, replace = false) => {
     const next = new URLSearchParams(params); next.delete('page');
     Object.entries(patch).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
@@ -70,6 +72,7 @@ export default function Projects() {
   useEventStream<{ kind?: string; state?: string }>(EVENT_TYPES.BACKGROUND_CHANGED, task => {
     if (task.kind === 'project_delete' && task.state !== 'running') void fetchProjects(true);
   });
+  useEventStream(EVENT_TYPES.PROJECTS_CHANGED, () => { void fetchProjects(true); });
   const updateProject = (project: GalleryProject) => {
     queryClient.setQueryData(['project',project.id],project);
     setProjects(rows => rows.some(row => row.id === project.id)
@@ -78,7 +81,7 @@ export default function Projects() {
   const mutate = async (id: string, operation: () => Promise<unknown>) => {
     if (pendingRef.current) return;
     pendingRef.current = id; setPending(id); setError('');
-    try { await operation(); await Promise.all([fetchProjects(),queryClient.invalidateQueries({queryKey:['project',id]})]); }
+    try { await operation(); await Promise.all([fetchProjects(),queryClient.invalidateQueries({queryKey:['project',id]}),queryClient.invalidateQueries({queryKey:['archive-projects']})]); }
     catch (failure) { setError(formatApiError(failure)); }
     finally { pendingRef.current = null; setPending(null); }
   };
@@ -86,13 +89,14 @@ export default function Projects() {
     if (!project.archived || pendingRef.current || project.deletion?.state === 'deleting') return;
     setDeleting(project);
   };
-  const categories = [...new Set(projects.map(project => project.category?.trim()).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
-  const categoryCount = (value: string | null) => projects.filter(project => (project.category || null) === value).length;
+  const scopedProjects = projects.filter(project => project.archived === archivedOnly);
+  const categories = [...new Set(scopedProjects.map(project => project.category?.trim()).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
+  const categoryCount = (value: string | null) => scopedProjects.filter(project => (project.category || null) === value).length;
   const categoryOptions = [...new Set([...categories, ...(category ? [category] : [])])];
   const query = search.trim().toLocaleLowerCase();
-  const filtered = !!(query || category || uncategorized);
-  const visibleProjects = projects.filter(project => {
-    if (!showArchived && project.archived) return false;
+  const filtered = !!(query || category || uncategorized || projectFilter);
+  const visibleProjects = scopedProjects.filter(project => {
+    if (projectFilter && project.id !== projectFilter) return false;
     if (uncategorized ? Boolean(project.category) : category && project.category !== category) return false;
     return !query || `${project.name} ${project.id} ${project.note || ''}`.toLocaleLowerCase().includes(query);
   }).sort((left, right) => sort === 'name' ? left.name.localeCompare(right.name, i18n.resolvedLanguage) : (Number(sort === 'created' ? right.created_at : right.updated_at) || 0) - (Number(sort === 'created' ? left.created_at : left.updated_at) || 0));
@@ -128,8 +132,9 @@ export default function Projects() {
   ];
   const training = projects.filter(project => !project.archived && ACTIVE.includes(project.latest_job?.status || '')).length;
   const archivedCount = projects.filter(project => project.archived).length;
-  const summary = loading ? '' : filtered || (showArchived && archivedCount)
-    ? text(`显示 ${visibleProjects.length} / ${projects.length} 个项目`, `${visibleProjects.length} of ${projects.length} projects`)
+  const summary = loading ? '' : filtered
+    ? text(`显示 ${visibleProjects.length} / ${scopedProjects.length} 个项目`, `${visibleProjects.length} of ${scopedProjects.length} projects`)
+    : archivedOnly ? text(`${archivedCount} 个已归档项目`, `${archivedCount} archived projects`)
     : [text(`${projects.length - archivedCount} 个项目`, `${projects.length - archivedCount} projects`), training > 0 && text(`${training} 个训练中`, `${training} training`), archivedCount > 0 && text(`${archivedCount} 个已归档`, `${archivedCount} archived`)].filter(Boolean).join(' · ');
   const open = (project: GalleryProject) => `/projects/${encodeURIComponent(project.id)}?step=overview`;
   const menu = (project: GalleryProject) => <ProjectCardMenu name={project.name} archived={project.archived} busy={!!pending || project.deletion?.state === 'deleting'} onEdit={() => setEditor(project)} onArchive={() => void mutate(project.id, () => apiClient.patch(`/projects/${project.id}`, { archived: !project.archived }))} onDelete={() => remove(project)}/>;
@@ -140,19 +145,22 @@ export default function Projects() {
   const meta = (project: GalleryProject) => [project.category ? categoryLabel(project.category, english) : text('未分类', 'Uncategorized'), modelLabel(project), versionLabel(project)].filter(Boolean);
   const mixedDataTypes = pageProjects.some(project => project.project_type === 'tts') && pageProjects.some(project => project.project_type !== 'tts');
 
-  return <div className="projects-workspace" data-testid="projects-page">
+  if (!archivedOnly && legacyArchived) return <Navigate replace to={archiveUrl('projects', params.get('project') || undefined, params)}/>;
+
+  return <div className={`projects-workspace${archivedOnly ? ' archive-workspace' : ''}`} data-testid="projects-page">
     <header className="projects-toolbar">
       <div className="projects-heading-row">
-        <PageLocation trail={[{ label: text('项目', 'Projects') }]}/><div className="projects-page-heading"><h1>{t('projects.title')}</h1>{summary && <p>{summary}</p>}</div>
-        <div className="projects-heading-actions"><button type="button" aria-label={text('刷新项目', 'Refresh projects')} disabled={loading || !!pending} onClick={() => void fetchProjects()} className="ui-btn ui-btn-icon" title={text('刷新项目', 'Refresh projects')}><RefreshCw size={15}/></button><button type="button" onClick={() => setEditor('new')} className="ui-btn ui-btn-primary"><FolderPlus size={15}/><span>{t('projects.newProject')}</span></button></div>
+        <PageLocation trail={archivedOnly ? [{label:text('项目','Projects'),to:'/projects'},{label:text('归档','Archive')}] : [{ label: text('项目', 'Projects') }]}/><div className="projects-page-heading"><h1>{archivedOnly ? text('归档','Archive') : t('projects.title')}</h1>{summary && <p>{summary}</p>}</div>
+        <div className="projects-heading-actions">{projectFilter && <button type="button" className="ui-btn ui-btn-sm" onClick={()=>changeFilter({project:null})}>{text('全部归档项目','All archived projects')}</button>}<button type="button" aria-label={text('刷新项目', 'Refresh projects')} disabled={loading || !!pending} onClick={() => void fetchProjects()} className="ui-btn ui-btn-icon" title={text('刷新项目', 'Refresh projects')}><RefreshCw size={15}/></button>{!archivedOnly && <button type="button" onClick={() => setEditor('new')} className="ui-btn ui-btn-primary"><FolderPlus size={15}/><span>{t('projects.newProject')}</span></button>}</div>
       </div>
+      {archiveTabs}
       <div className="projects-filter-row">
         <label className="projects-search"><Search size={15}/><input type="text" value={search} onChange={event => changeFilter({ q: event.target.value || null }, true)} aria-label={text('搜索项目', 'Search projects')} placeholder={text('项目名称或备注', 'Project name or note')} data-testid="project-search-input"/></label>
         <StudioSelect className="projects-category-filter" aria-label={text('按分类筛选', 'Filter by category')} value={uncategorized ? 'uncategorized' : category ? `category:${category}` : ''}
           options={[{ value: '', label: text('所有分类', 'All categories') }, { value: 'uncategorized', label: `${text('未分类', 'Uncategorized')} · ${categoryCount(null)}` }, ...categoryOptions.map(value => ({ value: `category:${value}`, label: `${categoryLabel(value, english)} · ${categoryCount(value)}` }))]}
           onValueChange={value => changeFilter({ category: value.startsWith('category:') ? value.slice(9) : null, uncategorized: value === 'uncategorized' ? 'true' : null })}/>
         <StudioSelect className="projects-sort-filter" aria-label={text('项目排序', 'Sort projects')} value={sort} options={[{ value: 'updated', label: text('最近更新', 'Recently updated') }, { value: 'created', label: text('最近创建', 'Recently created') }, { value: 'name', label: text('名称排序', 'Name') }]} onValueChange={value => changeFilter({ sort: value === 'updated' ? null : value })}/>
-        <Switch className="projects-archive-filter" checked={showArchived} onCheckedChange={checked => changeFilter({ archived: checked ? '1' : null })} data-testid="show-archived-toggle">{t('projects.showArchived', '显示已归档')}</Switch>
+        <Link className="projects-archive-filter ui-btn" to={archivedOnly ? '/projects' : archiveUrl('projects', undefined, archiveEntryParams)}><Archive size={14}/>{archivedOnly ? text('返回项目','Back to projects') : text('归档','Archive')}</Link>
         <div className="projects-view-toggle ui-segmented" role="group" aria-label={text('项目显示方式', 'Project view')}><button type="button" aria-label={text('卡片视图', 'Grid view')} title={text('卡片视图', 'Grid view')} aria-pressed={view === 'grid'} onClick={() => changeFilter({ view: null })}><LayoutGrid size={15}/></button><button type="button" aria-label={text('列表视图', 'List view')} title={text('列表视图', 'List view')} aria-pressed={view === 'list'} onClick={() => changeFilter({ view: 'list' })}><List size={15}/></button><SlidingIndicator className="ui-segmented-thumb"/></div>
       </div>
       {error && <div role="alert" className="projects-list-error"><span>{error}</span><button type="button" className="ui-btn ui-btn-sm" onClick={() => void fetchProjects()} disabled={loading}>{t('common.retry')}</button></div>}
@@ -186,12 +194,12 @@ export default function Projects() {
             {menu(project)}
           </article>)}
         </div>
-      : !error && <div className="projects-empty-state" data-testid={filtered ? 'projects-no-results' : projects.length ? 'projects-all-archived' : 'projects-empty'}>
+      : !error && <div className="projects-empty-state" data-testid={filtered ? 'projects-no-results' : archivedOnly ? 'archive-projects-empty' : projects.length ? 'projects-all-archived' : 'projects-empty'}>
         {filtered ? <SearchX size={28}/> : projects.length ? <Archive size={28}/> : <FolderOpen size={28}/>}
-        <h3>{filtered ? text('没有匹配的项目', 'No matching projects') : projects.length ? t('projects.allArchivedTitle', '所有项目都已归档') : t('projects.emptyTitle', '还没有项目')}</h3>
-        {filtered && <button type="button" className="ui-btn" onClick={() => changeFilter({ q: null, category: null, uncategorized: null })}>{text('清除筛选', 'Clear filters')}</button>}
-        {!filtered && projects.length > 0 && !showArchived && <button type="button" className="ui-btn" onClick={() => changeFilter({ archived: '1' })}>{text('查看已归档项目', 'View archived projects')}</button>}
-        {!filtered && projects.length === 0 && <button type="button" className="ui-btn ui-btn-primary" onClick={() => setEditor('new')}><FolderPlus size={15}/>{text('创建第一个项目', 'Create your first project')}</button>}
+        <h3>{filtered ? text('没有匹配的项目', 'No matching projects') : archivedOnly ? text('暂无归档项目','No archived projects') : projects.length ? t('projects.allArchivedTitle', '所有项目都已归档') : t('projects.emptyTitle', '还没有项目')}</h3>
+        {filtered && <button type="button" className="ui-btn" onClick={() => changeFilter({ q: null, category: null, uncategorized: null, project: null })}>{text('清除筛选', 'Clear filters')}</button>}
+        {!filtered && projects.length > 0 && !archivedOnly && <Link className="ui-btn" to={archiveUrl('projects')}>{text('查看已归档项目', 'View archived projects')}</Link>}
+        {!filtered && projects.length === 0 && !archivedOnly && <button type="button" className="ui-btn ui-btn-primary" onClick={() => setEditor('new')}><FolderPlus size={15}/>{text('创建第一个项目', 'Create your first project')}</button>}
       </div>}
     {!loading && pageCount > 1 && <nav className="projects-pagination" aria-label={text('项目分页', 'Project pagination')}><span>{text(`共 ${visibleProjects.length} 个项目 · 每页 ${PAGE_SIZE} 个`, `${visibleProjects.length} projects · ${PAGE_SIZE} per page`)}</span><div><button type="button" className="ui-btn ui-btn-sm" aria-label={text('上一页', 'Previous')} disabled={page <= 1} onClick={() => changeFilter({ page: String(page - 1) })}><ChevronLeft size={15}/>{text('上一页', 'Previous')}</button><span aria-label={text('当前页', 'Current page')}>{page} / {pageCount}</span><button type="button" className="ui-btn ui-btn-sm" aria-label={text('下一页', 'Next')} disabled={page >= pageCount} onClick={() => changeFilter({ page: String(page + 1) })}>{text('下一页', 'Next')}<ChevronRight size={15}/></button></div></nav>}
     {deleting && <ProjectDeleteDialog project={deleting} onClose={() => setDeleting(null)} onStarted={() => { setDeleting(null); void fetchProjects(true); }}/>}

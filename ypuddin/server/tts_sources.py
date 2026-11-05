@@ -209,7 +209,10 @@ class TtsSources:
         deleting_project = self.c.db.fetchone("SELECT name FROM sqlite_master WHERE type='table' AND name='project_deletions'") and self.c.db.fetchone(
             "SELECT project_id FROM project_deletions WHERE state='deleting' LIMIT 1"
         )
-        if deleting_jobs or deleting_project:
+        deleting_version = self.c.db.fetchone("SELECT name FROM sqlite_master WHERE type='table' AND name='version_deletions'") and self.c.db.fetchone(
+            "SELECT version_id FROM version_deletions WHERE state IN ('deleting','failed') LIMIT 1"
+        )
+        if deleting_jobs or deleting_project or deleting_version:
             try:
                 paths = manifest_references(path, allowed=self.c.is_allowed)
             except (OSError, ValueError) as exc:
@@ -485,12 +488,16 @@ class TtsSources:
                                         "duration_seconds": source.summary.duration_seconds if source.summary else None}
             return result
 
-    def references_to(self, targets: list[Path], *, excluding_project_id: str | None = None) -> list[dict]:
+    def references_to(self, targets: list[Path], *, excluding_project_id: str | None = None,
+                      excluding_version_id: str | None = None) -> list[dict]:
+        from .tts_validation import validation_references
+
         roots = [absolute_path(path).resolve() for path in targets]
         sources = self.c.db.fetchall("SELECT * FROM tts_sources ORDER BY id")
-        references = []
+        references = validation_references(self.c, roots, excluding_project_id=excluding_project_id,
+                                            excluding_version_id=excluding_version_id)
         for source in sources:
-            if source["project_id"] == excluding_project_id:
+            if source["project_id"] == excluding_project_id or source["version_id"] == excluding_version_id:
                 continue
             path = Path(source["path"])
             try:

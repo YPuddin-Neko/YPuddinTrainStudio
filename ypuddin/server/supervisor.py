@@ -1427,6 +1427,7 @@ class JobSupervisor:
             # Force starts the job ahead of the queue without the memory estimate; see _force_device.
             forced_at = now() if command == "force" else None
             if command == "force" and status in ("queued", "scheduled"):
+                self._check_job_references(job, resume_from=job.get("resume_from"))
                 self._set_status(job_id, "queued", forced_at=forced_at)
                 return self.db.fetchone("SELECT * FROM jobs WHERE id=?", (job_id,))
             allowed = ("paused",) if command == "force" else ("paused", "failed", "cancelled", "interrupted")
@@ -1445,6 +1446,7 @@ class JobSupervisor:
                 resume_from = resume_from or self._latest_state(state_directory(job))
             if status != "paused" and job["type"] != "cache" and not resume_from:
                 raise ValueError("no checkpoint to resume from")
+            self._check_job_references(job, resume_from=resume_from)
             # The last run's phase ("saving", ...) would read as what the waiting job is doing.
             self._merge_progress(job_id, {"phase": "", "wait_reason": self._blocked_reason or ""})
             self._set_status(
@@ -1553,6 +1555,10 @@ class JobSupervisor:
                         pass
 
     def clone(self, job: dict[str, Any]) -> dict[str, Any]:
+        with self.db.lock:
+            return self._clone(job)
+
+    def _clone(self, job: dict[str, Any]) -> dict[str, Any]:
         from .job_layout import makes_products, renamed_for_job
 
         self._check_job_version(job)
@@ -1598,12 +1604,14 @@ class JobSupervisor:
         if job["type"] == "xyz":
             from .xyz import clone_reference_inputs
 
+            self._check_job_references({**job, "run_dir": str(run_dir), "samples_dir": str(samples_dir)}, cfg)
             manifests = clone_reference_inputs(cfg, run_dir)
         if job["type"] == "tts_train":
             from .routes_tts import cloned_manifests
 
             manifests = cloned_manifests(cfg, run_dir)
         with manifests:
+            self._check_job_references({**job, "run_dir": str(run_dir), "samples_dir": str(samples_dir)}, cfg)
             self.db.insert(
                 "jobs",
                 {
@@ -1637,10 +1645,32 @@ class JobSupervisor:
     def is_running(self, job_id: str) -> bool:
         return job_id in self._procs or job_id in self._orphaned
 
+    def _check_job_references(
+        self, job: dict[str, Any], config: dict | None = None, *, resume_from: str | None = None
+    ) -> None:
+        context = getattr(self, "context", None)
+        if context is None or job["type"] in TTS_JOBS:
+            return
+        from .versions import reject_deleting_references
+
+        if config is None:
+            config = json.loads(job["config_json"])
+        if resume_from:
+            config = {**config, "checkpoint": {**config.get("checkpoint", {}), "resume": resume_from}}
+        if job["type"] == "xyz":
+            from .xyz import file_reference_config
+
+            config = file_reference_config(config)
+        reject_deleting_references(context, [config, job.get("run_dir"), job.get("samples_dir")])
+
     def _check_job_version(self, job: dict[str, Any]) -> None:
         from .errors import ApiError
 
         if job.get("project_id"):
+            if getattr(self, "context", None) is not None:
+                from .versions import assert_not_deleting
+
+                assert_not_deleting(self.context, job["project_id"], job.get("version_id"))
             project = self.db.fetchone("SELECT archived FROM projects WHERE id=?", (job["project_id"],))
             if not project or project["archived"]:
                 raise ApiError(

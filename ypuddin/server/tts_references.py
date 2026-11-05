@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -24,10 +25,28 @@ def reject_job_file_references(c: Any, targets: list[Path]) -> None:
         )
 
 
+def _deletion_targets(c: Any, row: dict, *, version_id: str | None = None) -> list[Path]:
+    from .project_deletion import plan
+
+    if row.get("plan_json"):
+        try:
+            return [Path(item["path"]).resolve() for item in json.loads(row["plan_json"])["locations"]]
+        except (KeyError, TypeError, ValueError, OSError, RuntimeError) as exc:
+            raise ApiError("无法读取删除位置，请完成删除后再引用文件。",
+                           code="version.references_unresolved" if version_id else "project.references_unresolved", status=409) from exc
+    found = plan(c, row["project_id"], version_id=version_id, check_tts_refs=False)
+    return [location.path.resolve() for location in found.locations]
+
+
+def _overlaps(path: Path, targets: list[Path]) -> bool:
+    directory = path.is_dir()
+    return any(path == target or path.is_relative_to(target) or directory and target.is_relative_to(path)
+               for target in targets)
+
+
 def reject_deleting_references(c: Any, paths: list[Path]) -> None:
     """Caller holds the database admission lock; only existing deletion plans matter."""
     from .job_paths import deleting_jobs, job_directories
-    from .project_deletion import plan
 
     for jid in tuple(deleting_jobs):
         job = c.db.fetchone("SELECT * FROM jobs WHERE id=?", (jid,))
@@ -36,24 +55,37 @@ def reject_deleting_references(c: Any, paths: list[Path]) -> None:
         targets = [folder.resolve() for folder in job_directories(job) if folder.name == jid]
         for path in paths:
             resolved = Path(path).expanduser().resolve()
-            if any(resolved == target or resolved.is_relative_to(target) for target in targets):
+            if _overlaps(resolved, targets):
                 raise ApiError(
                     "引用文件所在的任务正在删除。", code="job.deleting", status=409,
                     details={"blocker": {"job_id": jid, "path": str(path)}},
                 )
 
-    if not c.db.fetchone("SELECT name FROM sqlite_master WHERE type='table' AND name='project_deletions'"):
-        return
-    for row in c.db.fetchall("SELECT project_id,skipped_json FROM project_deletions WHERE state='deleting'"):
+    projects = c.db.fetchall("SELECT * FROM project_deletions WHERE state='deleting'") if c.db.fetchone(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='project_deletions'"
+    ) else []
+    for row in projects:
         # Include skipped locations conservatively while the owning project is being removed.
-        found = plan(c, row["project_id"], check_tts_refs=False)
-        targets = [location.path.resolve() for location in found.locations]
+        targets = _deletion_targets(c, row)
         for path in paths:
             resolved = Path(path).expanduser().resolve()
-            if any(resolved == target or resolved.is_relative_to(target) for target in targets):
+            if _overlaps(resolved, targets):
                 raise ApiError(
-                    "录音或清单所在的项目正在删除。",
+                    "引用文件所在的项目正在删除。",
                     code="project.deleting",
                     status=409,
                     details={"blocker": {"project_id": row["project_id"], "path": str(path)}},
+                )
+
+    versions = c.db.fetchall("SELECT * FROM version_deletions WHERE state IN ('deleting','failed')") if c.db.fetchone(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='version_deletions'"
+    ) else []
+    for row in versions:
+        targets = _deletion_targets(c, row, version_id=row["version_id"])
+        for path in paths:
+            resolved = Path(path).expanduser().resolve()
+            if _overlaps(resolved, targets):
+                raise ApiError(
+                    "引用文件所在的版本尚未完成删除。", code="version.deleting", status=409,
+                    details={"blocker": {"project_id": row["project_id"], "version_id": row["version_id"], "path": str(path)}},
                 )

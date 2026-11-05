@@ -786,6 +786,12 @@ class VersionStats(_Out):
     artifacts: int
 
 
+class ProjectDeletionState(_Out):
+    state: Literal["deleting", "failed"]
+    error: str | None = None
+    task_id: str | None = None
+
+
 class ProjectVersion(_Out):
     id: str
     project_id: str
@@ -809,6 +815,21 @@ class ProjectVersion(_Out):
     engine: Literal["voxcpm1.5", "gpt-sovits-v5"] | None = None
     variant: Literal["v5dev", "v5turbo"] | None = None
     audio_stats: AudioStats | None = None
+    deletion: ProjectDeletionState | None = None
+
+
+class ArchivedProjectVersion(ProjectVersion):
+    project_name: str
+    project_archived: bool
+    project_category: str | None = None
+    project_cover_url: str | None = None
+
+
+class ArchivedVersionPage(_Out):
+    items: list[ArchivedProjectVersion]
+    total: int
+    page: int
+    page_size: int
 
 
 class DatasetSource(_Out):
@@ -1294,12 +1315,6 @@ class ProjectStorageBlock(_Out):
     code: str
     message: str
     jobs: list[str] = Field(default_factory=list)
-
-
-class ProjectDeletionState(_Out):
-    state: Literal["deleting", "failed"]
-    error: str | None = None
-    task_id: str | None = None
 
 
 class ProjectStorage(_Out):

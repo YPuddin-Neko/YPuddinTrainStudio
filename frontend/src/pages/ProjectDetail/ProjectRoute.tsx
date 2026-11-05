@@ -5,7 +5,7 @@ import { apiClient } from '../../api/client';
 import type { Project } from '../../api/types';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import { projectUrl } from '../../utils/projectVersions';
+import { archiveUrl, projectUrl } from '../../utils/projectVersions';
 import { LoadingNote } from '../../components/Loading';
 
 const ProjectDetail = React.lazy(() => import('./ProjectDetail'));
@@ -19,6 +19,7 @@ export default function ProjectRoute({ view = 'detail' }: { view?: 'detail' | 't
   const query = useQuery({ queryKey: ['project', id], queryFn: ({ signal }) => apiClient.get<Project>(`/projects/${encodeURIComponent(id)}`, { signal, silent: true }), enabled: !!id });
   if (query.isPending) return <LoadingNote block label={text('正在打开项目…', 'Opening project…')}/>;
   if (!query.data) return <div role="alert" className="workspace-message error">{formatApiError(query.error)}<button className="ui-btn ui-btn-sm" onClick={() => void query.refetch()}>{text('重试', 'Retry')}</button></div>;
+  if (!versionId && !query.data.active_version_id && query.data.version_count) return <Navigate replace to={archiveUrl('versions', id)}/>;
   if (query.data.project_type === 'tts') return view === 'curate'
     ? <Navigate replace to={projectUrl(id, versionId, 'data')}/>
     : <TtsProjectWorkspace key={`${id}/${versionId || 'active'}`} project={query.data} versionId={versionId} training={view === 'train'}/>;

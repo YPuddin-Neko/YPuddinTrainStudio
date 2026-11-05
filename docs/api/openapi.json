@@ -2748,6 +2748,138 @@
         }
       }
     },
+    "/api/archived-versions": {
+      "get": {
+        "summary": "Archived Versions",
+        "operationId": "archived_versions_api_archived_versions_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 500,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "project_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "image",
+                    "tts"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Type"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "updated",
+                "created",
+                "name"
+              ],
+              "type": "string",
+              "default": "updated",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 24,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ArchivedProjectVersion"
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/ArchivedVersionPage"
+                    }
+                  ],
+                  "title": "Response Archived Versions Api Archived Versions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{pid}/versions": {
       "get": {
         "summary": "List Versions",
@@ -2925,6 +3057,67 @@
           }
         }
       },
+      "delete": {
+        "summary": "Delete Version",
+        "operationId": "delete_version_api_projects__pid__versions__vid__delete",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Listed locations to keep.",
+              "default": [],
+              "title": "Skip"
+            },
+            "description": "Listed locations to keep."
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDeletionStarted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "summary": "Patch Version",
         "operationId": "patch_version_api_projects__pid__versions__vid__patch",
@@ -3008,6 +3201,54 @@
               }
             },
             "description": "Unprocessable Entity"
+          }
+        }
+      }
+    },
+    "/api/projects/{pid}/versions/{vid}/delete-preview": {
+      "get": {
+        "summary": "Version Delete Preview",
+        "operationId": "version_delete_preview_api_projects__pid__versions__vid__delete_preview_get",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pid"
+            }
+          },
+          {
+            "name": "vid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStorage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         }
       }
@@ -15349,6 +15590,257 @@
           "error"
         ],
         "title": "ApiErrorResponse"
+      },
+      "ArchivedProjectVersion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "number": {
+            "type": "integer",
+            "title": "Number",
+            "default": 1
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          },
+          "busy": {
+            "type": "boolean",
+            "title": "Busy"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "copying",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At"
+          },
+          "dataset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Ids"
+          },
+          "paths": {
+            "$ref": "#/components/schemas/VersionPaths"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/VersionStats"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/VersionProgress"
+          },
+          "family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family"
+          },
+          "display_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Family"
+          },
+          "project_type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "tts"
+            ],
+            "title": "Project Type",
+            "default": "image"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "voxcpm1.5",
+                  "gpt-sovits-v5"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "v5dev",
+                  "v5turbo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
+          },
+          "audio_stats": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioStats"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deletion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectDeletionState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "project_archived": {
+            "type": "boolean",
+            "title": "Project Archived"
+          },
+          "project_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Category"
+          },
+          "project_cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Cover Url"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "name",
+          "note",
+          "archived",
+          "busy",
+          "status",
+          "created_at",
+          "updated_at",
+          "dataset_ids",
+          "paths",
+          "stats",
+          "progress",
+          "project_name",
+          "project_archived"
+        ],
+        "title": "ArchivedProjectVersion"
+      },
+      "ArchivedVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ArchivedProjectVersion"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "ArchivedVersionPage"
       },
       "Artifact": {
         "properties": {
@@ -29112,6 +29604,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AudioStats"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deletion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectDeletionState"
               },
               {
                 "type": "null"

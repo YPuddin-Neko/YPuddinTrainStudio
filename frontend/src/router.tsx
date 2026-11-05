@@ -7,10 +7,12 @@ import './pages/Setup/setup.css';
 import SettingsRedirect from './pages/Settings/SettingsRedirect';
 import { projectUrl } from './utils/projectVersions';
 import { ResourceActivityContext, useResourceCacheEvents } from './api/resourcePolicy';
+import { useProjectArchiveEvents } from './components/projects/useProjectVersions';
 
 const Setup = React.lazy(() => import('./pages/Setup/Setup'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard/Dashboard'));
 const Projects = React.lazy(() => import('./pages/Projects/Projects'));
+const Archives = React.lazy(() => import('./pages/Projects/Archives'));
 const Presets = React.lazy(() => import('./pages/Presets/Presets'));
 const ProjectRoute = React.lazy(() => import('./pages/ProjectDetail/ProjectRoute'));
 const Dataset = React.lazy(() => import('./pages/Dataset/Dataset'));
@@ -39,6 +41,7 @@ function settingsRoutes() {
 }
 export default function AppRoutes() {
   useResourceCacheEvents();
+  useProjectArchiveEvents();
   const location = useLocation(); const navigate = useNavigate();
   const previous = (location.state as {backgroundLocation?: Location} | null)?.backgroundLocation;
   const background = location.pathname.startsWith('/settings') && previous?.pathname && !previous.pathname.startsWith('/settings') ? previous : null;
@@ -48,6 +51,7 @@ export default function AppRoutes() {
       <Route path="/setup" element={<React.Suspense fallback={<div className="setup-loading"/>}><Setup/></React.Suspense>}/>
       <Route path="/" element={<OnboardingGate><Layout navigationKey={location.key}/></OnboardingGate>}>
         <Route index element={<Dashboard/>}/><Route path="projects" element={<Projects/>}/>
+        <Route path="archive" element={<Archives/>}/>
         <Route path="presets" element={<Presets/>}/><Route path="tts" element={<TtsWorkspace/>}/>
         <Route path="projects/:id" element={<ProjectRoute/>}/><Route path="projects/:id/train" element={<ProjectRoute view="train"/>}/>
         <Route path="projects/:id/v/:versionId" element={<ProjectRoute/>}/><Route path="projects/:id/v/:versionId/train" element={<ProjectRoute view="train"/>}/>

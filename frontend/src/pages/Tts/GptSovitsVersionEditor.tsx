@@ -165,7 +165,6 @@ const GptSovitsVersionEditor = React.forwardRef<TtsEditorHandle, Props>(function
     <form id={formId} ref={form} className="tts-version-editor" onSubmit={event => { event.preventDefault(); void save(); }} aria-busy={saving}>
       <TtsParameterToolbar model={`GPT-SoVITS · ${String(draft.variant)}`} search={search} onSearch={updateSearch} advanced={advanced} onAdvancedChange={setAdvanced} parameterActions={parameterActions} status={saving ? text('正在保存…', 'Saving…') : dirty ? text('有未保存修改', 'Unsaved changes') : text('参数已保存', 'Parameters saved')} actions={<><button type="submit" form={formId} className={`ui-btn${toolbarActions ? '' : ' ui-btn-primary'}`} disabled={readOnly || saving || !dirty || !!conflict || schemaUnavailable}>{saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>} {text('保存参数', 'Save parameters')}</button>{toolbarActions}</>}/>
       {schemaUnavailable && <p className="workspace-message error" role="alert">{text('参数定义与当前模型不匹配，请重新读取此版本。', 'The parameter definition does not match this model. Reload this version.')}</p>}
-      {readOnly && <p className="workspace-message" role="status">{text('此版本当前只读。', 'This version is currently read-only.')}</p>}
       {error && <p className="workspace-message error" role="alert">{error}</p>}
       {notice && <p className="tts-editor-notice" role="status">{notice}</p>}
       {storageError && dirty && <p role="alert" className="workspace-message error">{text('浏览器无法保留草稿，请在离开前保存。', 'This browser cannot retain the draft. Save before leaving.')}</p>}

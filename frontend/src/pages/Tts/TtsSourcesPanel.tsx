@@ -214,7 +214,6 @@ function SourcesForVersion({ projectId: pid, versionId: vid, readOnly, engine = 
         <SlidingIndicator className="ui-segmented-thumb dataset-stage-indicator"/>
       </OverflowStrip>
     </div>
-    {readOnly && <p className="tts-source-muted">{text('当前版本只读，可查看检查结果和试听音频。', 'This version is read-only. Check results and audio previews remain available.')}</p>}
     {sources.isPending && <p role="status" className="workspace-loading"><Loader2 size={14} className="animate-spin"/>{text('正在读取数据来源…', 'Loading data sources…')}</p>}
     {(sources.error || error) && <p role="alert" className="workspace-message error">{error || formatApiError(sources.error)}</p>}
     <div className="pipeline-stage-body" id={stageId} ref={stageBody}>

@@ -859,6 +859,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/archived-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Archived Versions */
+        get: operations["archived_versions_api_archived_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{pid}/versions": {
         parameters: {
             query?: never;
@@ -888,11 +905,29 @@ export interface paths {
         get: operations["get_version_api_projects__pid__versions__vid__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Version */
+        delete: operations["delete_version_api_projects__pid__versions__vid__delete"];
         options?: never;
         head?: never;
         /** Patch Version */
         patch: operations["patch_version_api_projects__pid__versions__vid__patch"];
+        trace?: never;
+    };
+    "/api/projects/{pid}/versions/{vid}/delete-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Version Delete Preview */
+        get: operations["version_delete_preview_api_projects__pid__versions__vid__delete_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{pid}/datasets": {
@@ -3721,6 +3756,83 @@ export interface components {
         /** ApiErrorResponse */
         ApiErrorResponse: {
             error: components["schemas"]["ApiErrorBody"];
+        } & {
+            [key: string]: unknown;
+        };
+        /** ArchivedProjectVersion */
+        ArchivedProjectVersion: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Number
+             * @default 1
+             */
+            number: number;
+            /** Name */
+            name: string;
+            /** Note */
+            note: string;
+            /** Parent Version Id */
+            parent_version_id?: string | null;
+            /** Archived */
+            archived: boolean;
+            /** Busy */
+            busy: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "copying" | "ready" | "failed";
+            /** Error */
+            error?: string | null;
+            /** Created At */
+            created_at: number;
+            /** Updated At */
+            updated_at: number;
+            /** Dataset Ids */
+            dataset_ids: string[];
+            paths: components["schemas"]["VersionPaths"];
+            stats: components["schemas"]["VersionStats"];
+            progress: components["schemas"]["VersionProgress"];
+            /** Family */
+            family?: string | null;
+            /** Display Family */
+            display_family?: string | null;
+            /**
+             * Project Type
+             * @default image
+             * @enum {string}
+             */
+            project_type: "image" | "tts";
+            /** Engine */
+            engine?: ("voxcpm1.5" | "gpt-sovits-v5") | null;
+            /** Variant */
+            variant?: ("v5dev" | "v5turbo") | null;
+            audio_stats?: components["schemas"]["AudioStats"] | null;
+            deletion?: components["schemas"]["ProjectDeletionState"] | null;
+            /** Project Name */
+            project_name: string;
+            /** Project Archived */
+            project_archived: boolean;
+            /** Project Category */
+            project_category?: string | null;
+            /** Project Cover Url */
+            project_cover_url?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ArchivedVersionPage */
+        ArchivedVersionPage: {
+            /** Items */
+            items: components["schemas"]["ArchivedProjectVersion"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
         } & {
             [key: string]: unknown;
         };
@@ -8816,6 +8928,7 @@ export interface components {
             /** Variant */
             variant?: ("v5dev" | "v5turbo") | null;
             audio_stats?: components["schemas"]["AudioStats"] | null;
+            deletion?: components["schemas"]["ProjectDeletionState"] | null;
         } & {
             [key: string]: unknown;
         };
@@ -15550,6 +15663,42 @@ export interface operations {
             };
         };
     };
+    archived_versions_api_archived_versions_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                project_id?: string | null;
+                project_type?: ("image" | "tts") | null;
+                sort?: "updated" | "created" | "name";
+                page?: number | null;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchivedProjectVersion"][] | components["schemas"]["ArchivedVersionPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_versions_api_projects__pid__versions_get: {
         parameters: {
             query?: {
@@ -15677,6 +15826,41 @@ export interface operations {
             };
         };
     };
+    delete_version_api_projects__pid__versions__vid__delete: {
+        parameters: {
+            query?: {
+                /** @description Listed locations to keep. */
+                skip?: string[];
+            };
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDeletionStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     patch_version_api_projects__pid__versions__vid__patch: {
         parameters: {
             query?: never;
@@ -15736,6 +15920,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiErrorResponse"];
+                };
+            };
+        };
+    };
+    version_delete_preview_api_projects__pid__versions__vid__delete_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+                vid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectStorage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

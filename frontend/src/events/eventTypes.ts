@@ -19,6 +19,8 @@ export const EVENT_TYPES = {
   TTS_ENVIRONMENT_CHANGED: 'tts.environment.changed',
   ARTIFACT_CREATED: 'artifact.created',
   BACKGROUND_CHANGED: 'background.changed',
+  PROJECTS_CHANGED: 'projects.changed',
+  VERSIONS_CHANGED: 'versions.changed',
   MODEL_DOWNLOAD: 'model.download',
   TTS_MODEL_DOWNLOAD: 'tts.model_download',
 } as const;

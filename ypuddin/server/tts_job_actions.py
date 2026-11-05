@@ -56,11 +56,14 @@ def _running(c: Any, job: dict) -> bool:
 
 
 def _owner_deletion_issue(c: Any, job: dict) -> TtsIssue | None:
-    from .project_deletion import deleting
+    from .project_deletion import deleting, deletion_state
 
     pid = job.get("project_id")
     if pid and deleting(c, pid):
         return _issue("project.deleting", "任务所属项目正在删除。", loc=["project_id"], project_id=pid)
+    vid = job.get("version_id")
+    if pid and vid and deletion_state(c, pid, version_id=vid):
+        return _issue("version.deleting", "任务所属版本尚未完成删除。", loc=["version_id"], project_id=pid, version_id=vid)
     return None
 
 

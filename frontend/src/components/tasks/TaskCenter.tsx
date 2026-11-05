@@ -44,7 +44,7 @@ const KEEP_DONE_MS = 6000;
 const POLL_MS = 3000;
 
 const kindIcons: Record<string, LucideIcon> = {
-  dataset_upload: Upload, model_download: Download, project_delete: Trash2, dataset_refresh: RefreshCw,
+  dataset_upload: Upload, model_download: Download, project_delete: Trash2, version_delete: Trash2, dataset_refresh: RefreshCw,
   environment: PackagePlus, trainer_update: ArrowUpCircle, dataset_automask: Scan,
 };
 const automaskPhases: Record<string, [string, string]> = {
@@ -68,6 +68,7 @@ function kindTitle(kind: string, text: Text, id = '') {
     case 'dataset_upload': return text('上传数据集', 'Dataset upload');
     case 'model_download': return text('下载模型', 'Model download');
     case 'project_delete': return text('删除项目', 'Project deletion');
+    case 'version_delete': return text('删除版本', 'Version deletion');
     case 'dataset_refresh': return text('刷新数据集索引', 'Dataset index refresh');
     case 'dataset_automask': return text('自动遮罩', 'Automatic masks');
     case 'environment': return id.startsWith('te_') ? text('语音运行环境', 'Speech environment') : text('安装运行环境', 'Environment install');

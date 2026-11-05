@@ -20,6 +20,7 @@ from .db import new_id, now
 from .errors import ApiError, NotFound
 from .gpu_selection import GpuSelection, selection_error
 from .hardware import gpu_info
+from .versions import reference_lease, reject_deleting_references
 
 AXES = {
     "steps": "Steps",
@@ -277,6 +278,19 @@ def _reference_copies(paths: list[Path], run_dir: Path, *, previous=None):
         if folder.is_dir() and not folder.is_symlink():
             shutil.rmtree(folder)
         raise
+
+
+def file_reference_config(config: dict) -> dict:
+    """Frozen images are dependencies; their original locations are provenance only."""
+    snapshot = config.get("xyz")
+    if not isinstance(snapshot, dict) or not isinstance(snapshot.get("references"), list):
+        return config
+    references = [
+        {key: value for key, value in record.items() if key != "source_path"}
+        if isinstance(record, dict) else record
+        for record in snapshot["references"]
+    ]
+    return {**config, "xyz": {**snapshot, "references": references}}
 
 
 def frozen_reference_paths(payload: dict, *, check_root=True) -> list[str]:
@@ -795,7 +809,7 @@ def start(context, source_id: str, request: XyzRequest):
     if references and not context.is_allowed(run_dir):
         raise ApiError("参考图保存目录不在允许访问的范围内。", code="xyz.path", status=403)
     try:
-        with _reference_copies(references, run_dir) as reference_records:
+        with reference_lease(context, references), _reference_copies(references, run_dir) as reference_records:
             if reference_records:
                 request = request.model_copy(update={"reference_images": [row["path"] for row in reference_records]})
             payload = {
@@ -837,6 +851,7 @@ def start(context, source_id: str, request: XyzRequest):
                             code="xyz.checkpoint",
                             status=422,
                         )
+                reject_deleting_references(context, file_reference_config(payload))
                 context.db.insert(
                     "jobs",
                     {

@@ -208,14 +208,15 @@ def publish(c: Any, pid: str, vid: str, entries: list[dict]) -> None:
                                            "assets_json": json.dumps(item["assets"])})
 
 
-def active_references(c: Any, targets: list[Path], *, excluding_project_id: str | None = None) -> list[dict]:
+def active_references(c: Any, targets: list[Path], *, excluding_project_id: str | None = None,
+                      excluding_version_id: str | None = None) -> list[dict]:
     """Retain frozen dependencies even if a copying source's JSONL is edited externally."""
     roots = [absolute_path(path).resolve() for path in targets]
     references = []
     for source in c.db.fetchall("""SELECT s.* FROM tts_sources s
         JOIN project_versions parent ON parent.id=s.version_id
         JOIN project_versions target ON target.id=parent.busy AND target.status='copying'"""):
-        if source["project_id"] == excluding_project_id:
+        if source["project_id"] == excluding_project_id or source["version_id"] == excluding_version_id:
             continue
         try:
             identities = json.loads(source["identities_json"])

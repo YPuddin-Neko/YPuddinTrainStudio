@@ -1193,6 +1193,14 @@ def list_models(c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
 
 @router.post("/models", response_model=m.ModelAsset, response_model_exclude_unset=True)
 def add_model(body: ModelBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
+    from .versions import reference_lease
+
+    paths = [Path(value).expanduser().resolve() for value in (body.path, body.processor_path) if value]
+    with reference_lease(c, paths):
+        return _add_model(body, c)
+
+
+def _add_model(body: ModelBody, c: ServiceContext) -> dict[str, Any]:
     if (body.family == "tagger") != (body.kind == "tagger") or body.kind == "tagger" and body.is_default:
         raise ApiError(
             "tagger assets have their own family/role and cannot be training defaults", code="model.role"
@@ -1552,6 +1560,13 @@ class ScanBody(BaseModel):
 @router.post("/models/scan", response_model=list[m.ModelAsset], response_model_exclude_unset=True)
 def scan_models(body: ScanBody, c: ServiceContext = Depends(ctx)) -> list[dict[str, Any]]:
     root = Path(body.path or c.settings()["paths"]["models_dir"]).expanduser().resolve()
+    from .versions import reference_lease
+
+    with reference_lease(c, root):
+        return _scan_models(body, c, root)
+
+
+def _scan_models(body: ScanBody, c: ServiceContext, root: Path) -> list[dict[str, Any]]:
     if not c.is_allowed(root):
         raise ApiError("model path is outside allowed storage roots", code="model.path", status=403)
     if not root.is_dir():

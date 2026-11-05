@@ -4,6 +4,13 @@ import type { components } from '../api/generated';
 
 export type VersionedProject = Project & { active_version_id?: string | null; version_count?: number; layout_version?: number };
 export type ProjectVersion = components['schemas']['ProjectVersion'];
+export function archiveUrl(tab: 'projects' | 'versions' = 'projects', projectId?: string, source?: URLSearchParams) {
+  const params = new URLSearchParams(source);
+  params.delete('archived');
+  params.set('tab', tab);
+  if (projectId) params.set('project', projectId); else params.delete('project');
+  return `/archive?${params}`;
+}
 export function projectUrl(projectId: string, versionId?: string | null, step?: string) {
   const base = `/projects/${encodeURIComponent(projectId)}${versionId ? `/v/${encodeURIComponent(versionId)}` : ''}`;
   return step === 'train' ? `${base}/train` : step ? `${base}?step=${step}` : base;
