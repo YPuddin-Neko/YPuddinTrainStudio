@@ -2544,8 +2544,10 @@ def _create_image_job(body: JobBody, c: ServiceContext, version: dict | None, co
             details={"errors": validation_issues(e)},
         ) from e
     from ypuddin.train.native_batch_contract import resolve_native_batching_config
+    from ypuddin.training_seeds import PREVIEW_SEED_VERSION, resolve_training_seeds
 
     try:
+        cfg = resolve_training_seeds(cfg)
         cfg = resolve_native_batching_config(cfg)
     except (OSError, ValueError) as e:
         raise ApiError(
@@ -2558,7 +2560,7 @@ def _create_image_job(body: JobBody, c: ServiceContext, version: dict | None, co
     if body.type == "cache" and cfg.dataset.resolution_mode == "native" and cfg.dataset.native_max_pixels_mode == "auto_vram":
         # Cache the exact canvases the later training run uses, including its multi-GPU budget.
         try:
-            planning_cfg = TrainConfig.model_validate({**cfg.to_dict(), "loop": training_loop})
+            planning_cfg = TrainConfig.model_validate({**cfg.to_dict(), "loop": {**training_loop, "seed": cfg.loop.seed}})
         except ValidationError as e:
             raise ApiError("invalid config", code="config.invalid", details={"errors": validation_issues(e)}) from e
     devices = gpu_info()
@@ -2659,7 +2661,7 @@ def _create_image_job(body: JobBody, c: ServiceContext, version: dict | None, co
                 "samples_dir": str(samples_dir),
                 "config_json": json.dumps(cfg.to_dict()),
                 "progress_json": json.dumps({"estimated_peak_mb": estimated_peak_mb, "estimated_host_mb": estimated_host_mb,
-                                             "preview_seeds": {"preview_seed_version": 2}}),
+                                             "preview_seeds": {"preview_seed_version": PREVIEW_SEED_VERSION}}),
                 "latest_json": "{}",
             },
         )

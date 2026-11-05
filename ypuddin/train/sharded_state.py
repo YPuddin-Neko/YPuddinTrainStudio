@@ -24,8 +24,9 @@ from torch import nn
 from torch.distributed.tensor import DTensor, Replicate, Shard
 
 from ypuddin.config.compute_policy import validate_resume_compute_policy
-from ypuddin.config.io import config_hash_variants, load_config
+from ypuddin.config.io import config_hash_variants
 from ypuddin.config.schema import TrainConfig
+from ypuddin.training_seeds import load_checkpoint_recipe
 
 from .state import Progress
 from .training_modes import FullTrainingSet, save_model_artifact
@@ -359,7 +360,7 @@ def _scheduler_contract(path: Path, meta: dict[str, Any]) -> dict[str, Any]:
     try:
         from .native_batch_contract import authenticated_native_recipe
 
-        original = authenticated_native_recipe(path, metadata=meta) or load_config(path.parent / "config.toml")
+        original = authenticated_native_recipe(path, metadata=meta) or load_checkpoint_recipe(path.parent / "config.toml", meta)
         if (
             original.dataset.resolution_mode == "native"
             and "native_batch_contract" not in meta.get("progress", {}).get("extra", {})

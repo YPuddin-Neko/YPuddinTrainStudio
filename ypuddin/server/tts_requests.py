@@ -16,8 +16,21 @@ def recover_pending(c: Any) -> None:
     c.db.execute("DELETE FROM tts_requests WHERE state='pending'")
 
 
+def _fingerprint(pid: str | None, vid: str | None, action: str, payload: dict) -> str:
+    identity = json.dumps(
+        {"scope": [pid, vid], "action": action, "payload": payload},
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    fingerprint = hashlib.sha256(identity.encode()).hexdigest()
+    return fingerprint
+
+
 def reserve(
-    c: Any, pid: str | None, vid: str | None, action: str, key: str, payload: dict, *, target_job_id: str | None = None
+    c: Any, pid: str | None, vid: str | None, action: str, key: str, payload: dict, *,
+    target_job_id: str | None = None, sample_seed_omitted: bool = False,
 ) -> tuple[str, dict | None]:
     try:
         normalized_key = str(UUID(key))
@@ -39,19 +52,19 @@ def reserve(
             },
         ) from exc
     scope = json.dumps([pid, vid], separators=(",", ":"))
-    identity = json.dumps(
-        {"scope": [pid, vid], "action": action, "payload": payload},
-        sort_keys=True,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
-    fingerprint = hashlib.sha256(identity.encode()).hexdigest()
     with c.db.transaction():
         row = c.db.fetchone(
             "SELECT * FROM tts_requests WHERE scope=? AND action=? AND request_key=?",
             (scope, action, normalized_key),
         )
+        prefix = ""
+        if action == "sample":
+            # Old receipts normalized an omitted seed to 42 and can outlive the job itself.
+            if row is None or row["request_hash"].startswith("sample-v2:"):
+                prefix = "sample-v2:"
+            elif sample_seed_omitted:
+                payload = {**payload, "seed": 42}
+        fingerprint = prefix + _fingerprint(pid, vid, action, payload)
         if row is not None:
             if row["request_hash"] != fingerprint:
                 raise ApiError("这个请求标识已用于其他内容。", code="tts.idempotency_conflict", status=409)

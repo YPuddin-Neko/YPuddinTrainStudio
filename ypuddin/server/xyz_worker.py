@@ -323,7 +323,9 @@ def generate(payload: dict, output: Path, emit, cancelled, models: LoadedModels 
 
     torch.set_num_threads(min(torch.get_num_threads(), 2))
     request = XyzRequest.model_validate(payload["xyz"]["request"])
-    if request.seed < 0:
+    if request.seed < 0 or any(
+        axis and axis.key == "seed" and -1 in axis.values for axis in (request.x, request.y, request.z)
+    ):
         raise ValueError("Model-test seed must be resolved before sampling")
     model = ModelConfig.model_validate(payload["model"])
     memory = MemoryConfig.model_validate(payload["memory"])

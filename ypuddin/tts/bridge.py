@@ -179,7 +179,7 @@ def sample(request: dict[str, Any], events: Events) -> dict[str, Any]:
     events.emit("phase.changed", phase="sampling")
     waveform = model.generate(
         text=options["text"], prompt_wav_path=options.get("reference_audio") or None,
-        prompt_text=options.get("reference_text") or None, seed=options.get("seed", 42),
+        prompt_text=options.get("reference_text") or None, seed=options["seed"],
         cfg_value=options.get("cfg_value", 2.0), inference_timesteps=options.get("inference_timesteps", 10),
         normalize=False, denoise=False,
     )
@@ -201,7 +201,7 @@ def sample(request: dict[str, Any], events: Events) -> dict[str, Any]:
         "mode": "sample", "path": str(output), "sample_rate": rate,
         "duration_seconds": waveform.size / rate, "source_job_id": options["source_job_id"],
         "checkpoint": str(checkpoint), "text": options["text"],
-        "requested_seed": options.get("seed", 42),
+        "requested_seed": options.get("requested_seed", options["seed"]),
         "seed": getattr(model.tts_model, "last_successful_seed", None),
         "cfg_value": options.get("cfg_value", 2.0),
         "inference_timesteps": options.get("inference_timesteps", 10),

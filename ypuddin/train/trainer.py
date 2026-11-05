@@ -83,6 +83,7 @@ from ypuddin.optim import (
 )
 from ypuddin.runtime_compile import validate_compile_environment
 from ypuddin.runtime_profiles import current_profile
+from ypuddin.training_seeds import PREVIEW_SEED_VERSION, resolve_training_seeds
 
 from .events import Emitter, NullEmitter
 from .logging import TrainingLogs, log_directory
@@ -229,6 +230,8 @@ class Trainer:
     def __init__(
         self, cfg: TrainConfig, *, device: str | torch.device | None = None, emitter: Emitter | None = None
     ):
+        if not hasattr(self, "distributed"):
+            cfg = resolve_training_seeds(cfg)
         cfg = resolve_native_batching_config(
             cfg, world_size=getattr(getattr(self, "distributed", None), "world_size", 1),
         )
@@ -309,7 +312,7 @@ class Trainer:
         configure_reproducibility(self.cfg.loop.deterministic, self.device)
         s = self.cfg.loop.seed
         random.seed(s)
-        np.random.seed(s)
+        np.random.seed(s % (2**32))
         torch.manual_seed(s)
 
     def emit(self, type_: str, **data: Any) -> None:
@@ -838,7 +841,8 @@ class Trainer:
         self.progress.extra[DORA_STATE_KEY] = compute_contract(self.adapters)
         self.progress.extra[TRAINING_FEATURE_STATE_KEY] = deepcopy(self._training_feature_contract)
         self.progress.extra["deterministic"] = cfg.loop.deterministic
-        self.progress.extra.setdefault("preview_seed_version", 1 if cfg.checkpoint.resume else 2)
+        self.progress.extra["training_seeds"] = {"loop": cfg.loop.seed, "validation": cfg.validation.seed}
+        self.progress.extra.setdefault("preview_seed_version", 1 if cfg.checkpoint.resume else PREVIEW_SEED_VERSION)
         # Checkpoints win; older states may predate the actual seeds recorded by the job.
         for key, value in self._job_preview_seed_state.items():
             self.progress.extra.setdefault(key, deepcopy(value))
@@ -2220,14 +2224,14 @@ class Trainer:
         return stored if type(stored) is int and stored >= 0 else None
 
     def _preview_seed_version(self) -> int:
-        version = self.progress.extra.get("preview_seed_version", 1 if self.cfg.checkpoint.resume else 2)
-        if type(version) is not int or version not in {1, 2}:
+        version = self.progress.extra.get("preview_seed_version", 1 if self.cfg.checkpoint.resume else PREVIEW_SEED_VERSION)
+        if type(version) is not int or version not in {1, 2, PREVIEW_SEED_VERSION}:
             raise ValueError("Invalid checkpoint preview seed version")
         return version
 
     @staticmethod
     def _validate_preview_seed_state(state: dict) -> dict:
-        if not isinstance(state, dict) or type(state.get("preview_seed_version")) is not int or state["preview_seed_version"] not in {1, 2}:
+        if not isinstance(state, dict) or type(state.get("preview_seed_version")) is not int or state["preview_seed_version"] not in {1, 2, PREVIEW_SEED_VERSION}:
             raise ValueError("Invalid job preview seed state")
         result = {"preview_seed_version": state["preview_seed_version"]}
         for key in ("preview_seed", "preview_prompt_seed_nonce"):
@@ -2248,13 +2252,13 @@ class Trainer:
         return {key: deepcopy(self.progress.extra[key]) for key in keys if key in self.progress.extra}
 
     def _random_preview_requested(self) -> bool:
-        return self.cfg.sampling.seed == (0 if self._preview_seed_version() == 1 else -1)
+        return self.cfg.sampling.seed == -1 or (self.cfg.sampling.seed == 0 and self._preview_seed_version() == 1)
 
     def _prepare_preview_seeds(self) -> None:
         # Preparation runs on every rank; DDP's sampling body runs only on rank zero.
         def frozen():
             state = {"preview_seed": self._preview_seed()}
-            if self._preview_seed_version() == 2:
+            if self._preview_seed_version() >= 2:
                 nonce = self.progress.extra.get("preview_prompt_seed_nonce")
                 state["preview_prompt_seed_nonce"] = (
                     nonce if type(nonce) is int and nonce >= 0 else _random_preview_seed()
@@ -2264,7 +2268,7 @@ class Trainer:
         self.progress.extra.update(self._primary_call(frozen))
         prompts = list(self.cfg.sampling.prompts)
         if self.cfg.sampling.prompts_file:
-            prompts += _load_prompts_file(self.cfg.sampling.prompts_file)
+            prompts += _load_prompts_file(self.cfg.sampling.prompts_file, seed_version=self._preview_seed_version())
         for index, prompt in enumerate(prompts):
             self._prompt_preview_seed(prompt.seed, index)
 
@@ -2279,7 +2283,7 @@ class Trainer:
 
     def _prompt_preview_seed(self, requested: int | None, index: int) -> int:
         if self._preview_seed_version() == 1:
-            return requested if requested else self._preview_seed() + index
+            return requested if requested is not None and requested > 0 else self._preview_seed() + index
         if requested is None:
             return self._preview_seed() + index
         if requested != -1:
@@ -2859,7 +2863,7 @@ class Trainer:
         scfg = self.cfg.sampling
         prompts = list(scfg.prompts)
         if scfg.prompts_file:
-            prompts += _load_prompts_file(scfg.prompts_file)
+            prompts += _load_prompts_file(scfg.prompts_file, seed_version=self._preview_seed_version())
         if not prompts:
             return []
         # Previews show what the exported file does: every T-LoRA rank.
@@ -3060,7 +3064,7 @@ def _describe(data: dict[str, Any], width: int = 160) -> str:
 _PER_STEP_EVENTS = {"step", "sample.progress", "xyz.progress", "epoch.started"}
 
 
-def _load_prompts_file(path: str) -> list[Any]:
+def _load_prompts_file(path: str, *, seed_version: int = PREVIEW_SEED_VERSION) -> list[Any]:
     from ypuddin.config import SamplePrompt
 
     p = Path(path)
@@ -3072,12 +3076,16 @@ def _load_prompts_file(path: str) -> list[Any]:
         else:  # pragma: no cover
             import tomli as tomllib
         data = tomllib.loads(p.read_text(encoding="utf-8"))
-        return [SamplePrompt.model_validate(d) for d in data.get("prompt", [])]
-    return [
-        SamplePrompt(prompt=line.strip())
-        for line in p.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
+        entries = data.get("prompt", [])
+    else:
+        entries = [
+            {"prompt": line.strip()}
+            for line in p.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+    if seed_version < PREVIEW_SEED_VERSION:
+        entries = [{"seed": None, **entry} for entry in entries]
+    return [SamplePrompt.model_validate(entry) for entry in entries]
 
 
 def cache(cfg: TrainConfig, *, device: str | None = None, emitter: Emitter | None = None) -> str:

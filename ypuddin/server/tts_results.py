@@ -652,6 +652,8 @@ def sample_job(c: Any, sid: str) -> TtsSampleJob:
     summary = _source_summary(job) or c.db.get_kv("tts.source_summary:" + source_id, {})
     records = _audio_records(c, job)
     records.sort(key=_audio_key, reverse=True)
+    request = {field: options.get(field) for field in TtsSampleRequestSnapshot.model_fields}
+    request["seed"] = options.get("requested_seed", request["seed"])
     from .routes_work import _job_row
 
     return TtsSampleJob(
@@ -664,9 +666,7 @@ def sample_job(c: Any, sid: str) -> TtsSampleJob:
         ),
         checkpoint_id=options.get("checkpoint_id"),
         checkpoint_revision=options.get("checkpoint_revision"),
-        request=TtsSampleRequestSnapshot(
-            **{field: options.get(field) for field in TtsSampleRequestSnapshot.model_fields}
-        ),
+        request=TtsSampleRequestSnapshot(**request),
         audio=_audio(c, job, records[0]) if records else None,
     )
 

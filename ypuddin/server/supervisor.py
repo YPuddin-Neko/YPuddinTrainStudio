@@ -817,7 +817,17 @@ class JobSupervisor:
             env["PYTHONPATH"] = os.pathsep.join(filter(None, (source, env.get("PYTHONPATH"))))
         else:
             payload = json.loads(job["config_json"])
-            env["YPUDDIN_JOB_PREVIEW_SEEDS"] = json.dumps(self._job_preview_seeds(job))
+            from ypuddin.training_seeds import PREVIEW_SEED_VERSION
+
+            preview_state = self._job_preview_seeds(job)
+            env["YPUDDIN_JOB_PREVIEW_SEEDS"] = json.dumps(preview_state)
+            if preview_state["preview_seed_version"] < PREVIEW_SEED_VERSION:
+                payload.setdefault("loop", {}).setdefault("seed", 42)
+                payload.setdefault("validation", {}).setdefault("seed", 1234)
+                sampling = payload.setdefault("sampling", {})
+                sampling.setdefault("seed", 0 if preview_state["preview_seed_version"] == 1 else -1)
+                for prompt in sampling.get("prompts", []):
+                    prompt.setdefault("seed", None)
             # New queue snapshots include the switch. Existing immutable jobs
             # predate it and must resume with their original calculation mode.
             payload.setdefault("loop", {}).setdefault("deterministic", False)

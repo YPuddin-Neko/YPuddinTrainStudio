@@ -16,7 +16,7 @@ class GptSettings(_Model):
     epochs: int = Field(15, ge=1, le=10000)
     batch_size: int = Field(8, ge=1, le=1024)
     precision: Literal["16-mixed", "32-true"] = "16-mixed"
-    seed: int = Field(1234, ge=0, le=4294967295)
+    seed: int = Field(-1, ge=-1, le=4294967295)
     save_every_epoch: int = Field(5, ge=1, le=10000)
     save_latest: bool = True
     learning_rate: float = Field(0.01, gt=0, le=1)
@@ -41,7 +41,7 @@ class SovitsSettings(_Model):
     epochs: int = Field(2, ge=1, le=10000)
     batch_size: int = Field(1, ge=1, le=1024)
     precision: Literal["fp16", "fp32"] = "fp16"
-    seed: int = Field(1234, ge=0, le=4294967295)
+    seed: int = Field(-1, ge=-1, le=4294967295)
     save_every_epoch: int = Field(1, ge=1, le=10000)
     save_latest: bool = True
     learning_rate: float = Field(1e-4, gt=0, le=1)

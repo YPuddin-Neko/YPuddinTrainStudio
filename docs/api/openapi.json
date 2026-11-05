@@ -20681,9 +20681,9 @@
           "seed": {
             "type": "integer",
             "maximum": 4294967295.0,
-            "minimum": 0.0,
+            "minimum": -1.0,
             "title": "Seed",
-            "default": 1234
+            "default": -1
           },
           "save_every_epoch": {
             "type": "integer",
@@ -23816,9 +23816,10 @@
           },
           "seed": {
             "type": "integer",
+            "minimum": -1.0,
             "title": "Seed",
-            "description": "训练随机种子，默认 42，影响数据顺序、标签变体、噪声等。对比参数时保持一致；不同设备、依赖版本或数据仍可能产生不同结果，预览图另有自己的种子。",
-            "default": 42,
+            "description": "控制训练中的数据顺序和噪声。-1 表示随机。",
+            "default": -1,
             "x-ui": {
               "advanced": true,
               "group": "loop",
@@ -31155,7 +31156,9 @@
                 "type": "null"
               }
             ],
-            "title": "Seed"
+            "title": "Seed",
+            "description": "单条提示词的预览种子。-1 表示随机。",
+            "default": -1
           },
           "width": {
             "anyOf": [
@@ -31322,7 +31325,7 @@
             },
             "type": "array",
             "title": "Prompts",
-            "description": "固定预览内容，默认空列表；每条可单独覆盖种子、尺寸、步数和 CFG，未填时继承下方设置。对比训练进度时保持提示词和种子一致。",
+            "description": "每条提示词可单独设置种子、尺寸、步数和 CFG，留空时沿用下方设置。",
             "x-ui": {
               "control": "prompts",
               "group": "sampling",
@@ -31435,7 +31438,7 @@
             "type": "integer",
             "minimum": -1.0,
             "title": "Seed",
-            "description": "预览初始噪声种子，默认 -1：每次训练开始时随机生成一次，续训沿用记录值。0 和正数为固定种子。单条提示词留空使用全局种子 + 序号（从 0 计），设为 -1 则单独随机一次。与训练随机种子独立。",
+            "description": "控制预览图的初始噪声。-1 表示随机。",
             "default": -1,
             "x-ui": {
               "advanced": true,
@@ -32951,9 +32954,9 @@
           "seed": {
             "type": "integer",
             "maximum": 4294967295.0,
-            "minimum": 0.0,
+            "minimum": -1.0,
             "title": "Seed",
-            "default": 1234
+            "default": -1
           },
           "save_every_epoch": {
             "type": "integer",
@@ -38460,9 +38463,9 @@
           "seed": {
             "type": "integer",
             "exclusiveMaximum": 4294967296.0,
-            "minimum": 0.0,
+            "minimum": -1.0,
             "title": "Seed",
-            "default": 42
+            "default": -1
           },
           "cfg_value": {
             "type": "number",
@@ -40472,9 +40475,10 @@
           },
           "seed": {
             "type": "integer",
+            "minimum": -1.0,
             "title": "Seed",
-            "description": "验证噪声种子",
-            "default": 1234,
+            "description": "控制验证时使用的噪声。-1 表示随机。",
+            "default": -1,
             "x-ui": {
               "advanced": true,
               "group": "validation",
@@ -41986,7 +41990,7 @@
             "exclusiveMaximum": 9.223372036854776e+18,
             "minimum": -1.0,
             "title": "Seed",
-            "default": 1
+            "default": -1
           },
           "sampler": {
             "type": "string",

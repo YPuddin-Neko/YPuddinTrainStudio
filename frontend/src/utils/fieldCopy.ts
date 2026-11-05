@@ -88,7 +88,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'loop.epochs': ['完整遍历全部训练图片的次数。', 'Passes over the whole training set.'],
   'loop.max_steps': ['最多更新多少次，留空按轮数结束。', 'Most updates to run; blank stops by epochs.'],
   'loop.mixed_precision': ['训练运算使用的精度，BF16 最常用。', 'Precision used for training math; BF16 is typical.'],
-  'loop.seed': ['固定后可重现相同的数据顺序和噪声。', 'Fixes data order and noise for repeatable runs.'],
+  'loop.seed': ['控制训练的数据顺序和噪声，-1 随机。', 'Controls training data order and noise; -1 randomizes it.'],
   'loop.ema_decay': ['越接近 1，平均权重变化越慢。', 'Closer to 1 averages more slowly.'],
   'loop.nan_skip_limit': ['连续出现无效数值时最多跳过的步数。', 'Invalid steps skipped in a row before stopping.'],
   'loop.log_every': ['每隔多少步记录一次训练指标。', 'Record metrics every N steps.'],
@@ -177,11 +177,11 @@ export const FIELD_HINTS: Record<string, Copy> = {
 
   'sampling.every_steps': ['每隔多少步生成预览，留空或设为 0 关闭。', 'Preview every N steps; leave blank to disable.'],
   'sampling.every_epochs': ['每隔多少轮生成预览，留空或设为 0 关闭。', 'Preview every N epochs; leave blank to disable.'],
-  'sampling.prompts': ['预览使用的提示词，可逐条覆盖参数；种子留空继承本任务种子，-1 单独随机，0 固定。', 'Preview prompts can override settings. A blank seed inherits the run seed; -1 randomizes this prompt, and 0 stays fixed.'],
+  'sampling.prompts': ['预览提示词可逐条覆盖参数；种子留空继承预览种子，-1 随机。', 'Preview prompts can override settings; a blank seed inherits the preview seed, and -1 randomizes it.'],
   'sampling.prompts_file': ['追加一个 .txt 或 .toml 提示词文件。', 'Append prompts from a .txt or .toml file.'],
   'sampling.width': ['预览图宽度，单条提示词可覆盖。', 'Preview width; prompts can override it.'],
   'sampling.height': ['预览图高度，单条提示词可覆盖。', 'Preview height; prompts can override it.'],
-  'sampling.seed': ['-1 为每次训练随机选取预览种子；0 和正整数固定，任务会记录实际种子。', '-1 chooses a preview seed for each run; 0 and positive integers stay fixed. The task records the actual seed.'],
+  'sampling.seed': ['控制预览图的初始噪声，-1 随机。', 'Controls the initial noise in previews; -1 randomizes it.'],
   'sampling.noise': ['选择适配器融合与噪声规则，仅影响采样。', 'Selects adapter merging and noise rules for sampling only.'],
   'sampling.adapter_merge_dtype': ['自动跟随底模精度；可按外部加载方式指定。', 'Auto follows the base model precision; override it to match an external loader.'],
   'sampling.sampler': ['生成预览图的采样算法。', 'Algorithm used to generate previews.'],
@@ -198,7 +198,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'validation.every_epochs': ['每隔多少轮计算一次验证损失，留空或设为 0 关闭。', 'Validate every N epochs; leave blank to disable.'],
   'validation.max_images': ['每次验证最多使用的图片数。', 'Most images used per validation.'],
   'validation.timesteps': ['计算验证损失时使用的噪声强度。', 'Noise levels used for validation loss.'],
-  'validation.seed': ['验证加噪使用的随机种子。', 'Random seed for validation noise.'],
+  'validation.seed': ['控制验证加噪，-1 随机。', 'Controls validation noise; -1 randomizes it.'],
 
   'checkpoint.name': ['导出权重的文件名前缀。', 'File name prefix for exported weights.'],
   'checkpoint.metadata_title': ['留空使用权重文件名前缀。', 'Blank uses the weight file name prefix.'],
@@ -224,6 +224,8 @@ export const FIELD_HINTS: Record<string, Copy> = {
 };
 
 export const FIELD_HELP: Record<string, Copy> = {
+  'loop.seed': ['控制训练的数据顺序和噪声。填写固定数值，便于在相同条件下比较参数调整的效果；设为 -1 时，每次新训练随机选择一个种子。', 'Controls training data order and noise. A fixed value helps compare parameter changes under the same conditions; -1 chooses a random seed for each new training run.'],
+  'sampling.seed': ['控制预览图的初始噪声。填写固定数值，便于在相同条件下比较不同训练阶段的效果；设为 -1 时，每次新训练随机选择一个种子。', 'Controls the initial noise in previews. A fixed value helps compare training stages under the same conditions; -1 chooses a random seed for each new training run.'],
   'optimizer.momentum': ['平滑 Muon 分支的梯度方向，默认 0.95。越接近 1，越依赖过去的方向；设为 0 不保留动量，须小于 1。', 'Smooths gradient directions in the Muon branch. Default: 0.95. Closer to 1 gives more weight to past directions; 0 keeps no momentum. Must be less than 1.'],
   'optimizer.nesterov': ['使用 Nesterov 动量计算 Muon 更新方向，默认开启。关闭后使用普通动量，只影响 Muon 分支。', 'Uses Nesterov momentum for Muon update directions. On by default; turning it off uses ordinary momentum. Applies only to the Muon branch.'],
   'optimizer.ns_steps': ['每次 Muon 更新中，使用 Newton–Schulz 迭代对更新矩阵做正交化。默认 5 次，通常保留；增加次数会增加更新计算量，最多 10 次，至少保留 1 次。', 'Newton–Schulz iterations used to orthogonalize the update matrix at each Muon update. Usually keep the default of 5. More iterations add update computation; use at least 1 and at most 10.'],
@@ -323,7 +325,7 @@ export const FIELD_HELP: Record<string, Copy> = {
   'validation.sources': ['只用于验证、不参与训练的图片目录。设置后可以不从训练图中划分验证集。', 'Image folders used only for validation, never for training. With these set, no training images need to be held out.'],
   'validation.every_steps': ['每隔多少次优化更新计算一次验证损失。留空不按步验证。', 'Computes validation loss every N optimizer updates. Blank disables step-based validation.'],
   'validation.every_epochs': ['每隔多少轮计算一次验证损失。留空不按轮验证。', 'Computes validation loss every N epochs. Blank disables epoch-based validation.'],
-  'validation.seed': ['验证加噪使用的随机种子。保持不变，不同时间点的验证损失才能直接比较。', 'Random seed for validation noise. Keep it fixed so validation losses stay comparable over time.'],
+  'validation.seed': ['同一次训练保持验证噪声条件一致，便于比较不同阶段的验证损失。填写固定数值可在不同训练间沿用这些条件；设为 -1 时，每次新训练随机选择一个种子。', 'Keeps validation noise consistent within a training run so losses can be compared across stages. A fixed value reuses those conditions across runs; -1 chooses a random seed for each new run.'],
   'logging.output_dir': ['保存控制台日志、训练事件与 TensorBoard 数据。留空使用“设置 → 存储路径”中的日志目录；该项也未设置时保存在版本目录的 jobs/<任务>。自定义目录下按项目、版本和任务分开存放。', 'Stores console logs, training events and TensorBoard data. Blank uses the log directory in Settings → Storage paths, or jobs/<job> in the version folder if unset. Custom roots are organized by project, version and job.'],
   'logging.events_path': ['记录训练进度、损失等事件的文件，默认名为 events.jsonl。设置了日志保存目录时使用该目录；否则使用此文件的父目录作为日志根目录。', 'Records training progress, losses and other events, named events.jsonl by default. Uses the configured log directory, or this file’s parent as the log root.'],
 };

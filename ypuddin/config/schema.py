@@ -1349,8 +1349,9 @@ class LoopConfig(_Strict):
         ui_=ui("loop", order=30, control="select"),
     )
     seed: int = F(
-        42,
-        help="训练随机种子，默认 42，影响数据顺序、标签变体、噪声等。对比参数时保持一致；不同设备、依赖版本或数据仍可能产生不同结果，预览图另有自己的种子。",
+        -1,
+        ge=-1,
+        help="控制训练中的数据顺序和噪声。-1 表示随机。",
         ui_=ui("loop", advanced=True, order=40),
     )
     deterministic: bool = F(
@@ -1513,7 +1514,7 @@ class SamplePrompt(_Strict):
     prompt: str
     reference_images: list[str] = F(default_factory=list, max_length=1, help="原生编辑预览使用的参考图片。")
     negative: str = ""
-    seed: int | None = F(None, ge=-1)
+    seed: int | None = F(-1, ge=-1, help="单条提示词的预览种子。-1 表示随机。")
     width: int | None = F(None, ge=32, le=MAX_SIDE)
     height: int | None = F(None, ge=32, le=MAX_SIDE)
     steps: int | None = F(None, ge=1, le=1000)
@@ -1561,7 +1562,7 @@ class SamplingConfig(_IntervalConfig):
     )
     prompts: list[SamplePrompt] = F(
         default_factory=list,
-        help="固定预览内容，默认空列表；每条可单独覆盖种子、尺寸、步数和 CFG，未填时继承下方设置。对比训练进度时保持提示词和种子一致。",
+        help="每条提示词可单独设置种子、尺寸、步数和 CFG，留空时沿用下方设置。",
         ui_=ui("sampling", order=40, control="prompts", show_when="sampling.enabled == true"),
     )
     prompts_file: str | None = F(
@@ -1607,7 +1608,7 @@ class SamplingConfig(_IntervalConfig):
     seed: int = F(
         -1,
         ge=-1,
-        help="预览初始噪声种子，默认 -1：每次训练开始时随机生成一次，续训沿用记录值。0 和正数为固定种子。单条提示词留空使用全局种子 + 序号（从 0 计），设为 -1 则单独随机一次。与训练随机种子独立。",
+        help="控制预览图的初始噪声。-1 表示随机。",
         ui_=ui("sampling", advanced=True, order=110, show_when="sampling.enabled == true"),
     )
     noise: Literal["comfyui", "a1111"] = F(
@@ -1705,8 +1706,9 @@ class ValidationConfig(_IntervalConfig):
         ui_=ui("validation", order=60, show_when="validation.enabled == true"),
     )
     seed: int = F(
-        1234,
-        help="验证噪声种子",
+        -1,
+        ge=-1,
+        help="控制验证时使用的噪声。-1 表示随机。",
         ui_=ui("validation", order=70, advanced=True, show_when="validation.enabled == true"),
     )
 

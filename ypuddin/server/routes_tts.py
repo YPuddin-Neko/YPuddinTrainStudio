@@ -50,7 +50,7 @@ class SampleBody(GpuSelection):
     text: str = Field(min_length=1, max_length=4000, pattern=r".*\S.*")
     reference_audio: str = ""
     reference_text: str = ""
-    seed: int = Field(42, ge=0, lt=2**32)
+    seed: int = Field(-1, ge=-1, lt=2**32)
     cfg_value: float = Field(2.0, ge=0, le=20)
     inference_timesteps: int = Field(10, ge=1, le=100)
 
@@ -255,6 +255,8 @@ def launch_payload(job: dict, device: str | None = None) -> dict:
 
             sample["checkpoint"] = str(gsv_checkpoint(sample["source_output_dir"], sample["checkpoint"]))
         else:
+            # Older VoxCPM snapshots could omit the then fixed sample seed.
+            sample.setdefault("seed", 42)
             sample["checkpoint"] = str(safe_checkpoint(sample["source_output_dir"], sample["checkpoint"]))
     return payload
 

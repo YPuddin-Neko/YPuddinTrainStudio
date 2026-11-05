@@ -13,7 +13,7 @@ export function readSampleAttempt(jobId: string): SampleAttempt | null {
       || typeof value.body.text !== 'string' || !value.body.text.trim() || value.body.text.length > 4000
       || typeof value.body.reference_audio !== 'string' || typeof value.body.reference_text !== 'string'
       || !!value.body.reference_audio.trim() !== !!value.body.reference_text.trim()
-      || typeof value.body.seed !== 'number' || !Number.isInteger(value.body.seed) || value.body.seed < 0 || value.body.seed >= 4294967296
+      || typeof value.body.seed !== 'number' || !Number.isInteger(value.body.seed) || value.body.seed < -1 || value.body.seed >= 4294967296
       || !Array.isArray(value.body.gpu_devices) || value.body.gpu_devices.length > 1 || value.body.gpu_devices.some(device => !/^cuda:\d+$/.test(device))) return null;
     if (value.checkpoint.gpt_sovits) {
       if (!value.body.reference_audio.trim() || !value.body.reference_text.trim()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import secrets
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -35,7 +36,7 @@ class TtsSampleBody(GpuSelection):
     text: str = Field(min_length=1, max_length=4000, pattern=r".*\S.*")
     reference_audio: str = ""
     reference_text: str = ""
-    seed: int = Field(42, ge=0, lt=2**32)
+    seed: int = Field(-1, ge=-1, lt=2**32)
     cfg_value: float = Field(2.0, ge=0, le=20, allow_inf_nan=False)
     inference_timesteps: int = Field(10, ge=1, le=100)
     gpt_sovits: GptSovitsSampleOptions | None = None
@@ -81,7 +82,7 @@ def _row(c: Any, jid: str, kind: str | None = None) -> dict:
     return row
 
 
-def _reserve(c: Any, jid: str, action: str, key: str | None, payload: dict):
+def _reserve(c: Any, jid: str, action: str, key: str | None, payload: dict, *, sample_seed_omitted: bool = False):
     source = c.db.fetchone("SELECT * FROM jobs WHERE id=?", (jid,))
     pid, vid = (source.get("project_id"), source.get("version_id")) if source else (None, None)
     if source is None:
@@ -92,7 +93,8 @@ def _reserve(c: Any, jid: str, action: str, key: str | None, payload: dict):
         saved = c.db.fetchone("SELECT scope FROM tts_requests WHERE action=? AND request_key=? AND target_job_id=?", (action, normalized, jid))
         if saved:
             pid, vid = json.loads(saved["scope"])
-    return tts_requests.reserve(c, pid, vid, action, key, {"target_job_id": jid, **payload}, target_job_id=jid)
+    return tts_requests.reserve(c, pid, vid, action, key, {"target_job_id": jid, **payload},
+                                target_job_id=jid, sample_seed_omitted=sample_seed_omitted)
 
 
 def _check_environment(c: Any, recipe: dict, *, sample: bool, gpu_devices: list[str] | None = None,
@@ -287,7 +289,8 @@ def _result(c: Any, jid: str, status: int):
 def create_sample(c: Any, jid: str, body: TtsSampleBody, key: str) -> tuple[dict, int]:
     from .routes_tts import _devices
 
-    rid, replay = _reserve(c, jid, "sample", key, body.model_dump(mode="json"))
+    rid, replay = _reserve(c, jid, "sample", key, body.model_dump(mode="json"),
+                           sample_seed_omitted="seed" not in body.model_fields_set)
     if replay is not None:
         return _result(c, replay["id"], 200)
     run = own = None
@@ -338,6 +341,8 @@ def create_sample(c: Any, jid: str, body: TtsSampleBody, key: str) -> tuple[dict
             if current["config_json"] != source["config_json"]:
                 _fail("tts.source_stale", "来源任务快照已变化。")
             _raise(tts_results.preview_issue(c, current, item, verify=False))
+            payload["tts_sample"]["requested_seed"] = body.seed
+            payload["tts_sample"]["seed"] = secrets.randbelow(2**32) if body.seed == -1 else body.seed
             _insert(c, rid, new, current, payload, run, f"{source['name']} · 试听", "tts_sample", devices)
         committed = True
         return _result(c, new, 201)

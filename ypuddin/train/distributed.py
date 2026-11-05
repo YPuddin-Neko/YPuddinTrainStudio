@@ -192,15 +192,18 @@ def _needs_unused_parameter_detection(trainer, graph: _TrainingGraph) -> bool:
 
 class DistributedTrainer(Trainer):
     def __init__(self, cfg, *, context: DistributedContext, emitter=None):
+        from ypuddin.training_seeds import resolve_training_seeds
+
         from .native_batch_contract import resolve_native_batching_config
         from .native_resolution import resolve_distributed_native_vram_config
 
+        self.distributed = context
+        self.is_primary = context.rank == 0
+        cfg = self._primary_call(resolve_training_seeds, cfg)
         cfg = resolve_native_batching_config(cfg, world_size=context.world_size)
         cfg = resolve_distributed_native_vram_config(
             cfg, device=context.device, rank=context.rank, world_size=context.world_size,
         )
-        self.distributed = context
-        self.is_primary = context.rank == 0
         self._checkpoint_rng = None
         super().__init__(cfg, device=context.device, emitter=emitter if self.is_primary else NullEmitter())
 

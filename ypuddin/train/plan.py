@@ -703,7 +703,7 @@ def _preview_invalid_config(
         _LayoutInputs(**fields, model=ModelConfig(family=family_name)),
         family.spec.latent,
         loop=loop,
-        seed=seed,
+        seed=0 if seed == -1 else seed,
         index_db_path=index_db_path,
         image_shapes=image_shapes,
         layout_result=layout_result,
@@ -780,6 +780,14 @@ def plan(
                 out["errors"][0],
             )
     try:
+        if draft:
+            for section in (cfg.loop, cfg.validation):
+                if section is not None and section.seed == -1:
+                    section.seed = 0
+        else:
+            from ypuddin.training_seeds import resolve_training_seeds
+
+            cfg = resolve_training_seeds(cfg, planning=True)
         if cfg.dataset is not None and cfg.checkpoint is not None:
             from .native_batch_contract import resolve_native_batching_config
 

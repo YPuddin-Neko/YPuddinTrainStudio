@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from ypuddin.config import TrainConfig
-from ypuddin.config.io import config_hash_variants, load_config, write_config
+from ypuddin.config.io import config_hash_variants, write_config
+from ypuddin.training_seeds import load_checkpoint_recipe
 
 STATE_KEY = "native_batch_contract"
 CURRENT_VERSION = 3
@@ -86,7 +87,7 @@ def authenticated_native_recipe(
         if source is None or not source.is_file():
             continue
         try:
-            candidate = load_config(source, overrides={"dataset": {"native_batching_version": version}})
+            candidate = load_checkpoint_recipe(source, metadata, overrides={"dataset": {"native_batching_version": version}})
         except (OSError, ValueError):
             continue
         candidate = _recipe_mode(candidate, version)
@@ -117,7 +118,7 @@ def preserve_native_resume_recipe(cfg: TrainConfig, record_dir: Path) -> None:
     if original is None or target is None:
         return
     if target.is_file():
-        saved = load_config(target)
+        saved = load_checkpoint_recipe(target, metadata)
         if metadata["config_hash"] not in config_hash_variants(saved):
             raise ValueError("已保留的恢复配置与检查点哈希不同，不能覆盖。")
         return

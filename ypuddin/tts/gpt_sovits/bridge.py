@@ -8,7 +8,6 @@ import logging
 import math
 import os
 import runpy
-import secrets
 import shutil
 import subprocess
 import sys
@@ -545,8 +544,8 @@ def sample(request):
     tts = TTS(tts_config)
     correct_fragment_interval(tts)
     specific = options["gpt_sovits"]
-    requested_seed = options.get("seed", -1)
-    seed = secrets.randbelow(2**32) if requested_seed == -1 else requested_seed
+    seed = options["seed"]
+    requested_seed = options.get("requested_seed", seed)
     inputs = {"text": options["text"], "text_lang": specific["text_language"],
               "ref_audio_path": options["reference_audio"], "prompt_text": options["reference_text"],
               "prompt_lang": specific["reference_language"], "seed": seed,

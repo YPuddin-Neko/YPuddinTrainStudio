@@ -490,7 +490,7 @@ const PromptsEditor: React.FC<{
   const { t, i18n } = useTranslation();
   const text = (zh: string, en: string) => i18n.resolvedLanguage?.startsWith('en') ? en : zh;
   const addPrompt = () => {
-    onChange([...value, { prompt: '', negative: '', seed: null, width: null, height: null, steps: null, cfg: null }]);
+    onChange([...value, { prompt: '', negative: '', seed: -1, width: null, height: null, steps: null, cfg: null }]);
   };
 
   const removePrompt = (idx: number) => {

@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ypuddin.config import TrainConfig, load_config
+from ypuddin.config import TrainConfig
 from ypuddin.config.io import config_hash_variants
 from ypuddin.config.optimizer_rules import optimizer_key
 from ypuddin.optim import manages_learning_rate
+from ypuddin.training_seeds import load_checkpoint_recipe
 
 _SCHEDULER_CLASS = "torch.optim.lr_scheduler.LambdaLR"
 
@@ -101,7 +102,7 @@ def read_resume_scheduler_contract(
             )
             from .native_batch_contract import authenticated_native_recipe
 
-            original = authenticated_native_recipe(path, metadata=metadata) or load_config(source)
+            original = authenticated_native_recipe(path, metadata=metadata) or load_checkpoint_recipe(source, metadata)
             if (
                 original.dataset.resolution_mode == "native"
                 and "native_batch_contract" not in extra

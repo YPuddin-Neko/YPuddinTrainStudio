@@ -78,7 +78,7 @@ class XyzAxis(BaseModel):
                 valid = isinstance(value, str) and bool(value.strip()) and len(value) <= 200
             elif self.key in {"steps", "seed"}:
                 valid = type(value) is int and (
-                    1 <= value <= 100 if self.key == "steps" else 0 <= value < 2**63
+                    1 <= value <= 100 if self.key == "steps" else -1 <= value < 2**63
                 )
             else:
                 valid = type(value) in {int, float} and math.isfinite(value)
@@ -90,7 +90,8 @@ class XyzAxis(BaseModel):
                     }[self.key]
             if not valid:
                 raise ValueError(f"invalid {self.key} axis value: {value!r}")
-        if len(set(self.values)) != len(self.values):
+        fixed = [v for v in self.values if v != -1] if self.key == "seed" else self.values
+        if len(set(fixed)) != len(fixed):
             raise ValueError("axis values must be distinct")
         return self
 
@@ -105,7 +106,7 @@ class XyzRequest(GpuSelection):
     height: int = Field(512, ge=32, le=2048)
     steps: int = Field(20, ge=1, le=100)
     cfg: float = Field(4, ge=0, le=30, allow_inf_nan=False)
-    seed: int = Field(1, ge=-1, lt=2**63)
+    seed: int = Field(-1, ge=-1, lt=2**63)
     sampler: str = "euler"
     scheduler: str = "uniform"
     noise: Literal["comfyui", "a1111"] = "comfyui"
@@ -194,6 +195,28 @@ class KeptModels(BaseModel):
     """Base models that model-test workers keep loaded for the next comparison."""
 
     models: list[KeptModel]
+
+
+def _freeze_seeds(request: XyzRequest) -> XyzRequest:
+    updates = {"seed": secrets.randbelow(2**32)} if request.seed == -1 else {}
+    for key in ("x", "y", "z"):
+        axis = getattr(request, key)
+        if axis is None or axis.key != "seed" or -1 not in axis.values:
+            continue
+        values = list(axis.values)
+        used = {v for v in values if 0 <= v < 2**32}
+        for index, value in enumerate(values):
+            if value == -1:
+                # Select uniformly among the unused seeds with one draw per random axis entry.
+                seed = secrets.randbelow(2**32 - len(used))
+                for existing in sorted(used):
+                    if existing > seed:
+                        break
+                    seed += 1
+                values[index] = seed
+                used.add(seed)
+        updates[key] = axis.model_copy(update={"values": values})
+    return request.model_copy(update=updates)
 
 
 class XyzOptions(BaseModel):
@@ -560,7 +583,7 @@ def options(context, source_id):
         prompt=prompt.prompt if prompt else "",
         negative=prompt.negative if prompt else "",
         reference_images=list(prompt.reference_images) if prompt else [],
-        seed=prompt.seed if prompt and prompt.seed is not None else 1,
+        seed=-1,
         adapter_scale=1,
         # Products of other runs are offered, but the source's own latest one is the starting point.
         checkpoint_id=own[0]["id"] if own else None,
@@ -803,9 +826,7 @@ def start(context, source_id: str, request: XyzRequest):
     logs_dir = context.job_storage_dir(
         source["project_id"], source.get("version_id"), jid, "logs_dir", run_dir
     )
-    if request.seed == -1:
-        # Freeze one seed for the whole comparison and any later replay.
-        request = request.model_copy(update={"seed": secrets.randbelow(2**32)})
+    request = _freeze_seeds(request)
     if references and not context.is_allowed(run_dir):
         raise ApiError("参考图保存目录不在允许访问的范围内。", code="xyz.path", status=403)
     try:

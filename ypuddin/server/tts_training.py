@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import shutil
 import stat
 from pathlib import Path
@@ -73,6 +74,12 @@ def _snapshot(
     try:
         execution = report._runtime_config or captured.config
         recipe = execution.model_dump(mode="json")
+        if recipe["engine"] == "gpt-sovits-v5":
+            random_stages = [recipe[stage] for stage in ("gpt", "sovits") if recipe[stage]["seed"] == -1]
+            if random_stages:
+                seed = secrets.randbelow(2**32)
+                for stage in random_stages:
+                    stage["seed"] = seed
         source_paths = {
             str(source["source"].path if hasattr(source["source"], "path") else source["source"]["path"])
             for source in (inputs["train"], inputs["validation"])
