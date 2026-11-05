@@ -83,6 +83,8 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
   const mounted = React.useRef(false);
   const actionBusy = React.useRef(false);
   const readController = React.useRef<AbortController|null>(null);
+  const switchController = React.useRef<AbortController|null>(null);
+  const switchTarget = React.useRef<ImageEditorIdentity|null>(null);
   const pendingSync = React.useRef<PaintInfo|null>(null);
   const savedCallback = React.useRef(onSaved);savedCallback.current=onSaved;
   const pendingChoice = React.useRef<NavigationChoice|null>(null);
@@ -161,7 +163,7 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
     }).catch(error=>{if(!controller.signal.aborted)reportError(error);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
   },[datasetId,reload,refreshKey,install]);
-  React.useEffect(()=>{renderView();},[revision,renderView,loading]);
+  React.useLayoutEffect(()=>{renderView();},[revision,renderView,loading]);
   React.useEffect(()=>{if(inline&&!loading&&verified)capture();},[revision,inline,loading,verified,capture]);
   React.useEffect(()=>{
     if(busy||returnFocus.current===null)return;
@@ -232,7 +234,7 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
     stroke.current.points.push(at);schedule();
   };
   const current=mode==='paint'?paint.current:mask.current;
-  React.useEffect(()=>{onStateChange?.({dirty:dirty(),canUndo:inline?timeline.current.position>0:!!current?.canUndo,canRedo:inline?timeline.current.position<timeline.current.modes.length:!!current?.canRedo,canRestore:!!info?.can_restore&&!unavailable&&!requiresReopen,busy:busy||loading,available:!!info&&!unavailable&&!requiresReopen,message:error||switchError||message});},[onStateChange,revision,busy,loading,info,unavailable,requiresReopen,error,switchError,message,current,inline]);
+  React.useEffect(()=>{onStateChange?.({dirty:dirty(),canUndo:inline?timeline.current.position>0:!!current?.canUndo,canRedo:inline?timeline.current.position<timeline.current.modes.length:!!current?.canRedo,canRestore:!!info?.can_restore&&!unavailable&&!requiresReopen,busy:busy||loading,switching,available:!!info&&!unavailable&&!requiresReopen,message:error||switchError||message});},[onStateChange,revision,busy,switching,loading,info,unavailable,requiresReopen,error,switchError,message,current,inline]);
 
   const history=(redo=false)=>{
     if(readOnly||actionBusy.current||unavailable||stroke.current)return;
@@ -321,17 +323,19 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
   };
   const cancelSwitch=()=>{
     if(saving)return;
-    readController.current?.abort();switchSequence.current++;
+    switchController.current?.abort();switchController.current=null;switchTarget.current=null;switchSequence.current++;
     actionBusy.current=false;setSwitching(false);
   };
-  const performSwitch=async(choice:NavigationChoice,saveFirst:boolean)=>{
+  const performSwitch=async(choice:NavigationChoice,saveFirst:boolean,origin:ImageEditorIdentity={datasetId,...identity.current})=>{
     if(!navigation)return;
     const sequence=++switchSequence.current;
     setPendingSwitch(null);setSwitching(true);setSwitchError('');
-    const controller=new AbortController();readController.current=controller;
+    const controller=new AbortController();readController.current=controller;switchController.current=controller;
+    switchTarget.current=typeof choice==='number'?origin:choice;
     try{
-      const target=typeof choice==='number' ? await navigation.resolve(choice,{datasetId,...identity.current},controller.signal) : choice;
+      const target=typeof choice==='number' ? await navigation.resolve(choice,origin,controller.signal) : choice;
       if(!mounted.current||controller.signal.aborted||!target)return;
+      switchTarget.current=target;
       // Resolve before saving: modified-time sorting can move the current image after a write.
       if(saveFirst&&!await persist())return;
       if(pendingSync.current){
@@ -352,14 +356,16 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
       if(mounted.current&&!controller.signal.aborted)setSwitchError(`${text('切换失败：','Could not switch images: ')}${formatApiError(error)}`);
     }finally{
       controller.abort();
-      if(sequence===switchSequence.current){actionBusy.current=false;if(mounted.current)setSwitching(false);}
+      if(sequence===switchSequence.current){switchController.current=null;switchTarget.current=null;actionBusy.current=false;if(mounted.current)setSwitching(false);}
     }
   };
   const requestSwitch=(choice:NavigationChoice)=>{
-    if(actionBusy.current||unavailable||!info||!navigation)return;
+    if((actionBusy.current&&!(inline&&switchController.current))||unavailable||!info||!navigation)return;
+    const origin=switchTarget.current??{datasetId,...identity.current};
+    switchController.current?.abort();
     returnFocus.current=typeof choice==='number' ? choice : null;
     finishStroke();actionBusy.current=true;
-    if(inline){capture();void performSwitch(choice,false);}
+    if(inline){capture();void performSwitch(choice,false,origin);}
     else if(dirty()){pendingChoice.current=choice;setPendingSwitch(choice);}
     else void performSwitch(choice,false);
   };
@@ -386,6 +392,9 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
     if(!(event.target instanceof Element)||(inline ? !!event.target.closest('[role="dialog"]') : event.target.closest('[role="dialog"]')!==dialog.current))return;
     if(!inline&&event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}
     const formField=event.target instanceof HTMLInputElement;
+    if(inline&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&['ArrowLeft','ArrowRight'].includes(event.key)&&event.target.closest('canvas,.paint-thumbnail-grid')){
+      event.preventDefault();requestSwitch(event.key==='ArrowLeft'?-1:1);return;
+    }
     if(event.target instanceof HTMLElement&&event.target.getAttribute('role')==='tab'&&['ArrowLeft','ArrowRight','Home','End'].includes(event.key)&&!busy){
       event.preventDefault();
       const next=event.key==='Home'?'paint':event.key==='End'?'mask':mode==='paint'?'mask':'paint';
@@ -416,7 +425,11 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
       return await beforeLeave();
     },
     saveCurrent:()=>save(),saveAll,undo:()=>history(),redo:()=>history(true),discard:reloadImage,restore,
-    requestImage:target=>{if(target.datasetId===datasetId&&target.relPath===identity.current.relPath)return;if(switching&&!saving)cancelSwitch();requestSwitch(target);},
+    requestImage:target=>{
+      if(target.datasetId===datasetId&&target.relPath===identity.current.relPath){if(switchController.current&&!saving)cancelSwitch();return;}
+      if(switchTarget.current?.datasetId===target.datasetId&&switchTarget.current.relPath===target.relPath)return;
+      requestSwitch(target);
+    },
   }));
   const inlineTools=<>
     <div className="image-editor-tool-group"><span>{text('模式','Mode')}</span><div className="ui-segmented" role="tablist" aria-label={text('编辑模式','Editing mode')}>{(['paint','mask'] as const).map(value=><button key={value} type="button" role="tab" aria-selected={mode===value} disabled={busy} onClick={()=>changeMode(value)}>{value==='paint'?text('图像涂抹','Image paint'):text('训练遮罩','Training mask')}</button>)}<SlidingIndicator className="ui-segmented-thumb"/></div></div>
@@ -466,9 +479,9 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
         <button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('缩小','Zoom out')} title={text('缩小','Zoom out')} disabled={busy} onClick={()=>setZoom(value=>Math.max(.25,value/1.5))}><ZoomOut size={14}/></button><button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={()=>{setZoom(1);viewport.current?.scrollTo(0,0);}}>{text('适应','Fit')} {Math.round(scale*100)}%</button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('放大','Zoom in')} title={text('放大','Zoom in')} disabled={busy} onClick={()=>setZoom(value=>Math.min(8,value*1.5))}><ZoomIn size={14}/></button>
       </div>
       <p className="image-editor-hint">{text('滚轮缩放，中键拖动。','Scroll to zoom; drag with the middle mouse button.')} {mode==='paint'?text('Alt + 点击取色；擦回原图可恢复本次编辑前的像素。','Alt + click picks a color. Erase restores pixels from before this editing session.'):text('白色参与训练，黑色忽略；红色为忽略区域。无独立遮罩时使用图片透明度。','White trains, black is ignored; red marks ignored areas. Without a separate mask, image transparency is used.')}</p>
-      </>}</aside><div className="image-editor-canvas-area">
+      </>}</aside><div className="image-editor-canvas-area" aria-busy={busy||loading}>
       {error&&<p className="image-editor-status" role="alert">{error} {requiresReopen?<><span>{text('图片身份或文件已变化，请刷新列表后重新打开。','The image identity or files changed. Refresh the list and reopen the image.')}</span><button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={()=>void closeAndRefresh()}>{text('关闭并刷新列表','Close and refresh list')}</button></>:<button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={()=>void reloadImage()}>{text('重新读取','Reload')}</button>}</p>}
-      {switching&&<LoadingNote className="image-editor-status" label={text('正在切换图片…','Switching images…')}/>}
+      {!inline&&switching&&<LoadingNote className="image-editor-status" label={text('正在切换图片…','Switching images…')}/>}
       {switchError&&<p className="image-editor-status" role="alert">{switchError}</p>}
       {navigationError&&<p className="image-editor-status" role="alert">{navigationError}</p>}
       {loading&&(!inline||!info)?<LoadingNote className="image-editor-status" label={text('正在读取图片与遮罩…','Loading image and mask…')}/>:info&&<div ref={viewport} {...viewportEvents} className="image-editor-viewport" data-testid="paint-viewport" style={{cursor:panning?'grabbing':tool==='pan'?'grab':undefined}}><div className="image-editor-stage" style={{width:Math.max(1,info.width*scale),height:Math.max(1,info.height*scale)}}><canvas ref={canvas} aria-label={text('图像与遮罩绘制画布','Image and mask drawing canvas')} tabIndex={0} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={finishStroke} onPointerCancel={finishStroke} onLostPointerCapture={finishStroke} onPointerLeave={()=>{if(cursor.current)cursor.current.style.visibility='hidden';}} style={{cursor:panning?'grabbing':tool==='pan'?'grab':tool==='pick'?'copy':'crosshair'}}/><div ref={cursor} aria-hidden="true" className="image-editor-cursor" style={{visibility:'hidden',width:diameter*scale,height:diameter*scale}}/></div></div>}

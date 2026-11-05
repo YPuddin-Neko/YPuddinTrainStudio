@@ -9,12 +9,11 @@ import { ACTIVE_DOWNLOAD, useRememberedSettings, useScopeOptions, useVisionModel
 import type { PipelineOperation } from './DatasetPipelinePanel';
 import Dialog from '../Dialog';
 import CheckboxSelect from '../CheckboxSelect';
-import { MASK_KINDS, maskKindLabel, modelMaskKinds, type MaskKind } from './maskPresentation';
+import { MASK_KINDS, MASK_MODEL_IDS, maskKindLabel, modelMaskKinds, type MaskKind } from './maskPresentation';
 import './dataset-vision.css';
 
 type Settings = Required<Pick<AutoMaskOptions, 'confidence' | 'padding' | 'feather' | 'device'>> & { kind: MaskKind; kinds?: MaskKind[] };
 const DEFAULTS: Settings = { kind: 'head', confidence: 0.413, padding: 0.10, feather: 0.03, device: 'auto' };
-const MODEL_IDS: Record<MaskKind, string> = { head: 'anime-head-detector-v2', torso: 'anime-body-detector-yolo11m', legs: 'anime-body-detector-yolo11m', foot: 'anime-foot-detector-v3' };
 
 export default function AutoMaskPanel({ projectId, versionId, locked, latest, running, onStart, onUndo, onCancel, beforeStart }: {
   projectId: string; versionId: string; locked: boolean; latest?: PipelineOperation; running?: PipelineOperation;
@@ -32,7 +31,7 @@ export default function AutoMaskPanel({ projectId, versionId, locked, latest, ru
   const [error, setError] = useState('');
   const chosenScope = scopes.options.some(option => option.value === scope) ? scope : scopes.first;
   const kinds = (settings.kinds ?? [settings.kind]).filter(kind => MASK_KINDS.includes(kind));
-  const modelFor = (kind: MaskKind) => catalog.data?.models.find(model => model.id === MODEL_IDS[kind] && modelMaskKinds(model).includes(kind));
+  const modelFor = (kind: MaskKind) => catalog.data?.models.find(model => model.id === MASK_MODEL_IDS[kind] && modelMaskKinds(model).includes(kind));
   const selected = kinds.map(kind => ({ kind, model: modelFor(kind) }));
   const models = [...new Map(selected.flatMap(item => item.model ? [[item.model.id, item.model] as const] : [])).values()];
   const missing = models.filter(model => !model.ready);

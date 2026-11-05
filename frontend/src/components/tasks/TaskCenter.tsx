@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ArrowUpCircle, Check, Download, FolderOpen, PackagePlus, RefreshCw, RotateCcw, Trash2, Upload, X, type LucideIcon } from 'lucide-react';
+import { ArrowUpCircle, Check, Download, FolderOpen, PackagePlus, RefreshCw, RotateCcw, Scan, Trash2, Upload, X, type LucideIcon } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { components } from '../../api/generated';
 import { EVENT_TYPES } from '../../events/eventTypes';
@@ -45,7 +45,15 @@ const POLL_MS = 3000;
 
 const kindIcons: Record<string, LucideIcon> = {
   dataset_upload: Upload, model_download: Download, project_delete: Trash2, dataset_refresh: RefreshCw,
-  environment: PackagePlus, trainer_update: ArrowUpCircle,
+  environment: PackagePlus, trainer_update: ArrowUpCircle, dataset_automask: Scan,
+};
+const automaskPhases: Record<string, [string, string]> = {
+  queued: ['排队中', 'Queued'],
+  detecting: ['正在检测', 'Detecting'],
+  masking: ['正在生成遮罩', 'Generating masks'],
+  applying: ['正在保存遮罩', 'Saving masks'],
+  inspecting: ['正在检查数据', 'Checking data'],
+  cancelling: ['正在取消', 'Cancelling'],
 };
 const importPhases: Record<string, [string, string]> = {
   receiving: ['等待导入', 'Waiting to import'],
@@ -61,6 +69,7 @@ function kindTitle(kind: string, text: Text, id = '') {
     case 'model_download': return text('下载模型', 'Model download');
     case 'project_delete': return text('删除项目', 'Project deletion');
     case 'dataset_refresh': return text('刷新数据集索引', 'Dataset index refresh');
+    case 'dataset_automask': return text('自动遮罩', 'Automatic masks');
     case 'environment': return id.startsWith('te_') ? text('语音运行环境', 'Speech environment') : text('安装运行环境', 'Environment install');
     case 'trainer_update': return text('更新训练器', 'Trainer update');
     default: return kind;
@@ -95,6 +104,7 @@ function serverItem(task: ServerTask, skew: number, text: Text): TaskItem {
   const phase = task.state !== 'running' ? ''
     : task.kind === 'environment' && task.id.startsWith('te_') && detail === '环境检查' ? text('环境检查', 'Environment check')
       : task.kind === 'environment' && task.id.startsWith('te_') && detail === '环境准备' ? text('环境准备', 'Environment preparation')
+    : task.kind === 'dataset_automask' && automaskPhases[detail] ? text(...automaskPhases[detail])
     : task.kind === 'dataset_upload' && importPhases[detail] ? text(...importPhases[detail])
       : detail === 'queued' ? text('排队中', 'Queued')
         : detail === 'verifying' ? text('正在校验', 'Verifying')

@@ -16,7 +16,6 @@
 .paint-library-browser>.ui-btn { width:34px; height:34px; min-height:34px; }
 .paint-library-filters.ui-segmented { display:flex; flex:none; width:100%; gap:2px; }
 .paint-library-filters.ui-segmented>button { flex:1; gap:3px; min-width:0; padding:0 4px; font-size:11px; font-variant-numeric:tabular-nums; }
-.paint-state-unknown { display:block; padding:3px 0; color:var(--studio-dim); font-size:10px; line-height:16px; }
 .paint-thumbnail-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-auto-rows:max-content; align-content:start; gap:6px; flex:1; min-height:0; overflow:auto; padding:2px; overscroll-behavior:contain; }
 .paint-thumbnail-grid>button { position:relative; min-width:0; padding:0; aspect-ratio:1; overflow:hidden; border:1px solid var(--studio-line); border-radius:5px; background:var(--studio-muted); }
 .paint-thumbnail-grid>button[aria-pressed=true] { border-color:var(--studio-accent); box-shadow:0 0 0 1px var(--studio-accent); }

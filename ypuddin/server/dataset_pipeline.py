@@ -15,6 +15,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import quote, urlencode
 
 from PIL import Image, ImageOps
 
@@ -22,6 +23,8 @@ from ypuddin.config import TrainConfig
 from ypuddin.data.image_metadata import alpha_channel, transparency_source
 from ypuddin.data.index import IMAGE_EXTS, IndexDB, content_hash, list_source, mask_for, stat_signature
 
+from .background_tasks import EVENT as BACKGROUND_EVENT
+from .background_tasks import KEEP_FINISHED_SECONDS
 from .caption_output import destination, json_layout
 from .db import new_id, now
 from .errors import ApiError, NotFound
@@ -106,6 +109,8 @@ class DatasetPipeline:
         # Per version, the digest of each input file with the identity it was read at.
         self._digests: OrderedDict[str, dict[str, tuple[list[int], str]]] = OrderedDict()
         self._digest_lock = threading.Lock()
+        self._background: dict[str, dict[str, Any]] = {}
+        self._background_lock = threading.Lock()
         self.vision = None  # VisionModels, attached by the app
         self.credentials = None  # ModelCredentials, attached by the app
         self.c.db.execute("""CREATE TABLE IF NOT EXISTS dataset_pipeline_operations (
@@ -167,6 +172,52 @@ class DatasetPipeline:
                     "updated_at": now(),
                 },
             )
+            self._sync_background(row["id"])
+
+    def background_tasks(self) -> list[dict[str, Any]]:
+        """Copy task-center status without re-reading operations or dataset files."""
+        cutoff = now() - KEEP_FINISHED_SECONDS
+        with self._background_lock:
+            for oid, task in list(self._background.items()):
+                if task["state"] in {"completed", "cancelled"} and task["finished_at"] < cutoff:
+                    del self._background[oid]
+            return [dict(task) for task in self._background.values()]
+
+    def _sync_background(self, oid: str) -> None:
+        with self.c.db.lock:
+            row = self.c.db.fetchone("SELECT * FROM dataset_pipeline_operations WHERE id=?", (oid,))
+            if not row or row["action"] not in {"automask", "detectheads"}:
+                return
+            with self._background_lock:
+                previous = self._background.get(oid)
+            if previous is None:
+                project = self.c.db.fetchone("SELECT name FROM projects WHERE id=?", (row["project_id"],))
+                request = json.loads(row["request_json"])
+                datasets = set(request.get("dataset_ids") or [])
+                datasets.update(item["dataset_id"] for item in request.get("images") or [])
+                datasets.update(item["dataset_id"] for item in (request.get("automask") or {}).get("selections") or [])
+                query = {"step": "data", "data_step": "preprocess"}
+                if len(datasets) == 1:
+                    query["dataset"] = next(iter(datasets))
+                previous = {
+                    "id": f"dataset-pipeline:{oid}", "kind": "dataset_automask",
+                    "subject": project["name"] if project else row["project_id"],
+                    "link": f"/projects/{quote(row['project_id'], safe='')}/v/{quote(row['version_id'], safe='')}?{urlencode(query)}",
+                    "operation_id": oid, "project_id": row["project_id"], "version_id": row["version_id"],
+                    "action": row["action"], "started_at": row["created_at"], "unit": "items",
+                }
+            active = row["status"] not in TERMINAL
+            task = previous | {
+                "state": "running" if active else row["status"],
+                "detail": "cancelling" if row["cancel_requested"] and active else row["phase"],
+                "done": row["done"], "total": row["total"] or None,
+                "cancellable": active and row["phase"] != "applying" and not row["cancel_requested"],
+                "finished_at": row["finished_at"], "error": row["error"],
+            }
+            with self._background_lock:
+                self._background[oid] = task
+            if task != previous:
+                self.c.bus.publish(BACKGROUND_EVENT, dict(task))
 
     def close(self) -> None:
         self.stopping.set()
@@ -543,6 +594,8 @@ class DatasetPipeline:
             fields["logs_json"] = _dump(logs[-100:])
         self.c.db.update("dataset_pipeline_operations", oid, fields)
         row = self._get(oid)
+        if row["action"] in {"automask", "detectheads"}:
+            self._sync_background(oid)
         self.c.bus.publish(
             "dataset.pipeline",
             {
@@ -607,6 +660,7 @@ class DatasetPipeline:
             )
             with self.c.db.lock:
                 self.cancel_events[oid] = threading.Event()
+            self._sync_background(oid)
             self.executor.submit(self._run, oid, lease)
         except BaseException as exc:
             with self.c.db.lock:
@@ -615,6 +669,7 @@ class DatasetPipeline:
                 "UPDATE dataset_pipeline_operations SET status='failed',phase='failed',error=?,finished_at=? WHERE id=?",
                 (str(exc), now(), oid),
             )
+            self._sync_background(oid)
             lease.__exit__(None, None, None)
             raise
         return self.operation(oid)
@@ -638,6 +693,7 @@ class DatasetPipeline:
             )
             if oid in self.cancel_events:
                 self.cancel_events[oid].set()
+            self._sync_background(oid)
         return self.operation(oid)
 
     def retry(self, oid: str) -> dict:
@@ -1440,9 +1496,11 @@ class DatasetPipeline:
             results = self._detect(oid, images, options)
         report.update(self._region_stats(results))
         changes = []
+        self._progress(oid, "masking", 0, len(images))
         for index, (record, found) in enumerate(zip(images, results, strict=True)):
             self._cancelled(oid)
             if not found["regions"]:
+                self._progress(oid, "masking", index + 1, len(images))
                 continue
             target = record["path"].with_name(record["path"].stem + ".mask.png")
             try:
@@ -1451,16 +1509,19 @@ class DatasetPipeline:
                 self._progress(oid, "masking", index + 1, len(images), f"{record['rel_path']}: {error}")
                 continue
             if current.size != tuple(found["size"]):
+                self._progress(oid, "masking", index + 1, len(images))
                 continue
             base = np.asarray(current, dtype=np.float32)
             # A region the user already excluded stays excluded.
             combined = np.minimum(base, rasterize_regions(found["regions"], current.size))
             if np.array_equal(combined, base):
+                self._progress(oid, "masking", index + 1, len(images))
                 continue
             staged = work / "staged" / f"mask-{index}"
             staged.parent.mkdir(parents=True, exist_ok=True)
             Image.fromarray(np.round(combined).astype(np.uint8), "L").save(staged, format="PNG")
             changes.append(self._change(work, target, staged))
+            self._progress(oid, "masking", index + 1, len(images))
         return changes, report
 
     def _read_proposals(self, row: dict) -> dict:
@@ -2051,6 +2112,7 @@ class DatasetPipeline:
                 lease.__exit__(None, None, None)
             with self.c.db.lock:
                 self.cancel_events.pop(oid, None)
+            self._sync_background(oid)
             self.c.bus.publish(
                 "dataset.pipeline", {"operation_id": oid, "project_id": pid, "version_id": vid}
             )

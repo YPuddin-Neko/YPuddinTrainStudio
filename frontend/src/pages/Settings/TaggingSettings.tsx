@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { CircleCheck, Loader2, RefreshCw } from 'lucide-react';
+import { CircleCheck, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { VlmService, VlmServices } from '../../api/types';
 import type { components } from '../../api/generated';
@@ -10,6 +10,8 @@ import StudioSelect from '../../components/StudioSelect';
 import { useConfirmation } from '../../components/useConfirmation';
 import { LoadingNote } from '../../components/Loading';
 import { SlidingIndicator } from '../../components/motion';
+import { formatBytes } from '../../utils/format';
+import { ModelCatalogRow, ModelCatalogSection } from '../Models/ModelDownloadLayout';
 import { VisionModelState } from '../../components/datasets/VisionModelField';
 import { SERVICE_NAMES, TAGGER_SERIES, modelName, resolveService, useTaggingSettings, useVisionModels, useVlmError, useVlmModels, useVlmServices, type TaggingSettings as Tagging, type VlmSettings } from '../../components/datasets/visionHooks';
 import { SettingsSections } from './SettingsSections';
@@ -19,17 +21,20 @@ import './tagging-settings.css';
 const CUSTOM = '__custom';
 const ADDRESS = /^https?:\/\/[^\s/]+(\/\S*)?$/i;
 const MODEL_DESCRIPTIONS: Record<string, [string, string]> = {
-  'wd-eva02-tagger-2026-canary': ['EVA02 架构的新版实验模型，适合尝试更细的标签识别。', 'New EVA02 experimental model for detailed tag recognition.'],
-  'wd-eva02-large-tagger-v3': ['EVA02-Large v3，通用动漫标签识别，当前推荐。', 'EVA02-Large v3 for general anime tagging; recommended.'],
-  'wd-vit-large-tagger-v3': ['ViT-Large v3，通用动漫标签识别。', 'ViT-Large v3 for general anime tagging.'],
-  'wd-swinv2-tagger-v3': ['SwinV2 v3，通用动漫标签识别。', 'SwinV2 v3 for general anime tagging.'],
-  'wd-convnext-tagger-v3': ['ConvNeXt v3，通用动漫标签识别。', 'ConvNeXt v3 for general anime tagging.'],
-  'wd-vit-tagger-v3': ['ViT v3，体积较小的通用动漫标签模型。', 'ViT v3, a smaller general anime tagger.'],
-  'wd-v1-4-moat-tagger-v2': ['MOAT v2，通用动漫标签识别。', 'MOAT v2 for general anime tagging.'],
-  'pixai-tagger-v1.0': ['PixAI v1.0，支持通用、角色、作品和画师等分类。', 'PixAI v1.0 with general, character, copyright and artist categories.'],
-  'pixai-tagger-v0.9': ['PixAI v0.9，支持通用和角色标签。', 'PixAI v0.9 for general and character tags.'],
-  'cl-tagger-v2-01a': ['CL Tagger v2.01a，按类别输出标签。', 'CL Tagger v2.01a with categorized output.'],
-  'cl-tagger-1-02': ['CL Tagger v1.02，按类别输出标签。', 'CL Tagger v1.02 with categorized output.'],
+  'wd-eva02-tagger-2026-canary': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
+  'wd-eva02-large-tagger-v3': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
+  'wd-vit-large-tagger-v3': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
+  'wd-swinv2-tagger-v3': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
+  'wd-convnext-tagger-v3': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
+  'wd-vit-tagger-v3': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
+  'wd-v1-4-moat-tagger-v2': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
+  'pixai-tagger-v1.0': ['识别通用、角色、作品、画师等标签。', 'Identify general, character, copyright, artist and other tags.'],
+  'pixai-tagger-v0.9': ['识别通用与角色标签。', 'Identify general and character tags.'],
+  'cl-tagger-v2-01a': ['识别通用、角色、作品及质量等标签。', 'Identify general, character, copyright, quality and other tags.'],
+  'cl-tagger-1-02': ['识别通用、角色、作品、画师等标签。', 'Identify general, character, copyright, artist and other tags.'],
+  'anime-head-detector-v2': ['检测动漫人物的头部，用于生成遮罩。', 'Detect anime heads to generate masks.'],
+  'anime-body-detector-yolo11m': ['检测动漫人物的躯干和腿部，可分别选择。', 'Detect anime torsos and legs, with each part selectable.'],
+  'anime-foot-detector-v3': ['检测动漫人物的脚部，可搭配腿部检测。', 'Detect anime feet alongside leg detection.'],
 };
 function Field({ id, label, hint, children }: { id?: string; label: string; hint?: React.ReactNode; children: React.ReactNode }) {
   return <div className="settings-field">{id ? <label htmlFor={id}>{label}</label> : <span className="settings-field-label">{label}</span>}
@@ -153,12 +158,16 @@ export default function TaggingSettings() {
   const taggerFamilies = ['wd', 'cl', 'pixai'].filter(family => taggers.some(model => model.family === family));
   const selectedFamilyVisible = taggerFamilies.includes(taggerFamily);
   const detectors = models.filter(model => model.role !== 'tagger');
-  const modelRow = (model: typeof models[number], series: string) => <div key={model.id} className="tagging-settings-model" data-testid={`tagging-model-${model.id}`}>
-    <div className="tagging-settings-model-name"><strong>{series ? `${series} · ${modelName(model)}` : model.label}</strong>
-      {MODEL_DESCRIPTIONS[model.id] && <p>{text(MODEL_DESCRIPTIONS[model.id][0], MODEL_DESCRIPTIONS[model.id][1])}</p>}
-      <span>{model.license === 'unspecified' ? text('未声明许可', 'No licence stated') : model.license}{model.token_required ? text(' · 需要 Hugging Face 令牌', ' · Hugging Face token needed') : ''}</span></div>
-    <div className="tagging-settings-model-state"><VisionModelState model={model}/></div>
-  </div>;
+  const modelRow = (model: typeof models[number], series: string) => <VisionModelState key={model.id} model={model} catalogRow>
+    {(action, details) => <ModelCatalogRow testId={`tagging-model-${model.id}`} name={series ? `${series} · ${modelName(model)}` : model.label} action={action} metadata={<>
+      {MODEL_DESCRIPTIONS[model.id] && <span>{text(...MODEL_DESCRIPTIONS[model.id])}</span>}
+      <span>{formatBytes(model.size)}</span>
+      {model.recommended && <span className="model-tag">{text('推荐', 'Recommended')}</span>}
+      {model.role === 'tagger' && <span>{model.license === 'unspecified' ? text('未声明许可', 'No licence stated') : model.license}</span>}
+      {model.token_required && <span>{text('需要 Hugging Face 令牌', 'Hugging Face token needed')}</span>}
+      <a className="ui-link" href={`https://huggingface.co/${model.repo}`} target="_blank" rel="noreferrer">{text('发布页', 'Source')}<ExternalLink size={11}/></a>
+    </>}>{details}</ModelCatalogRow>}
+  </VisionModelState>;
   return <div className="tagging-settings" data-testid="tagging-settings">
     {query.error && <div role="alert" className="settings-alert">{formatApiError(query.error)}<button type="button" className="ui-link ml-2" disabled={query.isFetching} onClick={() => void query.refetch()}>{text('重新读取设置', 'Reload settings')}</button></div>}
     <SettingsSections sections={sections}>
@@ -197,9 +206,8 @@ export default function TaggingSettings() {
       </Field>
       {catalog.isPending && <LoadingNote label={text('读取模型列表…', 'Loading models…')}/>}
       {catalog.error && <div role="alert" className="settings-alert">{formatApiError(catalog.error)}<button type="button" className="ui-link ml-2" disabled={catalog.isFetching} onClick={() => void catalog.refetch()}>{text('重新读取模型', 'Reload models')}</button></div>}
-      {catalog.data && <>
-        <h3 className="tagging-settings-group">{text('Tagger 模型', 'Tagger models')}</h3>
-        <div className="tagging-settings-tabs ui-segmented" role="tablist" aria-label={text('Tagger 模型系列', 'Tagger model series')}>
+      {catalog.data && <div className="models-workspace">
+        <ModelCatalogSection heading={text('Tagger 模型', 'Tagger models')} action={<div className="tagging-settings-tabs ui-segmented" role="tablist" aria-label={text('Tagger 模型系列', 'Tagger model series')}>
           {taggerFamilies.map((family, index) => <button key={family} id={`tagging-family-${family}`} type="button" role="tab" aria-selected={taggerFamily === family} aria-controls="tagging-family-models"
             tabIndex={taggerFamily === family || (!selectedFamilyVisible && index === 0) ? 0 : -1} onClick={() => setTaggerFamily(family)} onKeyDown={event => {
               if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -209,11 +217,11 @@ export default function TaggingSettings() {
               document.getElementById(`tagging-family-${taggerFamilies[next]}`)?.focus();
             }}>{TAGGER_SERIES[family] || family}</button>)}
           <SlidingIndicator className="ui-segmented-thumb"/>
-        </div>
+        </div>}>
         <div id="tagging-family-models" className="tagging-settings-models" role="tabpanel" aria-labelledby={selectedFamilyVisible ? `tagging-family-${taggerFamily}` : undefined} aria-label={selectedFamilyVisible ? undefined : text('Tagger 模型', 'Tagger models')}>{taggers.filter(model => model.family === taggerFamily).map(model => modelRow(model, TAGGER_SERIES[model.family] || model.family))}</div>
-        <h3 className="tagging-settings-group">{text('遮罩检测模型', 'Mask detectors')}</h3>
-        <div className="tagging-settings-models">{detectors.map(model => modelRow(model, ''))}</div>
-      </>}
+        </ModelCatalogSection>
+        <ModelCatalogSection heading={text('遮罩检测模型', 'Mask detectors')}>{detectors.map(model => modelRow(model, ''))}</ModelCatalogSection>
+      </div>}
     </section>
   </SettingsSections>
   <div className="settings-save">{notice.error && <span role="alert" className="tagging-settings-error">{notice.error}</span>}<span role="status" className="settings-note">{notice.saved && !draft && text('已保存', 'Saved')}</span>

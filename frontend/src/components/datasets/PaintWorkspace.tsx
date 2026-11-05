@@ -10,7 +10,7 @@ import StudioSelect from '../StudioSelect';
 import { LazyImage, LoadingNote } from '../Loading';
 import { SlidingIndicator } from '../motion';
 import ImageEditor, { type ImageEditorHandle, type ImageEditorNavigationTarget } from '../masks/ImageEditor';
-import { loadPaint, invalidatePaintCache, type PaintInfo } from '../masks/paintApi';
+import { preloadPaint, invalidatePaintCache, type PaintInfo } from '../masks/paintApi';
 import { paintDraftDirty, paintDraftKey, type PaintDraftStore, type PaintEditorState } from '../masks/paintWorkspaceState';
 import MaskIcon from '../icons/MaskIcon';
 import { useDatasetImageCatalog } from './useDatasetImageCatalog';
@@ -85,13 +85,13 @@ export default function PaintWorkspace({projectId,versionId,initialDatasetId='',
   React.useEffect(()=>{
     if(previousRefresh.current===refreshKey)return;
     previousRefresh.current=refreshKey;
-    if(did){invalidatePaintCache(did);void client.invalidateQueries({queryKey:['dataset-image-catalog',did]});}
+    if(did)void client.invalidateQueries({queryKey:['dataset-image-catalog',did]});
   },[refreshKey,did,client]);
   React.useEffect(()=>{
     if(!did||!image||readOnly)return;
     const controller=new AbortController();
     const at=items.findIndex(item=>item.rel_path===image.rel_path);
-    for(const neighbor of [items[at-1],items[at+1]])if(neighbor)void loadPaint(did,neighbor.hash,neighbor.rel_path,controller.signal).catch(()=>{});
+    for(const neighbor of [items[at-1],items[at+1]])if(neighbor)void preloadPaint(did,neighbor.hash,neighbor.rel_path,controller.signal).catch(()=>{});
     return()=>controller.abort();
   },[did,image,items,readOnly,refreshKey]);
   React.useEffect(()=>{
@@ -127,14 +127,12 @@ export default function PaintWorkspace({projectId,versionId,initialDatasetId='',
 
     </div>
     <div className="paint-library-filters ui-segmented ui-segmented-sm" role="group" aria-label={text('图片修改状态','Image edit status')}>
-      {([['all',text('全部','All')],['unmodified',text('未修改','Unmodified')],['pending',text('待保存','Unsaved')],['modified',text('已修改','Modified')]] as [Filter,string][]).map(([value,label])=><button type="button" key={value} aria-pressed={filter===value} disabled={state.busy} onClick={()=>{setFilter(value);setPage(1);}}>{label}<span>{catalog.isPending?'—':counts[value]}</span></button>)}<SlidingIndicator className="ui-segmented-thumb"/>
+      {([['all',text('全部','All')],['unmodified',text('未修改','Unmodified')],['modified',text('已修改','Modified')],['pending',text('待保存','Unsaved')]] as [Filter,string][]).map(([value,label])=><button type="button" key={value} aria-pressed={filter===value} disabled={state.busy} onClick={()=>{setFilter(value);setPage(1);}}>{label}<span>{catalog.isPending?'—':counts[value]}</span></button>)}<SlidingIndicator className="ui-segmented-thumb"/>
     </div>
-    {!!counts.unknown&&<small className="paint-state-unknown">{text(`${counts.unknown} 张修改状态未确认`,`${counts.unknown} images have an unknown edit status`)}</small>}
     <div className="paint-thumbnail-grid" role="region" aria-label={text('图片缩略图','Image thumbnails')} tabIndex={0}>
-      {visible.map(item=><button type="button" key={item.rel_path} title={item.rel_path} aria-label={text(`选择图片：${item.rel_path}`,`Select image: ${item.rel_path}`)} aria-pressed={item.rel_path===image?.rel_path} disabled={state.busy} data-edit-status={statusOf(item)} onClick={()=>choose(item)}><LazyImage src={apiUrl(`/datasets/${did}/images/${item.hash}/thumb?size=256`)} alt={item.rel_path} loading="lazy"/>{item.has_mask&&<span className="paint-mask-mark" role="img" aria-label={text('有遮罩','Has mask')} title={text('有遮罩','Has mask')}><MaskIcon size={12}/></span>}{statusOf(item)==='pending'&&<span className="paint-draft-mark" aria-label={text('待保存','Unsaved')}/>}</button>)}
+      {visible.map(item=><button type="button" key={item.rel_path} title={item.rel_path} aria-label={text(`选择图片：${item.rel_path}`,`Select image: ${item.rel_path}`)} aria-pressed={item.rel_path===image?.rel_path} disabled={state.busy&&!state.switching} data-edit-status={statusOf(item)} onClick={()=>choose(item)}><LazyImage src={apiUrl(`/datasets/${did}/images/${item.hash}/thumb?size=256`)} alt={item.rel_path} loading="lazy"/>{item.has_mask&&<span className="paint-mask-mark" role="img" aria-label={text('有遮罩','Has mask')} title={text('有遮罩','Has mask')}><MaskIcon size={12}/></span>}{statusOf(item)==='pending'&&<span className="paint-draft-mark" aria-label={text('待保存','Unsaved')}/>}</button>)}
       {!visible.length&&<p className="paint-library-empty">{text('没有符合条件的图片。','No matching images.')}</p>}
     </div>
-    <div className="paint-library-navigation" role="group" aria-label={text('切换图片','Switch image')}><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一张','Previous image')} disabled={state.busy||imageIndex<=0} onClick={()=>choose(filtered[imageIndex-1])}><ChevronLeft size={14}/></button><span>{imageIndex<0?'—':imageIndex+1} / {filtered.length}</span><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一张','Next image')} disabled={state.busy||imageIndex<0||imageIndex>=filtered.length-1} onClick={()=>choose(filtered[imageIndex+1])}><ChevronRight size={14}/></button></div>
     {pages>1&&<div className="paint-library-navigation"><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('上一页','Previous page')} disabled={state.busy||shownPage<=1} onClick={()=>setPage(shownPage-1)}><ChevronLeft size={12}/></button><span>{text('第','Page ')} {shownPage}/{pages}</span><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('下一页','Next page')} disabled={state.busy||shownPage>=pages} onClick={()=>setPage(shownPage+1)}><ChevronRight size={12}/></button></div>}
   </>;
   return <section className="paint-workspace" ref={root} onKeyDown={event=>{if(event.defaultPrevented||!(event.ctrlKey||event.metaKey)||event.target instanceof Element&&event.target.closest('[role="dialog"]'))return;if(event.key.toLowerCase()==='s'){event.preventDefault();if(event.shiftKey)void editor.current?.saveAll();else void editor.current?.saveCurrent();}else if(event.key.toLowerCase()==='z'&&!(event.target instanceof HTMLInputElement)&&!(event.target instanceof HTMLTextAreaElement)){event.preventDefault();if(event.shiftKey)editor.current?.redo();else editor.current?.undo();}}} aria-label={text('涂抹与遮罩','Paint and mask')}>
@@ -146,7 +144,7 @@ export default function PaintWorkspace({projectId,versionId,initialDatasetId='',
     </div>
     {(datasets.error||catalog.error)&&<p role="alert" className="paint-workspace-error">{formatApiError(datasets.error||catalog.error)}</p>}
     <div className="paint-workspace-body" ref={body}>
-      {did&&image?<ImageEditor key={did} ref={editor} datasetId={did} imageId={image.hash} relPath={image.rel_path} inline readOnly={readOnly} drafts={drafts.current} onDraftsChange={onDraftsChange} onStateChange={setState} refreshKey={refreshKey} gallery={gallery} onClose={()=>{}} onSaved={saved} onBatchSaved={refreshSaved} onReloadList={refresh} navigation={{position:imageIndex+1,total:filtered.length,resolve:async(direction)=>{const next=filtered[imageIndex+direction];return next?target(next,imageIndex+direction):null;},onNavigated:next=>{setSelected(previous=>({...previous,[did]:next.relPath}));const index=filtered.findIndex(item=>item.rel_path===next.relPath);if(index>=0)setPage(Math.floor(index/PAGE_SIZE)+1);}}}/>:catalog.isPending||datasets.isPending?<LoadingNote block label={text('读取图片与遮罩…','Loading images and masks…')}/>:<p className="paint-library-empty">{text('请先导入图片。','Import images first.')}</p>}
+      {did&&image?<ImageEditor key={did} ref={editor} datasetId={did} imageId={image.hash} relPath={image.rel_path} inline readOnly={readOnly} drafts={drafts.current} onDraftsChange={onDraftsChange} onStateChange={setState} refreshKey={refreshKey} gallery={gallery} onClose={()=>{}} onSaved={saved} onBatchSaved={refreshSaved} onReloadList={refresh} navigation={{position:imageIndex+1,total:filtered.length,resolve:async(direction,current)=>{const index=filtered.findIndex(item=>item.rel_path===current.relPath)+direction;const next=filtered[index];return next?target(next,index):null;},onNavigated:next=>{setSelected(previous=>({...previous,[did]:next.relPath}));const index=filtered.findIndex(item=>item.rel_path===next.relPath);if(index>=0)setPage(Math.floor(index/PAGE_SIZE)+1);}}}/>:catalog.isPending||datasets.isPending?<LoadingNote block label={text('读取图片与遮罩…','Loading images and masks…')}/>:<p className="paint-library-empty">{text('请先导入图片。','Import images first.')}</p>}
     </div>
     {leaveOpen&&<Dialog title={text('图片修改尚未保存','Unsaved image changes')} closeDisabled={state.busy} onClose={()=>finishLeave(false)}><p>{text(`有 ${pendingCount} 张图片的修改尚未保存。`,`Edits to ${pendingCount} images are unsaved.`)}</p><div className="workspace-confirm-actions"><button type="button" className="ui-btn" onClick={()=>finishLeave(false)}>{text('继续编辑','Keep editing')}</button><button type="button" className="ui-btn ui-btn-danger" onClick={()=>finishLeave(true)}>{text('放弃并离开','Discard and leave')}</button><button type="button" className="ui-btn ui-btn-primary" disabled={state.busy||readOnly} onClick={()=>void editor.current?.saveAll().then(()=>{if(![...drafts.current.values()].some(paintDraftDirty))finishLeave(true);})}>{text('保存全部并离开','Save all and leave')}</button></div></Dialog>}
   </section>;

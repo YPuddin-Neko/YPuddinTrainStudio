@@ -117,6 +117,10 @@ def create_app(
     family_geometry = FamilyGeometry(db)
     tasks = context.background_tasks
     tasks.add_source(context.upload_sessions.background_tasks)
+    tasks.add_source(
+        dataset_pipeline.background_tasks,
+        cancel=lambda task_id: dataset_pipeline.cancel(task_id.removeprefix("dataset-pipeline:")),
+    )
     tasks.add_source(model_download_source(model_downloads, tasks.started_at), cancel=model_downloads.cancel)
     tasks.add_source(tts_model_download_source(model_downloads.tts, tasks.started_at), cancel=model_downloads.tts.cancel)
     tasks.add_source(

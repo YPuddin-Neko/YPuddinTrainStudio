@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import './models.css';
 import { Link, useLocation } from 'react-router-dom';
 import { KeyRound, RefreshCw } from 'lucide-react';
 import { useWorkspaceText } from '../../utils/workspaceText';
