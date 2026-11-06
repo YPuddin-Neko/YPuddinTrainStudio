@@ -149,8 +149,8 @@ def paint_source(
     with manager.c.db.lock:
         _, image, _ = _resolve(manager.c, did, h, rel_path)
         rgba, _, _ = _original(image)
-        output = io.BytesIO()
-        rgba.save(output, format="PNG")
+    output = io.BytesIO()
+    rgba.save(output, format="PNG", compress_level=4)
     return Response(output.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 

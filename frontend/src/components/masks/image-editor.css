@@ -41,3 +41,4 @@
 .image-editor-canvas-info { display:flex; align-items:center; gap:12px; flex:none; min-width:0; height:28px; padding:0 10px; border-top:1px solid var(--studio-line); color:var(--studio-dim); font-size:11px; }
 .image-editor-canvas-info>span:first-child { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .image-editor-canvas-info>span { flex:none; }
+.image-editor-loading { flex:1; align-items:center; }

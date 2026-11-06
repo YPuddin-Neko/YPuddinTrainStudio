@@ -88,12 +88,12 @@ export default function PaintWorkspace({projectId,versionId,initialDatasetId='',
     if(did)void client.invalidateQueries({queryKey:['dataset-image-catalog',did]});
   },[refreshKey,did,client]);
   React.useEffect(()=>{
-    if(!did||!image||readOnly)return;
+    if(!did||!image||readOnly||!state.available||state.busy)return;
     const controller=new AbortController();
     const at=items.findIndex(item=>item.rel_path===image.rel_path);
     for(const neighbor of [items[at-1],items[at+1]])if(neighbor)void preloadPaint(did,neighbor.hash,neighbor.rel_path,controller.signal).catch(()=>{});
     return()=>controller.abort();
-  },[did,image,items,readOnly,refreshKey]);
+  },[did,image,items,readOnly,refreshKey,state.available,state.busy]);
   React.useEffect(()=>{
     const unload=(event:BeforeUnloadEvent)=>{if(pendingCount||state.busy){event.preventDefault();event.returnValue='';}};
     window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);
