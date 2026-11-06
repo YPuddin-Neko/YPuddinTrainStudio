@@ -21,13 +21,13 @@ import './tagging-settings.css';
 const CUSTOM = '__custom';
 const ADDRESS = /^https?:\/\/[^\s/]+(\/\S*)?$/i;
 const MODEL_DESCRIPTIONS: Record<string, [string, string]> = {
-  'wd-eva02-tagger-2026-canary': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
-  'wd-eva02-large-tagger-v3': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
-  'wd-vit-large-tagger-v3': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
-  'wd-swinv2-tagger-v3': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
-  'wd-convnext-tagger-v3': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
-  'wd-vit-tagger-v3': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
-  'wd-v1-4-moat-tagger-v2': ['识别动漫图片中的通用、角色和分级标签。', 'Identify general, character and rating tags in anime images.'],
+  'wd-eva02-tagger-2026-canary': ['基于 EVA02-Large v3 的实验版，扩充了 2026 年的通用与角色标签。', 'Experimental model based on EVA02-Large v3, with expanded general and character tags from 2026.'],
+  'wd-eva02-large-tagger-v3': ['大型 EVA02 模型，识别通用、角色与分级标签，可作为日常动漫打标的起点。', 'Large EVA02 model for general, character and rating tags; a starting point for everyday anime tagging.'],
+  'wd-vit-large-tagger-v3': ['大型 ViT 模型，与 EVA02-Large 使用同一 v3 标签集，便于对照不同架构的打标结果。', 'Large ViT model sharing the EVA02-Large v3 tag set, for comparing results across architectures.'],
+  'wd-swinv2-tagger-v3': ['采用窗口注意力的 v3 模型，权重小于两款 Large，适合减少模型存储占用。', 'Window-attention v3 model with smaller weights than both Large models, for a lower storage footprint.'],
+  'wd-convnext-tagger-v3': ['采用纯卷积的 v3 模型，可与注意力模型对照，检查同一图片的标签差异。', 'Convolution-only v3 model; compare it with attention-based models to check tag differences on the same image.'],
+  'wd-vit-tagger-v3': ['标准 ViT 模型，与 Large 版标签范围相同，下载与存储占用更小。', 'Standard ViT model with the same tag coverage as the Large version and a smaller download and storage footprint.'],
+  'wd-v1-4-moat-tagger-v2': ['卷积与注意力结合的旧版模型，使用 v2 标签集，适合沿用旧版打标流程。', 'Older model combining convolution and attention, using the v2 tag set for existing v2 tagging workflows.'],
   'pixai-tagger-v1.0': ['识别通用、角色、作品、画师等标签。', 'Identify general, character, copyright, artist and other tags.'],
   'pixai-tagger-v0.9': ['识别通用与角色标签。', 'Identify general and character tags.'],
   'cl-tagger-v2-01a': ['识别通用、角色、作品及质量等标签。', 'Identify general, character, copyright, quality and other tags.'],
