@@ -11,6 +11,7 @@ import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { ttsEngineLabel } from '../../utils/ttsEngines';
+import { EASE_OUT, prefersReducedMotion, useEnterAnimation } from '../../utils/motion';
 import { useTranslation } from 'react-i18next';
 import { categoryLabel, coverSource, PROJECT_CATEGORIES, type GalleryProject } from './projectGallery';
 import ProjectCoverCropper from './ProjectCoverCropper';
@@ -33,6 +34,35 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
   const english = i18n.resolvedLanguage?.startsWith('en') || false;
   const [projectType, setProjectType] = React.useState<'image' | 'tts'>(project?.project_type === 'tts' ? 'tts' : 'image');
   const [choosingType, setChoosingType] = React.useState(!project);
+  const stepBox = React.useRef<HTMLDivElement>(null);
+  const stepContent = useEnterAnimation<HTMLDivElement>(choosingType ? 'type' : projectType, { distance: 0, skipFirst: true });
+  const previousHeight = React.useRef<number | null>(null);
+  const heightAnimation = React.useRef<Animation>();
+  const rememberStepHeight = () => {
+    previousHeight.current = stepBox.current?.getBoundingClientRect().height ?? null;
+    heightAnimation.current?.cancel();
+  };
+  React.useLayoutEffect(() => {
+    const box = stepBox.current, content = stepContent.current, from = previousHeight.current;
+    previousHeight.current = null;
+    if (!box || !content || from == null || typeof box.animate !== 'function' || prefersReducedMotion()) return;
+    let remaining = 200;
+    let target = content.getBoundingClientRect().height;
+    let animation: Animation;
+    const run = (start: number, end: number, duration: number) => {
+      animation = box.animate([{ height: `${start}px`, overflow: 'clip' }, { height: `${end}px`, overflow: 'clip' }], { duration, easing: EASE_OUT });
+      heightAnimation.current = animation;
+      animation.onfinish = () => observer?.disconnect();
+    };
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => {
+      const next = content.getBoundingClientRect().height, elapsed = Number(animation.currentTime ?? 0);
+      if (next === target || remaining <= elapsed) return;
+      const current = box.getBoundingClientRect().height;
+      remaining -= elapsed; animation.cancel(); target = next; run(current, next, remaining);
+    });
+    run(from, target, 200); observer?.observe(content);
+    return () => { observer?.disconnect(); animation.cancel(); };
+  }, [choosingType, projectType, stepContent]);
   const stepFocus = React.useRef(false);
   const nameInput = React.useRef<HTMLInputElement>(null);
   const typeButtons = React.useRef<Partial<Record<'image' | 'tts', HTMLButtonElement | null>>>({});
@@ -79,6 +109,7 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
   }, [choosingType, projectType]);
   const chooseType = (type: 'image' | 'tts') => {
     if (busyRef.current || savedProject) return;
+    rememberStepHeight();
     stepFocus.current = true;
     setProjectType(type); setChoosingType(false); setError('');
   };
@@ -163,6 +194,7 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
     }}/>
   </Dialog>;
   return <Dialog key="editor" title={project ? text('编辑项目', 'Edit project') : choosingType ? text('新建项目', 'New project') : projectType === 'tts' ? text('新建语音项目', 'New speech project') : text('新建图像项目', 'New image project')} onClose={onClose} closeDisabled={busy}>
+    <div ref={stepBox} className="project-editor-step"><div ref={stepContent} className="project-editor-step-content">
     {choosingType ? <div className="project-type-choices" role="group" aria-label={text('项目类型', 'Project type')}>
       {([
         { type: 'image', Icon: ImageIcon, label: text('图像', 'Image'), description: text('使用图片训练图像生成模型', 'Train image generation models with images') },
@@ -205,8 +237,10 @@ export default function ProjectEditor({ project, categories, onClose, onSaved, o
       </fieldset>
       <div className="project-editor-footer">{!project && <button type="button" className="ui-btn ui-btn-quiet project-type-back" disabled={busy || !!savedProject} onClick={() => {
         if (busyRef.current || savedProject) return;
+        rememberStepHeight();
         stepFocus.current = true; setChoosingType(true); setError('');
       }}><ArrowLeft size={14} aria-hidden="true"/>{text('选择类型', 'Choose type')}</button>}<button type="button" className="ui-btn" disabled={busy} onClick={onClose}>{partial ? text('关闭', 'Close') : text('取消', 'Cancel')}</button><button type="submit" className="ui-btn ui-btn-primary" disabled={busy || !name.trim() || creationBlocked || (customCategory && !category.trim()) || category.trim().length > 64}>{busy && <Loader2 size={14} className="animate-spin"/>}{busy ? text('保存中…', 'Saving…') : project || partial ? text('保存', 'Save') : text('创建', 'Create')}</button></div>
     </form>}
+    </div></div>
   </Dialog>;
 }

@@ -6,6 +6,20 @@ export function prefersReducedMotion() {
   return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
 
+/** Let menus finish their short exit after interaction and accessibility have closed. */
+export function useMenuPresence(open: boolean, ref: React.RefObject<HTMLElement | null>) {
+  const [present, setPresent] = React.useState(open);
+  React.useLayoutEffect(() => {
+    if (ref.current) ref.current.inert = !open;
+    if (open) { setPresent(true); return; }
+    if (!present) return;
+    if (prefersReducedMotion()) { setPresent(false); return; }
+    const timer = window.setTimeout(() => setPresent(false), 140);
+    return () => window.clearTimeout(timer);
+  }, [open, present, ref]);
+  return open || present;
+}
+
 /** Fade a surface in (with a small rise) whenever `key` changes, without remounting it. */
 export function useEnterAnimation<T extends HTMLElement>(key: unknown, { distance = 4, duration = 180, skipFirst = false } = {}) {
   const ref = React.useRef<T>(null);

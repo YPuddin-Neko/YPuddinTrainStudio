@@ -2,6 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useWorkspaceText } from '../utils/workspaceText';
+import { useMenuPresence } from '../utils/motion';
 import type { StudioSelectOption } from './StudioSelect';
 import './studio-select-search.css';
 
@@ -49,11 +50,12 @@ export default function CheckboxSelect({ values, options, onValuesChange, groups
   const chosen = new Set(values);
   const unavailable = disabled || options.length === 0;
   const visible = open && !unavailable;
+  const present = useMenuPresence(visible, list);
   const full = max != null && values.length >= max;
   const grouped = groups.length > 1;
   const needle = filter.trim().toLocaleLowerCase();
   // The groups themselves are listed until one is opened, unless a search looks through all of them.
-  const atGroups = visible && grouped && group == null && !needle;
+  const atGroups = grouped && group == null && !needle;
   const groupLabel = (value?: string) => groups.find(item => item.value === value)?.label || '';
   const blocked = (option: CheckboxSelectOption) => !!option.disabled || (full && !chosen.has(option.value));
   const matches = options.map((option, index) => ({ option, index })).filter(({ option }) =>
@@ -64,6 +66,7 @@ export default function CheckboxSelect({ values, options, onValuesChange, groups
       : text(`已选 ${picked.length} 个：${picked.map(option => option.displayLabel ?? option.label).join('、')}`, `${picked.length} selected: ${picked.map(option => option.displayLabel ?? option.label).join(', ')}`);
 
   const toggle = (index: number) => {
+    if (!visible) return;
     const option = options[index];
     if (!option || blocked(option)) return;
     // Keep the options' order, not the order of clicks.
@@ -71,21 +74,22 @@ export default function CheckboxSelect({ values, options, onValuesChange, groups
     onValuesChange(next);
   };
   const firstEnabled = (group: string | null) => options.findIndex(option => (!grouped || option.group === group) && !blocked(option));
-  const openList = () => { setFilter(''); setGroup(null); setActiveGroup(0); setActive(grouped ? -1 : firstEnabled(null)); setOpen(true); };
+  const place = React.useCallback(() => {
+    const rect = trigger.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = Math.min(Math.max(rect.width, 200), window.innerWidth - 16);
+    const below = window.innerHeight - rect.bottom - 12, above = rect.top - 12;
+    const upwards = below < Math.min(options.length * 34 + 48, 280) && above > below;
+    setPosition({ position: 'fixed', width, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
+      ...(upwards ? { bottom: window.innerHeight - rect.top + 5 } : { top: rect.bottom + 5 }), maxHeight: Math.max(80, Math.min(320, upwards ? above : below)) });
+  }, [options.length]);
+  const openList = () => { setFilter(''); setGroup(null); setActiveGroup(0); setActive(grouped ? -1 : firstEnabled(null)); place(); setOpen(true); };
   const enter = (value: string) => { setGroup(value); setActive(firstEnabled(value)); };
   const leave = () => { setActiveGroup(Math.max(0, groups.findIndex(item => item.value === group))); setGroup(null); setActive(-1); };
 
   React.useLayoutEffect(() => {
     if (!visible) return;
-    const place = () => {
-      const rect = trigger.current?.getBoundingClientRect();
-      if (!rect) return;
-      const width = Math.min(Math.max(rect.width, 200), window.innerWidth - 16);
-      const below = window.innerHeight - rect.bottom - 12, above = rect.top - 12;
-      const upwards = below < Math.min(options.length * 34 + 48, 280) && above > below;
-      setPosition({ position: 'fixed', width, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
-        ...(upwards ? { bottom: window.innerHeight - rect.top + 5 } : { top: rect.bottom + 5 }), maxHeight: Math.max(80, Math.min(320, upwards ? above : below)) });
-    };
+
     const outside = (event: PointerEvent) => {
       if (!trigger.current?.contains(event.target as Node) && !list.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -94,7 +98,7 @@ export default function CheckboxSelect({ values, options, onValuesChange, groups
     window.addEventListener('scroll', place, true);
     document.addEventListener('pointerdown', outside);
     return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); document.removeEventListener('pointerdown', outside); };
-  }, [visible, options.length]);
+  }, [visible, place]);
   const activeId = !visible ? undefined : atGroups ? `${listId}-group-${activeGroup}` : active >= 0 ? `${listId}-${active}` : undefined;
   React.useEffect(() => { if (activeId) document.getElementById(activeId)?.scrollIntoView?.({ block: 'nearest' }); }, [activeId]);
   React.useEffect(() => { if (visible && searchable) filterInput.current?.focus(); }, [visible, searchable]);
@@ -142,7 +146,8 @@ export default function CheckboxSelect({ values, options, onValuesChange, groups
       onClick={() => visible ? setOpen(false) : openList()} onKeyDown={keyDown} onBlur={event => { if (!list.current?.contains(event.relatedTarget)) setOpen(false); }}>
       <span className="studio-select-value">{summary}</span><ChevronDown size={13} className="studio-select-chevron" aria-hidden="true"/>
     </button>
-    {visible && createPortal(<div ref={list} className="studio-select-menu checkbox-select-menu" style={position}
+    {present && createPortal(<div ref={list} className="studio-select-menu checkbox-select-menu" style={position}
+      data-side={position.bottom != null ? 'top' : 'bottom'} data-state={visible ? 'open' : 'closed'} aria-hidden={!visible || undefined}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== trigger.current) setOpen(false); }}
       onKeyDown={event => { if (event.key === 'Escape') keyDown(event); }}
       onPointerDown={event => { if (!(event.target instanceof HTMLInputElement) && !(event.target as Element).closest('.checkbox-select-footer')) event.preventDefault(); }}>

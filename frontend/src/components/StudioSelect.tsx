@@ -2,6 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { useWorkspaceText } from '../utils/workspaceText';
+import { useMenuPresence } from '../utils/motion';
 import './studio-select-search.css';
 
 export interface StudioSelectOption { value: string; label: string; displayLabel?: string; disabled?: boolean; }
@@ -46,16 +47,29 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
   const selected = options.findIndex(option => option.value === value);
   const unavailable = disabled || options.length === 0;
   const visible = open && !unavailable;
+  const present = useMenuPresence(visible, list);
   const triggerLabel = options[selected]?.displayLabel ?? options[selected]?.label ?? (fallbackLabel || value || placeholder || text(options.length ? '请选择' : '暂无可选项', options.length ? 'Choose' : 'No options available'));
   const matches = options.map((option, index) => ({ option, index })).filter(({ option }) => !searchable || option.label.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()));
+  const place = React.useCallback(() => {
+    const rect = (anchorRef?.current || trigger.current)?.getBoundingClientRect();
+    if (!rect) return;
+    const width = Math.min(Math.max(rect.width, columns === 3 ? 360 : 160), window.innerWidth - 16);
+    const below = window.innerHeight - rect.bottom - 12;
+    const above = rect.top - 12;
+    const upwards = below < Math.min(Math.ceil(options.length / columns) * (columns === 3 ? 64 : 34) + 10, 240) && above > below;
+    setPosition({ position: 'fixed', width, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
+      ...(upwards ? { bottom: window.innerHeight - rect.top + 5 } : { top: rect.bottom + 5 }),
+      maxHeight: Math.max(40, Math.min(280, upwards ? above : below)) });
+  }, [anchorRef, columns, options.length]);
   const openList = (last = false, edge = false) => {
     const fallback = last ? options.reduce((index, option, current) => option.disabled ? index : current, -1) : options.findIndex(option => !option.disabled);
     search.current = { text: '', time: 0 };
     setFilter('');
     setActive(!edge && selected >= 0 && !options[selected].disabled ? selected : fallback);
-    setOpen(true);
+    place(); setOpen(true);
   };
   const choose = (index: number) => {
+    if (!visible) return;
     if (trigger.current?.matches(':disabled')) { setOpen(false); return; }
     const option = options[index];
     if (!option || option.disabled || !matches.some(match => match.index === index)) return;
@@ -66,17 +80,7 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
 
   React.useLayoutEffect(() => {
     if (!visible) return;
-    const place = () => {
-      const rect = (anchorRef?.current || trigger.current)?.getBoundingClientRect();
-      if (!rect) return;
-      const width = Math.min(Math.max(rect.width, columns === 3 ? 360 : 160), window.innerWidth - 16);
-      const below = window.innerHeight - rect.bottom - 12;
-      const above = rect.top - 12;
-      const upwards = below < Math.min(Math.ceil(options.length / columns) * (columns === 3 ? 64 : 34) + 10, 240) && above > below;
-      setPosition({ position: 'fixed', width, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
-        ...(upwards ? { bottom: window.innerHeight - rect.top + 5 } : { top: rect.bottom + 5 }),
-        maxHeight: Math.max(40, Math.min(280, upwards ? above : below)) });
-    };
+
     const outside = (event: PointerEvent) => {
       if (!trigger.current?.contains(event.target as Node) && !list.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -89,7 +93,7 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
       window.removeEventListener('scroll', place, true);
       document.removeEventListener('pointerdown', outside);
     };
-  }, [visible, options.length, columns, anchorRef]);
+  }, [visible, place]);
   React.useEffect(() => {
     if (visible) document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: 'nearest' });
   }, [active, visible, listId]);
@@ -121,13 +125,13 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
         search.current = { text: '', time: 0 };
         setFilter(next);
         setActive(options.findIndex(option => !option.disabled && option.label.toLocaleLowerCase().includes(next.toLocaleLowerCase())));
-        setOpen(true);
+        place(); setOpen(true);
         return;
       }
       const now = event.timeStamp;
       search.current = { text: `${now - search.current.time > 700 ? '' : search.current.text}${event.key.toLocaleLowerCase()}`, time: now };
       const index = options.findIndex(option => !option.disabled && option.label.toLocaleLowerCase().startsWith(search.current.text));
-      if (!visible) setOpen(true);
+      if (!visible) { place(); setOpen(true); }
       if (index >= 0) setActive(index);
     }
   };
@@ -156,7 +160,8 @@ export default function StudioSelect({ id, value, options, onValueChange, disabl
       onClick={() => visible ? setOpen(false) : openList()} onKeyDown={keyDown} onBlur={event => { if (!list.current?.contains(event.relatedTarget)) setOpen(false); }}>
       {icon}<span className="studio-select-value">{triggerDescription ? <><span className="studio-select-title">{triggerLabel}</span><span className="studio-select-description">{triggerDescription}</span></> : triggerLabel}</span><ChevronDown size={13} className="studio-select-chevron" aria-hidden="true"/>
     </button>
-    {visible && createPortal(<div ref={list} id={searchable ? undefined : listId} role={searchable ? undefined : 'listbox'} className={`studio-select-menu${searchable ? ' studio-select-menu-searchable' : ''}${columns === 3 ? ' studio-select-menu-grid' : ''}`} style={position}
+    {present && createPortal(<div ref={list} id={searchable ? undefined : listId} role={searchable ? undefined : 'listbox'} className={`studio-select-menu${searchable ? ' studio-select-menu-searchable' : ''}${columns === 3 ? ' studio-select-menu-grid' : ''}`} style={position}
+      data-side={position.bottom != null ? 'top' : 'bottom'} data-state={visible ? 'open' : 'closed'} aria-hidden={!visible || undefined}
       aria-label={searchable ? undefined : aria['aria-label']} aria-labelledby={searchable ? undefined : aria['aria-labelledby'] || (!aria['aria-label'] ? triggerId : undefined)}
       onBlur={event => {if (!event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== trigger.current) setOpen(false);}}
       onPointerDown={event => {if (!(event.target instanceof HTMLInputElement)) event.preventDefault();}}>
