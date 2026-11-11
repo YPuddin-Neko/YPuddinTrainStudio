@@ -13,7 +13,7 @@
 .vision-field :is(input[type=text], input[type=number], input[type=password]) { min-width:0; width:100%; height:34px; padding:6px 10px; font-size:12px; border:1px solid var(--studio-line); border-radius:6px; background:var(--studio-panel); color:var(--studio-text); }
 .vision-field :is(input[type=text], input[type=number], input[type=password]):hover:not(:disabled):not([readonly]) { border-color:var(--control-hover-line); }
 .vision-field input[readonly] { background:var(--studio-muted); color:var(--studio-dim); }
-.vision-panel :is(input, textarea):disabled { opacity:.55; cursor:not-allowed; }
+.vision-panel :is(input, textarea):disabled:not(:where([role="switch"])) { opacity:.55; cursor:not-allowed; }
 .vision-running { flex:1 1 100%; min-width:0; }
 .vision-running > .dataset-operation-progress { background:var(--studio-panel); }
 .vision-field input:focus-visible { outline:2px solid var(--studio-accent); outline-offset:1px; }
