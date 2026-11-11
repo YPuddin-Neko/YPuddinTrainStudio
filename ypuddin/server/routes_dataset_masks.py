@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Literal
+from typing import BinaryIO, Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
@@ -17,16 +17,17 @@ from pydantic import BaseModel
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
 
-from ypuddin.data.image_metadata import alpha_channel
+from ypuddin.data.image_metadata import alpha_channel, has_alpha, has_color_key
 
 from .context import ServiceContext
 from .errors import ApiError, NotFound
 from .routes_work import _get_dataset, _records, _records_path, ctx
 
 router = APIRouter()
-MAX_REQUEST_BYTES = 32 * 1024**2
-MAX_PIXELS = 16_777_216
 MAX_EDGE = 8192
+# An 8-bit RGBA canvas plus PNG encoding overhead; multipart fields have a separate budget.
+MAX_PNG_BYTES = MAX_EDGE * MAX_EDGE * 4 + 1024**2
+MAX_REQUEST_BYTES = MAX_PNG_BYTES + 1024**2
 
 
 class MaskInfo(BaseModel):
@@ -76,12 +77,45 @@ def _resolve(c: ServiceContext, did: str, h: str, rel_path: str | None = None):
 
 
 def _check_size(size: tuple[int, int]) -> None:
-    if min(size) < 1 or max(size) > MAX_EDGE or size[0] * size[1] > MAX_PIXELS:
+    if min(size) < 1 or max(size) > MAX_EDGE:
         raise ApiError(
-            "mask editing supports up to 16 megapixels and 8192 pixels per side",
+            f"mask editing supports up to {MAX_EDGE} pixels per side",
             code="mask.dimensions",
             status=413,
         )
+
+
+def _sidecar(image: Path, target: Path) -> Path | None:
+    legacy = image.with_name(image.stem + ".mask")
+    return target if target.is_file() else legacy if legacy.is_file() else None
+
+
+def _inspect(image: Path, target: Path) -> tuple[int, int, Literal["sidecar", "alpha", "full"]]:
+    """Validate the pixels while reading geometry and mask source without building a mask."""
+    try:
+        with Image.open(image) as original:
+            _check_size(original.size)
+            original.load()
+            width, height = original.size
+            if original.getexif().get(274) in (5, 6, 7, 8):
+                width, height = height, width
+            sidecar = _sidecar(image, target)
+            if sidecar:
+                with Image.open(sidecar) as saved:
+                    _check_size(saved.size)
+                    saved.load()
+                source = "sidecar"
+            elif has_alpha(original):
+                if has_color_key(original) and (original.mode == "I" or original.mode.startswith("I;16")):
+                    alpha_channel(original)
+                source = "alpha"
+            else:
+                source = "full"
+        return width, height, source
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise ApiError(
+            "cannot read source image or mask; check the files and rescan", code="mask.image"
+        ) from exc
 
 
 def _load(image: Path, target: Path) -> tuple[Image.Image, MaskInfo]:
@@ -90,8 +124,7 @@ def _load(image: Path, target: Path) -> tuple[Image.Image, MaskInfo]:
             _check_size(original.size)
             oriented = ImageOps.exif_transpose(original)
             size = oriented.size
-            legacy = image.with_name(image.stem + ".mask")
-            sidecar = target if target.is_file() else legacy if legacy.is_file() else None
+            sidecar = _sidecar(image, target)
             resized = False
             if sidecar:
                 with Image.open(sidecar) as saved:
@@ -169,9 +202,11 @@ def mask_source(did: str, h: str, rel_path: str | None = None, c: ServiceContext
     return Response(output.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
-def _save(c: ServiceContext, did: str, h: str, rel_path: str | None, data: bytes, revision: str) -> MaskInfo:
+def _save(
+    c: ServiceContext, did: str, h: str, rel_path: str | None, data: bytes | BinaryIO, revision: str
+) -> MaskInfo:
     try:
-        with Image.open(io.BytesIO(data)) as uploaded:
+        with Image.open(io.BytesIO(data) if isinstance(data, bytes) else data) as uploaded:
             if uploaded.format != "PNG" or getattr(uploaded, "n_frames", 1) != 1:
                 raise ApiError("mask must be a single-frame PNG", code="mask.format")
             _check_size(uploaded.size)
@@ -287,7 +322,7 @@ async def save_mask(
         async for chunk in request.stream():
             count += len(chunk)
             if count > MAX_REQUEST_BYTES:
-                raise MultiPartException("mask upload exceeds 32 MiB")
+                raise MultiPartException(f"mask upload exceeds {MAX_REQUEST_BYTES // 1024**2} MiB")
             yield chunk
 
     parser = MultiPartParser(request.headers, bounded_stream(), max_files=1, max_fields=1)
@@ -306,10 +341,11 @@ async def save_mask(
             or not isinstance(revision, str)
         ):
             raise ApiError("provide one file and its revision", code="mask.upload")
-        data = await upload.read(MAX_REQUEST_BYTES + 1)
-        if len(data) > MAX_REQUEST_BYTES:
-            raise ApiError("mask upload exceeds 32 MiB", code="mask.upload", status=413)
-        return await run_in_threadpool(_save, c, did, h, rel_path, data, revision)
+        if upload.size is not None and upload.size > MAX_PNG_BYTES:
+            raise ApiError(
+                f"mask PNG exceeds {MAX_PNG_BYTES // 1024**2} MiB", code="mask.upload", status=413
+            )
+        return await run_in_threadpool(_save, c, did, h, rel_path, upload.file, revision)
     finally:
         if form is not None:
             await form.close()

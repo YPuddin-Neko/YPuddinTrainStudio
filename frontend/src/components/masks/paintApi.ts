@@ -1,5 +1,5 @@
-import { apiClient, apiUrl } from '../../api/client';
-import { ApiError } from '../../api/types';
+import { apiClient } from '../../api/client';
+import { encodeEditorPng, readEditorPng } from './editorPng';
 import { exportMask, maskEndpoint } from './maskApi';
 
 export interface PaintInfo {
@@ -11,52 +11,58 @@ export function paintEndpoint(datasetId: string, imageId: string, relPath: strin
   return `/datasets/${encodeURIComponent(datasetId)}/images/${encodeURIComponent(imageId)}/paint${suffix}?rel_path=${encodeURIComponent(relPath)}`;
 }
 type LoadedPaint = { info: PaintInfo; pixels: Uint8ClampedArray; mask: Uint8Array };
+const MAX_DECODED_BYTES = 80 * 1024 * 1024;
 const decodedImages = new Map<string, { datasetId: string; imageId: string; relPath: string; value: LoadedPaint }>();
 type PendingPaint = { datasetId: string; relPath: string; controller: AbortController; readers: number; promise: Promise<LoadedPaint> };
 const pendingImages = new Map<string, PendingPaint>();
+export function canPreloadPaint(width?: number | null, height?: number | null) {
+  // Each decoded pixel occupies four image bytes and one mask byte.
+  return width != null && height != null && width > 0 && height > 0 && width * height * 5 <= MAX_DECODED_BYTES;
+}
+const decodedBytes = (value: LoadedPaint) => value.pixels.byteLength + value.mask.byteLength;
 export function invalidatePaintCache(datasetId: string, relPath?: string) {
   for (const [key, item] of decodedImages) if (item.datasetId === datasetId && (!relPath || item.relPath === relPath)) decodedImages.delete(key);
   for (const [key, item] of pendingImages) if (item.datasetId === datasetId && (!relPath || item.relPath === relPath)) {
     pendingImages.delete(key); item.controller.abort();
   }
 }
-async function decode(url: string, signal: AbortSignal, width: number, height: number) {
-  const response = await fetch(apiUrl(url), { signal, cache: 'no-store' });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new ApiError(response.status, payload?.error || { code: 'paint.load', message: `HTTP ${response.status}` });
-  }
-  const objectUrl = URL.createObjectURL(await response.blob());
-  try {
-    const image = new Image();
-    await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error('Cannot decode image PNG')); image.src = objectUrl; });
-    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-    if (image.naturalWidth !== width || image.naturalHeight !== height) throw new Error('Image changed during loading; reload the editor');
-    const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
-    try {
-      const context = canvas.getContext('2d'); if (!context) throw new Error('Canvas is unavailable');
-      context.drawImage(image, 0, 0); return context.getImageData(0, 0, width, height).data;
-    } finally { canvas.width = 1; canvas.height = 1; }
-  } finally { URL.revokeObjectURL(objectUrl); }
-}
 async function readPaint(datasetId: string, imageId: string, relPath: string, signal: AbortSignal) {
   const infoUrl = paintEndpoint(datasetId, imageId, relPath, '/info');
   const info = await apiClient.get<PaintInfo>(infoUrl, {signal, silent:true});
   const key = JSON.stringify([datasetId, imageId, relPath, info.revision]);
   const cached = decodedImages.get(key)?.value;
-  const [pixels, maskRgba] = cached ? [cached.pixels, null] : await Promise.all([
-    decode(paintEndpoint(datasetId, imageId, relPath, '/source'), signal, info.width, info.height),
-    decode(maskEndpoint(datasetId, imageId, relPath), signal, info.width, info.height),
-  ]);
+  const cacheable = canPreloadPaint(info.width, info.height);
+  const readImage = () => readEditorPng(paintEndpoint(datasetId, imageId, relPath, '/source'), info, signal, 'image');
+  const readMask = () => readEditorPng(maskEndpoint(datasetId, imageId, relPath), info, signal, 'mask');
+  let frame: Pick<LoadedPaint, 'pixels' | 'mask'>;
+  if (cached) {
+    frame = cached;
+  } else if (info.mask_source === 'full') {
+    const pixels = await readImage();
+    frame = { pixels, mask: new Uint8Array(info.width * info.height).fill(255) };
+  } else if (cacheable) {
+    const [pixels, mask] = await Promise.all([readImage(), readMask()]);
+    frame = { pixels, mask };
+  } else {
+    // Keep the source and mask decoders from holding large bitmaps at the same time.
+    const pixels = await readImage();
+    frame = { pixels, mask: await readMask() };
+  }
   // Pixel reads need a second snapshot check; cached pixels already match the fresh revision.
   const checked = cached ? info : await apiClient.get<PaintInfo>(infoUrl, {signal, silent:true});
   if (checked.revision !== info.revision) throw new Error('Image or mask changed during loading; reload the editor');
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-  const mask = cached?.mask ?? new Uint8Array(info.width * info.height);
-  if (maskRgba) for (let i = 0; i < mask.length; i++) mask[i] = maskRgba[i * 4];
-  const value = {info: checked, pixels, mask};
-  decodedImages.delete(key); decodedImages.set(key, {datasetId, imageId, relPath, value});
-  while (decodedImages.size > 3) decodedImages.delete(decodedImages.keys().next().value!);
+  const value = { info: checked, pixels: frame.pixels, mask: frame.mask };
+  if (cacheable) {
+    decodedImages.delete(key);
+    decodedImages.set(key, { datasetId, imageId, relPath, value });
+    let bytes = [...decodedImages.values()].reduce((sum, entry) => sum + decodedBytes(entry.value), 0);
+    while (decodedImages.size > 3 || bytes > MAX_DECODED_BYTES) {
+      const [oldest, entry] = decodedImages.entries().next().value!;
+      decodedImages.delete(oldest);
+      bytes -= decodedBytes(entry.value);
+    }
+  }
   return value;
 }
 export function loadPaint(datasetId: string, imageId: string, relPath: string, signal: AbortSignal): Promise<LoadedPaint> {
@@ -87,14 +93,8 @@ export async function preloadPaint(datasetId: string, imageId: string, relPath: 
   if ([...decodedImages.values()].some(item => item.datasetId === datasetId && item.imageId === imageId && item.relPath === relPath)) return;
   await loadPaint(datasetId, imageId, relPath, signal);
 }
-export async function exportPaint(width: number, height: number, pixels: Uint8ClampedArray): Promise<Blob> {
-  const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
-  const context = canvas.getContext('2d'); if (!context) throw new Error('Canvas is unavailable');
-  const image = context.createImageData(width, height); image.data.set(pixels); context.putImageData(image, 0, 0);
-  return new Promise((resolve, reject) => canvas.toBlob(blob => {
-    canvas.width = 1; canvas.height = 1;
-    if (blob) resolve(blob); else reject(new Error('Could not encode image PNG'));
-  }, 'image/png'));
+export function exportPaint(width: number, height: number, pixels: Uint8ClampedArray): Promise<Blob> {
+  return encodeEditorPng(width, height, pixels, 'image');
 }
 export async function savePaint(datasetId: string, info: PaintInfo, pixels?: Uint8ClampedArray, mask?: Uint8Array) {
   const form = new FormData(); form.append('revision', info.revision);

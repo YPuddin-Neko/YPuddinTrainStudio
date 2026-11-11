@@ -7,7 +7,7 @@ import io
 import json
 import shutil
 from pathlib import Path
-from typing import Literal
+from typing import BinaryIO, Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
@@ -19,16 +19,16 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 
 from ypuddin.data.index import IMAGE_EXTS, content_hash
 
-from .dataset_pipeline import DatasetPipeline, _digest, _dump
+from .dataset_pipeline import DatasetPipeline, _digest, _dump, _stat
 from .db import new_id, now
 from .errors import ApiError
-from .routes_dataset_masks import _check_size, _load
+from .routes_dataset_masks import MAX_PNG_BYTES, _check_size, _inspect
 from .routes_dataset_masks import _resolve as _resolve_mask
 from .routes_dataset_pipeline import pipeline
 from .routes_work import _index_dataset, _records
 
 router = APIRouter()
-MAX_REQUEST_BYTES = 64 * 1024**2
+MAX_REQUEST_BYTES = 2 * MAX_PNG_BYTES + 1024**2
 
 
 class PaintInfo(BaseModel):
@@ -106,24 +106,32 @@ def _last(manager: DatasetPipeline, row: dict, image: Path) -> dict | None:
 
 
 def _info(manager: DatasetPipeline, row: dict, image: Path, mask: Path) -> PaintInfo:
-    _, info = _load(image, mask)
+    paths = (image, mask, image.with_name(image.stem + ".mask"))
+    before = [_stat(path) for path in paths]
+    width, height, source = _inspect(image, mask)
     original = _last(manager, row, image)
+    revision = _revision(image, mask)
     can_restore = (
         bool(original)
-        and original["result"].get("after_revision") == _revision(image, mask)
+        and original["result"].get("after_revision") == revision
         and all(
             (_digest(Path(change["target"])) if Path(change["target"]).exists() else None) == change["after"]
             for change in original["result"]["changes"]
         )
     )
+    image_id = content_hash(image)
+    if before != [_stat(path) for path in paths]:
+        raise ApiError(
+            "image or mask changed while reading; reload before editing", code="paint.conflict", status=409
+        )
     return PaintInfo(
-        width=info.width,
-        height=info.height,
-        revision=_revision(image, mask),
-        image_id=content_hash(image),
+        width=width,
+        height=height,
+        revision=revision,
+        image_id=image_id,
         rel_path=image.relative_to(Path(row["path"]).resolve()).as_posix(),
-        has_mask=info.has_mask,
-        mask_source=info.source,
+        has_mask=source == "sidecar",
+        mask_source=source,
         can_restore=can_restore,
         last_operation_id=original["id"] if original else None,
     )
@@ -154,11 +162,11 @@ def paint_source(
     return Response(output.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
-def _decode(data: bytes | None, *, mask: bool = False) -> Image.Image | None:
+def _decode(data: bytes | BinaryIO | None, *, mask: bool = False) -> Image.Image | None:
     if data is None:
         return None
     try:
-        with Image.open(io.BytesIO(data)) as image:
+        with Image.open(io.BytesIO(data) if isinstance(data, bytes) else data) as image:
             _check_size(image.size)
             if image.format != "PNG" or getattr(image, "n_frames", 1) != 1:
                 raise ApiError("upload a single-frame PNG", code="paint.format")
@@ -248,8 +256,8 @@ def _save(
     h: str,
     rel_path: str | None,
     revision: str,
-    image_data: bytes | None = None,
-    mask_data: bytes | None = None,
+    image_data: bytes | BinaryIO | None = None,
+    mask_data: bytes | BinaryIO | None = None,
     restore: bool = False,
 ) -> PaintSaved:
     rgba, gray = _decode(image_data), _decode(mask_data, mask=True)
@@ -464,7 +472,7 @@ async def save_paint(
         async for chunk in request.stream():
             count += len(chunk)
             if count > MAX_REQUEST_BYTES:
-                raise MultiPartException("combined paint upload exceeds 64 MiB")
+                raise MultiPartException(f"combined paint upload exceeds {MAX_REQUEST_BYTES // 1024**2} MiB")
             yield chunk
 
     parser = MultiPartParser(request.headers, bounded_stream(), max_files=2, max_fields=1)
@@ -489,7 +497,11 @@ async def save_paint(
             upload = form.get(key)
             if upload is not None and not isinstance(upload, UploadFile):
                 raise ApiError("image and mask must be file uploads", code="paint.upload")
-            payloads.append(await upload.read(MAX_REQUEST_BYTES + 1) if upload else None)
+            if upload is not None and upload.size is not None and upload.size > MAX_PNG_BYTES:
+                raise ApiError(
+                    f"PNG upload exceeds {MAX_PNG_BYTES // 1024**2} MiB", code="paint.upload", status=413
+                )
+            payloads.append(upload.file if upload else None)
         return await run_in_threadpool(_save, manager, did, h, rel_path, form["revision"], *payloads)
     finally:
         if form is not None:

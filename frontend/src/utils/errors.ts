@@ -7,14 +7,16 @@ export function formatApiError(error: unknown): string {
   if ((error as { name?: unknown }).name === 'TimeoutError') {
     return i18n.language?.startsWith('en') ? 'The training service did not answer in time. Retry.' : '训练服务长时间没有响应，请重试。';
   }
-  const payload = error as { message?: unknown; details?: { errors?: unknown } };
+  const payload = error as { code?: unknown; message?: unknown; details?: { errors?: unknown } };
   const message = typeof payload.message === 'string' ? payload.message : 'API request failed';
+  const english = i18n.language?.startsWith('en');
+  const editorLimit = payload.code === 'mask.dimensions' && /^mask editing supports up to (\d+) pixels per side$/.exec(message);
+  if (editorLimit && !english) return `图片宽度和高度均不能超过 ${editorLimit[1]} 像素。`;
   if (/^(Failed to fetch|Load failed|NetworkError when attempting to fetch resource\.?)$/i.test(message)) {
     return i18n.language?.startsWith('en') ? 'Cannot connect to the training service. Check that it is running, then retry.' : '暂时无法连接训练服务，请确认服务已启动后重试。';
   }
   const errors = payload.details?.errors;
   if (!Array.isArray(errors)) return message;
-  const english = i18n.language?.startsWith('en');
   const details = errors.flatMap((item: unknown) => {
     if (!item || typeof item !== 'object') return [];
     const { loc, msg } = item as ValidationIssue;

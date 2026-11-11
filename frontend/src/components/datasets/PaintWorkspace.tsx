@@ -10,7 +10,7 @@ import StudioSelect from '../StudioSelect';
 import { LazyImage, LoadingNote } from '../Loading';
 import { SlidingIndicator } from '../motion';
 import ImageEditor, { type ImageEditorHandle, type ImageEditorNavigationTarget } from '../masks/ImageEditor';
-import { preloadPaint, invalidatePaintCache, type PaintInfo } from '../masks/paintApi';
+import { canPreloadPaint, preloadPaint, invalidatePaintCache, type PaintInfo } from '../masks/paintApi';
 import { paintDraftDirty, paintDraftKey, type PaintDraftStore, type PaintEditorState } from '../masks/paintWorkspaceState';
 import MaskIcon from '../icons/MaskIcon';
 import { useDatasetImageCatalog } from './useDatasetImageCatalog';
@@ -88,10 +88,12 @@ export default function PaintWorkspace({projectId,versionId,initialDatasetId='',
     if(did)void client.invalidateQueries({queryKey:['dataset-image-catalog',did]});
   },[refreshKey,did,client]);
   React.useEffect(()=>{
-    if(!did||!image||readOnly||!state.available||state.busy)return;
+    if(!did||!image||readOnly||!state.available||state.busy||!canPreloadPaint(image.width,image.height))return;
     const controller=new AbortController();
     const at=items.findIndex(item=>item.rel_path===image.rel_path);
-    for(const neighbor of [items[at-1],items[at+1]])if(neighbor)void preloadPaint(did,neighbor.hash,neighbor.rel_path,controller.signal).catch(()=>{});
+    for(const neighbor of [items[at-1],items[at+1]]) {
+      if(neighbor&&canPreloadPaint(neighbor.width,neighbor.height))void preloadPaint(did,neighbor.hash,neighbor.rel_path,controller.signal).catch(()=>{});
+    }
     return()=>controller.abort();
   },[did,image,items,readOnly,refreshKey,state.available,state.busy]);
   React.useEffect(()=>{
