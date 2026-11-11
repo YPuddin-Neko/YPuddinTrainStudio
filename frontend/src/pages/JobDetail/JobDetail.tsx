@@ -11,6 +11,7 @@ import { mergeValidationPoint, appendMetricStep } from '../../utils/metrics';
 import { formatEta, formatSpeed, formatTime } from '../../utils/format';
 import { useFamilies } from '../../api/hooks/useFamilies';
 import { formatApiError } from '../../utils/errors';
+import { configOptionLabel } from '../../utils/configPresentation';
 import { jobRecoveryMessage } from '../../utils/jobRecovery';
 import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -78,16 +79,58 @@ function mergeSamples(previous: JobSample[], incoming: JobSample[]): JobSample[]
   return [...samples.values()].sort((a, b) => a.step - b.step || a.created_at - b.created_at || a.prompt_index - b.prompt_index);
 }
 
-function StatCard({ label, value, hint, warning, detail }: { label: string; value: React.ReactNode; hint?: string; warning?: string; detail?: React.ReactNode }) {
+function StatCard({ label, value, hint, warning, detail, badge, className = '' }: { label: string; value: React.ReactNode; hint?: string; warning?: string; detail?: React.ReactNode; badge?: React.ReactNode; className?: string }) {
   const text = useWorkspaceText();
-  return <div className={`job-stat${hint || warning ? ' has-help' : ''}`}>
-    <div className="job-stat-label">{label}</div>
+  return <div className={`job-stat${hint || warning ? ' has-help' : ''}${className ? ` ${className}` : ''}`}>
+    <div className="job-stat-label">{badge ? <><span>{label}</span>{badge}</> : label}</div>
     {(hint || warning) && <span className="job-stat-help">
       {warning && <ConfigHelp tone="warning" label={text(`${label} · 警告`, `${label} warning`)}>{warning}</ConfigHelp>}
       {hint && <ConfigHelp label={text(`${label} · 说明`, `About ${label}`)}>{hint}</ConfigHelp>}
     </span>}
     <div className="job-stat-value" tabIndex={0} role="group" aria-label={label}>{value}</div>{detail}
   </div>;
+}
+
+function OptimizerBadge({ optimizer, label, title }: { optimizer: string; label: string; title: string }) {
+  const viewportRef = React.useRef<HTMLSpanElement>(null);
+  const textRef = React.useRef<HTMLSpanElement>(null);
+  const [overflow, setOverflow] = React.useState(0);
+  React.useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    const text = textRef.current;
+    if (!viewport || !text) return;
+    const measure = () => setOverflow(Math.max(0, text.scrollWidth - viewport.clientWidth));
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(viewport);
+    observer?.observe(text);
+    return () => observer?.disconnect();
+  }, [label]);
+  const style = overflow > 0 ? {
+    '--optimizer-slide-distance': `${-overflow}px`,
+    '--optimizer-slide-duration': `${Math.max(2.6, 1.2 + overflow / 30)}s`,
+  } as React.CSSProperties : undefined;
+  return <span className="job-optimizer-badge" data-optimizer={optimizer || undefined} title={title}>
+    <span ref={viewportRef} className="job-optimizer-viewport" data-overflow={overflow > 0 || undefined} style={style}
+      tabIndex={overflow > 0 ? 0 : undefined} onBlur={event => { event.currentTarget.scrollLeft = 0; }}>
+      <span key={label} ref={textRef} className="job-optimizer-text">{label}</span>
+    </span>
+  </span>;
+}
+
+function orderedLearningRates(rates: [string, number][], algo: unknown) {
+  if (algo != null && algo !== 'lokr') return rates;
+
+  const other: typeof rates = [];
+  const w1: typeof rates = [];
+  const w2: typeof rates = [];
+  for (const entry of rates) {
+    const kind = entry[0].split('/', 1)[0].split('.').at(-1);
+    if (kind === 'w1') w1.push(entry);
+    else if (kind === 'w2') w2.push(entry);
+    else other.push(entry);
+  }
+  return [...other, ...w1, ...w2];
 }
 
 /** What each learning rate in the summary card belongs to, and how an adaptive optimizer sets it. */
@@ -536,9 +579,22 @@ export default function JobDetail() {
   const speedReading = speed != null ? formatSpeed(Number(speed)) : null;
   const speedWarning = speedReading?.actual != null ? text(`实际速度 ${speedReading.actual} it/s`, `Actual speed ${speedReading.actual} it/s`) : undefined;
   const learningRates = Object.entries(job?.latest?.lr || {}).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]));
-  // Two rows; groups are listed by name, so a DoRA rate sits alone above the w1 / w2 (or down / up) pair.
-  const rateSplit = Math.floor(learningRates.length / 2);
-  const learningRateRows = [learningRates.slice(0, rateSplit), learningRates.slice(rateSplit)];
+  const rates = orderedLearningRates(learningRates, configSnapshot?.adapter?.algo);
+  const doraRate = rates.find(([name]) => name.split('/', 1)[0].split('.').at(-1) === 'dora');
+  const mainRate = doraRate ?? rates[0];
+  const otherRates = rates.filter(rate => rate !== mainRate);
+  const shortLoKrNames = otherRates.length === 2 && otherRates[0][0].split('/', 1)[0] === 'w1' && otherRates[1][0].split('/', 1)[0] === 'w2';
+  const imageTraining = job?.id === id && job?.type === 'train';
+  const configuredOptimizer = configSnapshot?.optimizer?.type;
+  const optimizer = imageTraining && typeof configuredOptimizer === 'string' ? configuredOptimizer.trim().toLowerCase() : '';
+  const optimizerLabel = optimizer && configOptionLabel('optimizer.type', optimizer, true);
+  const configuredScheduler = configSnapshot?.scheduler?.type;
+  const scheduler = typeof configuredScheduler === 'string' ? configuredScheduler.trim() : '';
+  const schedulerLabel = scheduler && configOptionLabel('scheduler.type', scheduler, true);
+  const shortScheduler = scheduler === 'cosine' ? 'Cos' : schedulerLabel;
+  const doraLabel = configSnapshot?.adapter?.dora === true || doraRate != null ? 'DoRA' : '';
+  const badgeLabel = [doraLabel, optimizerLabel, shortScheduler].filter(Boolean).join(' · ');
+  const badgeTitle = [doraLabel, optimizerLabel, schedulerLabel].filter(Boolean).join(' · ');
   const epochProgress = isTtsJob(job)
     ? typeof job?.progress?.epoch === 'number' && Number.isFinite(job.progress.epoch) ? String(Number(job.progress.epoch.toFixed(2))) : '—'
     : stepsPerEpoch && job?.progress?.step != null ? (job.progress.step / stepsPerEpoch).toFixed(2).replace(/\.00$/, '') : job?.progress?.epoch != null ? String(job.progress.epoch + 1) : '—';
@@ -547,6 +603,7 @@ export default function JobDetail() {
   const metricActive = job != null && job.id === id && ['running', 'pausing', 'cancelling'].includes(job.status) && metrics != null && !metricsRequestRef.current?.pending;
   const metricContext = `${id}:${job?.started_at}:${job?.progress?.phase}`;
   const metricValue = (display: string, value: number | null | undefined, options: { delta?: boolean; duration?: number; scope?: string } = {}) => <MetricValue text={display} value={value} contextKey={`${metricContext}:${options.scope || ''}`} updateKey={metricUpdate} active={metricActive} delta={options.delta} duration={options.duration}/>;
+  const rateValue = (name: string, rate: number) => metricValue(rate.toExponential(2), rate, { scope: `lr:${name}` });
   const configurationName = job?.version_name || versionName || job?.name;
 
   return (
@@ -587,8 +644,18 @@ export default function JobDetail() {
           <StatCard label={text('轮次','Epochs')} value={metricValue(isTtsJob(job) && totalEpochs == null ? epochProgress : `${epochProgress} / ${totalEpochs ?? '—'}`, Number(epochProgress), { duration: 550 })}/>
           <StatCard label="Loss" value={metricValue(lossNumber(job?.latest?.loss), job?.latest?.loss, { delta: true })} detail={job?.id === id && <StepComparison key={metricContext} step={job?.progress?.step} value={currentLoss} fallback={previousLoss} text={text} updateKey={metricUpdate} active={metricActive}/>}/>
           <StatCard label={text('平均 Loss','Mean loss')} value={metricValue(lossNumber(meanLoss), meanLoss, { delta: true, scope: job?.latest?.loss_mean_scope || 'run' })} hint={meanScope} detail={job?.id === id && <StepComparison key={`${metricContext}:${job?.latest?.loss_mean_scope}`} step={job?.progress?.step} value={meanLoss} fallback={previousMean} text={text} updateKey={metricUpdate} active={metricActive}/>}/>
-          <StatCard label={text('学习率','Learning rate')} hint={learningRates.length ? learningRateHelp(learningRates.map(([name]) => name), configSnapshot?.adapter?.algo, configSnapshot?.optimizer?.type, text) : undefined}
-            value={learningRates.length > 1 ? <span className="job-learning-rates">{learningRateRows.map((row, index) => <span key={index}>{row.map(([name, rate]) => <span key={name}><small>{learningRateGroupName(name)}</small>{rate.toExponential(2)}</span>)}</span>)}</span> : learningRates.length ? learningRates[0][1].toExponential(2) : '—'}/>
+          <StatCard label={text('学习率','Learning rate')} className={imageTraining ? 'job-learning-rate' : undefined}
+            badge={imageTraining && badgeLabel && <OptimizerBadge optimizer={optimizer} label={badgeLabel} title={badgeTitle}/>}
+            hint={learningRates.length ? learningRateHelp(learningRates.map(([name]) => name), configSnapshot?.adapter?.algo, configuredOptimizer, text) : undefined}
+            value={mainRate ? <>
+              <span className="job-learning-rate-main" title={mainRate[0]}>
+                {rateValue(...mainRate)}
+                {!doraRate && otherRates.length > 0 && <small>{learningRateGroupName(mainRate[0])}</small>}
+              </span>
+              {otherRates.length > 0 && <span className="job-learning-rate-details">
+                {otherRates.map(([name, rate]) => <span key={name} title={name}>{`${shortLoKrNames ? name.split('/', 1)[0] : learningRateGroupName(name)}: `}{rateValue(name, rate)}</span>)}
+              </span>}
+            </> : '—'}/>
           <StatCard label={t('job.speed')} value={metricValue(speedReading ? `${speedReading.shown} it/s` : '—', speed)} warning={speedWarning}
             detail={job?.id === id && <MeanStepTime seconds={job?.progress?.mean_step_s} scope={job?.progress?.mean_step_scope} text={text} contextKey={`${metricContext}:mean-step`} updateKey={metricUpdate} active={metricActive}/>}/>
           <StatCard label={t('job.eta')} value={job?.status === 'interrupted' ? '—' : metricValue(job?.status === 'completed' ? '0s' : formatEta(job?.progress?.eta_s), job?.status === 'completed' ? 0 : job?.progress?.eta_s)}/>

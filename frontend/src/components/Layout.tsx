@@ -10,6 +10,7 @@ import { useEventStream, useEventStreamReconnect, useEventStreamStatus } from '.
 import { EVENT_TYPES } from '../events/eventTypes';
 import { formatApiError } from '../utils/errors';
 import { useWorkspaceText } from '../utils/workspaceText';
+import { samplingUrl } from '../utils/samplingRoutes';
 import SystemTelemetry from './SystemTelemetry';
 import TaskCenter from './tasks/TaskCenter';
 import PersistentProjectSidebar from './projects/PersistentProjectSidebar';
@@ -217,7 +218,9 @@ export default function Layout({ navigationKey }: { navigationKey?: string }) {
           <div className="topbar-status">
             {runningJob && <div className="topbar-job-slot">
                 <Link
-                  to={`/jobs/${runningJob.id}`}
+                  to={runningJob.type === 'xyz'
+                    ? samplingUrl(runningJob.source_job_id, runningJob.id, runningJob.project_id, runningJob.version_id)
+                    : `/jobs/${runningJob.id}`}
                   title={runningJob.name}
                   className="topbar-running-job bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
                   data-testid="topbar-running-job"

@@ -5,6 +5,7 @@ import { apiClient } from '../../api/client';
 import type { Project } from '../../api/types';
 import StudioSelect from '../../components/StudioSelect';
 import XyzSampling from '../../components/sampling/XyzSampling';
+import type { XyzTask } from '../../components/sampling/xyzTypes';
 import ReleaseModelsButton from '../../components/sampling/ReleaseModelsButton';
 import { formatApiError } from '../../utils/errors';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -31,6 +32,8 @@ export default function Sampling() {
   const projectId = params.get('project_id') || '';
   const versionId = params.get('version_id') || '';
   const sourceId = params.get('source_job_id') || '';
+  const taskId = params.get('task_id') || '';
+  const resolvingTaskId = sourceId ? '' : taskId;
   const query = params.get('q') || '';
   const page = Math.max(1, Number(params.get('page')) || 1);
   const [projects, setProjects] = React.useState<Project[]>([]);
@@ -38,7 +41,11 @@ export default function Sampling() {
   const [projectsRevision, setProjectsRevision] = React.useState(0);
   const [versions, setVersions] = React.useState<ProjectVersion[]>([]);
   const [jobs, setJobs] = React.useState<SourceJob[]>([]);
-  const [sourceJob, setSourceJob] = React.useState<SourceJob | null>(null);
+  const [loadedSource, setSourceJob] = React.useState<SourceJob | null>(null);
+  const sourceJob = loadedSource?.id === sourceId ? loadedSource : null;
+  const [taskLookupError, setTaskLookupError] = React.useState<{ id: string; message: string }>();
+  const [taskLookupRevision, setTaskLookupRevision] = React.useState(0);
+  const taskError = taskLookupError?.id === resolvingTaskId ? taskLookupError.message : '';
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
@@ -52,6 +59,22 @@ export default function Sampling() {
     Object.entries(patch).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
     setParams(next);
   };
+  React.useEffect(() => {
+    if (!resolvingTaskId) return;
+    const controller = new AbortController();
+    setTaskLookupError(undefined);
+    void apiClient.get<Pick<XyzTask, 'source_job_id'>>(`/xyz/${encodeURIComponent(resolvingTaskId)}`, { signal: controller.signal, silent: true }).then(task => {
+      if (controller.signal.aborted) return;
+      setParams(current => {
+        const next = new URLSearchParams(current);
+        if (next.get('task_id') === resolvingTaskId && !next.get('source_job_id')) next.set('source_job_id', task.source_job_id);
+        return next;
+      }, { replace: true });
+    }).catch(failure => {
+      if (!controller.signal.aborted) setTaskLookupError({ id: resolvingTaskId, message: formatApiError(failure) });
+    });
+    return () => controller.abort();
+  }, [resolvingTaskId, taskLookupRevision, setParams]);
   React.useEffect(() => {
     const controller = new AbortController(); setProjectsError('');
     void apiClient.get<Project[] | { items: Project[] }>('/projects', { signal: controller.signal, silent: true }).then(data => {
@@ -112,8 +135,9 @@ export default function Sampling() {
       <div className="sampling-source-choice"><label><span>{text('来源训练任务', 'Source training run')}</span><StudioSelect searchable disabled={loading} aria-label={text('来源训练任务', 'Source training run')} value={sourceId} placeholder={text('选择训练任务', 'Choose a training run')} options={sources.map(job => ({ value: job.id, label: sourceLabel(job) }))} onValueChange={value => change({ source_job_id: value, task_id: null })}/></label>{pages > 1 && <nav className="task-actions" aria-label={text('来源任务分页', 'Source run pages')}><button type="button" className="ui-btn" disabled={loading || page <= 1} onClick={() => change({ page: String(page - 1) })}>{text('上一页', 'Previous')}</button><span>{page} / {pages}</span><button type="button" className="ui-btn" disabled={loading || page >= pages} onClick={() => change({ page: String(page + 1) })}>{text('下一页', 'Next')}</button></nav>}</div>
       {sourceJob && <div className="sampling-source-context"><span>{sourceJob.name}</span>{!sourceJob.deleted && <Link className="ui-link" to={`/jobs/${encodeURIComponent(sourceJob.id)}?tab=metrics`}>{text('查看训练任务', 'View training run')}</Link>}{sourceJob.project_id && <Link className="ui-link" to={projectUrl(sourceJob.project_id, sourceJob.version_id, 'results')}>{text('返回版本训练结果', 'Back to version results')}</Link>}</div>}
     </div>
+    {taskError && <div className="task-error" role="alert">{taskError}<button type="button" className="ui-btn ui-btn-sm" onClick={() => setTaskLookupRevision(value => value + 1)}>{text('重试', 'Retry')}</button></div>}
     {(error || sourceError) && <div className="task-error" role="alert">{error || sourceError}<button type="button" className="ui-btn ui-btn-sm" onClick={() => { setRevision(value => value + 1); if (sourceId) change({ source_job_id: null, task_id: null }); }}>{text('重新选择', 'Choose again')}</button></div>}
     {sourceJob && scopeState !== 'ready' && <div className="task-notice" role="status">{scopeState === 'deleted' ? text('来源训练任务已删除，已生成的图片仍可查看和删除。', 'The source training run was deleted. Generated images remain available to view and delete.') : scopeState === 'archived' ? text('来源项目或版本已归档；可以查看对比记录，恢复归档后才能生成。', 'The source project or version is archived. Existing comparisons remain viewable; restore it to generate.') : scopeState === 'busy' ? text('来源版本正在处理，暂时无法生成对比图；已有对比记录仍可查看。', 'The source version is being processed. Existing comparisons remain viewable, but generation is temporarily unavailable.') : scopeState === 'not-ready' ? text('来源版本尚未就绪，暂时无法生成对比图。', 'The source version is not ready for generation.') : scopeState === 'unavailable' ? <>{text('无法确认来源版本状态', 'Could not check source version status')}: {scopeError} <button type="button" className="ui-link" onClick={() => setSourceRevision(value => value + 1)}>{text('重新检查来源', 'Recheck source')}</button></> : text('正在检查来源版本状态…', 'Checking source version status…')}</div>}
-    {sourceJob ? <XyzSampling readOnly={scopeState !== 'ready'} key={sourceJob.id} sourceJobId={sourceJob.id} initialTaskId={params.get('task_id') || undefined}/> : !sourceError && <div className="task-empty sampling-page-empty" role={sourceId ? 'status' : undefined}>{sourceId ? <Loader2 size={28} className="animate-spin sampling-page-spinner" aria-hidden="true"/> : <Grid2X2 size={32}/>}<strong>{sourceId ? text('正在读取来源任务…', 'Reading source run…') : text('选择要比较的训练任务', 'Choose a training run to compare')}</strong>{!loading && !jobs.length && <Link className="ui-link" to="/projects">{text('打开项目并配置训练', 'Open a project and configure training')}</Link>}</div>}
+    {sourceJob ? <XyzSampling readOnly={scopeState !== 'ready'} key={sourceJob.id} sourceJobId={sourceJob.id} initialTaskId={taskId || undefined}/> : !sourceError && !taskError && <div className="task-empty sampling-page-empty" role={sourceId || resolvingTaskId ? 'status' : undefined}>{sourceId || resolvingTaskId ? <Loader2 size={28} className="animate-spin sampling-page-spinner" aria-hidden="true"/> : <Grid2X2 size={32}/>}<strong>{resolvingTaskId ? text('正在读取模型测试任务…', 'Loading model test…') : sourceId ? text('正在读取来源任务…', 'Reading source run…') : text('选择要比较的训练任务', 'Choose a training run to compare')}</strong>{!loading && !jobs.length && <Link className="ui-link" to="/projects">{text('打开项目并配置训练', 'Open a project and configure training')}</Link>}</div>}
   </section>;
 }

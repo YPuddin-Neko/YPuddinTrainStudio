@@ -131,6 +131,13 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
   const runs = options ? [...new Map(options.checkpoints.map(cp => [cp.job_id || '', cp.job_name || ''])).entries()].map(([value, label]) => ({ value, label: value === sourceRun(options) ? text(`${label}（来源任务）`, `${label} (source run)`) : label })) : [];
   const weightOptions = options ? options.checkpoints.map(cp => ({ value: cp.id, label: cp.name, displayLabel: runs.length > 1 ? checkpointLabel(options, cp) : undefined, group: cp.job_id || '' })) : [];
 
+  React.useLayoutEffect(() => {
+    if (!initialTaskId) return;
+    setSelected(initialTaskId);
+    setPage(0);
+    setPreview(null);
+  }, [initialTaskId]);
+
   React.useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError('');
     void Promise.all([apiClient.get<XyzOptions>(`${source}/options`, { signal: controller.signal, silent: true }), apiClient.get<XyzTask[]>(source, { signal: controller.signal, silent: true })]).then(([next, rows]) => {
@@ -138,11 +145,12 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
       if (next.training_mode === 'full') next = { ...next, axes: next.axes.filter(axis => axis.key !== 'adapter_scale'), sampling_models: [] };
       setOptions(next); setValues(previous => compatibleValues(previous || next.defaults, next));
       setDrafts(previous => compatibleDrafts(previous, next));
-      setHistory(rows); setSelected(previous => rows.some(row => row.id === previous) ? previous : rows[0]?.id || '');
+      setHistory(rows);
+      setSelected(previous => previous === initialTaskId || rows.some(row => row.id === previous) ? previous : rows[0]?.id || '');
       if (!revision) setCollapsed(rows.length > 0);
     }).catch(err => { if (!controller.signal.aborted) setError(formatApiError(err)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [source, revision]);
+  }, [source, revision, initialTaskId]);
 
   // The source model and this machine decide what the compatibility help says, as on the training page.
   const [family, setFamily] = React.useState<FamilyInfo>();
@@ -378,7 +386,9 @@ function SamplingWorkspace({ sourceJobId, readOnly, initialTaskId }: { sourceJob
               <tbody>{yValues.map((value, y) => <tr key={y}>{rowHeads && <th className="xyz-row-head" title={displayValue(request?.y, value)}>{displayValue(request?.y, value)}</th>}{xValues.map((_, x) => { const cell = cells.get(`${x}:${y}`); return <td key={x}>{cell ? <button type="button" className="xyz-cell" data-cell-index={cell.index} onClick={() => setPreview({ taskId: task.id, cellIndex: cell.index })} aria-label={text(`查看第 ${x + 1} 列第 ${y + 1} 行`, `View column ${x + 1}, row ${y + 1}`)}><LazyImage src={imageUrl(cell.url)} loading="lazy" alt={`${name(request!.x.key)} ${displayValue(request?.x, cell.x_value)}${request?.y ? `, ${name(request.y.key)} ${displayValue(request.y, cell.y_value)}` : ''}`} width={request?.width} height={request?.height}/></button> : <PendingCell task={task} drawing={isActive(task) && !isWaiting(task) && (page * yValues.length + y) * xValues.length + x === task.done}/>}</td>; })}</tr>)}</tbody>
             </table>
           </div>
-        </> : <div className="xyz-empty"><Grid2X2 size={26} aria-hidden="true"/><span>{text('还没有对比图', 'No comparisons yet')}</span></div>}
+        </> : <div className="xyz-empty"><Grid2X2 size={26} aria-hidden="true"/><span>{selected === initialTaskId
+          ? loading ? text('正在读取模型测试任务…', 'Loading model test…') : text('找不到此模型测试任务', 'Model test not found')
+          : text('还没有对比图', 'No comparisons yet')}</span></div>}
       </div>
       {history.length > 0 && <XyzHistory tasks={history} selected={selected} disabled={!!cancelling || deleteBusy} onSelect={id => { setSelected(id); setPage(0); }} onCancel={item => void cancel(item)} onDelete={item => { setDeleteError(''); setDeleting(item); }}/>}
     </div>
