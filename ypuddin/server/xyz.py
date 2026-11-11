@@ -14,6 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from ypuddin.config import MemoryConfig, ModelConfig, SamplingConfig
+from ypuddin.config.schema import MAX_SIDE
 from ypuddin.models import get_family
 
 from .db import new_id, now
@@ -102,8 +103,8 @@ class XyzRequest(GpuSelection):
     prompt: str = Field(min_length=1, max_length=8000)
     negative: str = Field("", max_length=8000)
     reference_images: list[str] = Field(default_factory=list, max_length=1)
-    width: int = Field(512, ge=32, le=2048)
-    height: int = Field(512, ge=32, le=2048)
+    width: int = Field(512, ge=32, le=MAX_SIDE)
+    height: int = Field(512, ge=32, le=MAX_SIDE)
     steps: int = Field(20, ge=1, le=100)
     cfg: float = Field(4, ge=0, le=30, allow_inf_nan=False)
     seed: int = Field(-1, ge=-1, lt=2**63)

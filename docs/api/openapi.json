@@ -42163,14 +42163,14 @@
           },
           "width": {
             "type": "integer",
-            "maximum": 2048.0,
+            "maximum": 8192.0,
             "minimum": 32.0,
             "title": "Width",
             "default": 512
           },
           "height": {
             "type": "integer",
-            "maximum": 2048.0,
+            "maximum": 8192.0,
             "minimum": 32.0,
             "title": "Height",
             "default": 512
