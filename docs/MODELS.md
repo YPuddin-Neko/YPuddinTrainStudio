@@ -68,7 +68,7 @@ Base 和蒸馏模型可能具有相同的权重形状。完整目录的元数据
 
 文本编码器使用未量化的 Qwen3-VL-4B-Instruct，支持完整本地目录，或配有匹配配置及 processor 的 BF16 单文件。完整模型包可提供文本编码器、processor 和 VAE；独立主模型需选择配套组件。经身份校验的相同文本编码器与 FLUX.2 VAE 可复用已有文件，文本特征缓存仍使用 FLUX.3 自身的编码规则。
 
-运行环境需要 Transformers 5.8.1 或更新版本。支持单卡适配器训练及完整 DiT 全量微调，文本编码器和 VAE 保持冻结。注意力可选 SDPA 或 FlashAttention 2，梯度检查点可选关闭、开启或开启并卸载到内存。适配器训练可使用 FP8 底模存储和冻结模型块换出；两种训练方式均可使用 VAE 分块及符合条件的模型编译。FP8 存储是在读取原始权重后进行的运行时转换，源文件仍需符合上述未量化格式要求。暂不支持 T-LoRA、文本编码器训练或多卡训练。具体组合限制见[精度与显存](TRAINING.md#精度与显存)，FA2 的设备与序列条件见[注意力后端](ATTENTION.md#flux3-与-moss-image)。
+标准启动入口和受管理环境固定安装 Transformers 5.8.1；手工环境的模型能力检查以 5.8.1 为最低版本。支持单卡适配器训练及完整 DiT 全量微调，文本编码器和 VAE 保持冻结。注意力可选 SDPA 或 FlashAttention 2，梯度检查点可选关闭、开启或开启并卸载到内存。适配器训练可使用 FP8 底模存储和冻结模型块换出；两种训练方式均可使用 VAE 分块及符合条件的模型编译。FP8 存储是在读取原始权重后进行的运行时转换，源文件仍需符合上述未量化格式要求。暂不支持 T-LoRA、文本编码器训练或多卡训练。具体组合限制见[精度与显存](TRAINING.md#精度与显存)，FA2 的设备与序列条件见[注意力后端](ATTENTION.md#flux3-与-moss-image)。
 
 ## MOSS-Image 5B
 
@@ -82,7 +82,7 @@ DiT 推荐下载使用 Comfy-Org 的 `moss_image_base_bf16.safetensors` 单文�
 
 已有 Anima 的训练器 JSON 标签和 Danbooru TXT 标签可直接复用；最终文本由 MOSS-Image 的配套编码器处理，不自动转换成官方 JSON Layout，见 [JSON 标签](JSON_CAPTIONS.md#moss-image-标签复用)。
 
-运行环境需要 PyTorch 2.9 或更新版本、Transformers 5.8.1 或更新版本，以及 Diffusers 0.40 或更新版本。支持单卡适配器训练及完整 DiT 全量微调，文本编码器和 VAE 保持冻结。适配器可用 LoRA、LoKr、LoHa、OrthoLoRA、T-LoRA 和 LyCORIS Full，T-LoRA 可按全局算法或逐层规则设置。注意力提供 SDPA 和 FlashAttention 2，梯度检查点可选关闭、开启或开启并卸载到内存。适配器训练可使用 FP8 底模存储和冻结模型块换出；两种训练方式均可使用 VAE 分块及符合条件的模型编译。源文件仍需符合上述 BF16 / FP32 格式要求，暂不支持文本编码器训练或多卡训练。具体组合限制见[精度与显存](TRAINING.md#精度与显存)，FA2 的批次条件见[注意力后端](ATTENTION.md#flux3-与-moss-image)，训练时间步与预览设置见[MOSS-Image 时间步](TRAINING.md#moss-image-时间步)。
+运行环境需要 PyTorch 2.9 或更新版本，以及 Diffusers 0.40 或更新版本。MOSS 与 FLUX.3 共用的标准环境固定安装 Transformers 5.8.1；手工环境的模型能力检查以 5.8.1 为最低版本。支持单卡适配器训练及完整 DiT 全量微调，文本编码器和 VAE 保持冻结。适配器可用 LoRA、LoKr、LoHa、OrthoLoRA、T-LoRA 和 LyCORIS Full，T-LoRA 可按全局算法或逐层规则设置。注意力提供 SDPA 和 FlashAttention 2，梯度检查点可选关闭、开启或开启并卸载到内存。适配器训练可使用 FP8 底模存储和冻结模型块换出；两种训练方式均可使用 VAE 分块及符合条件的模型编译。源文件仍需符合上述 BF16 / FP32 格式要求，暂不支持文本编码器训练或多卡训练。具体组合限制见[精度与显存](TRAINING.md#精度与显存)，FA2 的批次条件见[注意力后端](ATTENTION.md#flux3-与-moss-image)，训练时间步与预览设置见[MOSS-Image 时间步](TRAINING.md#moss-image-时间步)。
 
 ## 精度
 

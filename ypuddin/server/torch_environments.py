@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Literal
 
+from packaging.requirements import Requirement
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -119,10 +120,14 @@ def python_in(root: Path) -> Path:
     return root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
-def model_runtime_updates(versions: dict[str, str]) -> set[str]:
-    """Release old HF stack pins only when the new environment needs FLUX.3 dependencies."""
+def model_runtime_updates(versions: dict[str, str], project: dict) -> set[str]:
+    """Release HF stack pins when they conflict with this installation's FLUX.3 requirement."""
+    requirement = next(
+        requirement for raw in project["optional-dependencies"]["flux3"]
+        if (requirement := Requirement(raw)).name.lower() == "transformers"
+    )
     try:
-        if Version(versions.get("transformers", "0")) >= Version("5.8.1"):
+        if Version(versions.get("transformers", "0")) in requirement.specifier:
             return set()
     except InvalidVersion:
         pass
@@ -480,6 +485,11 @@ class TorchEnvironments:
             )
             if not build.supported:
                 raise ValueError(build_reason(build.reason))
+            try:
+                import tomllib
+            except ImportError:
+                import tomli as tomllib
+            project = tomllib.loads((SOURCE_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
             # All writes stay inside this operation directory. Failed environments are never selected.
             self.installer.run([sys.executable, "-m", "venv", str(work)], log, cancel, timeout=180)
             py = str(python_in(work))
@@ -497,7 +507,7 @@ class TorchEnvironments:
             torch_version = build.torch + (f"+{build.backend}" if build.backend.startswith("cu") else "")
             constraints = work / "constraints.txt"
             versions = self.environment.versions()
-            runtime_updates = model_runtime_updates(versions)
+            runtime_updates = model_runtime_updates(versions, project)
             constraints.write_text(
                 "".join(
                     f"{name}==={version}\n"
@@ -545,11 +555,6 @@ class TorchEnvironments:
                 log,
                 cancel,
             )
-            try:
-                import tomllib
-            except ImportError:
-                import tomli as tomllib
-            project = tomllib.loads((SOURCE_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
             extras = ["models", "flux3", "server", "optim", "logging"] + (
                 ["nvidia"] if build.backend.startswith("cu") else []
             )

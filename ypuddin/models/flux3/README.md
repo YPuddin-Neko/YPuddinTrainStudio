@@ -4,11 +4,13 @@ This family loads the original undistilled Base DiT, its paired autoencoder and 
 complete local Qwen3-VL-4B-Instruct processor/encoder directory. The fixed upstream
 source revision and licensing are recorded in `NOTICE.md`.
 
-The `flux3` optional dependency group requires Transformers 5.8.1 or later. Normal
+The `flux3` optional dependency group pins Transformers to 5.8.1. Normal
 CUDA/CPU/MPS startup and the existing isolated PyTorch environment preparation
 include it; native framework constraints remain protected. The Linux DTK launcher
 retains its vendor dependency rules and does not select this group. Family preflight
-reports an incompatible Transformers version before loading model payloads.
+checks the upstream minimum capability (Transformers 5.8.1) for manually managed
+environments before loading model payloads; this is separate from the managed
+installation pin. MOSS uses the same pinned standard environment.
 
 Text-to-image training supports adapters or the full DiT, with a frozen BF16 text
 encoder and FP32 VAE. LoRA, LoKr, LoHa, Full-diff and Ortho adapters

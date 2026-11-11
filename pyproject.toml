@@ -41,7 +41,7 @@ models = [
     "protobuf>=4.0",
 ]
 # Ordinary CUDA/CPU/MPS launchers include this; the vendor DTK stack keeps its own constraints.
-flux3 = ["transformers>=5.8.1"]
+flux3 = ["transformers==5.8.1"]
 # HTTP service used by the frontend.
 server = [
     "fastapi>=0.110",
