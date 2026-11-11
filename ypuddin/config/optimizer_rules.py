@@ -155,7 +155,10 @@ def optimizer_capabilities() -> dict[str, Any]:
                 "optimizer.kahan": _KAHAN_REASON,
                 "optimizer.cpu_offload": _reason("Muon 不支持优化器 CPU 卸载。", "Muon does not support optimizer CPU offload."),
             },
-            "defaults": {"optimizer.lr": 0.02, "optimizer.betas": [0.9, 0.99], "optimizer.eps": 1e-8},
+            "defaults": {
+                "optimizer.lr": 0.002, "optimizer.aux_lr_ratio": 0.05,
+                "optimizer.betas": [0.9, 0.99], "optimizer.eps": 1e-8,
+            },
             "conditional": [],
             "aliases": ["ypuddin.optim.muon.Muon"],
             "typed_fields": list(MUON_FIELDS),

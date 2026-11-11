@@ -79,10 +79,18 @@ export function optimizerRules(schema: any, config: Config): Required<Rules> {
   return result;
 }
 
-export function normalizeOptimizerConfig(schema: any, source: Config): Config {
+function normalizePartialOptimizerConfig(schema: any, source: Config): Config {
   const type = source.optimizer?.type;
   const name = typeof type === 'string' ? optimizerName(schema, type) : type;
-  let next = migrateArguments(schema, name === type ? source : assign(source, 'optimizer.type', name));
+  const next = migrateArguments(schema, name === type ? source : assign(source, 'optimizer.type', name));
+  if (name !== 'muon' || next.optimizer.lr === undefined || next.optimizer.aux_lr_ratio !== undefined) return next;
+  // An explicit Muon rate with no ratio keeps the historical field default.
+  const ratio = optimizerSchema(schema)?.properties?.aux_lr_ratio?.default;
+  return ratio === undefined ? next : assign(next, 'optimizer.aux_lr_ratio', ratio);
+}
+
+export function normalizeOptimizerConfig(schema: any, source: Config): Config {
+  let next = normalizePartialOptimizerConfig(schema, source);
   const profile = capability(schema, next);
   for (const [path, value] of Object.entries(profile?.defaults || {})) {
     if (configPathValue(next, path) === undefined) next = assign(next, path, value);
@@ -110,6 +118,9 @@ export function selectOptimizer(schema: any, config: Config, type: string, selec
   let next = assign(config, 'optimizer.type', type);
   const profile = capability(schema, next);
   const properties = optimizerSchema(schema)?.properties || {};
+  const supplied = selection.optimizer && type === 'muon'
+    ? normalizePartialOptimizerConfig(schema, { ...next, optimizer: { ...selection.optimizer, type } }).optimizer
+    : selection.optimizer;
   // Optimizer-specific extras cannot safely carry over into another constructor.
   next = assign(next, 'optimizer.args', {});
   for (const [name, property] of Object.entries(properties) as Array<[string, any]>) {
@@ -117,7 +128,7 @@ export function selectOptimizer(schema: any, config: Config, type: string, selec
     next = assign(next, `optimizer.${name}`, property.default);
   }
   for (const [path, value] of Object.entries(profile?.defaults || {})) next = assign(next, path, value);
-  if (selection.optimizer) next = assign(next, 'optimizer', { ...next.optimizer, ...selection.optimizer });
+  if (supplied) next = assign(next, 'optimizer', { ...next.optimizer, ...supplied });
   // Release the previous algorithm's scheduler locks when the new one uses external scheduling.
   const nextRules = optimizerRules(schema, next);
   for (const path of Object.keys(optimizerRules(schema, selection.previous || config).fixed)) {

@@ -873,7 +873,7 @@ class OptimizerConfig(_Strict):
     )
     aux_lr_ratio: float = F(
         0.005, gt=0,
-        help="辅助 AdamW 学习率相对各参数组学习率的倍率。默认 0.005，基础学习率为 0.02 时得到 0.0001；用于偏置、归一化、标量、嵌入、模型输入输出及非二维参数，并随同一调度器变化。",
+        help="辅助 AdamW 学习率相对各参数组学习率的倍率。自动配套倍率为 0.05，基础学习率为 0.002 时得到 0.0001；用于偏置、归一化、标量、嵌入、模型输入输出及非二维参数，并随同一调度器变化。",
         ui_=ui("optimizer", order=95, show_when="optimizer.type == 'muon'"),
     )
 
@@ -1160,7 +1160,12 @@ class OptimizerConfig(_Strict):
             data[name] = legacy
         data["args"] = args
         policy = optimizer_policy(key, use_schedulefree=data.get("use_schedulefree", True))
+        # Saved Muon configs with an explicit LR used 0.005 when the ratio was omitted.
+        # Check after migrating args so legacy LR fields keep the same behavior.
+        muon_explicit_lr = key == "muon" and "lr" in data
         for path, default in policy.get("defaults", {}).items():
+            if muon_explicit_lr and path == "optimizer.aux_lr_ratio":
+                continue
             if path.startswith("optimizer."):
                 data.setdefault(path.split(".")[1], default)
         for path, fixed in policy.get("fixed", {}).items():

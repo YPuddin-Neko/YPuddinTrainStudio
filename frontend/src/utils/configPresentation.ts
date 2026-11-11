@@ -1,4 +1,4 @@
-import { FIELD_HELP, FIELD_HINTS } from './fieldCopy';
+import { FIELD_HELP, FIELD_HINTS, MUON_LEARNING_RATE_HELP } from './fieldCopy';
 import { describeValidation, type ValidationIssue } from './validationMessages';
 
 
@@ -238,6 +238,7 @@ export function schedulerTypeHelp(english = false, options?: string[]) {
 
 /** Explain what a choice changes before introducing the implementation term. */
 export function configFieldHelp(path: string, fallback: string | undefined, english = false, optimizerType?: string, scheduleFree = false) {
+  if (path === 'optimizer.lr' && optimizerType === 'muon') return MUON_LEARNING_RATE_HELP[english ? 1 : 0];
   if (path === 'optimizer.args' && optimizerType === 'muon') return english
     ? 'Muon uses its dedicated parameter controls. Resolve conflicting imported values or remove unsupported arguments.'
     : 'Muon 使用专用参数控件。导入配置中的冲突项或不支持的参数，需要修改或移除。';
