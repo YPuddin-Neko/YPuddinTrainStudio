@@ -434,7 +434,11 @@ class Trainer:
 
     def prepare_data(self) -> None:
         """Load the model, index the dataset and fill the latent / text caches (what a cache job does)."""
+        from ypuddin.data.captions import caption_execution_issues
+
         cfg = self.cfg
+        if issues := caption_execution_issues(cfg):
+            raise ValueError("; ".join(f"{issue['loc']}: {issue['msg']}" for issue in issues))
         # Reject incompatible/retired recipes before touching an existing run's files.
         self.family = get_family(cfg.model.family)
         self._check_capabilities()
@@ -1152,7 +1156,7 @@ class Trainer:
                 captions.update(ds.use_cached_captions())
         if self.cfg.sampling.enabled:
             prompts = list(self.cfg.sampling.prompts) + (
-                _load_prompts_file(self.cfg.sampling.prompts_file) if self.cfg.sampling.prompts_file else []
+                _load_prompts_file(self.cfg.sampling.prompts_file, cfg=self.cfg) if self.cfg.sampling.prompts_file else []
             )
             for p in prompts:
                 (preview_captions if separate_prompts else captions).update(
@@ -2268,7 +2272,7 @@ class Trainer:
         self.progress.extra.update(self._primary_call(frozen))
         prompts = list(self.cfg.sampling.prompts)
         if self.cfg.sampling.prompts_file:
-            prompts += _load_prompts_file(self.cfg.sampling.prompts_file, seed_version=self._preview_seed_version())
+            prompts += _load_prompts_file(self.cfg.sampling.prompts_file, cfg=self.cfg, seed_version=self._preview_seed_version())
         for index, prompt in enumerate(prompts):
             self._prompt_preview_seed(prompt.seed, index)
 
@@ -2863,7 +2867,7 @@ class Trainer:
         scfg = self.cfg.sampling
         prompts = list(scfg.prompts)
         if scfg.prompts_file:
-            prompts += _load_prompts_file(scfg.prompts_file, seed_version=self._preview_seed_version())
+            prompts += _load_prompts_file(scfg.prompts_file, cfg=self.cfg, seed_version=self._preview_seed_version())
         if not prompts:
             return []
         # Previews show what the exported file does: every T-LoRA rank.
@@ -3064,11 +3068,45 @@ def _describe(data: dict[str, Any], width: int = 160) -> str:
 _PER_STEP_EVENTS = {"step", "sample.progress", "xyz.progress", "epoch.started"}
 
 
-def _load_prompts_file(path: str, *, seed_version: int = PREVIEW_SEED_VERSION) -> list[Any]:
+def _load_prompts_file(path: str, *, cfg: TrainConfig | None = None, seed_version: int = PREVIEW_SEED_VERSION) -> list[Any]:
     from ypuddin.config import SamplePrompt
 
     p = Path(path)
-    if p.suffix.lower() == ".toml":
+    if p.suffix.lower() == ".json":
+        from ypuddin.data.captions import (
+            deterministic_config,
+            read_training_caption,
+            transform_spatial_caption,
+        )
+        from ypuddin.data.spatial_captions import SpatialCaption
+
+        raw = read_training_caption(p, require_known_format=True)
+        if not isinstance(raw, SpatialCaption):
+            raise ValueError("JSON 预览文件需为 GBC 或 MOSS Layout；普通提示词请使用 TXT 或 TOML。")
+        if cfg is None:
+            raise ValueError("结构预览提示词需要模型与训练配置。")
+        caption_cfg = deterministic_config(cfg.dataset.caption.model_copy(update={"content_type": "auto"}))
+        dimensions = {}
+        geometry = None
+        if raw.format in {"moss_layout", "gbc"}:
+            from ypuddin.models import get_family
+
+            if raw.format == "gbc":
+                graph = raw.document.get("graph", raw.document)
+                width, height = graph.get("img_size") or (cfg.sampling.width, cfg.sampling.height)
+            else:
+                width = raw.document.get("width", cfg.sampling.width)
+                height = raw.document.get("height", cfg.sampling.height)
+            align = get_family(cfg.model.family).spec.latent.align
+            target_width, target_height = width // align * align, height // align * align
+            dimensions = {"width": width, "height": height}
+            geometry = {"source_width": width, "source_height": height,
+                        "width": target_width, "height": target_height, "resized_width": target_width,
+                        "resized_height": target_height, "left": 0, "top": 0}
+        text = transform_spatial_caption(raw, caption_cfg, random.Random(0),
+                                         family=cfg.model.family, geometry=geometry)
+        entries = [{"prompt": text, **dimensions}]
+    elif p.suffix.lower() == ".toml":
         import sys
 
         if sys.version_info >= (3, 11):

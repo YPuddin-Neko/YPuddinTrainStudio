@@ -19,7 +19,7 @@ const layouts: Record<string, Section[]> = {
     section('loading', ['text_encoding', 'num_workers', 'cache_latents', 'cache_dir'], ['数据读取与缓存', 'Data loading and caching']),
   ],
   caption: [
-    section('text', ['dataset.caption.trigger_word', 'dataset.caption.prefix', 'dataset.caption.suffix', 'dataset.caption.separator', 'dataset.caption.weighted'], ['标签内容', 'Caption content']),
+    section('text', ['dataset.caption.content_type', 'dataset.caption.structured_mode', 'dataset.caption.trigger_word', 'dataset.caption.prefix', 'dataset.caption.suffix', 'dataset.caption.separator', 'dataset.caption.weighted'], ['标签内容', 'Caption content']),
     section('ordering', ['dataset.caption.shuffle', 'dataset.caption.keep_tokens'], ['标签顺序', 'Caption ordering'], { togglesFirst: true }),
     // Two short sections share a row; their fields stack in each half.
     section('dropout', ['dataset.caption.tag_dropout', 'dataset.caption.caption_dropout'], ['标签丢弃', 'Caption dropout'], { beside: 'ordering' }),

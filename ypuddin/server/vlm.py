@@ -312,6 +312,8 @@ def caption(
     retries: int,
     pacer: Pacer,
     cancel: threading.Event | None,
+    before_request: Any = None,
+    reject_truncated: bool = False,
 ) -> str:
     """One image's reply text. Retries rate limits, server errors and timeouts with backoff."""
     picture: dict[str, Any] = {"url": image_data_url(image, image_size)}
@@ -339,6 +341,8 @@ def caption(
         pacer.wait(cancel)
         if cancel is not None and cancel.is_set():
             raise VlmStopped()
+        if before_request is not None:
+            before_request()
         try:
             payload = _request(endpoint, key, body, policy=policy, timeout=timeout)
             break
@@ -385,6 +389,8 @@ def caption(
     text = clean(content or "")
     if choice.get("finish_reason") in {"content_filter", "safety"}:
         raise VlmError("the service's content filter refused this image")
+    if reject_truncated and choice.get("finish_reason") == "length":
+        raise VlmError("the reply was truncated; increase the maximum output length")
     if not text:
         reason = choice.get("finish_reason")
         raise VlmError("the reply was empty" + (f" (finish reason: {reason})" if reason else ""))

@@ -428,7 +428,7 @@ def preview_shapes(cfg: TrainConfig, align: int) -> dict[tuple[int, int], int]:
     if sampling.prompts_file:
         from .trainer import _load_prompts_file
 
-        prompts.extend(_load_prompts_file(sampling.prompts_file))
+        prompts.extend(_load_prompts_file(sampling.prompts_file, cfg=cfg))
     sizes = [(prompt.width or sampling.width, prompt.height or sampling.height) for prompt in prompts]
     return {
         (width // align * align, height // align * align): 1

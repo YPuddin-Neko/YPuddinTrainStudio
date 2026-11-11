@@ -19,6 +19,7 @@ from PIL import Image
 from ypuddin.data.caption_json import StructuredCaption
 from ypuddin.data.captions import read_training_caption
 from ypuddin.data.index import caption_target, iter_images
+from ypuddin.data.spatial_captions import SpatialCaption
 
 from .booru import META_TAG, Post, normalize, rating_terms
 from .regularization_plan import training_sources
@@ -79,6 +80,8 @@ def _caption_tags(path: Path, caption_ext: str, cache: dict) -> tuple[list[str],
         raw = read_training_caption(caption_target(path, caption_ext, directory_cache=cache))
     except (OSError, UnicodeError, ValueError):
         return None
+    if isinstance(raw, SpatialCaption):
+        return [], ""
     if isinstance(raw, StructuredCaption):
         return [*raw.fixed, *raw.appearance, *raw.tags, *raw.environment], raw.trigger
     return [tag.strip() for tag in raw.split(",") if tag.strip()], ""

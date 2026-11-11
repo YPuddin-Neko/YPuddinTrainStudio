@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .spatial_captions import SpatialCaption, detect_spatial_format, parse_spatial_caption
+
 EDIT_MARKER = "_ypuddin_caption_edit"
 ORIGINAL_TAGS = "_ypuddin_original_tags"
 _FIXED = ("quality", "count", "character", "series", "artist")
@@ -150,16 +152,20 @@ def _parse(data: dict) -> StructuredCaption:
     )
 
 
-def parse_caption(data: Any, *, filename: str = "caption.json") -> StructuredCaption:
+def parse_caption(data: Any, *, filename: str = "caption.json") -> StructuredCaption | SpatialCaption:
     try:
         if not isinstance(data, dict):
             raise ValueError("caption root must be an object")
+        if detect_spatial_format(data) is not None:
+            return parse_spatial_caption(data, filename=filename)
         return _parse(data)
     except ValueError as error:
         raise JSONCaptionError(f"Invalid JSON caption {filename}: {error}") from error
 
 
-def load_caption(path: str | Path, *, require_known_format: bool = False) -> tuple[dict, StructuredCaption]:
+def load_caption(
+    path: str | Path, *, require_known_format: bool = False,
+) -> tuple[dict, StructuredCaption | SpatialCaption]:
     path = Path(path)
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"), parse_constant=_reject_constant)
@@ -184,6 +190,8 @@ class CaptionConflictError(ValueError):
 
 
 def _format(data: dict) -> str:
+    if spatial := detect_spatial_format(data):
+        return spatial
     full = any(key in data for key in ("fixed", "ai_output", "from_path"))
     if data.get(EDIT_MARKER) == 1 or (full and isinstance(data.get("tags"), list)):
         return "legacy_override"
@@ -196,6 +204,16 @@ def _format(data: dict) -> str:
     if "tags" in data or "nl" in data:
         return "flat"
     return "unknown"
+
+
+def _read_only_reason(fmt: str) -> str | None:
+    if fmt == "gbc":
+        return "GBC captions are read only in the tag editor"
+    if fmt == "moss_layout":
+        return "MOSS layout captions are read only in the tag editor"
+    if fmt == "unknown":
+        return "Unrecognized JSON caption schema; source document is read only"
+    return None
 
 
 def _lookup(data: dict, path: tuple[str, ...]) -> tuple[bool, Any]:
@@ -245,7 +263,7 @@ def _fields(data: dict, fmt: str) -> list[dict]:
         else:
             add((*prefix, "character"), "character", default)
 
-    if fmt == "unknown":
+    if _read_only_reason(fmt) is not None:
         return fields
     if fmt == "legacy_override":
         add(("tags",), "tags", [])
@@ -300,9 +318,8 @@ def load_caption_structure(path: str | Path | None) -> dict | None:
     fmt = _format(data)
     return {
         "format": fmt, "document": data, "fields": _fields(data, fmt), "revision": revision,
-        "editable": fmt != "unknown", "legacy_override": fmt == "legacy_override",
-        "reason": "Unrecognized JSON caption schema; source document is read only"
-        if fmt == "unknown" else None,
+        "editable": _read_only_reason(fmt) is None, "legacy_override": fmt == "legacy_override",
+        "reason": _read_only_reason(fmt),
     }
 
 
@@ -364,8 +381,8 @@ def edited_content(
     if revision is not None and revision != current_revision:
         raise CaptionConflictError("Caption changed since it was loaded; reload before saving")
     fmt = _format(data)
-    if fmt == "unknown":
-        raise ValueError("Unrecognized JSON caption schema; source document is read only")
+    if reason := _read_only_reason(fmt):
+        raise ValueError(reason)
     allowed = _fields(data, fmt)
     if fields is not None:
         if text is not None or description is not None:
@@ -412,6 +429,8 @@ def document_categories(data: dict, *, filename: str = "caption.json") -> dict[s
     fmt = _format(data)
     parsed = parse_caption(data, filename=filename)
     result: dict[str, Any] = {key: [] for key in (*_FIXED, *_VARIABLE)}
+    if isinstance(parsed, SpatialCaption):
+        return {**result, "nl": parsed.text(), "trigger": ""}
     if fmt == "legacy_override":
         result["tags"] = list(parsed.tags)
     else:
@@ -460,6 +479,9 @@ def _set_trigger(data: dict, trigger: str) -> None:
 def with_trigger(content: str, trigger: str, *, filename: str = "caption.json") -> str:
     """A JSON caption document with ``meta.trigger`` set; everything else unchanged."""
     data = json.loads(content)
+    if detect_spatial_format(data) is not None:
+        parse_caption(data, filename=filename)
+        raise ValueError(_read_only_reason(_format(data)))
     _set_trigger(data, trigger.strip())
     parse_caption(data, filename=filename)
     return json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
@@ -481,8 +503,8 @@ def categorized_content(
     path = Path(path)
     data = _read_document(path)[0] if path.exists() else {}
     fmt = _format(data) if data else "simple"
-    if fmt == "unknown":
-        raise ValueError("Unrecognized JSON caption schema; source document is read only")
+    if reason := _read_only_reason(fmt):
+        raise ValueError(reason)
     ordered = ("count", "appearance", "tags", "environment")
     if fmt == "legacy_override":
         # The top-level list overrides every classified field; keep one list, in group order.

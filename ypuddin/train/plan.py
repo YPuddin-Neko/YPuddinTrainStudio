@@ -779,6 +779,12 @@ def plan(
                 (issue for issue in out["errors"] if issue["loc"].startswith(("dataset", "validation"))),
                 out["errors"][0],
             )
+    if not draft:
+        from ypuddin.data.captions import caption_execution_issues
+
+        if issues := caption_execution_issues(cfg):
+            out.update(ok=False, errors=issues)
+            return out
     try:
         if draft:
             for section in (cfg.loop, cfg.validation):

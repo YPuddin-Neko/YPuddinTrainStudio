@@ -128,6 +128,14 @@ class ModelConfig(_Strict):
 
 # --------------------------------------------------------------------------- dataset
 class CaptionConfig(_Strict):
+    content_type: Literal["auto", "text", "anima_json", "gbc", "moss_layout"] = F(
+        "auto", help="自动识别标签内容，或选择 TXT、Anima JSON、MOSS JSON。Anima JSON 也可用于 MOSS；MOSS JSON 按所选结构用法读取布局或转换 GBC 标注。文件后缀由数据来源单独选择。",
+        ui_=ui("caption", order=-20),
+    )
+    structured_mode: Literal["native", "gbc_to_moss", "natural_language"] = F(
+        "native", help="原生格式直接使用标签；MOSS JSON 可选择把 GBC 标注转为 MOSS Layout，仅用于 MOSS-Image。",
+        ui_=ui("caption", order=-10),
+    )
     prefix: str = F("", help="加在 caption 前的文本", ui_=ui("caption", order=0, advanced=True))
     suffix: str = F("", help="加在 caption 后的文本", ui_=ui("caption", order=10, advanced=True))
     trigger_word: str | None = F(
@@ -1567,7 +1575,7 @@ class SamplingConfig(_IntervalConfig):
     )
     prompts_file: str | None = F(
         None,
-        help="可选的额外提示词文件，.txt 每行一条，.toml 可携带逐条参数；文件内容会追加到上方列表。留空只使用列表，避免两处重复填写。",
+        help="额外提示词文件：TXT 每行一条，TOML 可携带逐条参数。MOSS-Image 也可读取单份 MOSS Layout 或 GBC JSON，沿用所选结构标签用法。文件内容追加到上方列表，留空只使用列表。",
         ui_=ui("sampling", advanced=True, order=50, control="path", show_when="sampling.enabled == true"),
     )
     steps: int | None = F(

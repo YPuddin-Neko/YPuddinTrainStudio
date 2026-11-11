@@ -19,6 +19,7 @@ const labels: Record<string, string> = {
   'training.mlp_lr': 'MLP 学习率',
   'training.modulation_lr': '调制层学习率',
   'dataset.caption.weighted': '标签权重语法',
+  'dataset.caption.content_type': '标签内容类型', 'dataset.caption.structured_mode': '结构标签用法',
   'objective.noise_offset': '噪声偏移强度',
   'objective.multires_noise_iterations': '多分辨率噪声层数',
   'objective.multires_noise_discount': '多分辨率噪声衰减',
@@ -158,6 +159,8 @@ export function configFieldLabel(path: string, fallback: string, english = false
   if (path === 'loop.distributed_strategy') return english ? 'Multi-GPU training strategy' : labels[path];
   if (path === 'loop.deterministic') return english ? 'Reproducible training' : labels[path];
   if (path === 'adapter.preset') return english ? 'Adapter scope' : labels[path];
+  if (path === 'dataset.caption.content_type') return english ? 'Caption content type' : labels[path];
+  if (path === 'dataset.caption.structured_mode') return english ? 'Structured caption use' : labels[path];
   if (english) {
     const added: Record<string, string> = {'dataset.caption.weighted':'Weighted captions','objective.noise_offset':'Noise offset','objective.multires_noise_iterations':'Multiresolution noise levels','objective.multires_noise_discount':'Multiresolution noise discount','optimizer.cpu_offload':'Optimizer CPU offload','optimizer.exclude_bias_norm_from_weight_decay':'Exclude bias and norms from decay'};
     if (added[path]) return added[path];
@@ -361,6 +364,8 @@ export function configOptionLabel(path: string, option: string, english = false,
     return english ? 'MOSS discrete' : 'MOSS discrete (MOSS 离散)';
   }
   const options: Record<string, Record<string, [string, string]>> = {
+    'dataset.caption.content_type': {auto:['自动识别','Auto-detect'],text:['TXT','TXT'],anima_json:['Anima JSON（兼容 MOSS）','Anima JSON (compatible with MOSS)'],moss_layout:['MOSS JSON','MOSS JSON']},
+    'dataset.caption.structured_mode': {native:['原生格式','Native format'],gbc_to_moss:['GBC 转 MOSS Layout','GBC to MOSS Layout'],natural_language:['转自然语言（已停用）','Natural-language conversion (retired)']},
     'objective.weighting': { none: ['不加权', 'None'], sigma_sqrt: ['噪声尺度平方根', 'Sigma square root'], cosmap: ['余弦映射', 'CosMap'], snr_like: ['类信噪比加权', 'SNR-like'], cosmos: ['Cosmos', 'Cosmos'], min_snr: ['最小信噪比加权', 'Min-SNR'] },
     'objective.timestep_sampling': { uniform: ['均匀采样', 'Uniform'], logit_normal: ['逻辑正态分布', 'Logit-Normal'], shift: ['偏移采样', 'Shift'], resolution_shift: ['按分辨率偏移', 'Resolution shift'], resolution_sqrt: ['按分辨率修正 Shift', 'Resolution-corrected Shift'], mode: ['模式分布', 'Mode'], cosmap: ['余弦映射', 'CosMap'], moss_image: ['MOSS-Image 分布', 'MOSS-Image distribution'] },
     'objective.loss': { mse: ['均方误差', 'MSE'], huber: ['平滑绝对误差', 'Huber'], pseudo_huber: ['伪 Huber 损失', 'Pseudo-Huber'] },
@@ -403,7 +408,7 @@ export function configOptionLabel(path: string, option: string, english = false,
   };
   const label = options[path]?.[option];
   if (!label) return option;
-  if (['adapter.dora_compute_mode', 'training.task', 'slider.mode'].includes(path)) return label[english ? 1 : 0];
+  if (['adapter.dora_compute_mode', 'training.task', 'slider.mode', 'dataset.caption.content_type', 'dataset.caption.structured_mode'].includes(path)) return label[english ? 1 : 0];
   if (english || label[0] === label[1]) return label[1];
   return `${label[1]} (${label[0]})`;
 }

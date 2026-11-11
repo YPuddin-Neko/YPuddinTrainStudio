@@ -6,6 +6,7 @@
 .caption-workspace-source { display:flex; align-items:center; gap:8px; flex:0 0 calc(max(160px,var(--caption-gallery-width,220px)) - 56px); min-width:0; }
 .caption-workspace-source svg { color:var(--studio-dim); flex:none; }
 .caption-workspace-source .studio-select { flex:1; min-width:0; width:0; }
+.caption-workspace-format .studio-select { width:106px; }
 .caption-workspace-toolbar .studio-select { min-height:32px; font-size:12px; }
 .caption-workspace-source-summary { color:var(--studio-dim); font-size:11px; }
 .caption-save-all { margin-left:auto; }
@@ -42,6 +43,9 @@
 .caption-preview-heading>div { display:flex; align-items:center; gap:4px; color:var(--studio-dim); font-variant-numeric:tabular-nums; }
 .caption-workspace-preview { position:relative; flex:1; min-width:0; min-height:0; overflow:hidden; background:var(--studio-muted); }
 .caption-workspace-preview img { width:100%; height:100%; object-fit:contain; }
+.caption-gbc-overlay { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); overflow:hidden; pointer-events:none; }
+.caption-gbc-region { position:absolute; border:2px solid var(--caption-region-color); box-shadow:0 0 0 1px #0005; }
+.caption-gbc-region > span { position:absolute; top:0; left:0; max-width:100%; padding:0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:var(--caption-region-color); color:#0f172a; font-size:10px; }
 .caption-resize-handle { position:relative; min-width:0; min-height:0; cursor:col-resize; touch-action:none; border-radius:3px; }
 .caption-resize-handle::after { content:''; position:absolute; width:2px; height:32px; top:calc(50% - 16px); left:3px; border-radius:2px; background:var(--studio-line); }
 .caption-resize-handle:hover::after,.caption-resize-handle:focus-visible::after { background:var(--studio-accent); }

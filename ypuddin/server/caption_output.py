@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from ypuddin.data.caption_json import document_categories, parse_caption
+from ypuddin.data.spatial_captions import detect_spatial_format
 
 from .errors import ApiError
 
@@ -26,6 +27,8 @@ def json_layout(content: str, output_format: str | None) -> str:
     if output_format not in {"json", "json_simplified"}:
         return content
     data = json.loads(content)
+    if detect_spatial_format(data):
+        raise ValueError("GBC 与 MOSS Layout 标签为只读，不能转换为分类标签格式。")
     fields = document_categories(data)
     full = any(key in data for key in ("ai_output", "fixed", "from_path"))
     override = data.get("_ypuddin_caption_edit") == 1 or full and isinstance(data.get("tags"), list)

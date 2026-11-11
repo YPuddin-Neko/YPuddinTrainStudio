@@ -4265,6 +4265,28 @@
               "default": false,
               "title": "Include Edit Status"
             }
+          },
+          {
+            "name": "caption_file",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "default",
+                    "txt",
+                    "json",
+                    "gbc"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Caption File"
+            }
           }
         ],
         "responses": {
@@ -4324,6 +4346,16 @@
               "minimum": 16,
               "default": 256,
               "title": "Size"
+            }
+          },
+          {
+            "name": "orient",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Orient"
             }
           }
         ],
@@ -4433,6 +4465,45 @@
               ],
               "title": "Rel Path"
             }
+          },
+          {
+            "name": "sidecar",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "gbc",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sidecar"
+            }
+          },
+          {
+            "name": "caption_file",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "default",
+                    "txt",
+                    "json",
+                    "gbc"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Caption File"
+            }
           }
         ],
         "responses": {
@@ -4494,6 +4565,27 @@
                 }
               ],
               "title": "Rel Path"
+            }
+          },
+          {
+            "name": "caption_file",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "default",
+                    "txt",
+                    "json"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Caption File"
             }
           }
         ],
@@ -16528,6 +16620,38 @@
       },
       "CaptionConfig": {
         "properties": {
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "text",
+              "anima_json",
+              "gbc",
+              "moss_layout"
+            ],
+            "title": "Content Type",
+            "description": "自动识别标签内容，或选择 TXT、Anima JSON、MOSS JSON。Anima JSON 也可用于 MOSS；MOSS JSON 按所选结构用法读取布局或转换 GBC 标注。文件后缀由数据来源单独选择。",
+            "default": "auto",
+            "x-ui": {
+              "group": "caption",
+              "order": -20
+            }
+          },
+          "structured_mode": {
+            "type": "string",
+            "enum": [
+              "native",
+              "gbc_to_moss",
+              "natural_language"
+            ],
+            "title": "Structured Mode",
+            "description": "原生格式直接使用标签；MOSS JSON 可选择把 GBC 标注转为 MOSS Layout，仅用于 MOSS-Image。",
+            "default": "native",
+            "x-ui": {
+              "group": "caption",
+              "order": -10
+            }
+          },
           "prefix": {
             "type": "string",
             "title": "Prefix",
@@ -16797,6 +16921,8 @@
               "simple",
               "flat",
               "legacy_override",
+              "gbc",
+              "moss_layout",
               "unknown"
             ],
             "title": "Format"
@@ -18189,6 +18315,25 @@
               }
             ],
             "title": "Caption Format"
+          },
+          "caption_files": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "txt",
+                    "json",
+                    "gbc"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption Files"
           },
           "caption_error": {
             "anyOf": [
@@ -20309,6 +20454,30 @@
             "type": "array",
             "title": "Caption Formats"
           },
+          "caption_content_types": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "text",
+                "anima_json",
+                "gbc",
+                "moss_layout"
+              ]
+            },
+            "type": "array",
+            "title": "Caption Content Types"
+          },
+          "native_caption_types": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "gbc",
+                "moss_layout"
+              ]
+            },
+            "type": "array",
+            "title": "Native Caption Types"
+          },
           "text_modes": {
             "items": {
               "type": "string"
@@ -20630,6 +20799,31 @@
           "entries"
         ],
         "title": "FsList"
+      },
+      "GbcOptions": {
+        "properties": {
+          "max_nodes": {
+            "type": "integer",
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Max Nodes",
+            "default": 20
+          },
+          "max_depth": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Max Depth",
+            "default": 3
+          },
+          "save_graph": {
+            "type": "boolean",
+            "title": "Save Graph",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "GbcOptions"
       },
       "GelbooruCredentialUpdate": {
         "properties": {
@@ -31343,7 +31537,7 @@
               }
             ],
             "title": "Prompts File",
-            "description": "可选的额外提示词文件，.txt 每行一条，.toml 可携带逐条参数；文件内容会追加到上方列表。留空只使用列表，避免两处重复填写。",
+            "description": "额外提示词文件：TXT 每行一条，TOML 可携带逐条参数。MOSS-Image 也可读取单份 MOSS Layout 或 GBC JSON，沿用所选结构标签用法。文件内容追加到上方列表，留空只使用列表。",
             "x-ui": {
               "advanced": true,
               "control": "path",
@@ -41453,6 +41647,16 @@
             "minimum": 0.0,
             "title": "Retries",
             "default": 2
+          },
+          "gbc": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GbcOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

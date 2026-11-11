@@ -1,7 +1,7 @@
 import React from 'react';
 import { Plus, X } from 'lucide-react';
 import { useWorkspaceText } from '../../utils/workspaceText';
-import { captionFieldKey, captionMetadata, type CaptionFieldDraft, type CaptionStructure } from '../../utils/captionStructure';
+import { captionFieldKey, captionMetadata, captionStructureLabel, isSceneCaption, type CaptionFieldDraft, type CaptionStructure } from '../../utils/captionStructure';
 import './structured-caption-editor.css';
 import './caption-tag.css';
 
@@ -17,10 +17,14 @@ export default function StructuredCaptionEditor({ structure, draft, onChange, di
   disabled?: boolean; readOnly?: boolean;
 }) {
   const text = useWorkspaceText();
-  const metadata = React.useMemo(() => structure ? captionMetadata(structure) : {}, [structure]);
-  if (!structure) return <p className="structured-caption-notice">{text('未取得 JSON 分类数据，请刷新后再编辑。', 'JSON fields could not be loaded. Refresh before editing.')}</p>;
+  const metadata = React.useMemo(() => structure && !isSceneCaption(structure) ? captionMetadata(structure) : {}, [structure]);
+  if (!structure) return <p className="structured-caption-notice">{text('未取得 JSON 数据，请刷新后再编辑。', 'JSON fields could not be loaded. Refresh before editing.')}</p>;
+  if (isSceneCaption(structure)) return <div className="structured-caption-editor" aria-label={captionStructureLabel(structure)}>
+    <p className="structured-caption-notice" role="status">{text('结构 JSON 仅供查看。', 'This structured JSON is read-only.')}</p>
+    <details className="structured-caption-document" open><summary>{text('查看完整 JSON 原文', 'View original JSON document')}</summary><pre>{JSON.stringify(structure.document, null, 2)}</pre></details>
+  </div>;
   const locked = disabled || readOnly || !structure.editable;
-  return <div className="structured-caption-editor" aria-label={text('JSON 分类标签', 'Structured JSON captions')}>
+  return <div className="structured-caption-editor" aria-label={text(captionStructureLabel(structure), captionStructureLabel(structure, true))}>
     {structure.legacy_override && <p className="structured-caption-notice">{text('编辑当前使用的标签；旧分类可在 JSON 原文中查看。', 'Edit the active tags. Previous categories are available in the original JSON.')}</p>}
     {!structure.editable && <p className="structured-caption-notice">{text('此 JSON 格式暂不能按分类编辑，可查看原文。', 'This JSON format is available for inspection but does not support category editing.')}</p>}
     <div className="structured-caption-fields">

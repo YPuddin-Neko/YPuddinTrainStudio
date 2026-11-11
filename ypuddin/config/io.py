@@ -279,8 +279,9 @@ def _fingerprint(
             }
     # A caption override uses the same schema as the task-wide caption settings.
     def legacy_caption(value):
-        if isinstance(value, Mapping) and value.get("weighted") is False:
-            return {key: item for key, item in value.items() if key != "weighted"}
+        if isinstance(value, Mapping):
+            defaults = {"weighted": False, "content_type": "auto", "structured_mode": "native"}
+            return {key: item for key, item in value.items() if key not in defaults or item != defaults[key]}
         return value
 
     for section in ("dataset", "validation"):

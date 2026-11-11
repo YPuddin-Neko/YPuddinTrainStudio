@@ -1,6 +1,6 @@
 import { adapterLayerTypesLock, applySwitchLocks, selectTrainingComponents, switchLock, trainingManagedReason } from '../../utils/trainingSelection';
 import { confirmedTrainingComputePolicy, trainingComputeManagedField, trainingComputePolicyHint } from '../../utils/trainingComputePolicy';
-import { contextHelp, contextOptions, hideUnusedSetting, missingSwitchPackage, presetHasConvolutions, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
+import { captionOptionReason, contextHelp, contextOptions, hideUnusedSetting, missingSwitchPackage, presetHasConvolutions, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
@@ -1039,7 +1039,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
     const incompatibleInfoNoise = infonoiseField && conditionValue.model.family !== 'anima' && !!value.objective?.infonoise_enabled;
     const sharedTLoRASetting = hasTLoRARule && parentPath[0] === 'adapter' && key.startsWith('tlora_');
-    if (ui.show_when && !sharedTLoRASetting && !incompatiblePredictionLoss && !incompatibleFamilyLoss && !incompatibleInfoNoise && !adaptiveIssue) {
+    if (fullPathKey === 'dataset.caption.structured_mode') {
+      const caption = value.dataset?.caption;
+      const type = caption?.content_type ?? 'auto';
+      if ((caption?.structured_mode ?? 'native') === 'native' && !['gbc', 'moss_layout'].includes(type) && !errorItem) return null;
+    }
+    if (ui.show_when && fullPathKey !== 'dataset.caption.structured_mode' && !sharedTLoRASetting && !incompatiblePredictionLoss && !incompatibleFamilyLoss && !incompatibleInfoNoise && !adaptiveIssue) {
       try {
         const previewConditions = fullPathKey === 'loop.ema_decay'
           ? {...conditionValue,loop:{...value.loop,ema:true}}
@@ -1079,6 +1084,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const unavailableOptions = family?.unavailable_options?.[fullPathKey];
     const choice = (option: string): StudioSelectOption => {
       const label = configOptionLabel(fullPathKey, option, english, family?.name ?? value.model?.family);
+      const captionReason = captionOptionReason(fullPathKey, option, fieldContext);
+      if (captionReason) return { value: option, label: `${label} (${captionReason})`, displayLabel: label, disabled: true };
       if (taskChoice && supportedOptions && !supportedOptions.includes(option)) {
         return { value: option, label: `${label} (${english ? 'not supported by this model' : '当前模型不支持'})`, displayLabel: label, disabled: true };
       }
@@ -1331,6 +1338,16 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
           const label = configOptionLabel('training.task', task, english);
           return { value: task, label: tasks.includes(task) ? label : `${label} (${english ? 'not supported by this model' : '当前模型不支持'})`, displayLabel: label, disabled: !tasks.includes(task) };
         })]}/>;
+    } else if (fullPathKey === 'dataset.caption.content_type') {
+      const types = (schemaOptions ?? ['auto', 'text', 'anima_json', 'moss_layout']).filter(option => option !== 'gbc');
+      const selectedType = fieldValue ?? 'auto';
+      control = <StudioSelect aria-label={fieldLabel} value={types.includes(selectedType) ? selectedType : ''}
+        onValueChange={next => onChange(setNestedValue(value, path, next))}
+        options={types.map(choice)}/>;
+    } else if (fullPathKey === 'dataset.caption.structured_mode') {
+      control = <StudioSelect aria-label={fieldLabel} value={fieldValue ?? 'native'}
+        onValueChange={next => onChange(setNestedValue(value, path, next))}
+        options={(schemaOptions ?? ['native']).filter(option => option !== 'natural_language' || fieldValue === 'natural_language').map(choice)}/>;
     } else if (supportedOptions) {
       control = <StudioSelect aria-label={fieldLabel} value={fieldValue == null ? '' : String(fieldValue)} fallbackLabel={configOptionLabel(fullPathKey, String(fieldValue), english, family?.name ?? value.model?.family)}
         onValueChange={next => {
@@ -1489,6 +1506,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       : [weightMeta?.hint ? [configFieldHelp(fullPathKey, undefined, english), weightMeta.hint].filter(Boolean).join('\n') : contextHelp(trainingMode && value.training?.task && value.training.task !== 'standard' ? 'training.task' : fullPathKey, fieldContext, offeredOptions) || configFieldHelp(fullPathKey, prop.description, english, value.optimizer?.type, scheduleFree), dtkReproducibility].filter(Boolean).join('\n\n');
     // Switches carry no standing description; a status or warning still shows beneath them.
     const statusHint = (fullPathKey === 'model.dit_path' && selectedModel ? [selectedModel.variant?.toUpperCase(), selectedModel.dtype?.toUpperCase()].filter(Boolean).join(' · ') : undefined)
+      || captionOptionReason(fullPathKey, String(fieldValue), fieldContext)
       || (incompatibleFamilyLoss ? (english ? 'This loss option only supports SDXL. Turn it off or set it to zero before using this model.' : '此损失参数仅适用于 SDXL，请关闭或设为 0 后再使用当前模型。') : undefined)
       || (incompatiblePredictionLoss ? (english ? 'This option is incompatible with the selected prediction type. Turn it off or choose the matching prediction type.' : '此参数与当前预测方式不兼容，请关闭此项或选择对应的预测方式。') : undefined)
       || managedReason
@@ -1504,11 +1522,17 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         : value.training?.mode === 'full'
         ? (english ? 'Updates the selected model weights directly.' : '直接训练所选模型本身的权重。')
         : (english ? 'Trains LoRA weights while keeping the base model frozen.' : '只训练 LoRA 权重，底模保持不变。')
+      : fullPathKey === 'dataset.caption.structured_mode'
+        ? fieldValue === 'gbc_to_moss'
+          ? (english ? 'Converts GBC JSON into the layout format used by MOSS.' : '将 GBC JSON 转成 MOSS 使用的布局格式。')
+          : (english ? 'Uses the caption format supported by the model.' : '按模型支持的格式读取标签。')
       : fullPathKey === 'model.dtype' ? modelPrecisionHint
       : fullPathKey === 'checkpoint.save_dtype' && value.training?.mode === 'full'
         ? (english ? 'Precision of exported full-model weights; FP32 files are larger.' : '导出完整模型权重的精度，FP32 文件更大。')
       : fullPathKey === 'sampling.noise' && value.training?.mode === 'full'
         ? (english ? 'Selects how sampling noise is generated.' : '选择采样噪声的生成规则。')
+      : fullPathKey === 'sampling.prompts_file' && family?.name === 'moss_image'
+        ? (english ? 'Append TXT / TOML prompts, or a layout / GBC input file using the selected caption use.' : '追加 TXT／TOML 提示词，或按所选用途读取布局／GBC 输入文件。')
       : fullPathKey === 'adapter.dora_axis' ? fieldValue === 'input'
         ? (english ? 'One magnitude per input channel; loads in ComfyUI, Forge and A1111.' : '每个输入通道一个幅度；ComfyUI、Forge 和 A1111 都能加载。')
         : (english ? 'One magnitude per output channel; not A1111, and Forge and ComfyUI render it differently, possibly badly distorted.' : '每个输出通道一个幅度；A1111 不支持，Forge 与 ComfyUI 出图不一致，可能严重失真。')

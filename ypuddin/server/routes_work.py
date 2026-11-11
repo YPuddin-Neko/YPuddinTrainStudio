@@ -1794,17 +1794,26 @@ def _image_in_source(row: dict, record: dict) -> bool:
 
 
 def _current_caption_path(
-    row: dict, record: dict, directory_cache: dict, *, create: bool = False
+    row: dict, record: dict, directory_cache: dict, *, create: bool = False,
+    caption_file: Literal["default", "txt", "json", "gbc"] | None = None,
 ) -> Path | None:
     from ypuddin.data.index import caption_for, caption_target
 
     if not _image_in_source(row, record):
         raise ApiError("image is outside its dataset or no longer exists", code="dataset.image_path")
     image, root = Path(record["path"]), Path(row["path"]).resolve()
+    if caption_file is not None and (image.is_symlink() or any(
+        parent.is_symlink() for parent in image.parents if parent.is_relative_to(Path(row["path"]))
+    )):
+        raise ApiError("image must remain inside its dataset", code="dataset.image_path")
+    extension = (".gbc.json" if caption_file == "gbc" else "." + caption_file
+                 if caption_file in {"txt", "json"} else row["caption_ext"])
+    if caption_file in {"txt", "json", "gbc"} and image.with_suffix(extension).is_symlink():
+        raise ApiError("caption must remain inside its dataset", code="dataset.caption_path")
     selected = (
-        caption_target(image, row["caption_ext"], directory_cache=directory_cache)
+        caption_target(image, extension, directory_cache=directory_cache)
         if create
-        else caption_for(image, row["caption_ext"], directory_cache=directory_cache)
+        else caption_for(image, extension, directory_cache=directory_cache)
     )
     if selected is None:
         return None
@@ -1814,9 +1823,76 @@ def _current_caption_path(
     return path
 
 
-def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
+def _editor_caption_fields(row: dict, record: dict, directory_cache: dict, caption_file: str,
+                           *, strict: bool = False, detail: bool = False) -> dict:
+    from ypuddin.data.caption_json import (
+        StructuredCaption,
+        load_caption_structure,
+        parse_caption,
+        render,
+        unique,
+    )
+    from ypuddin.data.index import caption_for
+    from ypuddin.data.spatial_captions import SpatialCaption
+    from ypuddin.data.tag_edits import _tokens
+
+    image, root = Path(record["path"]), Path(row["path"]).resolve()
+    files = []
+    path, structure, file_format = None, None, None
+    try:
+        path = _current_caption_path(row, record, directory_cache, caption_file=caption_file)
+        physical = path or _current_caption_path(row, record, directory_cache, caption_file=caption_file, create=True)
+        file_format = physical.name[len(image.stem):].lstrip(".")
+        for kind, suffix in (("txt", ".txt"), ("json", ".json"), ("gbc", ".gbc.json")):
+            found = caption_for(image, suffix, directory_cache=directory_cache)
+            if found and not Path(found).is_symlink() and Path(found).resolve().is_relative_to(root):
+                files.append(kind)
+        if path is None:
+            raw, tokens = "", ()
+        elif path.suffix.lower() == ".json":
+            structure = load_caption_structure(path)
+            if structure is None:
+                raise FileNotFoundError("Caption no longer exists; reload and retry")
+            if caption_file == "gbc" and structure["format"] != "gbc":
+                raise ValueError("the .gbc.json sidecar must contain a GBC graph")
+            if structure["format"] == "unknown" and not detail:
+                raise ValueError(f"Invalid JSON caption {path.name}: unrecognized caption format")
+            raw = parse_caption(structure["document"], filename=path.name)
+            fields = sorted(structure["fields"], key=lambda field: field["role"] != "trigger")
+            tokens = unique(token for field in fields if field["role"] != "nl"
+                            for token in _tokens(field["value"], trigger=field["role"] == "trigger"))
+        else:
+            payload = path.read_bytes()
+            raw = payload.decode("utf-8", errors="replace").strip()
+            tokens = unique(_tokens(payload.decode("utf-8-sig")))
+        cap = raw.text() if isinstance(raw, (StructuredCaption, SpatialCaption)) else raw
+        editable = "" if isinstance(raw, SpatialCaption) else render(tokens, "") if isinstance(raw, StructuredCaption) else raw
+        description = raw.text() if isinstance(raw, SpatialCaption) else raw.nl if isinstance(raw, StructuredCaption) else ""
+        status = "captioned" if cap.strip() else "missing"
+        if not cap and caption_file == "default":
+            cap = row["class_prompt"] or ""
+        if isinstance(raw, SpatialCaption) and not detail:
+            structure = None
+        error = None
+    except (ValueError, OSError, ApiError) as exc:
+        if strict:
+            raise
+        cap, editable, description, tokens, status = "", "", "", (), "invalid"
+        error = str(exc) if isinstance(exc, ValueError) else "Could not read this caption safely"
+    return {
+        "caption": cap, "caption_tags": editable, "caption_description": description,
+        "caption_structure": structure, "caption_format": file_format,
+        "caption_files": files, "caption_error": error, "caption_status": status, "_tokens": tokens,
+    }
+
+
+def _dataset_image_items(
+    c: ServiceContext, row: dict, *, caption_file: str | None = None,
+    metadata_only: bool = False, directory_cache: dict | None = None,
+) -> list[dict]:
     from ypuddin.data.caption_json import StructuredCaption, load_caption_structure, render
     from ypuddin.data.captions import read_training_caption
+    from ypuddin.data.spatial_captions import SpatialCaption
     from ypuddin.data.tag_edits import caption_tags
 
     from .routes_dataset_management import included, source_states
@@ -1837,7 +1913,7 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
         except ApiError as error:
             companion_maps.append((source_root, None, {}, str(error)))
     items = []
-    directory_cache = {}
+    directory_cache = {} if directory_cache is None else directory_cache
     seen = set()
     for r in _records(c, row["id"]):
         # Index files are source-local snapshots. Never follow a stale or redirected
@@ -1856,6 +1932,17 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
                 "pairing_error": pairing_error,
             }
             break
+        item = {
+            "hash": r["content_hash"], "rel_path": str(Path(r["path"]).relative_to(root)),
+            "width": r["width"], "height": r["height"], "has_mask": bool(r["mask_path"]),
+            "training_enabled": included(r["path"], states), **pairing,
+        }
+        if metadata_only:
+            items.append(item | {"_record": r})
+            continue
+        if caption_file is not None:
+            items.append(item | _editor_caption_fields(row, r, directory_cache, caption_file))
+            continue
         error = None
         caption_path = None
         structure = None
@@ -1867,10 +1954,10 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
             # Retain the source document for the read-only editor, but classify
             # unsupported JSON exactly as training does instead of calling it empty.
             raw = read_training_caption(caption_path, require_known_format=True)
-            cap = raw.text() if isinstance(raw, StructuredCaption) else raw
+            cap = raw.text() if isinstance(raw, (StructuredCaption, SpatialCaption)) else raw
             tokens = caption_tags(caption_path)
-            editable = render(tokens, "") if isinstance(raw, StructuredCaption) else raw
-            description = raw.nl if isinstance(raw, StructuredCaption) else ""
+            editable = "" if isinstance(raw, SpatialCaption) else render(tokens, "") if isinstance(raw, StructuredCaption) else raw
+            description = raw.text() if isinstance(raw, SpatialCaption) else raw.nl if isinstance(raw, StructuredCaption) else ""
             status = "captioned" if cap.strip() else "missing"
             if not cap:
                 cap = row["class_prompt"] or ""
@@ -1879,10 +1966,7 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
             error = str(exc) if isinstance(exc, ValueError) else "Could not read this caption safely"
         items.append(
             {
-                "hash": r["content_hash"],
-                "rel_path": str(Path(r["path"]).relative_to(root)),
-                "width": r["width"],
-                "height": r["height"],
+                **item,
                 "caption": cap,
                 "caption_tags": editable,
                 "caption_description": description,
@@ -1891,9 +1975,6 @@ def _dataset_image_items(c: ServiceContext, row: dict) -> list[dict]:
                 "caption_error": error,
                 "caption_status": status,
                 "_tokens": tokens,
-                "has_mask": bool(r["mask_path"]),
-                "training_enabled": included(r["path"], states),
-                **pairing,
             }
         )
     return items
@@ -1935,14 +2016,23 @@ def list_images(
     membership: Literal["all", "training", "unused"] = "all",
     sort: Literal["filename", "folder", "modified"] = "filename",
     include_edit_status: bool = False,
+    caption_file: Literal["default", "txt", "json", "gbc"] | None = None,
 ) -> dict[str, Any]:
     from .dataset_sort import sort_images
 
     row = _get_dataset(c, did)
     items = []
     query, exact_tag = q.casefold(), tag.strip().casefold() if tag else ""
-    for item in _dataset_image_items(c, row):
+    early_page = caption_file is not None and not (query or exact_tag or caption_status)
+    directory_cache = {}
+    candidates = (_dataset_image_items(c, row) if caption_file is None else
+                  _dataset_image_items(c, row, caption_file=caption_file,
+                                       metadata_only=early_page, directory_cache=directory_cache))
+    for item in candidates:
         if membership != "all" and item["training_enabled"] != (membership == "training"):
+            continue
+        if early_page:
+            items.append(item)
             continue
         if query and query not in item["caption"].casefold() and query not in item["rel_path"].casefold():
             continue
@@ -1953,6 +2043,10 @@ def list_images(
         item.pop("_tokens")
         items.append(item)
     result = _page(sort_images(items, row["path"], sort), page, page_size)
+    if early_page:
+        for item in result["items"]:
+            item.update(_editor_caption_fields(row, item.pop("_record"), directory_cache, caption_file))
+            item.pop("_tokens")
     if include_edit_status:
         from .dataset_edit_status import saved_statuses
 
@@ -1972,11 +2066,12 @@ def _record_by_hash(c: ServiceContext, did: str, h: str, rel_path: str | None = 
 
 @router.get("/datasets/{did}/images/{h}/thumb")
 def thumb(
-    did: str, h: str, size: int = Query(256, ge=16, le=2048), c: ServiceContext = Depends(ctx)
+    did: str, h: str, size: int = Query(256, ge=16, le=2048), c: ServiceContext = Depends(ctx),
+    orient: bool = False,
 ) -> Response:
     r = _record_by_hash(c, did, h)
     return Response(
-        c.thumbnails.image(r["path"], h, size),
+        c.thumbnails.image(r["path"], h, size, orient=orient),
         media_type="image/jpeg",
         headers={"Cache-Control": "public, max-age=86400"},
     )
@@ -2002,14 +2097,26 @@ class CaptionBody(BaseModel):
 
 @router.get("/datasets/{did}/images/{h}/caption", response_model=m.Caption, response_model_exclude_unset=True)
 def get_caption(
-    did: str, h: str, c: ServiceContext = Depends(ctx), rel_path: str | None = None
+    did: str, h: str, c: ServiceContext = Depends(ctx), rel_path: str | None = None,
+    sidecar: Literal["gbc"] | None = None,
+    caption_file: Literal["default", "txt", "json", "gbc"] | None = None,
 ) -> dict[str, Any]:
     from ypuddin.data import read_caption
     from ypuddin.data.caption_json import load_caption_structure
 
     row = _get_dataset(c, did)
+    if sidecar is not None and caption_file not in (None, "gbc"):
+        raise ApiError("sidecar and caption_file select different captions", code="dataset.caption_format", status=422)
+    selected = "gbc" if sidecar == "gbc" else caption_file
+    if selected is not None and rel_path is not None and (
+        Path(rel_path).is_absolute() or ".." in Path(rel_path).parts or "\\" in rel_path
+    ):
+        raise ApiError("invalid image relative path", code="dataset.image_path")
     r = _record_by_hash(c, did, h, rel_path)
     try:
+        if selected is not None:
+            fields = _editor_caption_fields(row, r, {}, selected, strict=True, detail=True)
+            return {"caption": fields["caption"], "caption_structure": fields["caption_structure"]}
         path = _current_caption_path(row, r, {})
         return {
             "caption": read_caption(path, row["class_prompt"]),
@@ -2021,7 +2128,8 @@ def get_caption(
 
 @router.put("/datasets/{did}/images/{h}/caption", response_model=m.Caption, response_model_exclude_unset=True)
 def put_caption(
-    did: str, h: str, body: CaptionBody, c: ServiceContext = Depends(ctx), rel_path: str | None = None
+    did: str, h: str, body: CaptionBody, c: ServiceContext = Depends(ctx), rel_path: str | None = None,
+    caption_file: Literal["default", "txt", "json"] | None = None,
 ) -> dict[str, Any]:
     from ypuddin.data.caption_json import CaptionConflictError, load_caption_structure
     from ypuddin.data.captions import read_caption, write_caption
@@ -2029,6 +2137,10 @@ def put_caption(
     from .dataset_refresh import image_entry, note_own_edit
 
     row = _get_dataset(c, did)
+    if caption_file is not None and rel_path is not None and (
+        Path(rel_path).is_absolute() or ".." in Path(rel_path).parts or "\\" in rel_path
+    ):
+        raise ApiError("invalid image relative path", code="dataset.image_path")
     if body.caption is None and body.description is None and body.caption_fields is None:
         raise ApiError(
             "caption, description or caption_fields is required", code="dataset.caption_invalid", status=422
@@ -2036,14 +2148,16 @@ def put_caption(
     with c.versions.mutation(row["project_id"], row["version_id"]):
         row = _get_dataset(c, did)
         r = _record_by_hash(c, did, h, rel_path)
-        cap_path = _current_caption_path(row, r, {}, create=True)
+        cap_path = _current_caption_path(row, r, {}, create=True, caption_file=caption_file)
+        if caption_file is not None:
+            _current_caption_path(row, r, {})
         if body.description is not None and cap_path.suffix.lower() != ".json":
             raise ApiError(
                 "separate descriptions require a JSON caption", code="dataset.caption_format", status=422
             )
         # Only a newly selected caption file changes what the index records about the image.
         selected = r["caption_path"] != str(cap_path)
-        before = image_entry(row, Path(r["path"])) if selected else None
+        before = image_entry(row, Path(r["path"])) if selected or caption_file is not None else None
         try:
             write_caption(
                 cap_path,
@@ -2058,12 +2172,15 @@ def put_caption(
             raise ApiError(str(exc), code="dataset.caption_conflict", status=409) from exc
         except (ValueError, OSError) as exc:
             raise ApiError(str(exc), code="dataset.caption_invalid", status=422) from exc
+        actual = _current_caption_path(row, r, {}) if caption_file is not None else cap_path
+        selected = r["caption_path"] != (str(actual) if actual else None)
         if selected:
             recs = _records(c, did)
             for rec in recs:
                 if rec["path"] == r["path"]:
-                    rec["caption_path"] = str(cap_path)
+                    rec["caption_path"] = str(actual) if actual else None
             _records_path(c, did).write_text(json.dumps(recs), encoding="utf-8")
+        if selected or caption_file is not None:
             note_own_edit(c, did, [before], [image_entry(row, Path(r["path"]))])
         c.bus.publish("dataset.changed", {
             "dataset_id": did, "project_id": row["project_id"], "version_id": row["version_id"], "reason": "caption",

@@ -438,7 +438,12 @@ def record_content_key(record: ImageRecord) -> tuple[int, str, str, str]:
         # TXT hashes stay unprefixed to keep their fingerprints and resume ordering. The
         # prefix keeps checkpoints that trained JSON as raw file text from resuming with
         # structured semantics.
-        caption_hash = "structured-json-v1:" + caption_hash
+        from .caption_json import load_caption
+        from .spatial_captions import SpatialCaption
+
+        raw = load_caption(record.caption_path)[1]
+        version = f"{raw.format}-geometry-v1:" if isinstance(raw, SpatialCaption) else "structured-json-v1:"
+        caption_hash = version + caption_hash
     return (
         record.source_index,
         ("color-key-white-v1:" if record.color_key_transparency else "") + record.content_hash,
@@ -472,13 +477,21 @@ def dataset_fingerprint_variants(
         mode="json", exclude={"path", "excluded_files", "excluded_dirs", "pair_path", "reference_dir"},
     ) for s in sources]
 
-    def legacy_caption_settings(values):
+    def legacy_caption_settings(values, *, include_weighted=True):
         result = dict(values)
         caption = result.get("caption")
-        if isinstance(caption, dict) and caption.get("weighted") is False:
-            result["caption"] = {key: value for key, value in caption.items() if key != "weighted"}
+        if isinstance(caption, dict):
+            defaults = {"content_type": "auto", "structured_mode": "native"}
+            if include_weighted:
+                defaults["weighted"] = False
+            result["caption"] = {key: value for key, value in caption.items()
+                                 if key not in defaults or value != defaults[key]}
         return result
 
+    semantic_sources = [legacy_caption_settings(source, include_weighted=False) for source in semantic_sources]
+    settings = dict(settings or {})
+    if isinstance(settings.get("dataset"), dict):
+        settings["dataset"] = legacy_caption_settings(settings["dataset"], include_weighted=False)
     payload = {
         "version": 2,
         "sources": semantic_sources,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import re
@@ -11,6 +12,7 @@ from pathlib import Path
 from ypuddin.config import CaptionConfig
 
 from .caption_json import StructuredCaption, edited_content, load_caption, render, unique
+from .spatial_captions import SpatialCaption, render_spatial_caption
 
 _WILDCARD = re.compile(r"\{([^{}]*)\}")
 
@@ -49,7 +51,7 @@ def weighted_caption_issues(text: str) -> list[dict[str, str]]:
 
 def read_training_caption(
     path: str | Path | None, fallback: str | None = None, *, require_known_format: bool = False
-) -> str | StructuredCaption:
+) -> str | StructuredCaption | SpatialCaption:
     """Read the selected caption; training callers require a recognized JSON format.
 
     Inspection also uses this reader and keeps unknown documents available for the
@@ -66,12 +68,14 @@ def read_training_caption(
 
 def read_caption(path: str | Path | None, fallback: str | None = None) -> str:
     raw = read_training_caption(path, fallback)
-    return raw.text() if isinstance(raw, StructuredCaption) else raw
+    return raw.text() if isinstance(raw, (StructuredCaption, SpatialCaption)) else raw
 
 
 def read_editable_caption(path: str | Path | None, fallback: str | None = None) -> str:
     """Tag-editor text; structured natural language remains separate and untouched."""
     raw = read_training_caption(path, fallback)
+    if isinstance(raw, SpatialCaption):
+        return ""
     if isinstance(raw, StructuredCaption):
         return (", ").join(unique((raw.trigger, *raw.fixed, *raw.appearance, *raw.tags, *raw.environment)))
     return raw
@@ -80,6 +84,8 @@ def read_editable_caption(path: str | Path | None, fallback: str | None = None) 
 def caption_description(path: str | Path | None) -> str:
     """Read-only structured prose for the editor; ordinary TXT has no separate description."""
     raw = read_training_caption(path)
+    if isinstance(raw, SpatialCaption):
+        return raw.text()
     return raw.nl if isinstance(raw, StructuredCaption) else ""
 
 
@@ -170,8 +176,93 @@ def _weighted_groups(tokens: list[str]) -> list[str]:
     ) if tokens else []
 
 
-def transform_caption(raw: str | StructuredCaption, cfg: CaptionConfig, rng: random.Random) -> str | None:
+def _caption_config_error(cfg: CaptionConfig, family: str | None) -> tuple[str, str] | None:
+    if cfg.structured_mode == "natural_language":
+        return "structured_mode", "旧自然语言结构标签用途已停用，请重新选择原生格式或 GBC 转 MOSS Layout。"
+    if cfg.structured_mode == "gbc_to_moss":
+        if family is not None and family != "moss_image":
+            return "structured_mode", "GBC 转 MOSS Layout 仅用于 MOSS-Image。"
+        if cfg.content_type not in {"auto", "moss_layout", "gbc"}:
+            return "structured_mode", "GBC 转 MOSS Layout 需选择 MOSS JSON 或自动识别；其他标签请选择原生格式。"
+    if cfg.content_type == "gbc" and cfg.structured_mode == "native":
+        return "structured_mode", "当前模型没有原生 GBC 图入口；MOSS-Image 可选择 GBC 转 MOSS Layout。"
+    if family is not None and cfg.content_type != "auto":
+        from ypuddin.models import get_family
+
+        spec = get_family(family).spec
+        supported = spec.caption_content_types if "json" in spec.caption_formats else ("text",)
+        content_type = "moss_layout" if cfg.content_type == "gbc" else cfg.content_type
+        if content_type not in supported:
+            return "content_type", f"{spec.label or family} 不支持 {cfg.content_type} 标签内容。"
+    return None
+
+
+def caption_execution_issues(cfg) -> list[dict[str, str]]:
+    """Validate selected caption uses at execution, keeping legacy recipes editable."""
+    configs = [("dataset.caption", cfg.dataset.caption)]
+    for prefix, sources in (
+        ("dataset.sources", cfg.dataset.sources),
+        ("validation.sources", cfg.validation.sources if cfg.validation.enabled else []),
+    ):
+        configs.extend((f"{prefix}.{index}.caption", source.caption)
+                       for index, source in enumerate(sources) if source.caption is not None)
+    issues = []
+    for prefix, caption_cfg in configs:
+        error = _caption_config_error(caption_cfg, cfg.model.family)
+        if error is not None:
+            field, message = error
+            issues.append({"loc": f"{prefix}.{field}", "msg": message, "code": "caption_mode"})
+    return issues
+
+
+def validate_caption_content(raw, cfg: CaptionConfig, family: str | None = None) -> None:
+    error = _caption_config_error(cfg, family)
+    if error is not None:
+        raise ValueError(error[1])
+    kind = raw.format if isinstance(raw, SpatialCaption) else "anima_json" if isinstance(raw, StructuredCaption) else "text"
+    expected = "gbc" if cfg.content_type == "moss_layout" and cfg.structured_mode == "gbc_to_moss" else cfg.content_type
+    matches = expected in ("auto", kind) or expected == "text" and kind == "anima_json"
+    if not matches:
+        if cfg.content_type == "moss_layout" and cfg.structured_mode == "gbc_to_moss":
+            raise ValueError("GBC 转 MOSS Layout 需要 GBC 图标注；已有 MOSS Layout 请选原生格式。")
+        raise ValueError(f"标签内容为 {kind}，与选择的 {cfg.content_type} 不符。")
+    if not isinstance(raw, SpatialCaption):
+        return
+    if cfg.wildcard or cfg.weighted:
+        raise ValueError("布局标签需关闭通配符与提示词权重。")
+    if raw.format == "gbc":
+        if cfg.structured_mode != "gbc_to_moss":
+            raise ValueError("当前模型没有原生 GBC 图入口；MOSS-Image 可选择 GBC 转 MOSS Layout。")
+    elif cfg.structured_mode != "native":
+        raise ValueError("MOSS Layout 标签请选择原生格式；转换用途仅接收 GBC 图。")
+    if family is not None:
+        from ypuddin.models import get_family
+
+        if "moss_layout" not in get_family(family).spec.native_caption_types:
+            raise ValueError("MOSS Layout 标签仅用于 MOSS-Image。")
+
+
+def transform_spatial_caption(raw: SpatialCaption, cfg: CaptionConfig, rng: random.Random, *,
+                              geometry: dict | None = None, image_fit: str = "crop",
+                              flip: bool = False, family: str | None = None) -> str | None:
+    validate_caption_content(raw, cfg, family)
+    text = render_spatial_caption(raw, mode=cfg.structured_mode, geometry=geometry,
+                                  image_fit=image_fit, flip=flip)
+    if cfg.caption_dropout > 0 and rng.random() < cfg.caption_dropout:
+        return None
+    data = json.loads(text)
+    # LoRA trigger and surrounding prose belong to the global caption, outside box syntax.
+    data["summary"]["caption"] = _transform_structured(
+        StructuredCaption(nl=data["summary"]["caption"]), cfg, rng,
+    )
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+
+def transform_caption(raw: str | StructuredCaption | SpatialCaption, cfg: CaptionConfig, rng: random.Random) -> str | None:
     """Returns the caption to encode, or ``None`` when this sample is dropped to unconditional."""
+    validate_caption_content(raw, cfg)
+    if isinstance(raw, SpatialCaption):
+        return transform_spatial_caption(raw, cfg, rng)
     if cfg.caption_dropout > 0 and rng.random() < cfg.caption_dropout:
         return None
     if isinstance(raw, StructuredCaption):

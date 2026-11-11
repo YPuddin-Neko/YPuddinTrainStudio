@@ -339,6 +339,7 @@ class DatasetPipeline:
             "content_signature_version": 1,
             "caption_inspection_version": ANIMA_CAPTION_INSPECTION_VERSION if family == "anima" else 3,
             "transparency_inspection_version": 4,
+            "spatial_caption_inspection_version": 3,
             "model_family": family,
         }]
         files: dict[str, list[Path]] = {"images": [], "captions": [], "masks": []}
@@ -365,6 +366,8 @@ class DatasetPipeline:
                 "path": str(root), "dataset_id": source["dataset_id"],
                 "roles": sorted(source["roles"]), "class_prompt": bool(source.get("class_prompt")),
                 "caption_ext": extension.lower(), "available": root.is_dir(), "caption_advice": advice,
+                "caption_content": {key: cap_cfg.get(key) for key in
+                                    ("content_type", "structured_mode", "wildcard", "weighted")},
             })
             if not root.is_dir():
                 continue
@@ -818,6 +821,7 @@ class DatasetPipeline:
         return hashes
 
     def _inspect(self, oid: str, pid: str, vid: str) -> dict:
+        from ypuddin.config import CaptionConfig
         from ypuddin.data.anima_caption_inspection import inspect_anima_caption
         from ypuddin.data.caption_formats import (
             effective_caption_extension,
@@ -825,7 +829,8 @@ class DatasetPipeline:
             require_caption_format,
         )
         from ypuddin.data.caption_json import StructuredCaption
-        from ypuddin.data.captions import read_training_caption
+        from ypuddin.data.captions import read_training_caption, validate_caption_content
+        from ypuddin.data.spatial_captions import SpatialCaption
 
         from .routes_work import get_project_config
 
@@ -934,8 +939,12 @@ class DatasetPipeline:
                 require_caption_format(caption, caption_formats, family_name)
                 if caption.is_file():
                     raw_caption = read_training_caption(str(caption), None, require_known_format=True)
+                    cap_cfg = source.get("caption")
+                    if cap_cfg is None:
+                        cap_cfg = {} if source.get("is_reg") else config.get("dataset", {}).get("caption", {})
+                    validate_caption_content(raw_caption, CaptionConfig.model_validate(cap_cfg), family_name)
                     record["caption"] = (
-                        raw_caption.text() if isinstance(raw_caption, StructuredCaption) else raw_caption
+                        raw_caption.text() if isinstance(raw_caption, (StructuredCaption, SpatialCaption)) else raw_caption
                     )
                     if weighted_captions:
                         from ypuddin.data.captions import weighted_caption_issues
@@ -1109,6 +1118,15 @@ class DatasetPipeline:
             stream.flush()
             os.fsync(stream.fileno())
         try:
+            for change in changes:
+                for name, expected in change.get("input_guards", {}).items():
+                    source = Path(name)
+                    if source.is_symlink() or _stat(source) != expected:
+                        raise ApiError(
+                            f"source changed while preparing: {source}",
+                            code="pipeline.source_changed",
+                            status=409,
+                        )
             for index, change in enumerate(changes):
                 target = Path(change["target"])
                 if (_digest(target) if target.exists() else None) != change["before"]:
@@ -1127,6 +1145,10 @@ class DatasetPipeline:
             raise
 
     def _preprocess(self, oid: str, work: Path, images: list[dict], options: dict) -> list[dict]:
+        from ypuddin.data.captions import read_training_caption
+        from ypuddin.data.index import caption_for
+        from ypuddin.data.spatial_captions import SpatialCaption
+
         changes = []
         width, height = options["width"], options["height"]
         for index, record in enumerate(images):
@@ -1174,6 +1196,18 @@ class DatasetPipeline:
                     else min(1, cropped.width / width, cropped.height / height)
                 )
                 size = (max(1, round(width * scale)), max(1, round(height * scale)))
+            if box != (0, 0, image.width, image.height) or size != image.size:
+                # Inactive JSON sidecars also refer to these pixels and may be selected later.
+                selected = record["caption"]
+                sidecars = {caption_for(record["path"], ".json")}
+                if selected.suffix.lower() == ".json" and selected.is_file():
+                    sidecars.add(str(selected))
+                for sidecar in sidecars - {None}:
+                    if isinstance(read_training_caption(sidecar), SpatialCaption):
+                        raise ApiError(
+                            "图片带有 GBC 或 MOSS Layout 坐标标注，不能单独裁剪或缩放；请在外部同步处理图片与标注。",
+                            code="pipeline.spatial_geometry",
+                        )
             staged = work / "staged" / f"image-{index}"
             staged.parent.mkdir(parents=True, exist_ok=True)
             cropped.resize(size, Image.Resampling.LANCZOS).save(staged, format=fmt)
@@ -1264,7 +1298,10 @@ class DatasetPipeline:
             config.get("dataset", {}).get("caption", {}).get("weighted", False)
         )
 
-    def _tagger_run(self, oid: str, paths: list[str], options: dict, exclude, *, anima: bool):
+    def _tagger_run(
+        self, oid: str, paths: list[str], options: dict, exclude, *, anima: bool,
+        execution_device: tuple[str, int] | None = None,
+    ):
         """Each image's tags as (tag, category) in caption order, from the chosen tagger."""
         from .model_catalog import LABEL_FILES, VISION_MODELS
         from .vision_models import DEFAULT_CATEGORIES, tag_images
@@ -1273,7 +1310,7 @@ class DatasetPipeline:
             raise ApiError("tagging models are unavailable", code="vision.unavailable", status=503)
         entry = VISION_MODELS[options["model"]]
         files = self.vision.files(options["model"])
-        provider, device_index = self._vision_provider(options["device"])
+        provider, device_index = execution_device or self._vision_provider(options["device"])
         results = self._vision_call(
             oid,
             lambda: tag_images(
@@ -1601,6 +1638,9 @@ class DatasetPipeline:
         from . import vlm
         from .network import ProxyPolicy
 
+        gbc = options.get("gbc")
+        if gbc is not None and (tagging is None or options["output"] == "tags"):
+            raise ApiError("GBC refinement needs assisted natural-language tagging", code="vlm.gbc_mode")
         provider = options["provider"]
         url = vlm.base_url(provider, options.get("base_url"))
         key = self.credentials.vlm_key(provider) if self.credentials is not None else None
@@ -1622,9 +1662,26 @@ class DatasetPipeline:
                 target = record["path"].with_suffix(".json")
             as_json = target.suffix.lower() == ".json"
             try:
+                guards = {}
+                graph_path = record["path"].with_suffix(".gbc.json")
+                if gbc is not None:
+                    if graph_path in {target, record["caption"]}:
+                        raise vlm.VlmError("the GBC sidecar conflicts with this image's caption path")
+                    if gbc["save_graph"] and any(
+                        sibling != record["path"] and sibling.suffix.lower() in IMAGE_EXTS
+                        and sibling.stem in {record["path"].stem, graph_path.stem}
+                        for sibling in record["path"].parent.iterdir()
+                    ):
+                        raise vlm.VlmError("the GBC sidecar is shared with another image; rename the image")
+                    for path in {record["path"], record["caption"], target, graph_path}:
+                        if path.is_symlink():
+                            raise vlm.VlmError("sidecar links cannot be used for GBC refinement")
+                        if path.exists() and not path.is_file():
+                            raise vlm.VlmError("GBC refinement requires regular image and sidecar files")
+                        guards[str(path)] = _stat(path)
                 fields = category_tokens(source) if source and source.suffix == ".json" else None
                 text = read_editable_caption(source) if source else ""
-            except ValueError as error:
+            except (ValueError, OSError, vlm.VlmError) as error:
                 failures.append({"rel_path": record["rel_path"], "error": str(error)})
                 continue
             if fields is not None:
@@ -1653,6 +1710,8 @@ class DatasetPipeline:
                     "reference": reference,
                     "tagged": tagging is not None and not reference,
                     "characters": [],
+                    "input_guards": guards,
+                    "graph_path": graph_path,
                 }
             )
         if txt_only:
@@ -1662,14 +1721,17 @@ class DatasetPipeline:
                 code="vlm.json_required",
                 status=409,
             )
+        execution_device = self._vision_provider(tagging["device"]) if gbc is not None and jobs else None
         tagged = [job for job in jobs if job["tagged"]]
         if tagged:
             if self.vision is None:
                 raise ApiError("tagging models are unavailable", code="vision.unavailable", status=503)
             self.vision.files(tagging["model"])
             self._progress(oid, "tagging", 0, len(tagged), f"Tagging {len(tagged)} images for reference")
+            extra = {"execution_device": execution_device} if execution_device else {}
             results = self._tagger_run(
-                oid, [str(job["record"]["path"]) for job in tagged], tagging, options["exclude_tags"], anima=anima
+                oid, [str(job["record"]["path"]) for job in tagged], tagging, options["exclude_tags"],
+                anima=anima, **extra,
             )
             for job, pairs in zip(tagged, results, strict=True):
                 tags = [tag for tag, _ in pairs]
@@ -1678,16 +1740,35 @@ class DatasetPipeline:
                 job["characters"] = characters if structured else []
                 job["reference"] = [tag for tag in tags if tag not in characters] if structured else tags
         total = len(jobs)
-        self._progress(
-            oid, "requesting", 0, total, f"Sending {total} images to {options['model']}; {skipped} skipped"
-        )
         report = {"skipped": skipped, "stopped": False}
+        if gbc is not None:
+            report.update(caption_files=0, graph_files=0)
         if not jobs:
             return [], report | {"failed_files": len(failures), "failures": failures[:100]}
         policy = ProxyPolicy.from_context(self.c)
         pacer = vlm.Pacer(options["interval"])
         cancel = self.cancel_events.get(oid) or threading.Event()
         halt = threading.Event()
+        analyzer = None
+        runtime = None
+        if gbc is not None:
+            from . import gbc_caption, gbc_runtime
+
+            device_name, device_index = execution_device
+            device = f"cuda:{device_index}" if device_name == "cuda" else "cpu"
+            self._progress(oid, "gbc_preparing", 0, 1, "Preparing GBC analysis")
+            try:
+                runtime = gbc_runtime.prepare(
+                    self.c, device=device, cancel=cancel,
+                    progress=lambda message: self._progress(oid, "gbc_preparing", 0, 1, message),
+                )
+            except vlm.VlmStopped:
+                raise PipelineCancelled("GBC preparation stopped") from None
+            self._cancelled(oid)
+            analyzer = gbc_runtime.Analyzer(runtime, device=device, work=work / "gbc", cancel=halt)
+        self._progress(
+            oid, "requesting", 0, total, f"Sending {total} images to {options['model']}; {skipped} skipped"
+        )
 
         def prompt_for(job: dict) -> str:
             text = options["prompt"]
@@ -1700,10 +1781,10 @@ class DatasetPipeline:
                 text = "\n".join(line for line in text.splitlines() if "{trigger}" not in line)
             return text.replace("{tags}", ", ".join(job["reference"]))
 
-        def request(job: dict) -> str:
+        def caption(image: Path, prompt: str, before_request=None) -> str:
             return vlm.caption(
-                job["record"]["path"],
-                prompt_for(job),
+                image,
+                prompt,
                 provider=provider,
                 url=url,
                 key=key,
@@ -1717,7 +1798,40 @@ class DatasetPipeline:
                 retries=options["retries"],
                 pacer=pacer,
                 cancel=halt,
+                before_request=before_request,
+                reject_truncated=gbc is not None,
             )
+
+        def request(job: dict) -> str:
+            prompt = prompt_for(job)
+            if gbc is None:
+                return caption(job["record"]["path"], prompt)
+            budget = gbc_caption.RequestBudget()
+            job["gbc_budget"] = budget
+            draft = caption(job["record"]["path"], prompt, budget.consume)
+            prose = gbc_caption.draft_caption(draft, output)
+            identity = gbc_caption.graph_identity(
+                job["record"]["path"], source_revision=runtime.identity,
+                model_revisions=gbc_runtime.MODEL_REVISIONS,
+                max_nodes=gbc["max_nodes"], max_depth=gbc["max_depth"],
+                url=url, model=options["model"], temperature=options["temperature"],
+                image_size=options["image_size"], image_detail=options["image_detail"],
+                prompt=prompt, reference=job["reference"], max_tokens=options.get("max_tokens"),
+            )
+            graph = gbc_caption.cached_graph(job["graph_path"], identity)
+            if graph is None:
+                graph = analyzer.analyze(
+                    job["record"]["path"], max_nodes=gbc["max_nodes"], max_depth=gbc["max_depth"],
+                    request=lambda image, text: caption(image, text, budget.consume),
+                )
+                graph = gbc_caption.validate_graph(graph)
+            refined = caption(
+                job["record"]["path"], gbc_caption.refinement_prompt(prose, graph),
+                lambda: budget.consume(final=True),
+            )
+            reply = gbc_caption.replace_caption(draft, refined, output)
+            job["gbc_graph"] = gbc_caption.cache_document(graph, identity)
+            return reply
 
         replies: dict[int, str] = {}
         fatal: ApiError | None = None
@@ -1760,6 +1874,8 @@ class DatasetPipeline:
                         future.cancel()
                     remaining = {future for future in remaining if not future.cancelled()}
         finally:
+            if analyzer is not None:
+                analyzer.close()
             executor.shutdown(wait=False, cancel_futures=True)
         if self.stopping.is_set():
             raise PipelineCancelled("Service is stopping; original files were preserved")
@@ -1778,18 +1894,33 @@ class DatasetPipeline:
             if index not in replies:
                 continue
             try:
+                for name, expected in job["input_guards"].items():
+                    path = Path(name)
+                    if path.is_symlink() or _stat(path) != expected:
+                        raise vlm.VlmError("image or caption changed during refinement; retry this image")
                 content = self._vlm_content(job, replies[index], options, trigger)
                 if job["json"]:
                     content = json_layout(content, options.get("output_format"))
-            except (vlm.VlmError, ValueError) as error:
+            except (vlm.VlmError, ValueError, OSError) as error:
                 failures.append({"rel_path": job["record"]["rel_path"], "error": str(error)})
                 continue
-            if job["target"].exists() and _same_caption(job["target"], content):
-                continue
-            staged = work / "staged" / f"vlm-{index}"
-            staged.parent.mkdir(parents=True, exist_ok=True)
-            staged.write_text(content, encoding="utf-8")
-            changes.append(self._change(work, job["target"], staged))
+            outputs = [("caption", job["target"], content)]
+            if gbc is not None and gbc["save_graph"]:
+                outputs.append(("graph", job["graph_path"], _dump(job["gbc_graph"])))
+            for kind, target, value in outputs:
+                if target.exists() and (kind == "caption" and _same_caption(target, value)
+                                        or kind == "graph" and target.read_text(encoding="utf-8") == value):
+                    continue
+                staged = work / "staged" / f"vlm-{index}-{kind}"
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                staged.write_text(value, encoding="utf-8")
+                change = self._change(work, target, staged)
+                if gbc is not None:
+                    change["input_guards"] = job["input_guards"]
+                    report[f"{kind}_files"] += 1
+                changes.append(change)
+        if gbc is not None:
+            report["gbc_requests"] = sum(job["gbc_budget"].used for job in jobs if "gbc_budget" in job)
         return changes, report | {"failed_files": len(failures), "failures": failures[:100]}
 
     @staticmethod

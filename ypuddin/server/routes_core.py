@@ -188,6 +188,8 @@ def family_info(name: str, layers: Callable[[str], dict[str, Any]] | None = None
         "adapter_prefix": spec.adapter_prefix,
         "capabilities": sorted(spec.capabilities),
         "caption_formats": list(spec.caption_formats),
+        "caption_content_types": list(spec.caption_content_types) if "json" in spec.caption_formats else ["text"],
+        "native_caption_types": list(spec.native_caption_types) if "json" in spec.caption_formats else [],
         "text_modes": text_modes,
         "training_capabilities": training_capabilities(name),
         "presets": presets,

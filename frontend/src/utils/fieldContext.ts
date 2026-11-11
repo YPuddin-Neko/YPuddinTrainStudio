@@ -14,6 +14,30 @@ export interface FieldContext {
   nativeBatchingVersion?: 1 | 2 | 3 | null;
 }
 
+export function captionOptionReason(path: string, option: string, { family, config, english }: FieldContext): string | undefined {
+  if (!['dataset.caption.content_type', 'dataset.caption.structured_mode'].includes(path)) return undefined;
+  const type = path === 'dataset.caption.content_type' ? option : config.dataset?.caption?.content_type ?? 'auto';
+  if (path === 'dataset.caption.structured_mode' && option === 'natural_language') {
+    return english ? 'This use is retired. Choose a caption use again.' : '此用法已停用，请重新选择。';
+  }
+  if (path === 'dataset.caption.structured_mode' && option === 'gbc_to_moss') {
+    if (family?.name !== 'moss_image' || !family.caption_content_types?.includes('moss_layout') || !family.native_caption_types?.includes('moss_layout')) {
+      return english ? 'GBC to MOSS Layout is available only for MOSS.' : 'GBC 转 MOSS Layout 仅适用于 MOSS。';
+    }
+    if (!['auto', 'moss_layout', 'gbc'].includes(type)) return english ? 'Choose MOSS JSON or Auto-detect for this conversion.' : '此转换用于 MOSS JSON 或自动识别。';
+  }
+  if (!['auto', 'gbc'].includes(type) && Array.isArray(family?.caption_content_types) && !family.caption_content_types.includes(type)) {
+    return english ? 'This model does not accept this caption content type.' : '当前模型不支持此标签内容类型。';
+  }
+  if (path === 'dataset.caption.structured_mode' && option === 'native' && ['gbc', 'moss_layout'].includes(type)
+    && Array.isArray(family?.native_caption_types) && !family.native_caption_types.includes(type)) {
+    return type === 'gbc'
+      ? english ? 'Native GBC graph training is not available.' : 'GBC 原生图训练尚未接入。'
+      : english ? 'This model does not support MOSS JSON.' : '当前模型不支持 MOSS JSON。';
+  }
+  return undefined;
+}
+
 type Runtime = 'cuda' | 'hip' | 'mps' | 'cpu';
 const runtimeOf = (family?: FamilyInfo) => (family?.runtime_backend ?? undefined) as Runtime | undefined;
 const onGpu = (runtime?: Runtime) => runtime === 'cuda' || runtime === 'hip';

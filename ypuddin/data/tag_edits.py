@@ -52,6 +52,8 @@ def edit_caption_tags(
 ) -> bytes | None:
     """Return replacement bytes only when an operation changes stored tag values."""
     data, fields = _document(path, original, fallback)
+    if data is not None and _format(data) in {"gbc", "moss_layout"}:
+        raise ValueError("GBC 与 MOSS Layout 标签为只读，不能进行标签编辑。")
     unwanted = {tag.casefold() for tag in remove}
     for field in fields:
         field["updated"] = [replacements.get(tag.casefold(), tag) for tag in field["tokens"]

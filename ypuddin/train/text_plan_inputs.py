@@ -34,7 +34,7 @@ def _clip_config_paths(cfg: TrainConfig) -> tuple[Path, Path]:
 
 def _pairs(cfg: TrainConfig, spec: LatentSpec, items: list, *, validation: bool) -> tuple:
     dataset = TrainDataset(
-        items, latent_spec=spec, latent_cache=None, flip=False, masked_loss=False,
+        items, latent_spec=spec, latent_cache=None, flip=cfg.dataset.flip and not validation, masked_loss=False,
         seed=cfg.validation.seed if validation else cfg.loop.seed, deterministic_captions=validation,
     )
     pairs = dataset.use_cached_captions()
@@ -174,7 +174,7 @@ def text_plan_inputs(cfg: TrainConfig, latent_spec: LatentSpec, layout: DataLayo
             try:
                 from .trainer import _load_prompts_file
 
-                values.extend(_load_prompts_file(cfg.sampling.prompts_file))
+                values.extend(_load_prompts_file(cfg.sampling.prompts_file, cfg=cfg))
             except (OSError, ValueError, TypeError) as error:
                 known["prompt"] = False
                 errors.append({"loc": "sampling.prompts_file", "msg": str(error)})

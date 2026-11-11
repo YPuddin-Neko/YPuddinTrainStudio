@@ -120,6 +120,12 @@ class AutoMaskOptions(BaseModel):
         return _vision_model(value, "head_detector")
 
 
+class GbcOptions(BaseModel):
+    max_nodes: int = Field(20, ge=1, le=64)
+    max_depth: int = Field(3, ge=0, le=5)
+    save_graph: bool = False
+
+
 class VlmOptions(BaseModel):
     output_format: CaptionOutputFormat | None = None
     provider: VlmProvider
@@ -141,11 +147,14 @@ class VlmOptions(BaseModel):
     interval: float = Field(0, ge=0, le=120)
     timeout: int = Field(120, ge=10, le=900)
     retries: int = Field(2, ge=0, le=5)
+    gbc: GbcOptions | None = None
 
     @model_validator(mode="after")
     def output_matches_format(self):
         if self.output_format == "txt" and self.output in {"categories", "sort"}:
             raise ValueError("grouped tags require a JSON output format")
+        if self.gbc is not None and self.output == "tags":
+            raise ValueError("GBC refinement requires a natural-language output")
         return self
 
 
@@ -178,6 +187,8 @@ class PipelineRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_action(self) -> PipelineRequest:
+        if self.vlm is not None and self.vlm.gbc is not None and self.action != "assisttag":
+            raise ValueError("GBC refinement is available in assisted tagging")
         if self.action in {"exclude", "preprocess", "captions"} and not self.images:
             raise ValueError("select at least one image")
         reviewed = self.action == "automask" and self.automask is not None and self.automask.proposal_id

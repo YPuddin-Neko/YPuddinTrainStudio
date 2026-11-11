@@ -11,9 +11,9 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
-_NAME = re.compile(r"[a-f0-9]{16}_[0-9]+\.jpg")
+_NAME = re.compile(r"[a-f0-9]{16}_[0-9]+(?:_oriented)?\.jpg")
 
 
 class ThumbnailCache:
@@ -104,8 +104,8 @@ class ThumbnailCache:
                 "failed_files": failed,
             }
 
-    def image(self, source: str | Path, content_hash: str, size: int) -> bytes:
-        name = f"{content_hash}_{size}.jpg"
+    def image(self, source: str | Path, content_hash: str, size: int, *, orient: bool = False) -> bytes:
+        name = f"{content_hash}_{size}{'_oriented' if orient else ''}.jpg"
         if not _NAME.fullmatch(name):
             raise ValueError("Invalid thumbnail identity")
         # Return bytes so clearing or evicting a file cannot race FileResponse's later open.
@@ -132,7 +132,7 @@ class ThumbnailCache:
             generation = self._generation
         # Decoding a large original must not hold up other thumbnails or a manual clear.
         with Image.open(source) as original:
-            image = original.convert("RGB")
+            image = (ImageOps.exif_transpose(original) if orient else original).convert("RGB")
             image.thumbnail((size, size))
             buffer = io.BytesIO()
             image.save(buffer, "JPEG", quality=85)

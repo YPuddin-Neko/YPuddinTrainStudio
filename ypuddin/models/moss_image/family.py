@@ -69,6 +69,8 @@ class MOSSImageFamily(ModelFamily):
         sampling=SamplingDefaults(steps=50, cfg=3.0, shift=5.0, sampler="euler"),
         capabilities=frozenset({"activation_checkpointing", "masked_loss", "online_text", "block_swap", "fp8_base", "compile"}),
         checkpointing_modes=("none", "block", "unsloth"),
+        caption_content_types=("text", "anima_json", "moss_layout"),
+        native_caption_types=("moss_layout",),
         attention_backends=("auto", "sdpa", "flash_attn"), adapter_prefix="lora_unet",
         sampling_samplers=("euler", "euler_ancestral", "heun", "er_sde"),
         sampling_schedulers=("uniform", "moss", "simple", "normal", "sgm_uniform"),

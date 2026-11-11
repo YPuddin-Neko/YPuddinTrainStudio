@@ -53,6 +53,8 @@ class ModelSpec:
     capabilities: frozenset[str]
     # The shared caption reader renders supported sidecars to text before encoding.
     caption_formats: tuple[str, ...] = ("txt", "json")
+    caption_content_types: tuple[str, ...] = ("text", "anima_json")
+    native_caption_types: tuple[str, ...] = ()
     objective: str = "rectified_flow"
     t_convention: str = "unit"  # backbone receives t in (0, 1)
     architecture: str = "unknown"  # modelspec.architecture base tag

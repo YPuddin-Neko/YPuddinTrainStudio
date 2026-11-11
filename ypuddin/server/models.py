@@ -657,6 +657,10 @@ class FamilyInfo(_Out):
     adapter_prefix: str
     capabilities: list[str]
     caption_formats: list[Literal["txt", "json"]] = Field(default_factory=lambda: ["txt", "json"])
+    caption_content_types: list[Literal["text", "anima_json", "gbc", "moss_layout"]] = Field(
+        default_factory=lambda: ["text", "anima_json"]
+    )
+    native_caption_types: list[Literal["gbc", "moss_layout"]] = Field(default_factory=list)
     text_modes: list[str]  # valid values for a frozen encoder
     training_capabilities: dict[str, Any] = Field(default_factory=dict)
     presets: list[FamilyPreset]
@@ -928,7 +932,7 @@ class CaptionField(_Out):
 
 
 class CaptionStructure(_Out):
-    format: Literal["full", "nested", "simple", "flat", "legacy_override", "unknown"]
+    format: Literal["full", "nested", "simple", "flat", "legacy_override", "gbc", "moss_layout", "unknown"]
     document: dict[str, Any]
     fields: list[CaptionField]
     revision: str
@@ -947,6 +951,7 @@ class DatasetImage(_Out):
     caption_description: str | None = None
     caption_structure: CaptionStructure | None = None
     caption_format: str | None = None
+    caption_files: list[Literal["txt", "json", "gbc"]] | None = None
     caption_error: str | None = None
     caption_status: Literal["captioned", "missing", "invalid"] = "missing"
     has_mask: bool

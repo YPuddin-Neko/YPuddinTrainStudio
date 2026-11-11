@@ -48,6 +48,7 @@ export type DatasetInfo = S['DatasetInfo'] & { cache: DatasetCacheInfo };
 
 export type DatasetImage = S['DatasetImage'];
 export type DatasetImagesPage = S['ImagePage'];
+export type CaptionFile = 'default' | NonNullable<DatasetImage['caption_files']>[number];
 export type VisionCatalog = S['VisionCatalog'];
 export type VisionModel = S['VisionModel'];
 export type TaggingOptions = S['TaggingOptions'];

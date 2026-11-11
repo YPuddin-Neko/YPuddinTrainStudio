@@ -1,7 +1,11 @@
-import type { DatasetImage } from '../api/types';
+import type { CaptionFile, DatasetImage } from '../api/types';
 import { captionFieldChanges, captionFieldKey, getCaptionStructure, type CaptionField, type CaptionFieldDraft, type CaptionStructure } from './captionStructure';
 
-export const captionDraftKey=(datasetId:string,relPath:string)=>JSON.stringify([datasetId,relPath]);
+export const captionDraftKey=(datasetId:string,relPath:string,captionFile:CaptionFile='default')=>JSON.stringify([datasetId,relPath,captionFile]);
+export function captionFileTarget(image:DatasetImage,selection:CaptionFile):CaptionFile{
+  if(selection!=='default')return selection;
+  return image.caption_format==='txt'||image.caption_format==='json'?image.caption_format:'default';
+}
 export const tagKey=(value:string)=>value.trim().toLowerCase().replace(/ß/g,'ss').replace(/ς/g,'σ');
 /** Match training's comma boundaries; escaped commas and weighted groups remain one token. */
 export function splitCaptionTags(value:string):string[]{
@@ -15,10 +19,13 @@ export function splitCaptionTags(value:string):string[]{
   const tail=value.slice(start).trim();if(tail)result.push(tail);return result;
 }
 export const joinCaptionTags=(tags:string[])=>tags.map(tag=>tag.trim()).filter(Boolean).join(', ');
-export const captionIsJson=(image:DatasetImage)=>image.caption_format?.toLowerCase().replace(/^\./,'')==='json';
-export interface CaptionDraft { datasetId:string; image:DatasetImage; caption:string; fields:CaptionFieldDraft; additions:Record<string,string> }
+export function captionIsJson(image:DatasetImage){
+  const format=image.caption_format?.toLowerCase().replace(/^\./,'');
+  return (format==='json'||!!format?.endsWith('.json'))&&(image.caption_status!=='missing'||!!getCaptionStructure(image));
+}
+export interface CaptionDraft { datasetId:string; image:DatasetImage; captionFile:CaptionFile; caption:string; fields:CaptionFieldDraft; additions:Record<string,string> }
 export type CaptionDraftMap=Record<string,CaptionDraft>;
-export function newCaptionDraft(datasetId:string,image:DatasetImage):CaptionDraft{return {datasetId,image,caption:image.caption_tags??image.caption??'',fields:{},additions:{}};}
+export function newCaptionDraft(datasetId:string,image:DatasetImage,captionFile:CaptionFile='default'):CaptionDraft{return {datasetId,image,captionFile,caption:image.caption_tags??image.caption??'',fields:{},additions:{}};}
 export const fieldTokens=(field:CaptionField,value=field.value)=>Array.isArray(value)?[...value]:field.role==='trigger'?(value.trim()?[value.trim()]:[]):splitCaptionTags(value);
 export function draftFieldTokens(draft:CaptionDraft,field:CaptionField){return fieldTokens(field,draft.fields[captionFieldKey(field.path)]??field.value);}
 export function materializeCaptionDraft(draft:CaptionDraft):CaptionDraft{
@@ -48,6 +55,7 @@ export function draftNaturalText(draft:CaptionDraft){
 }
 export interface CaptionBatchEdit { action:'add'|'remove'|'replace'|'deduplicate'; tags?:string[]; from?:string; to?:string; position?:'start'|'end'; field?:string; mode?:'tags'|'text' }
 export function editCaptionDraft(input:CaptionDraft,edit:CaptionBatchEdit):CaptionDraft{
+  if(input.captionFile==='gbc')return input;
   if(!captionIsJson(input.image)&&((edit.mode==='text')!==(captionEditorPresentation(input.image)==='text')))return input;
   const draft=materializeCaptionDraft(input);
   if(!captionEditable(draft.image))return input;

@@ -23,10 +23,15 @@ from .cache import CacheKey, LatentCache, build_latent_cache, cache_names
 from .caption_formats import effective_caption_extension, family_caption_formats, require_caption_format
 from .caption_json import StructuredCaption
 from .captions import (
+    caption_execution_issues,
     caption_variants_for_cache,
+    deterministic_config,
+    is_stochastic,
     read_training_caption,
     transform_caption,
     transform_caption_deterministic,
+    transform_spatial_caption,
+    validate_caption_content,
 )
 from .images import (
     load_alpha,
@@ -48,6 +53,7 @@ from .index import (
     scan_sources,
 )
 from .native import automatic_max_pixels, native_size
+from .spatial_captions import SpatialCaption
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +74,7 @@ class Item:
     cache_name: str = ""
     pair: Item | None = None
     reference: Item | None = None
+    family: str | None = None
 
     @property
     def max_scale(self) -> float | None:
@@ -150,6 +157,15 @@ def item_conditioning_geometry(item: Item) -> dict[str, tuple[int, int]]:
     }
 
 
+def _spatial_caption_text(
+    item: Item, raw: SpatialCaption, cfg: CaptionConfig, rng: random.Random, flip: bool,
+) -> str | None:
+    return transform_spatial_caption(
+        raw, cfg, rng, geometry=item_geometry(item), image_fit=item.image_fit,
+        flip=flip, family=item.family,
+    )
+
+
 @dataclass
 class DataPlan:
     images: int
@@ -204,7 +220,7 @@ def _split_by_hash(records: list[ImageRecord], ratio: float) -> tuple[list[Image
 
 def expand_items(
     records: list[ImageRecord], sources: list[DatasetSourceConfig], ds: DatasetConfig, bm: BucketManager,
-    *, native_max_pixels: int | None = None,
+    *, native_max_pixels: int | None = None, family: str | None = None,
 ) -> list[Item]:
     if native_max_pixels is None:
         if ds.resolution_mode == "native" and ds.native_max_pixels_mode == "auto_vram":
@@ -272,6 +288,7 @@ def expand_items(
                         ds.bucket_no_upscale,
                         ds.crop_anchor,
                         names[r.path],
+                        family=family,
                     )
                 )
     return items
@@ -301,14 +318,17 @@ class TrainDataset(Dataset):
         self.epoch = 0
         # per-item caption variants when text encodings are pre-cached (None = transform online)
         self.caption_variants: list[list[str]] | None = None
+        self._spatial_caption_variants: dict[int, dict[bool, list[str]]] = {}
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = epoch
 
-    def raw_caption(self, item: Item) -> str | StructuredCaption:
-        return read_training_caption(
+    def raw_caption(self, item: Item) -> str | StructuredCaption | SpatialCaption:
+        raw = read_training_caption(
             item.record.caption_path, item.source.class_prompt, require_known_format=True
         )
+        validate_caption_content(raw, item.caption_cfg, item.family)
+        return raw
 
     def use_cached_captions(self) -> list[tuple[str, str]]:
         """Restrict every item to a bounded, deterministic set of caption variants; return ``(cache name, caption)``.
@@ -318,9 +338,22 @@ class TrainDataset(Dataset):
         seed, the item index and its raw caption, so a resumed run sees exactly the same captions.
         """
         variants: list[list[str]] = []
+        self._spatial_caption_variants = {}
         for index, item in enumerate(self.items):
             raw = self.raw_caption(item)
-            if self.deterministic:
+            if isinstance(raw, SpatialCaption):
+                cfg = deterministic_config(item.caption_cfg) if self.deterministic else item.caption_cfg.model_copy(update={"caption_dropout": 0.0})
+                count = cfg.cache_variants if not self.deterministic and is_stochastic(cfg) else 1
+                seed = self.seed * 1_000_003 + index if not self.deterministic and is_stochastic(cfg) else 0
+                by_flip = {}
+                for flip in ((False, True) if self.flip and not self.deterministic else (False,)):
+                    rng = random.Random(seed)
+                    by_flip[flip] = sorted({
+                        _spatial_caption_text(item, raw, cfg, rng, flip) or "" for _ in range(count)
+                    })
+                self._spatial_caption_variants[index] = by_flip
+                variants.append(sorted({text for captions in by_flip.values() for text in captions}))
+            elif self.deterministic:
                 variants.append([transform_caption_deterministic(raw, item.caption_cfg)])
             else:
                 variants.append(
@@ -340,7 +373,7 @@ class TrainDataset(Dataset):
             }
         )
 
-    def _caption(self, index: int, item: Item, rng: random.Random) -> str | None:
+    def _caption(self, index: int, item: Item, rng: random.Random, flip: bool = False) -> str | None:
         if self.caption_variants is not None:
             if (
                 not self.deterministic
@@ -348,8 +381,13 @@ class TrainDataset(Dataset):
                 and rng.random() < item.caption_cfg.caption_dropout
             ):
                 return None
+            if index in self._spatial_caption_variants:
+                return rng.choice(self._spatial_caption_variants[index][flip])
             return rng.choice(self.caption_variants[index])
         raw = self.raw_caption(item)
+        if isinstance(raw, SpatialCaption):
+            cfg = deterministic_config(item.caption_cfg) if self.deterministic else item.caption_cfg
+            return _spatial_caption_text(item, raw, cfg, random.Random(0) if self.deterministic else rng, flip)
         if self.deterministic:
             return transform_caption_deterministic(raw, item.caption_cfg)
         return transform_caption(raw, item.caption_cfg, rng)
@@ -436,7 +474,7 @@ class TrainDataset(Dataset):
             "path": item.record.path,
             "cache_name": item.cache_name,
         }
-        cap = self._caption(index, item, rng)
+        cap = self._caption(index, item, rng, flip)
         out["caption"] = "" if cap is None else cap
         out["uncond"] = cap is None
         latents = self.cache.load(self.cache_key(item, flip)) if self.cache is not None else None
@@ -570,6 +608,9 @@ def prepare_data_layout(
     allow_unresolved_native_vram: bool = False,
 ) -> DataLayout:
     """Shared preflight and train data selection; does not load models or create tensor caches."""
+    issues = caption_execution_issues(cfg)
+    if issues:
+        raise DataConfigError(issues[0]["loc"], issues[0]["msg"])
     ds = cfg.dataset
     if (
         ds.resolution_mode == "native" and ds.native_max_pixels_mode == "auto_vram"
@@ -604,6 +645,8 @@ def prepare_data_layout(
     except ValueError as e:
         raise DataConfigError("dataset.bucket_step", str(e)) from e
 
+    spatial_captions: dict[str, SpatialCaption] = {}
+
     def scan(group: list[DatasetSourceConfig], prefix: str, offset: int = 0) -> list[ImageRecord]:
         try:
             records = scan_sources(
@@ -619,15 +662,28 @@ def prepare_data_layout(
                 progress=(lambda d, t: progress("index", d, t)) if progress else None,
             )
             for record in records:
+                source = group[record.source_index]
+                cap_cfg = source.caption if source.caption is not None else CaptionConfig(weighted=ds.caption.weighted) if source.is_reg else ds.caption
                 if record.caption_path:
                     try:
                         require_caption_format(record.caption_path, caption_formats, cfg.model.family)
-                        if Path(record.caption_path).suffix.lower() == ".json":
-                            read_training_caption(record.caption_path, require_known_format=True)
+                        if Path(record.caption_path).suffix.lower() == ".json" or cap_cfg.content_type != "auto":
+                            raw = read_training_caption(record.caption_path, require_known_format=True)
+                            validate_caption_content(raw, cap_cfg, cfg.model.family)
+                            if isinstance(raw, SpatialCaption):
+                                spatial_captions[record.caption_path] = raw
                     except (ValueError, OSError) as error:
                         raise DataConfigError(
                             f"{prefix}.{record.source_index}.caption_ext", str(error)
                         ) from error
+                if (
+                    not record.caption_path and cap_cfg.content_type == "anima_json"
+                    or record.caption_path not in spatial_captions and cap_cfg.content_type in {"gbc", "moss_layout"}
+                ):
+                    raise DataConfigError(
+                        f"{prefix}.{record.source_index}.caption.content_type",
+                        f"{Path(record.path).name}: 所选结构标签需要对应的 JSON 标注。",
+                    )
             for index, source in enumerate(group):
                 if source.caption_ext.lower() != "auto":
                     try:
@@ -690,17 +746,38 @@ def prepare_data_layout(
             if ds.native_max_pixels_mode == "auto_vram"
             else auto_pixels if ds.native_max_pixels_mode == "auto" else ds.native_max_pixels
         )
-    items = expand_items(records, sources, ds, bm, native_max_pixels=resolved_pixels)
+    items = expand_items(records, sources, ds, bm, native_max_pixels=resolved_pixels, family=cfg.model.family)
     if not items:
         raise DataConfigError("dataset.sources", "没有生成任何训练样本，请检查训练尺寸和重复次数。")
     validation_items: list[Item] = []
     seen: set[str] = set()
-    for item in expand_items(val_records, sources, ds, bm, native_max_pixels=resolved_pixels):
+    for item in expand_items(val_records, sources, ds, bm, native_max_pixels=resolved_pixels, family=cfg.model.family):
         if item.record.content_hash not in seen:
             seen.add(item.record.content_hash)
             validation_items.append(item)
     if cfg.validation.max_images:
         validation_items = validation_items[: cfg.validation.max_images]
+    if spatial_captions:
+        checked_geometry = set()
+        for group, flips in ((items, (False, True) if ds.flip else (False,)), (validation_items, (False,))):
+            for item in group:
+                raw = spatial_captions.get(item.record.caption_path)
+                if raw is None:
+                    continue
+                for flip in flips:
+                    key = (item.record.path, item.record.caption_path, item.bucket.key, item.image_fit, item.native_scale,
+                           item.no_upscale, item.crop_anchor, item.caption_cfg.structured_mode, flip)
+                    if key in checked_geometry:
+                        continue
+                    try:
+                        _spatial_caption_text(
+                            item, raw, item.caption_cfg.model_copy(update={"caption_dropout": 0.0}), random.Random(0), flip,
+                        )
+                    except ValueError as error:
+                        index = item.record.source_index
+                        prefix = f"dataset.sources.{index}" if index < len(ds.sources) else f"validation.sources.{index - len(ds.sources)}"
+                        raise DataConfigError(f"{prefix}.caption", f"{Path(item.record.path).name}: {error}") from error
+                    checked_geometry.add(key)
     if companion_field:
         names = cache_names([*records, *val_records, *companions.values()])
         kind = "reference" if companion_field == "reference_dir" else "pair"
