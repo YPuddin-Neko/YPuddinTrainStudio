@@ -4,6 +4,7 @@ interface Options {
   viewport: React.RefObject<HTMLDivElement>;
   canvas: React.RefObject<HTMLCanvasElement>;
   preview: React.RefObject<HTMLDivElement>;
+  freePan?: boolean;
   zoom: number;
   setZoom: React.Dispatch<React.SetStateAction<number>>;
   enabled: boolean;
@@ -12,9 +13,10 @@ interface Options {
   finishStroke: () => void;
 }
 
-export function useImageViewport({ viewport, canvas, preview, zoom, setZoom, enabled, panTool, isDrawing, finishStroke }: Options) {
+export function useImageViewport({ viewport, canvas, preview, freePan = false, zoom, setZoom, enabled, panTool, isDrawing, finishStroke }: Options) {
   const [panning, setPanning] = React.useState(false);
   const zoomValue = React.useRef(zoom);
+  const offset = React.useRef({ left: 0, top: 0 });
   const drag = React.useRef<{ id: number; buttons: number; x: number; y: number; left: number; top: number } | null>(null);
   const anchor = React.useRef<{ x: number; y: number; clientX: number; clientY: number } | null>(null);
   const endPan = React.useCallback(() => {
@@ -23,6 +25,23 @@ export function useImageViewport({ viewport, canvas, preview, zoom, setZoom, ena
     if (active && viewport.current?.hasPointerCapture(active.id)) viewport.current.releasePointerCapture(active.id);
     setPanning(false);
   }, [viewport]);
+  const moveStage = React.useCallback((host: HTMLDivElement, left: number, top: number) => {
+    offset.current = { left, top };
+    host.style.setProperty('--paint-stage-offset', `${left}px ${top}px`);
+  }, []);
+  const resetView = () => {
+    anchor.current = null;
+    zoomValue.current = 1;
+    setZoom(1);
+    const host = viewport.current;
+    if (!host) return;
+    if (freePan) {
+      endPan();
+      moveStage(host, 0, 0);
+    } else {
+      host.scrollTo(0, 0);
+    }
+  };
 
   React.useEffect(() => {
     const host = viewport.current;
@@ -51,8 +70,14 @@ export function useImageViewport({ viewport, canvas, preview, zoom, setZoom, ena
     anchor.current = null;
     if (!at || !host || !element) return;
     const rect = element.getBoundingClientRect();
-    host.scrollTo({ left:host.scrollLeft + rect.left + at.x * rect.width - at.clientX, top:host.scrollTop + rect.top + at.y * rect.height - at.clientY, behavior:'instant' });
-  }, [zoom, viewport, canvas]);
+    const dx = at.clientX - (rect.left + at.x * rect.width);
+    const dy = at.clientY - (rect.top + at.y * rect.height);
+    if (freePan) {
+      moveStage(host, offset.current.left + dx, offset.current.top + dy);
+    } else {
+      host.scrollTo({ left: host.scrollLeft - dx, top: host.scrollTop - dy, behavior: 'instant' });
+    }
+  }, [zoom, viewport, canvas, freePan, moveStage]);
 
   React.useEffect(() => {
     window.addEventListener('blur', endPan);
@@ -66,7 +91,8 @@ export function useImageViewport({ viewport, canvas, preview, zoom, setZoom, ena
     if (drag.current) return;
     finishStroke();
     const host = event.currentTarget;
-    drag.current = { id: event.pointerId, buttons: event.button === 1 ? 4 : 1, x: event.clientX, y: event.clientY, left: host.scrollLeft, top: host.scrollTop };
+    const origin = freePan ? offset.current : { left: host.scrollLeft, top: host.scrollTop };
+    drag.current = { id: event.pointerId, buttons: event.button === 1 ? 4 : 1, x: event.clientX, y: event.clientY, ...origin };
     host.setPointerCapture(event.pointerId);
     preview.current?.style.setProperty('visibility', 'hidden');
     setPanning(true);
@@ -76,8 +102,14 @@ export function useImageViewport({ viewport, canvas, preview, zoom, setZoom, ena
     if (!active || event.pointerId !== active.id) return;
     event.preventDefault(); event.stopPropagation();
     if (!(event.buttons & active.buttons)) { endPan(); return; }
-    event.currentTarget.scrollLeft = active.left - (event.clientX - active.x);
-    event.currentTarget.scrollTop = active.top - (event.clientY - active.y);
+    const dx = event.clientX - active.x;
+    const dy = event.clientY - active.y;
+    if (freePan) {
+      moveStage(event.currentTarget, active.left + dx, active.top + dy);
+    } else {
+      event.currentTarget.scrollLeft = active.left - dx;
+      event.currentTarget.scrollTop = active.top - dy;
+    }
   };
   const onPointerUpCapture = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!drag.current || event.pointerId !== drag.current.id) return;
@@ -87,7 +119,7 @@ export function useImageViewport({ viewport, canvas, preview, zoom, setZoom, ena
   const onPointerCancel = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerId === drag.current?.id) endPan();
   };
-  return { panning, viewportEvents: {
+  return { panning, resetView, viewportEvents: {
     onPointerDownCapture, onPointerMoveCapture, onPointerUpCapture,
     onPointerCancel, onLostPointerCapture: onPointerCancel,
     onAuxClick: (event: React.MouseEvent<HTMLDivElement>) => { if (event.button === 1) event.preventDefault(); },

@@ -209,7 +209,7 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
     if(inline&&tool!=='pan')setTool(next==='mask'?'erase':'brush');
     else if(tool==='pick'||(next==='paint'&&tool==='maskErase'))setTool('brush');
   };
-  const { panning, viewportEvents } = useImageViewport({ viewport, canvas, preview:cursor, zoom, setZoom, enabled:!!info&&!unavailable&&!busy, panTool:tool==='pan', isDrawing:()=>!!stroke.current, finishStroke });
+  const { panning, resetView, viewportEvents } = useImageViewport({ viewport, canvas, preview:cursor, freePan:inline, zoom, setZoom, enabled:!!info&&!unavailable&&!busy, panTool:tool==='pan', isDrawing:()=>!!stroke.current, finishStroke });
   const point=(event:React.PointerEvent<HTMLCanvasElement>)=>imagePoint(event.clientX,event.clientY,event.currentTarget.getBoundingClientRect(),info!.width,info!.height);
   const pointerDown=(event:React.PointerEvent<HTMLCanvasElement>)=>{
     if(readOnly||!paint.current||!mask.current||actionBusy.current||unavailable||event.button!==0)return;
@@ -349,7 +349,7 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
       if(!mounted.current||controller.signal.aborted)return;
       install(loaded);
       navigation.onNavigated({...target,imageId:loaded.info.image_id,relPath:loaded.info.rel_path});
-      setZoom(1);viewport.current?.scrollTo(0,0);
+      resetView();
       if(cursor.current)cursor.current.style.visibility='hidden';
       setMessage('');setError('');setRequiresReopen(false);pendingSync.current=null;
     }catch(error){
@@ -445,7 +445,7 @@ const ImageEditor = React.forwardRef<ImageEditorHandle, Props>(function ImageEdi
     </div>
     <div className="image-editor-tool-group"><span>{text('显示与缩放','Display and zoom')}</span>
       {mode==='mask'&&<><label className="image-editor-control-row"><span>{text('叠加','Overlay')}</span><input aria-label={text('叠加透明度','Overlay opacity')} type="range" min={0} max={1} step={.05} value={opacity} disabled={busy} onChange={event=>setOpacity(Number(event.target.value))}/><input aria-label={text('叠加透明度百分比','Overlay opacity percent')} type="number" min={0} max={100} step={5} value={Math.round(opacity*100)} disabled={busy} onChange={event=>setOpacity(Math.max(0,Math.min(100,Number(event.target.value)||0))/100)}/><small>%</small></label><Switch disabled={busy} checked={maskOnly} onCheckedChange={setMaskOnly}>{text('仅看遮罩','Mask only')}</Switch></>}
-      <div className="image-editor-zoom-row"><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('缩小','Zoom out')} disabled={busy} onClick={()=>setZoom(value=>Math.max(.25,value/1.5))}><ZoomOut size={14}/></button><button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={()=>{setZoom(1);viewport.current?.scrollTo(0,0);}}>{text('适应','Fit')} {Math.round(scale*100)}%</button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('放大','Zoom in')} disabled={busy} onClick={()=>setZoom(value=>Math.min(8,value*1.5))}><ZoomIn size={14}/></button></div>
+      <div className="image-editor-zoom-row"><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('缩小','Zoom out')} disabled={busy} onClick={()=>setZoom(value=>Math.max(.25,value/1.5))}><ZoomOut size={14}/></button><button type="button" className="ui-btn ui-btn-sm" disabled={busy} onClick={resetView}>{text('适应','Fit')} {Math.round(scale*100)}%</button><button type="button" className="ui-btn ui-btn-sm ui-btn-icon" aria-label={text('放大','Zoom in')} disabled={busy} onClick={()=>setZoom(value=>Math.min(8,value*1.5))}><ZoomIn size={14}/></button></div>
     </div>
     <div className="image-editor-tool-group image-editor-mask-actions">{mode==='mask'?<><button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>operation({kind:'fill',value:255})}>{text('全白','All white')}</button><button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>operation({kind:'fill',value:0})}>{text('全黑','All black')}</button><button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>operation({kind:'invert'})}>{text('反转','Invert')}</button></>:<button type="button" className="ui-btn ui-btn-sm" disabled={readOnly||busy||unavailable} onClick={()=>{paint.current?.apply({kind:'clear'});recordOperation('paint');setMessage('');redraw();}}>{text('清除本次涂抹','Clear session paint')}</button>}</div>
   </>;
