@@ -2,7 +2,9 @@ import { jobModelTypeLabel, jobTypeLabel, mergeJobEvent, timestepSamplingEvent, 
 import React from 'react';
 import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { apiClient } from '../../api/client';
+import { useQuery } from '@tanstack/react-query';
+import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
+import type { operations } from '../../api/generated';
 import { Job, JobMetrics, JobSample, JobCheckpoint, ValidationPoint } from '../../api/types';
 import { useEventStream, useEventStreamReconnect } from '../../events/useEventStream';
 import { EVENT_TYPES } from '../../events/eventTypes';
@@ -17,6 +19,7 @@ import { projectUrl, type ProjectVersion } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { JobActions, JobStatus } from '../Queue/jobPresentation';
 import ConfigHelp from '../../components/ConfigHelp';
+import { LoadingNote } from '../../components/Loading';
 import '../Queue/queue.css';
 import './job-detail.css';
 import JobLogView from './JobLogView';
@@ -41,30 +44,7 @@ import { TtsJobLineage } from '../Tts/TtsTaskActions';
 type VersionedJob = Job & { version_id?: string | null; latest: Job['latest'] & {loss_mean?:number|null; loss_count?:number|null; loss_mean_scope?:string|null} };
 type PendingMetrics = { id: string; pending: boolean; steps: Record<string, any>[]; validation: ValidationPoint[] };
 type PendingJob = { id: string; pending: boolean; samplingStep: number; sampling: { event: Record<string, any>; kind: 'step' | 'phase' } | null };
-
-function nativeSnapshotDisplay(snapshot: any) {
-  if (snapshot?.dataset?.resolution_mode !== 'native') return snapshot;
-  let changed = false;
-  const dataset = { ...snapshot.dataset };
-  for (const field of ['resolutions', 'aspect_ratio_limit', 'area_tolerance', 'bucket_step', 'bucket_no_upscale']) {
-    if (Object.prototype.hasOwnProperty.call(dataset, field)) {
-      delete dataset[field]; changed = true;
-    }
-  }
-  const projectSources = (section: any) => {
-    if (!Array.isArray(section?.sources)) return section;
-    const sources = section.sources.map((source: any) => {
-      if (!source || typeof source !== 'object' || Array.isArray(source) || !Object.prototype.hasOwnProperty.call(source, 'resolutions')) return source;
-      const projected = { ...source };
-      delete projected.resolutions; changed = true;
-      return projected;
-    });
-    return { ...section, sources };
-  };
-  const projectedDataset = projectSources(dataset);
-  const validation = projectSources(snapshot.validation);
-  return changed ? { ...snapshot, dataset: projectedDataset, ...(validation !== snapshot.validation ? { validation } : {}) } : snapshot;
-}
+type JobConfigOperation = operations['job_config_api_jobs__jid__config_get'];
 
 function mergeJobProjection(previous: VersionedJob, updated: VersionedJob, metricsChanged: boolean, samplingChanged: boolean): VersionedJob {
   const projectionChanged = metricsChanged || samplingChanged && previous.latest.timestep_sampling != null;
@@ -325,8 +305,6 @@ export default function JobDetail() {
   React.useEffect(() => { setDeleting(null); setDeleteBusy(false); setDeleteError(''); }, [id]);
   const [configSnapshot, setConfigSnapshot] = React.useState<any>(null);
   const [showRawConfig, setShowRawConfig] = React.useState(false);
-  const displayConfigSnapshot = React.useMemo(() => job?.type === 'train' ? nativeSnapshotDisplay(configSnapshot) : configSnapshot, [configSnapshot, job?.type]);
-  const hasFilteredConfig = displayConfigSnapshot !== configSnapshot;
   const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
   const requestedTab = params.get('tab') || '';
@@ -338,6 +316,22 @@ export default function JobDetail() {
   const samplesRequestRef = React.useRef<AbortController | null>(null);
   const [connectionRevision, setConnectionRevision] = React.useState(0);
   useEventStreamReconnect(() => setConnectionRevision(value => value + 1));
+  const projectsSnapshot = job?.type === 'train' || job?.type === 'cache';
+  const effectiveConfig = useQuery({
+    queryKey: ['job-effective-config', id, connectionRevision],
+    queryFn: ({ signal }) => {
+      const params: JobConfigOperation['parameters']['query'] = { view: 'effective' };
+      return apiClient.get<JobConfigOperation['responses'][200]['content']['application/json']>(`/jobs/${encodeURIComponent(id!)}/config`, {
+        params, signal, silent: true, timeout: READ_TIMEOUT_MS,
+      });
+    },
+    enabled: activeTab === 'config' && !!id && job?.id === id && projectsSnapshot && configSnapshot != null,
+    staleTime: Infinity,
+    retry: false,
+  });
+  const displayConfigSnapshot = projectsSnapshot ? effectiveConfig.data : configSnapshot;
+  const hasFilteredConfig = projectsSnapshot && effectiveConfig.data !== undefined
+    && JSON.stringify(effectiveConfig.data) !== JSON.stringify(configSnapshot);
   const refreshSamples = React.useCallback(async () => {
     if (!id || jobKind.current?.id === id && isTtsJob(jobKind.current)) return;
     samplesRequestRef.current?.abort();
@@ -745,12 +739,19 @@ export default function JobDetail() {
             />
           ) : (
             <>
-              {hasFilteredConfig && <button type="button" className="ui-btn ui-btn-sm mb-2" onClick={() => setShowRawConfig(value => !value)}>
+              {(hasFilteredConfig || effectiveConfig.isError) && <button type="button" className="ui-btn ui-btn-sm mb-2" onClick={() => setShowRawConfig(value => !value)}>
                 {showRawConfig ? text('返回配置快照', 'Back to configuration snapshot') : text('查看原始配置', 'View raw configuration')}
               </button>}
-              <pre className="job-config-snapshot text-xs font-mono bg-slate-50 dark:bg-slate-900 p-4 rounded-lg overflow-x-auto">
-                {JSON.stringify(showRawConfig ? configSnapshot : displayConfigSnapshot, null, 2)}
-              </pre>
+              {showRawConfig || displayConfigSnapshot !== undefined ? (
+                <pre className="job-config-snapshot text-xs font-mono bg-slate-50 dark:bg-slate-900 p-4 rounded-lg overflow-x-auto">
+                  {JSON.stringify(showRawConfig ? configSnapshot : displayConfigSnapshot, null, 2)}
+                </pre>
+              ) : effectiveConfig.isError ? (
+                <div className="workspace-message error" role="alert">
+                  <span>{text('读取配置快照失败。', 'Could not load the configuration snapshot.')}{' '}{formatApiError(effectiveConfig.error)}</span>
+                  <button type="button" className="ui-btn ui-btn-sm" onClick={() => void effectiveConfig.refetch()}>{t('common.retry')}</button>
+                </div>
+              ) : <LoadingNote label={text('正在读取配置快照…', 'Loading configuration snapshot…')}/>}
             </>
           )}
         </div>

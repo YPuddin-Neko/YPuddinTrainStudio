@@ -3103,8 +3103,16 @@ def job_command(
 
 
 @router.get("/jobs/{jid}/config")
-def job_config(jid: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
-    return json.loads(_get_job(c, jid)["config_json"] or "{}")
+def job_config(
+    jid: str, c: ServiceContext = Depends(ctx), view: Literal["raw", "effective"] = "raw",
+) -> dict[str, Any]:
+    job = _get_job(c, jid)
+    config = json.loads(job["config_json"] or "{}")
+    if view == "effective" and job["type"] in {"train", "cache"}:
+        from ypuddin.config.export import project_config_for_export
+
+        return project_config_for_export(config, preserve_resume_identity=False, omit_default_nulls=True)
+    return config
 
 
 def _events_file(c: ServiceContext, jid: str) -> list[dict[str, Any]]:

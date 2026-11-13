@@ -5275,6 +5275,20 @@
               "type": "string",
               "title": "Jid"
             }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "raw",
+                "effective"
+              ],
+              "type": "string",
+              "default": "raw",
+              "title": "View"
+            }
           }
         ],
         "responses": {

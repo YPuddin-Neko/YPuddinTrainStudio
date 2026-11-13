@@ -240,10 +240,24 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
   if (path === 'scheduler.type') return schedulerTypeHelp(context.english, options);
   const nativeHelp = nativeBatchingHelp(path, context);
   if (nativeHelp) return nativeHelp;
-  const { family, english } = context;
+  const { family, config, english } = context;
+  const text = (zh: string, en: string) => english ? en : zh;
+  if (path === 'objective.shift') {
+    const objective = config.objective;
+    const modeHelp = objective?.timestep_sampling === 'resolution_sqrt'
+      ? text(
+        '实际偏移 = 基础 Shift × √(实际 token 数 / 参考 token 数)。实际 token 数按训练画布编码后的图像 patch 计算，原生分辨率和分桶都适用。实际偏移大于 1 偏向高噪声，小于 1 偏向低噪声，等于 1 不偏移。',
+        'Effective shift = base shift × √(actual tokens / reference tokens). Actual tokens are image patches after encoding the training canvas. This applies to both native resolution and buckets. An effective shift above 1 favors higher noise, below 1 favors lower noise, and 1 leaves the sampled timestep unchanged.',
+      )
+      : configFieldHelp(path, undefined, english);
+    return join([
+      modeHelp,
+      (family?.name ?? config.model?.family) === 'anima' && objective?.infonoise_enabled === true
+        && text('开启 InfoNoise 时，偏移只用于基础分布。', 'With InfoNoise enabled, the shift applies only to the baseline distribution.'),
+    ]);
+  }
   if (!family) return undefined;
   const runtime = runtimeOf(family);
-  const text = (zh: string, en: string) => english ? en : zh;
   const label = (option: string) => configOptionLabel(path, option, english, family.name);
   const listed = (option: string) => !options || options.includes(option);
   // One line per option the dropdown offers, named as the dropdown names it.
@@ -421,10 +435,6 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       ]);
     case 'dataset.caption.cache_variants':
       return text('标签在训练前缓存时，每张图预先生成几个随机版本（打乱顺序、丢弃标签、通配符），训练时轮流使用。只有开启这些随机变化时才有意义。', 'When captions are cached before training, each image gets this many pre-generated random versions (shuffled order, dropped tags, wildcards) that training rotates through. Useful only when those variations are on.');
-    case 'objective.shift':
-      return family.name === 'anima'
-        ? text('固定 Shift 直接使用此值；按分辨率修正 Shift 时，再乘以 √(实际 token 数 / 参考 token 数)。最终偏移大于 1 时偏向高噪声，1 不偏移。\n只影响训练的基础分布；InfoNoise 学到的分布和均匀探索不再应用此偏移，预览图另设采样 Shift。', 'Fixed Shift uses this value directly. Resolution-corrected Shift multiplies it by √(actual tokens / reference tokens). A resulting shift above 1 favors high noise; 1 applies no shift.\nAffects the training baseline only. The learned InfoNoise distribution and uniform exploration receive no further shift; previews have a separate sampling shift.')
-        : configFieldHelp(path, undefined, english);
     case 'objective.t_min':
     case 'objective.t_max':
       if (family.name === 'moss_image' && context.config.objective?.timestep_sampling === 'moss_image') return text('只在时间步上下限之间的离散点抽样，按原分布重新归一化，不把越界样本裁到边界。默认范围包含 0.001–1 的 1000 个离散点；下限须小于上限，范围内至少保留一个点。', 'Samples only discrete timesteps within the lower and upper limits, renormalizing the original distribution instead of clipping samples to the boundaries. The default range includes 1000 points from 0.001 to 1. The lower limit must be below the upper limit, with at least one point remaining.');
@@ -436,9 +446,9 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
       } : {
         uniform: ['各种噪声强度出现的机会相同。', 'every noise level is equally likely.'],
         logit_normal: ['多抽中等噪声，很低和很高的噪声较少。', 'favours medium noise, fewer very low or very high levels.'],
-        shift: ['在逻辑正态的基础上偏向高噪声，偏移量见下方「时间步偏移」。', 'logit-normal pushed towards high noise by the shift set below.'],
+        shift: ['在逻辑正态抽样后应用固定偏移，各训练尺寸使用同一偏移值。', 'applies the same fixed shift after logit-normal sampling at every training size.'],
         resolution_shift: ['偏移量随图像大小自动调整，图越大越偏向高噪声。', 'the shift follows the image size: larger images lean towards higher noise.'],
-        resolution_sqrt: ['基础 Shift 乘以 √(实际 token 数 / 参考 token 数)，按训练图像大小修正；InfoNoise 仅对基础分布应用此修正。', 'multiplies the base shift by √(actual tokens / reference tokens) for the training image size; with InfoNoise, only the baseline receives this correction.'],
+        resolution_sqrt: ['按训练画布编码后的图像 patch token 数修正基础 Shift，原生分辨率和分桶都适用。', 'adjusts the base shift using the encoded training canvas’s image patch count, in both native resolution and buckets.'],
         mode: ['同样偏向中等噪声，但两端比逻辑正态保留更多，形状由下方系数控制。', 'also favours medium noise but keeps more at both ends than logit-normal; the coefficient below sets the shape.'],
         cosmap: ['中间多、两端少，比逻辑正态平缓。', 'more in the middle, fewer at the ends, flatter than logit-normal.'],
       };

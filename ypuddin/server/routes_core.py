@@ -579,7 +579,7 @@ def config_export(body: ConfigExportBody) -> dict[str, str]:
     cfg = _validated_or_error(raw, preset=body.kind == "preset")
     exported = project_config_for_export(raw if body.kind == "preset" else cfg)
     return {
-        "text": dump_toml(exported)
+        "text": dump_toml(exported, null_mode="preset" if body.kind == "preset" else "config")
         if body.format == "toml"
         else json.dumps(exported, ensure_ascii=False, indent=2)
     }

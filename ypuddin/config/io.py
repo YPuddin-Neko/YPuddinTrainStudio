@@ -7,9 +7,11 @@ import json
 import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from types import UnionType
+from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import tomli_w
+from pydantic import BaseModel
 
 from .intervals import normalize_legacy_intervals, project_legacy_intervals
 from .schema import TrainConfig
@@ -386,7 +388,39 @@ def parse_toml(text: str) -> dict[str, Any]:
     return data
 
 
-def dump_toml(config: TrainConfig | Mapping[str, Any], *, for_export: bool = False) -> str:
+def _schema_default_none(schema: Any, path: list[str | int]) -> bool:
+    """Only named model fields have schema defaults; arbitrary mapping keys do not."""
+    origin = get_origin(schema)
+    if origin is Annotated:
+        return _schema_default_none(get_args(schema)[0], path)
+    if origin in (Union, UnionType):
+        choices = [item for item in get_args(schema) if item is not type(None)]
+        return len(choices) == 1 and _schema_default_none(choices[0], path)
+    if isinstance(schema, type) and issubclass(schema, BaseModel):
+        field = schema.model_fields.get(path[0]) if isinstance(path[0], str) else None
+        if field is None:
+            return False
+        if len(path) == 1:
+            return field.default is None
+        return _schema_default_none(field.annotation, path[1:])
+    if origin is list and type(path[0]) is int and len(path) > 1:
+        return _schema_default_none(get_args(schema)[0], path[1:])
+    return False
+
+
+def dump_toml(
+    config: TrainConfig | Mapping[str, Any], *, for_export: bool = False,
+    null_mode: Literal["lossless", "config", "preset"] | None = None,
+) -> str:
+    """Keep internal snapshots lossless; public full configs omit default-null metadata.
+
+    Presets retain every explicit null because they can clear a value during merging.
+    Already-projected mappings can select ``null_mode="config"`` explicitly.
+    """
+    if null_mode is None:
+        null_mode = ("config" if isinstance(config, TrainConfig) else "preset") if for_export else "lossless"
+    if null_mode not in {"lossless", "config", "preset"}:
+        raise ValueError(f"unknown TOML null mode: {null_mode!r}")
     paths: list[list[str | int]] = []
 
     def pack(obj: Any, path: list[str | int]) -> Any:
@@ -394,7 +428,8 @@ def dump_toml(config: TrainConfig | Mapping[str, Any], *, for_export: bool = Fal
             result = {}
             for key, value in obj.items():
                 if value is None:
-                    paths.append([*path, key])
+                    if null_mode != "config" or not _schema_default_none(TrainConfig, [*path, key]):
+                        paths.append([*path, key])
                 else:
                     result[key] = pack(value, [*path, key])
             return result
@@ -418,7 +453,8 @@ def dump_toml(config: TrainConfig | Mapping[str, Any], *, for_export: bool = Fal
     values = pack(data, [])
     if paths:
         values = {_NULL_PATHS_KEY: paths, **values}
-    return "# Explicit nulls are preserved below because TOML has no null value.\n" + tomli_w.dumps(values)
+    comment = "# Explicit nulls are preserved below because TOML has no null value.\n" if paths or null_mode == "lossless" else ""
+    return comment + tomli_w.dumps(values)
 
 
 def write_config(config: TrainConfig, path: str | Path, *, for_export: bool = False) -> None:
