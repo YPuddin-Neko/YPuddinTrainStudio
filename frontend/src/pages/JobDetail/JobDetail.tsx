@@ -2,7 +2,7 @@ import { jobModelTypeLabel, jobTypeLabel, mergeJobEvent, timestepSamplingEvent, 
 import React from 'react';
 import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, READ_TIMEOUT_MS } from '../../api/client';
 import type { operations } from '../../api/generated';
 import { Job, JobMetrics, JobSample, JobCheckpoint, ValidationPoint } from '../../api/types';
@@ -316,6 +316,7 @@ export default function JobDetail() {
   const [connectionRevision, setConnectionRevision] = React.useState(0);
   useEventStreamReconnect(() => setConnectionRevision(value => value + 1));
   const projectsSnapshot = job?.type === 'train' || job?.type === 'cache';
+  const queryClient = useQueryClient();
   const effectiveConfig = useQuery({
     queryKey: ['job-effective-config', id, connectionRevision],
     queryFn: ({ signal }) => {
@@ -454,6 +455,12 @@ export default function JobDetail() {
     if (data.job_id === id) {
       rememberSampling(data, 'phase');
       setJob((prev) => prev ? mergeJobEvent(prev, data, 'phase') : null);
+      if (data.phase === 'prepared') {
+        // The worker has frozen the preview seeds used by the effective snapshot.
+        void queryClient.cancelQueries({ queryKey: ['job-effective-config', id] }).then(() =>
+          queryClient.invalidateQueries({ queryKey: ['job-effective-config', id] }),
+        );
+      }
     }
   });
   useEventStream(EVENT_TYPES.JOB_CHECKPOINT, (data: any) => {

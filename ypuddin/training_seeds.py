@@ -11,6 +11,38 @@ from ypuddin.config.io import config_hash_variants, load_config
 PREVIEW_SEED_VERSION = 3
 
 
+def apply_preview_seed_snapshot(config: dict, state: object) -> None:
+    """Show recorded preview seeds in a display copy, never in an executable recipe."""
+    sampling = config.get("sampling")
+    if not isinstance(sampling, dict) or sampling.get("enabled") is False:
+        return
+    state = state if isinstance(state, dict) else {}
+    version = state.get("preview_seed_version")
+    known = type(version) is int and version in (1, 2, PREVIEW_SEED_VERSION)
+    base = state.get("preview_seed") if known else None
+    requested = sampling.get("seed", 0 if version == 1 else -1)
+    if type(base) is not int or base < 0 or requested not in (-1, base) and not (version == 1 and requested == 0):
+        base = None
+    if base is not None:
+        sampling["seed"] = base
+    seeds = state.get("preview_prompt_seeds") if known else None
+    seeds = seeds if isinstance(seeds, dict) else {}
+    for index, prompt in enumerate(sampling.get("prompts", [])):
+        if not isinstance(prompt, dict):
+            continue
+        requested = prompt.get("seed", -1 if version == PREVIEW_SEED_VERSION else None)
+        inherited = requested is None or version == 1 and type(requested) is int and requested <= 0
+        if inherited and base is not None:
+            prompt["seed"] = base + index
+        elif known and version >= 2 and requested == -1:
+            actual = seeds.get(str(index))
+            if type(actual) is int and actual >= 0:
+                prompt["seed"] = actual
+        elif prompt.get("seed", -1) is None:
+            # Omitting inheritance is display-only: a new recipe defaults to independent random seeds.
+            prompt.pop("seed")
+
+
 def _preview_version(extra: dict) -> int:
     version = extra.get("preview_seed_version", 1)
     if type(version) is not int or version not in (1, 2, PREVIEW_SEED_VERSION):

@@ -1500,23 +1500,30 @@ class Trainer:
             return
         cfg = self.cfg.objective
         status = self._timestep_status()
-        if batch and (status is None or status["recent_num_tokens"] is None):
+        if status is None or (batch and status["recent_num_tokens"] is None):
             return
-        parts = [f"timestep sampling {cfg.timestep_sampling}"]
+        names = {
+            "uniform": "Uniform", "logit_normal": "Logit-normal",
+            "shift": "Fixed Shift", "resolution_sqrt": "Resolution-adjusted Shift",
+        }
+        parts = [f"timestep sampling {names[cfg.timestep_sampling]}"]
         if cfg.timestep_sampling == "resolution_sqrt":
             from ypuddin.config.timestep_reference import effective_reference_tokens
 
-            parts.append(f"reference {effective_reference_tokens(cfg)} tokens ({cfg.resolution_reference_mode})")
-            parts.append(f"base shift {cfg.shift:g}")
+            parts.append(f"reference {effective_reference_tokens(cfg)} tokens/image ({cfg.resolution_reference_mode})")
+            parts.append(f"base Shift {cfg.shift:g}")
+        elif cfg.timestep_sampling == "shift":
+            parts.append(f"Shift {cfg.shift:g}")
         if batch:
-            parts.append(f"last training batch {status['recent_num_tokens']} target tokens")
+            parts.append(f"last training target {status['recent_num_tokens']} tokens/image")
             if status["effective_baseline_shift"] is not None:
-                parts.append(f"batch shift {status['effective_baseline_shift']:.6g}")
+                label = "baseline Shift" if cfg.infonoise_enabled else "applied Shift"
+                parts.append(f"{label} {status['effective_baseline_shift']:.6g}")
         if cfg.infonoise_enabled:
-            parts.append(f"InfoNoise {status['stage']}")
-            if status.get("reason") and status["reason"] != status["stage"]:
-                parts.append(str(status["reason"]))
-        log.info("%s", " | ".join(parts))
+            parts.append(f"InfoNoise {status['stage']}" if batch else "InfoNoise enabled (baseline distribution)")
+            if batch and status.get("reason") and status["reason"] != status["stage"]:
+                parts.append(str(status["reason"]).replace("_", " "))
+        (log.debug if batch else log.info)("%s", " | ".join(parts))
 
     def _discard_timestep_observations(self) -> None:
         sampler = getattr(self, "_adaptive_sampler", None)

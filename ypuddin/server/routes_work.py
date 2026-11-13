@@ -3116,8 +3116,17 @@ def job_config(
     config = json.loads(job["config_json"] or "{}")
     if view == "effective" and job["type"] in {"train", "cache"}:
         from ypuddin.config.export import project_config_for_export
+        from ypuddin.training_seeds import apply_preview_seed_snapshot
 
-        return project_config_for_export(config, preserve_resume_identity=False, omit_default_nulls=True)
+        display = project_config_for_export(config, preserve_resume_identity=False, omit_default_nulls=True)
+        state = json.loads(job.get("progress_json") or "{}").get("preview_seeds")
+        checkpoint = config.get("checkpoint") or {}
+        has_state_path = job.get("run_dir") or job.get("resume_from") or checkpoint.get("resume") or checkpoint.get("state_dir")
+        if (display.get("sampling", {}).get("enabled", True) and has_state_path
+                and (not isinstance(state, dict) or not {"preview_seed", "preview_prompt_seeds"}.intersection(state))):
+            state = c.supervisor._job_preview_seeds(job)
+        apply_preview_seed_snapshot(display, state)
+        return display
     return config
 
 

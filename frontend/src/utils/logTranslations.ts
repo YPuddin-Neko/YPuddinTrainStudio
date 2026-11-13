@@ -8,6 +8,33 @@ type Rule = [RegExp, (match: RegExpMatchArray) => string];
 const FAMILIES: Record<string, string> = { anima: 'Anima', krea2: 'Krea 2', flux: 'FLUX.1', flux2: 'FLUX.2', flux3: 'FLUX.3 Klein 5.5B', moss_image: 'MOSS-Image 5B', sdxl: 'SDXL', toy: '测试模型' };
 const SAVED: Record<string, string> = { weights: '权重', 'training state': '训练状态', model: '模型', file: '文件' };
 const OUTCOMES: Record<string, string> = { finished: '完成', paused: '已暂停', stopped: '已停止', failed: '失败' };
+const SHIFT_SAMPLING: Record<string, string> = {
+  uniform: '均匀采样', Uniform: '均匀采样', logit_normal: '逻辑正态分布', 'Logit-normal': '逻辑正态分布',
+  shift: '固定 Shift', 'Fixed Shift': '固定 Shift', resolution_sqrt: '按分辨率修正 Shift', 'Resolution-adjusted Shift': '按分辨率修正 Shift',
+};
+const INFONOISE_STATUS: Record<string, string> = {
+  warmup: '预热中', active: '已生效', collecting: '正在收集统计', fallback: '已回到基准分布',
+  'nonfinite statistics': '统计值含非有限数', 'no main observations': '尚无主训练样本的统计',
+  'zero information': '信息量为零', 'insufficient samples': '样本数不足',
+  'insufficient coverage': '时间步覆盖不足', 'adaptive mix zero': '自适应采样占比为零',
+};
+
+function timestepSamplingMessage(match: RegExpMatchArray): string {
+  const [, method, reference, mode, base, fixed, currentTarget, legacyTarget, applied, stage, reason] = match;
+  const target = currentTarget ?? legacyTarget;
+  const adaptive = stage != null;
+  const parts = target
+    ? [`最近训练批次每张目标图 ${Number(target).toLocaleString('zh-CN')} 个 token`]
+    : [adaptive ? `InfoNoise 已启用，基准分布为${SHIFT_SAMPLING[method]}` : `时间步采样采用${SHIFT_SAMPLING[method]}`];
+  if (reference && !target) parts.push(`参考值为每张图 ${Number(reference).toLocaleString('zh-CN')} 个 token（${mode === 'auto' ? '自动' : '手动'}）`);
+  if (!target && (base || fixed)) parts.push(`${base ? '基础 Shift' : 'Shift'} 为 ${base || fixed}`);
+  if (applied) parts.push(`${adaptive ? '基准分布 Shift' : '实际 Shift'} 为 ${applied}`);
+  if (target && stage) {
+    const readableReason = reason && (INFONOISE_STATUS[reason.replace(/_/g, ' ')] ?? reason);
+    parts.push(`InfoNoise ${INFONOISE_STATUS[stage]}${readableReason ? `（${readableReason}）` : ''}`);
+  }
+  return parts.join('，');
+}
 
 /** "1904x2656 (133), 2832x2304 (19)" → "1904×2656（133 个样本）、2832×2304（19 个样本）". */
 function layoutSizes(value: string): string {
@@ -111,19 +138,20 @@ const RULES: Rule[] = [
   [/^optimizer (\S+): (\d+) parameter groups, learning rates (.+), weight decay (\S+)$/, m => `优化器 ${m[1]}：${m[2]} 个参数组，学习率 ${m[3]}，权重衰减 ${m[4]}`],
   [/^scheduler managed by optimizer: warmup (\S+), (\d+) total steps$/, m => `学习率由优化器自行调度：预热 ${m[1]}，共 ${m[2]} 步`],
   [/^scheduler (\S+): warmup (\S+), (\d+) total steps$/, m => `学习率调度 ${m[1]}：预热 ${m[2]}，共 ${m[3]} 步`],
+  [/^timestep sampling (resolution_sqrt|Resolution-adjusted Shift|uniform|Uniform|logit_normal|Logit-normal|shift|Fixed Shift)(?: \| reference (\d+) tokens(?:\/image)? \((auto|manual)\) \| base [sS]hift (\S+)| \| Shift (\S+))?(?: \| (?:last training target (\d+) tokens\/image|last training batch (\d+) target tokens)(?: \| (?:applied Shift|baseline Shift|batch shift) (\S+))?)?(?: \| InfoNoise (enabled \(baseline distribution\)|warmup|active|collecting|fallback)(?: \| ([a-z_ ]+))?)?$/, timestepSamplingMessage],
   [/^training (\d+) steps: (\d+) per epoch, effective batch (\d+) \((\d+) x (\d+) accumulation x (\d+) GPU\)$/, m => `开始训练：共 ${m[1]} 步，每轮 ${m[2]} 步，等效批次 ${m[3]}（批次 ${m[4]} × 梯度累积 ${m[5]} × ${m[6]} 张 GPU）`],
   [/^resuming at step (\d+)\/(\d+)$/, m => `从第 ${m[1]} 步继续训练（共 ${m[2]} 步）`],
   [/^resume requested: restoring the run from (.+)$/, m => `收到继续训练信号：正在从恢复点恢复（${m[1]}）`],
   [/^resumed training (\S+ \S+) \| step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+) \| from (.+)$/, m => `开始继续训练：${m[1]} | 第 ${m[2]}/${m[3]} 步 | 第 ${m[4]} 轮 | Loss ${m[5]} | 恢复点 ${m[6]}`],
-  [/^preview seed (\d+) \(kept from the resume point\)$/, m => `预览图种子 ${m[1]}（沿用恢复点中的种子）`],
-  [/^preview seed (\d+) \(random for this run\)$/, m => `预览图种子 ${m[1]}（本次训练随机生成，所有预览图共用）`],
-  [/^preview seed (\d+)$/, m => `预览图种子 ${m[1]}`],
+  [/^preview seed (\d+) \(kept from the resume point\)$/, m => `预览基础种子 ${m[1]}（沿用恢复点）`],
+  [/^preview seed (\d+) \(random for this run\)$/, m => `预览基础种子 ${m[1]}（本次训练随机生成）`],
+  [/^preview seed (\d+)$/, m => `预览基础种子 ${m[1]}`],
 
   // Progress
   [/^step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+) \| avg loss (\S+) \| lr (.+?) \| grad norm (\S+) \| (\S+) it\/s \| eta (\S+)$/, m => `步数 ${m[1]}/${m[2]} | 轮次 ${m[3]} | Loss ${m[4]} | 平均 Loss ${m[5]} | 学习率 ${m[6]} | 梯度范数 ${m[7]} | ${m[8]} it/s | 剩余 ${m[9] === '-' ? '—' : duration(m[9])}`],
   [/^epoch (\d+) finished at step (\d+) \| loss (\S+) \| (\S+)( since resume)?$/, m => `第 ${m[1]} 轮完成（第 ${m[2]} 步）| 本轮平均 Loss ${m[3]} | 用时 ${duration(m[4])}${m[5] ? '（自恢复起）' : ''}`],
   [/^epoch (\d+) finished at step (\d+)$/, m => `第 ${m[1]} 轮完成（第 ${m[2]} 步）`],
-  [/^sampling (\d+) previews at step (\d+) \(seed (\d+)\)$/, m => `第 ${m[2]} 步：开始生成 ${m[1]} 张预览图（种子 ${m[3]}）`],
+  [/^sampling (\d+) previews at step (\d+) \(seed (\d+)\)$/, m => `第 ${m[2]} 步：开始生成 ${m[1]} 张预览图（基础种子 ${m[3]}）`],
   [/^preview (\d+)\/(\d+) saved: (\S+) \((\d+)x(\d+), seed (\d+), ([\d.]+)s\)$/, m => `预览图 ${m[1]}/${m[2]} 已保存：${m[3]}（${m[4]}×${m[5]}，种子 ${m[6]}，用时 ${seconds(m[7])}）`],
   [/^previews finished in ([\d.]+)s$/, m => `预览图生成完成，用时 ${seconds(m[1])}`],
   [/^saved (weights|model|file)( \(EMA\))?: (.+?) \| step (\d+)\/(\d+) \| epoch (\S+) \| loss (\S+)$/, m => `已保存${m[2] ? ' EMA ' : ''}${SAVED[m[1]]}：${m[3]} | 第 ${m[4]}/${m[5]} 步 | 第 ${m[6]} 轮 | Loss ${m[7]}`],

@@ -129,6 +129,15 @@ _SOVITS_TQDM_EPOCH = re.compile(
     + r" *(?P<record_time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})"
     r" INFO prepared: Train Epoch: (?P<epoch>[1-9]\d*) \[(?P<percent>100|\d{1,2})%\]"
 )
+_SHIFT_NUMBER = r"\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
+_LEGACY_TIMESTEP_BATCH = re.compile(
+    r"timestep sampling (?:resolution_sqrt \| reference \d+ tokens \((?:auto|manual)\)"
+    r" \| base shift " + _SHIFT_NUMBER + r"|uniform|logit_normal|shift)"
+    r" \| last training batch \d+ target tokens \| batch shift " + _SHIFT_NUMBER
+    + r"(?: \| InfoNoise (?:warmup|active|collecting|fallback)"
+    r"(?: \| (?:warmup|active|nonfinite_statistics|no_main_observations|zero_information"
+    r"|insufficient_samples|insufficient_coverage|adaptive_mix_zero))?)?"
+)
 
 MAX_READ = 512 * 1024
 SUPERVISOR_SOURCE = "ypuddin.server.supervisor"
@@ -310,6 +319,10 @@ def parse_log_lines(lines: list[str], *, now: datetime | None = None) -> list[di
         out.extend(_parse_plain_lines([raw], now=now))
     for line in out:
         if line["source"] == "ypuddin.tts.gpt_sovits.progress" and line["level"] == "debug":
+            line["standalone"] = True
+        if (line["source"] == "ypuddin.train.trainer" and line["level"] == "info"
+                and _LEGACY_TIMESTEP_BATCH.fullmatch(_PROCESS_RANK.sub("", line["msg"], count=1))):
+            line["level"] = "debug"
             line["standalone"] = True
         # Native initialization notices bypass Python logging; retain their raw file and source.
         if line["level"] == "info" and (

@@ -231,7 +231,8 @@ export default function JobLogView({ jobId, live, active, recordedLevel, exitCod
   };
 
   const levelNames: Record<string, string> = { info: text('信息', 'Info'), warning: text('警告', 'Warning') };
-  const debugMissing = debug && filter === 'all' && !!recordedLevel && recordedLevel !== 'debug';
+  const debugMissing = loaded && debug && filter === 'all' && !!recordedLevel && recordedLevel !== 'debug'
+    && !entries.some(entry => entry.level === 'debug');
   const filtered = filter !== 'all' || !!query.trim();
   const hasLog = lines.length > 0 || terminal !== null;
   // A burst of debug records can fill the loaded window while debug lines are hidden.
