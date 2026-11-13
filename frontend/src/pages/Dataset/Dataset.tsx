@@ -28,6 +28,7 @@ import { useWorkspaceText } from '../../utils/workspaceText';
 import { datasetReturnTarget } from '../../utils/datasetReturn';
 import TopbarBreadcrumb from '../../components/TopbarBreadcrumb';
 import Dialog from '../../components/Dialog';
+import PopoverDetails from '../../components/PopoverDetails';
 import { useConfirmation } from '../../components/useConfirmation';
 import {
   RefreshCcw,
@@ -337,10 +338,10 @@ export function DatasetWorkspace({id}: {id?:string}) {
       <div className="dataset-library-meta">
         <span className={`dataset-index-state status-${info?.index_status || 'unknown'}`}>{statusLabel(info?.index_status)}</span>
         {stats && <span>{text(`共 ${formatParams(stats.images)} 张 · 已有标签 ${formatParams(stats.captioned ?? 0)} 张 · 遮罩 ${formatParams(stats.masks ?? 0)} 张`, `${formatParams(stats.images)} images · ${formatParams(stats.captioned ?? 0)} captioned · ${formatParams(stats.masks ?? 0)} masks`)}</span>}
-        <details className="dataset-source-details" data-popover><summary>{text('目录详情', 'Folder details')}</summary><div><code>{info?.source.path}</code>
+        <PopoverDetails className="dataset-source-details"><summary>{text('目录详情', 'Folder details')}</summary><div><code>{info?.source.path}</code>
           {info?.source.pair_path && <><span>{text('负端图片目录', 'Negative image folder')}</span><code>{info.source.pair_path}</code></>}
           {info?.source.reference_dir && <><span>{text('参考图片目录', 'Reference image folder')}</span><code>{info.source.reference_dir}</code></>}
-          <span>{text('标签格式', 'Caption format')}: {info?.source.caption_ext || '—'}</span></div></details>
+          <span>{text('标签格式', 'Caption format')}: {info?.source.caption_ext || '—'}</span></div></PopoverDetails>
       </div>
       {/* 索引进度条 */}
       {(info?.index_status === 'indexing' || indexProgress) && (

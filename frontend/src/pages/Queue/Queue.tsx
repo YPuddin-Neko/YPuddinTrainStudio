@@ -7,6 +7,7 @@ import type { Job, JobListResponse, Project, QueueSettings } from '../../api/typ
 import { isTtsJob } from '../../api/tts';
 import { ttsAction, ttsJobError } from '../Tts/ttsJobActions';
 import StudioSelect from '../../components/StudioSelect';
+import PopoverDetails from '../../components/PopoverDetails';
 import ConfigHelp from '../../components/ConfigHelp';
 import ProgressBar from '../../components/ProgressBar';
 import { useQueueDevices } from '../../api/hooks/useQueueDevices';
@@ -169,12 +170,12 @@ export default function Queue() {
       <PageLocation trail={[{ label: text('任务队列', 'Job queue') }]}/><div className="queue-heading"><h1 data-testid="queue-title">{text('任务队列', 'Job queue')}</h1>{summary && <p>{summary}</p>}</div>
       <div className="queue-header-actions">
         <button type="button" className="ui-btn ui-btn-icon" disabled={loading} onClick={refresh} aria-label={text('刷新队列', 'Refresh queue')} title={text('刷新队列', 'Refresh queue')}><RefreshCw size={15}/></button>
-        <details className="queue-options" data-popover><summary className="ui-btn"><SlidersHorizontal size={14}/>{text('调度设置', 'Scheduling options')}</summary><div>
+        <PopoverDetails className="queue-options"><summary className="ui-btn"><SlidersHorizontal size={14}/>{text('调度设置', 'Scheduling options')}</summary><div>
           <label>{text('并行方式', 'Concurrency mode')}<StudioSelect aria-label={text('并行方式', 'Concurrency mode')} value={settings.max_concurrent == null ? 'auto' : 'limit'} disabled={settingBusy} onValueChange={value => void updateSettings({ max_concurrent: value === 'auto' ? null : 1 })} options={[{ value: 'auto', label: text('自动 · 按空闲显卡', 'Automatic · available GPUs') }, { value: 'limit', label: text('限制任务数量', 'Limit concurrent jobs') }]}/></label>
           {settings.max_concurrent != null && <label>{text('最多并行任务', 'Concurrent jobs')}<input aria-label={text('最多并行任务', 'Concurrent jobs')} type="number" min={1} max={64} key={settings.max_concurrent} defaultValue={settings.max_concurrent} disabled={settingBusy} onBlur={event => { const value = Number(event.target.value); if (event.target.value.trim() && Number.isInteger(value) && value >= 1 && value <= 64) void updateSettings({ max_concurrent: value }); else setError(text('并行数量必须为 1–64。', 'Concurrency must be 1–64.')); }}/></label>}
           <Switch checked={settings.memory_admission !== false} disabled={settingBusy} onCheckedChange={checked => void updateSettings({ memory_admission: checked })}>{text('启动前检查可用显存', 'Check free memory before launch')}</Switch>
           <p>{text('每张显卡同一时间只运行一个任务；并行数量是上限。', 'Each GPU runs one job at a time. Concurrency is an upper limit.')}</p>
-        </div></details>
+        </div></PopoverDetails>
         <button type="button" className={`ui-btn${settings.held ? ' ui-btn-primary' : ''}`} data-testid="toggle-held" disabled={settingBusy} onClick={() => void updateSettings({ held: !settings.held })}>{settings.held ? <Play size={14}/> : <PauseCircle size={14}/>}{settings.held ? text('继续调度', 'Resume scheduling') : text('暂停调度', 'Hold scheduling')}</button>
       </div>
     </header>

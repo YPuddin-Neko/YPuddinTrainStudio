@@ -25,6 +25,7 @@ import { projectUrl, versionConfigUrl, type VersionedProject, type ProjectVersio
 import '../../styles/project-workspace.css';
 import BucketInspector from './BucketInspector';
 import StudioSelect from '../../components/StudioSelect';
+import PopoverDetails from '../../components/PopoverDetails';
 import GpuDevicePicker from '../../components/GpuDevicePicker';
 import { useQueueDevices } from '../../api/hooks/useQueueDevices';
 import { gpuDeviceLabel, gpuSelectionValid } from '../../utils/gpuDevices';
@@ -811,7 +812,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       <GpuDevicePicker compact training label={text('训练显卡', 'Training GPUs')} value={gpuDevices} count={gpuCount} deviceState={queueDevices}
         disabled={!loaded || !!inactiveReason || isEnqueuing || savingNavigation} onChange={devices => {setGpuDevices(devices);setGpuSelectionNotice('');}}/>
       <input className="launch-name" aria-label={t('train.jobName')} placeholder={text('任务名称（可选）', 'Job name (optional)')} value={jobName} onChange={event => setJobName(event.target.value)}/>
-      <details className="launch-schedule" data-popover><summary className="ui-btn">{scheduledAt ? text('已排期', 'Scheduled') : text('排期', 'Schedule')}</summary><div><label>{t('queue.priority')}<input aria-label={t('queue.priority')} type="number" step="1" aria-invalid={!Number.isInteger(priority)} value={priority} onChange={event => setPriority(Number(event.target.value))}/></label>{!Number.isInteger(priority) && <p className="text-xs text-amber-600">{text('优先级必须是整数', 'Priority must be an integer')}</p>}<label>{t('train.scheduledAt')}<input aria-label={t('train.scheduledAt')} type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)}/></label></div></details>
+      <PopoverDetails className="launch-schedule"><summary className="ui-btn">{scheduledAt ? text('已排期', 'Scheduled') : text('排期', 'Schedule')}</summary><div><label>{t('queue.priority')}<input aria-label={t('queue.priority')} type="number" step="1" aria-invalid={!Number.isInteger(priority)} value={priority} onChange={event => setPriority(Number(event.target.value))}/></label>{!Number.isInteger(priority) && <p className="text-xs text-amber-600">{text('优先级必须是整数', 'Priority must be an integer')}</p>}<label>{t('train.scheduledAt')}<input aria-label={t('train.scheduledAt')} type="datetime-local" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)}/></label></div></PopoverDetails>
       <button type="button" className="ui-btn ui-btn-primary start-training" onClick={() => void handleEnqueue()} disabled={!ready || !gpuValid || isEnqueuing || savingNavigation || !Number.isInteger(priority)}><Play size={14}/>{enqueueSuccess ? t('train.enqueued') : isEnqueuing ? t('train.enqueuing') : text('开始训练', 'Start training')}</button>
     </div>
     </div>
@@ -830,11 +831,17 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         <StudioSelect aria-label={t('train.loadPreset')} disabled={!loaded || savingNavigation || !!inactiveReason} value="" onValueChange={name => {const preset=presets.find(item=>item.name===name);if(preset)setPendingPreset(preset);}} placeholder={t('train.loadPreset')} options={presets.map(preset=>({value:preset.name,label:`${preset.name}${inactiveTrainingReason(preset.config) ? ` · ${text('已停用','Retired')}` : presetFamily(preset) && presetFamily(preset)!==config.model?.family ? ` · ${text('适用于','For')} ${presetFamily(preset)}` : ''}`,disabled:!!inactiveTrainingReason(preset.config) || !!presetFamily(preset) && presetFamily(preset)!==config.model?.family}))}/>
         <button type="button" className="ui-btn" disabled={!loaded || savingNavigation || !!inactiveReason} onClick={() => {setPresetName('');setPresetError('');setPresetDialog(true);}}><Save size={14}/>{text('另存为新预设','Save as new preset')}</button>
         <button type="button" className="ui-btn" disabled={!loaded || savingNavigation} onClick={() => setInspectionOpen(true)}><ListChecks size={14}/>{text('参数检查','Check parameters')}</button>
-        <details className="config-tools" data-popover><summary className="ui-btn"><Settings2 size={14}/>{text('配置工具', 'Config tools')}</summary><div className="config-tools-menu">
+        <PopoverDetails className="config-tools"><summary className="ui-btn"><Settings2 size={14}/>{text('配置工具', 'Config tools')}</summary><div className="config-tools-menu" onClick={event => {
+          if (!(event.target instanceof Element) || !event.target.closest('a[href],button:not(:disabled)')) return;
+          const details = event.currentTarget.closest('details');
+          if (!details) return;
+          details.open = false;
+          details.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true });
+        }}>
           <Link to="/presets">{text('管理参数预设','Manage parameter presets')}</Link>
           <Link to={modelUrl} state={{ backgroundLocation: location }}>{text('管理与下载模型','Manage & download models')}</Link>
           <button type="button" disabled={!loaded} onClick={() => {setImportError('');setImportOpen(true);}}>{t('train.importToml')}</button><button type="button" disabled={!loaded} onClick={handleExport}>{t('train.exportToml')}</button><button type="button" disabled={!loaded} onClick={async () => { if (await confirm({title:t('train.resetDefaults'),message:t('train.resetConfirm'),confirmLabel:t('train.resetDefaults'),danger:true})) setConfig(structuredClone(defaults)); }}>{t('train.resetDefaults')}</button>
-        </div></details>
+        </div></PopoverDetails>
       </div>
     </div>
     {presetDialog && <Dialog title={text('另存为新预设','Save as new preset')} closeDisabled={savingPreset} onClose={()=>setPresetDialog(false)}><form className="preset-create-dialog" onSubmit={event=>{event.preventDefault();void handleSavePreset();}}>

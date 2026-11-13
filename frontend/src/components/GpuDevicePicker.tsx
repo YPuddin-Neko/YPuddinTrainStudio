@@ -6,6 +6,7 @@ import { useQueueDevices } from '../api/hooks/useQueueDevices';
 import { gpuDeviceLabel, gpuSelectionValid } from '../utils/gpuDevices';
 import { useWorkspaceText } from '../utils/workspaceText';
 import StudioSelect from './StudioSelect';
+import PopoverDetails from './PopoverDetails';
 import '../styles/gpu-device-picker.css';
 import Switch from './Switch';
 import { gpuMemorySummary, gpuMemoryDetails } from '../utils/gpuMemory';
@@ -74,7 +75,6 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
       document.removeEventListener('mousedown', outside); document.removeEventListener('keydown', escape);
     };
   }, [training, visible]);
-  const popover = React.useRef<HTMLDetailsElement>(null);
   const devices = snapshot?.devices || [];
   const wrongCount = value.length > 0 && value.length !== count;
   const missing = snapshot !== null && value.some(id => !devices.some(device => device.device === id && device.status !== 'unavailable'));
@@ -86,18 +86,6 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
     : value.length ? text(`当前训练需要选择 ${count} 张显卡，也可以改为自动选择。`, `Select ${count} GPUs for this run, or use automatic selection.`)
     : text(`当前可用设备不足 ${count} 张，请调整显卡数量。`, `Fewer than ${count} GPUs are available. Adjust the device count.`);
   React.useEffect(() => { onValidityChange?.(valid); }, [valid, onValidityChange]);
-  React.useEffect(() => {
-    if (!compact || training) return;
-    const close = (event: MouseEvent | KeyboardEvent) => {
-      if (!popover.current?.open) return;
-      if (event instanceof KeyboardEvent) { if (event.key === 'Escape') popover.current.open = false; return; }
-      const target = event.target as Node;
-      const ownedMenu = Array.from(popover.current.querySelectorAll('[aria-controls]')).some(trigger => document.getElementById(trigger.getAttribute('aria-controls') || '')?.contains(target));
-      if (!popover.current.contains(target) && !ownedMenu) popover.current.open = false;
-    };
-    document.addEventListener('mousedown', close); document.addEventListener('keydown', close);
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
-  }, [compact, training]);
   const statusLabel = (device: QueueDevice) => device.job_id
     ? text(`占用中 · ${device.job_name || device.job_id}`, `Busy · ${device.job_name || device.job_id}`)
     : device.status === 'unavailable' ? text('不可用', 'Unavailable') : text('空闲', 'Free');
@@ -141,5 +129,5 @@ function DevicePicker({ value, onChange, count = 1, disabled = false, compact = 
     {visible && createPortal(<div id={menuId} ref={menu} role="dialog" aria-label={text('训练显卡选择', 'Training GPU selection')} className="gpu-picker gpu-picker-menu" style={position}>{body}</div>, document.body)}
   </div>;
   if (!compact) return <section className="gpu-picker" aria-label={text('显卡选择', 'GPU selection')}>{body}</section>;
-  return <details className="gpu-picker gpu-picker-compact" data-popover ref={popover}><summary className="ui-btn" aria-label={text('选择运行显卡', 'Choose run GPUs')}><Cpu size={14}/><span>{value.length ? value.map(gpuDeviceLabel).join(', ') : text('自动选卡', 'Auto GPU')}{wrongCount ? ' !' : ''}</span><ChevronDown size={12}/></summary>{body}</details>;
+  return <PopoverDetails className="gpu-picker gpu-picker-compact"><summary className="ui-btn" aria-label={text('选择运行显卡', 'Choose run GPUs')}><Cpu size={14}/><span>{value.length ? value.map(gpuDeviceLabel).join(', ') : text('自动选卡', 'Auto GPU')}{wrongCount ? ' !' : ''}</span><ChevronDown size={12}/></summary>{body}</PopoverDetails>;
 }
