@@ -180,7 +180,8 @@ function ImagePresets() {
       const item = draft.originalName
         ? await apiClient.put<Preset>(`/presets/${encodeURIComponent(draft.originalName)}`, body, { silent: true })
         : await apiClient.post<Preset>('/presets', body, { silent: true });
-      const next = { ...draft, name: item.name, description: item.description, config: item.config, originalName: item.name, builtin: false };
+      // Keep the active editor draft. The preset list uses the stored configuration.
+      const next = { ...draft, name: item.name, description: item.description, originalName: item.name, builtin: false };
       setDraft(next); setSaved(JSON.stringify(presetPayload(next)));
       queryClient.setQueryData<Preset[]>(KEY, previous => [...(previous || []).filter(row => row.name !== item.name), item]);
       setNotice(text('预设已保存。', 'Preset saved.'));

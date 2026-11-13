@@ -16,7 +16,7 @@ import { parameterGroupLabel } from '../../utils/parameterWorkflow';
 import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
 import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights, supportsResolutionCorrectedShift, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { managedValueLabel, normalizeOptimizerConfig, optimizerManagedReason, optimizerManagesSchedule, restoreOptimizerSelection, selectOptimizer } from '../../utils/optimizerCapabilities';
-import { usesOnlyFullLoKr } from '../../utils/lokrParameters';
+import { inheritsFullLoKrRank, usesOnlyFullLoKr } from '../../utils/lokrParameters';
 import NumericControl from './NumericControl';
 import DecimalNumberInput from './DecimalNumberInput';
 import { scientificText } from '../../utils/numberText';
@@ -175,10 +175,12 @@ const setNestedValue = (obj: any, path: string[], value: any): any => {
 const RulesEditor: React.FC<{
   value: any[];
   algorithms: string[];
+  defaultAlgorithm: string;
+  inheritsFullRank: boolean;
   english: boolean;
   learningRateReason?: string;
   onChange: (val: any[]) => void;
-}> = ({ value = [], algorithms, english, learningRateReason, onChange }) => {
+}> = ({ value = [], algorithms, defaultAlgorithm, inheritsFullRank, english, learningRateReason, onChange }) => {
   const { t } = useTranslation();
   const options = [
     { value: '', label: t('train.inherit') },
@@ -216,67 +218,74 @@ const RulesEditor: React.FC<{
 
   return (
     <div className="space-y-3" data-testid="rules-editor">
-      {value.map((rule, idx) => (
-        <div key={idx} className="flex flex-wrap items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
-          <input
-            type="text"
-            placeholder={t('train.matchPlaceholder', 'Match 正则 / glob')}
-            value={rule.match || ''}
-            onChange={(e) => updateRule(idx, 'match', e.target.value)}
-            className="flex-1 min-w-[140px] px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-          />
-          <StudioSelect aria-label={`${t('train.algo', '算法')} ${idx+1}`} value={rule.algo ?? ''} onValueChange={value => updateRule(idx,'algo',value || null)}
-            fallbackLabel={rule.algo ? configOptionLabel('adapter.algo', rule.algo, english) : undefined}
-            options={options}/>
+      {value.map((rule, idx) => {
+        const algorithm = rule.algo || defaultAlgorithm;
+        const adapts = algorithm !== 'none';
+        const usesRank = adapts && (algorithm !== 'full' || rule.rank === 'full');
+        const fullLoKr = algorithm === 'lokr' && (rule.rank === 'full' || rule.rank == null && inheritsFullRank);
+        const usesAlpha = adapts && algorithm !== 'full' && !fullLoKr;
+        return (
+          <div key={idx} className="flex flex-wrap items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+            <input
+              type="text"
+              placeholder={t('train.matchPlaceholder', 'Match 正则 / glob')}
+              value={rule.match || ''}
+              onChange={(e) => updateRule(idx, 'match', e.target.value)}
+              className="flex-1 min-w-[140px] px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
+            />
+            <StudioSelect aria-label={`${t('train.algo', '算法')} ${idx+1}`} value={rule.algo ?? ''} onValueChange={value => updateRule(idx,'algo',value || null)}
+              fallbackLabel={rule.algo ? configOptionLabel('adapter.algo', rule.algo, english) : undefined}
+              options={options}/>
 
-          <input
-            type="text"
-            placeholder="Rank / full"
-            value={rule.rank ?? ''}
-            onChange={(e) => {
-              const val = e.target.value === '' ? null : e.target.value === 'full' ? 'full' : Number(e.target.value);
-              updateRule(idx, 'rank', val);
-            }}
-            className="w-16 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-          />
-          <input
-            type="number"
-            placeholder="Alpha"
-            value={rule.alpha ?? ''}
-            onChange={(e) => updateRule(idx, 'alpha', e.target.value === '' ? null : Number(e.target.value))}
-            className="w-16 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-          />
-          <input
-            type="number"
-            placeholder="Factor"
-            value={rule.factor ?? ''}
-            onChange={(e) => updateRule(idx, 'factor', e.target.value === '' ? null : Number(e.target.value))}
-            className="w-16 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-          />
-          <input
-            type="number"
-            aria-label={`LR ${idx + 1}`}
-            placeholder="LR"
-            step="0.0001"
-            value={rule.lr ?? ''}
-            disabled={!!learningRateReason}
-            title={learningRateReason}
-            onChange={(e) => updateRule(idx, 'lr', e.target.value === '' ? null : Number(e.target.value))}
-            className="w-20 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
-          />
-          <div className="flex items-center space-x-1">
-            <button type="button" onClick={() => moveRule(idx, 'up')} disabled={idx === 0} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon">
-              <ArrowUp className="w-3.5 h-3.5" />
-            </button>
-            <button type="button" onClick={() => moveRule(idx, 'down')} disabled={idx === value.length - 1} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon">
-              <ArrowDown className="w-3.5 h-3.5" />
-            </button>
-            <button type="button" onClick={() => removeRule(idx)} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon ui-btn-danger">
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            {usesRank && <input
+              type="text"
+              placeholder="Rank / full"
+              value={rule.rank ?? ''}
+              onChange={(e) => {
+                const val = e.target.value === '' ? null : e.target.value === 'full' ? 'full' : Number(e.target.value);
+                updateRule(idx, 'rank', val);
+              }}
+              className="w-16 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
+            />}
+            {usesAlpha && <input
+              type="number"
+              placeholder="Alpha"
+              value={rule.alpha ?? ''}
+              onChange={(e) => updateRule(idx, 'alpha', e.target.value === '' ? null : Number(e.target.value))}
+              className="w-16 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
+            />}
+            {algorithm === 'lokr' && <input
+              type="number"
+              placeholder="Factor"
+              value={rule.factor ?? ''}
+              onChange={(e) => updateRule(idx, 'factor', e.target.value === '' ? null : Number(e.target.value))}
+              className="w-16 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
+            />}
+            {adapts && <input
+              type="number"
+              aria-label={`LR ${idx + 1}`}
+              placeholder="LR"
+              step="0.0001"
+              value={rule.lr ?? ''}
+              disabled={!!learningRateReason}
+              title={learningRateReason}
+              onChange={(e) => updateRule(idx, 'lr', e.target.value === '' ? null : Number(e.target.value))}
+              className="w-20 px-2 py-1 border rounded dark:bg-slate-800 dark:border-slate-600"
+            />}
+            <div className="flex items-center space-x-1">
+              <button type="button" onClick={() => moveRule(idx, 'up')} disabled={idx === 0} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon">
+                <ArrowUp className="w-3.5 h-3.5" />
+              </button>
+              <button type="button" onClick={() => moveRule(idx, 'down')} disabled={idx === value.length - 1} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon">
+                <ArrowDown className="w-3.5 h-3.5" />
+              </button>
+              <button type="button" onClick={() => removeRule(idx)} className="ui-btn ui-btn-quiet ui-btn-sm ui-btn-icon ui-btn-danger">
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       {!!value.length && learningRateReason && <p className="config-field-hint">{learningRateReason}</p>}
       <button
         type="button"
@@ -1071,6 +1080,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
 
     const errorItem = errors.find((e) => trainingMode && e.loc === 'training.task' || e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || intervalRule && e.loc === `${fullPathKey}_enabled` || fullPathKey === 'checkpoint.save_state_every_steps' && ['checkpoint.save_state_every_epochs', 'checkpoint.save_state_every_epochs_enabled'].includes(e.loc || '') || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode' || shiftReference && e.loc === 'objective.resolution_reference_mode');
     if (!errorItem) {
+      if (fullPathKey === 'optimizer.exclude_bias_norm_from_weight_decay' && value.optimizer?.weight_decay === 0) return null;
       if (textOnlyAdapter && ['adapter.preset', 'adapter.layer_types', 'adapter.conv_rank', 'adapter.conv_alpha'].includes(fullPathKey)) return null;
       if (onlyFullAdapters && (
         (fullPathKey === 'adapter.rank' && value.adapter.rank !== 'full')
@@ -1250,6 +1260,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         <RulesEditor
           value={fieldValue || []}
           algorithms={algorithms}
+          defaultAlgorithm={value.adapter?.algo ?? 'lokr'}
+          inheritsFullRank={inheritsFullLoKrRank(value, family)}
           english={english}
           learningRateReason={optimizerManagedReason(schema, value, 'adapter.rules.lr', english)}
           onChange={(val) => onChange(setNestedValue(value, path, val))}

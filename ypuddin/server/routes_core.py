@@ -543,6 +543,11 @@ def _validated_or_error(raw: dict[str, Any], *, preset: bool = False) -> TrainCo
 def config_import(body: ConfigImportBody) -> Any:
     from fastapi.responses import JSONResponse
 
+    from ypuddin.config.export import (
+        project_config_for_export,
+        project_config_for_storage,
+        public_config_dict,
+    )
     from ypuddin.config.io import parse_toml
 
     try:
@@ -552,20 +557,14 @@ def config_import(body: ConfigImportBody) -> Any:
     if not isinstance(raw, dict):
         raise ApiError("config must be an object", code="config.invalid")
     cfg = _validated_or_error(raw, preset=body.kind == "preset")
-    value = cfg.to_dict()
-    legacy_native = (
-        cfg.dataset.resolution_mode == "native" and cfg.checkpoint.resume
-        and any(key not in raw.get("dataset", {}) for key in ("native_batching_version", "native_batch_mode"))
-    )
-    if legacy_native:
-        # Preserve an omitted recovery identity through response-model defaults.
-        for key in ("native_batching_version", "native_batch_mode"):
-            if key not in raw.get("dataset", {}):
-                value["dataset"].pop(key, None)
-    if body.kind == "preset" or legacy_native:
-        # Presets have already been validated without binding version references.
-        return JSONResponse(value)
-    return value
+    if cfg.checkpoint.resume:
+        value = public_config_dict(cfg)
+    elif body.kind == "preset":
+        value = project_config_for_storage(raw, partial=True)
+    else:
+        value = project_config_for_export(cfg)
+    # Response-model defaults must not put inactive fields back into the recipe.
+    return JSONResponse(value)
 
 
 @router.post("/config/export", response_model=ConfigText)
@@ -613,10 +612,11 @@ def _scoped_config(body: ConfigBody, c: ServiceContext) -> dict[str, Any]:
 def _validate(config: dict[str, Any], *, preset: bool = False) -> tuple[TrainConfig | None, list[dict[str, Any]]]:
     from pydantic import ValidationError
 
+    from ypuddin.config.export import project_config_for_storage
     from ypuddin.config.issues import validation_issues
 
     try:
-        return TrainConfig.model_validate(config, context={"preset": preset}), []
+        return TrainConfig.model_validate(project_config_for_storage(config, partial=preset), context={"preset": preset}), []
     except ValidationError as e:
         return None, validation_issues(e)
 
@@ -665,7 +665,9 @@ def _plan_model_errors(family, model, c: ServiceContext) -> list[str]:
 @router.post("/plan", response_model=m.Plan, response_model_exclude_unset=True)
 def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     # plan keeps full validation errors while previewing independently valid data fields.
-    cfg = _scoped_config(body, c)
+    from ypuddin.config.export import project_config_for_storage
+
+    cfg = project_config_for_storage(_scoped_config(body, c))
     from ypuddin.train.native_resolution import clear_native_vram_resolution
     from ypuddin.train.resolution_reference import clear_resolution_reference
 
@@ -846,6 +848,7 @@ def _merge_preset_config(base: dict[str, Any], fragment: dict[str, Any]) -> dict
 
 
 def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: bool) -> dict[str, Any]:
+    from ypuddin.config.export import project_config_for_storage
     from ypuddin.config.io import preserve_legacy_dora
 
     path = _preset_path(name, c)
@@ -870,12 +873,14 @@ def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: boo
     fragment = normalize_legacy_intervals(
         clear_resolution_reference(clear_native_vram_resolution(preserve_legacy_dora(body.config)))
     )
+    fragment = project_config_for_storage(fragment, partial=True)
     validated = _validated_or_error(_merge_preset_config(initial_family_config(c, family), fragment), preset=True)
     from ypuddin.config.optimizer_rules import canonical_optimizer_fragment
 
     config = dict(fragment)
     if isinstance(fragment.get("optimizer"), dict):
         config["optimizer"] = canonical_optimizer_fragment(fragment, validated.to_dict())["optimizer"]
+    config = project_config_for_storage(config, partial=True)
     with _preset_lock:
         collision = next(
             (f for f in path.parent.glob("*.json") if f.stem.casefold() == name.casefold()), None
@@ -932,7 +937,7 @@ def delete_preset(name: str, c: ServiceContext = Depends(ctx)) -> dict[str, Any]
 @router.post("/presets/{name}/resolve")
 def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any]:
     """Overlay ``body.config`` on the preset and return the fully resolved config (+ TOML)."""
-    from ypuddin.config.export import public_config_dict
+    from ypuddin.config.export import project_config_for_export, public_config_dict
     from ypuddin.train.native_resolution import clear_native_vram_resolution
     from ypuddin.train.resolution_reference import clear_resolution_reference
 
@@ -958,7 +963,7 @@ def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)
     return {
         "ok": cfg is not None,
         "errors": errors,
-        "config": public_config_dict(cfg) if cfg else merged,
+        "config": (public_config_dict(cfg) if cfg.checkpoint.resume else project_config_for_export(cfg)) if cfg else merged,
         "toml": dump_toml(cfg, for_export=True) if cfg else None,
     }
 
@@ -967,7 +972,7 @@ def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)
 def import_toml(body: dict[str, str]) -> dict[str, Any]:
     import tempfile
 
-    from ypuddin.config.export import public_config_dict
+    from ypuddin.config.export import project_config_for_export, public_config_dict
 
     with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False, encoding="utf-8") as f:
         f.write(body.get("toml", ""))
@@ -977,7 +982,8 @@ def import_toml(body: dict[str, str]) -> dict[str, Any]:
     finally:
         Path(path).unlink(missing_ok=True)
     cfg, errors = _validate(data)
-    return {"ok": cfg is not None, "errors": errors, "warnings": [], "config": public_config_dict(cfg) if cfg else data}
+    value = (public_config_dict(cfg) if cfg.checkpoint.resume else project_config_for_export(cfg)) if cfg else data
+    return {"ok": cfg is not None, "errors": errors, "warnings": [], "config": value}
 
 
 # --------------------------------------------------------------------------- models

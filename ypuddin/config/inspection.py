@@ -7,26 +7,13 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .intervals import INTERVAL_DEFAULTS, normalize_legacy_intervals
-from .io import deep_merge
+from .export import project_config_for_storage
 from .issues import validation_issues
-from .optimizer_rules import optimizer_key
 from .schema import TrainConfig
-from .show_when import ShowWhenError, evaluate
-
-# These sections gate their runtime consumers with the same configuration choices.
-# Model paths, resume settings and arbitrary plugin arguments are never pruned by visibility.
-_CONDITIONAL_SECTIONS = {"objective", "scheduler", "optimizer", "sampling", "validation"}
 
 
 def inspect_config(raw: dict[str, Any]) -> dict[str, Any]:
     schema = TrainConfig.json_schema()
-    effective = deep_merge(TrainConfig().to_dict(), normalize_legacy_intervals(raw))
-    if isinstance(effective.get("optimizer"), dict):
-        effective["optimizer"]["type"] = optimizer_key(str(effective["optimizer"].get("type", "adamw")))
-    known_optimizer = isinstance(effective.get("optimizer"), dict) and effective["optimizer"].get(
-        "type"
-    ) in schema.get("x-optimizer-capabilities", {})
     cleaned = deepcopy(raw)
     fields: list[dict[str, Any]] = []
 
@@ -71,25 +58,6 @@ def inspect_config(raw: dict[str, Any]) -> dict[str, Any]:
                         walk(item, extra, child_path, clean[key])
                     continue
                 child = resolve(properties[key], item)
-                condition = child.get("x-ui", {}).get("show_when")
-                comparison_value = (
-                    effective[path[0]].get(key, item)
-                    if len(path) == 1 and key in INTERVAL_DEFAULTS.get(path[0], {})
-                    else item
-                )
-                if (
-                    path
-                    and path[0] in _CONDITIONAL_SECTIONS
-                    and (path[0] != "optimizer" or known_optimizer)
-                    and condition
-                    and "default" in child
-                    and comparison_value != child["default"]
-                ):
-                    try:
-                        if not evaluate(condition, effective):
-                            add(child_path, item, "inactive", condition)
-                    except (ShowWhenError, TypeError, ValueError):
-                        pass
                 walk(item, child, child_path, clean[key])
         elif isinstance(value, list) and node.get("type") == "array" and isinstance(node.get("items"), dict):
             for index, item in enumerate(value):
@@ -98,7 +66,7 @@ def inspect_config(raw: dict[str, Any]) -> dict[str, Any]:
     walk(raw, schema, [], cleaned)
     errors, advice = [], []
     try:
-        validated = TrainConfig.model_validate(cleaned)
+        validated = TrainConfig.model_validate(project_config_for_storage(cleaned))
     except ValidationError as exc:
         errors = validation_issues(exc)
     else:
@@ -109,14 +77,4 @@ def inspect_config(raw: dict[str, Any]) -> dict[str, Any]:
             advice = value_advice(validated, get_family(validated.model.family).spec.latent.align)
         except KeyError:
             advice = []  # Unknown families are reported by the plan.
-    # Invalid values need correction, not deletion disguised as cleanup.
-    fields = [
-        field
-        for field in fields
-        if field["kind"] == "unknown"
-        or not any(
-            not error["loc"] or field["loc"] == error["loc"] or field["loc"].startswith(error["loc"] + ".")
-            for error in errors
-        )
-    ]
     return {"fields": fields, "errors": errors, "advice": advice}

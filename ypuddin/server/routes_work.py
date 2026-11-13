@@ -34,7 +34,6 @@ from pydantic import (
 from starlette.background import BackgroundTask
 
 from ypuddin.config import DatasetSourceConfig, TrainConfig, deep_merge
-from ypuddin.config.intervals import normalize_legacy_intervals
 from ypuddin.config.io import absolute_paths
 from ypuddin.data import IndexDB, scan_sources
 
@@ -538,10 +537,12 @@ def get_project_config(
         raise ApiError("version configuration is not ready", code="version.not_ready", status=409)
     f = c.config_path(pid, version_id)
     if f.exists():
+        from ypuddin.config.export import project_config_for_storage
+
         from .source_roles import normalize_source_roles
 
-        raw = normalize_legacy_intervals(json.loads(f.read_text(encoding="utf-8")))
-        return normalize_source_roles(c, pid, raw, version["id"])
+        raw = json.loads(f.read_text(encoding="utf-8"))
+        return project_config_for_storage(normalize_source_roles(c, pid, raw, version["id"]))
     from .environment import environment_attention_default
 
     cfg = TrainConfig()
@@ -560,9 +561,13 @@ def put_project_config(
     pid: str, body: dict[str, Any], c: ServiceContext = Depends(ctx), version_id: str | None = None
 ) -> dict[str, Any]:
     c.require_project_type(pid, "image")
+    from ypuddin.config.export import project_config_for_storage
     from ypuddin.train.native_resolution import clear_native_vram_resolution
 
-    body = normalize_legacy_intervals(clear_native_vram_resolution(body))
+    checkpoint = body.get("checkpoint")
+    if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
+        body = clear_native_vram_resolution(body)
+    body = project_config_for_storage(body)
     reindex = []
     with c.db.lock:
         version = assert_version_writable(c, pid, version_id)
@@ -681,7 +686,9 @@ def _write_project_config(
     c: ServiceContext, pid: str, body: dict[str, Any], version_id: str | None = None
 ) -> None:
     """Caller holds the DB lock to serialize config edits with dataset source registration."""
-    body = normalize_legacy_intervals(body)
+    from ypuddin.config.export import project_config_for_storage
+
+    body = project_config_for_storage(body)
     d = c.config_path(pid, version_id).parent
     d.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=d, suffix=".tmp", delete=False) as fp:
@@ -2557,6 +2564,9 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
         config = get_project_config(body.project_id, c, vid)
     if config is None:
         raise ApiError("config is required", code="job.no_config")
+    from ypuddin.config.export import project_config_for_storage
+
+    config = project_config_for_storage(config)
     with reference_lease(c, config):
         return _create_image_job(body, c, version, config)
 

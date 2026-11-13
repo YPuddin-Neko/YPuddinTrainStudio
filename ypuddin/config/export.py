@@ -19,7 +19,7 @@ from .optimizer_rules import (
     optimizer_policy,
     optimizer_specific_fields,
 )
-from .schema import ModelConfig, TrainConfig
+from .schema import CaptionConfig, DatasetSourceConfig, ModelConfig, TrainConfig
 
 NATIVE_INACTIVE_BUCKET_FIELDS = frozenset({
     "resolutions", "aspect_ratio_limit", "area_tolerance", "bucket_step", "bucket_no_upscale",
@@ -81,6 +81,9 @@ def _project_model(data: dict[str, Any], config: TrainConfig | None) -> None:
         (("krea2_variant",), {"krea2"}),
     ):
         _only_for(model, model, "family", families, fields)
+    if (model.get("family") == "sdxl" and model.get("prediction_type") == "epsilon"
+            and model.get("zero_terminal_snr") is False):
+        model.pop("zero_terminal_snr")
     _only_for(memory, model, "family", {"anima", "krea2"}, ("vae_attention_chunking", "no_half_vae"))
     _only_for(memory, model, "family", _TILED_FAMILIES, ("vae_tiling", "cache_encode_tiled"))
     dataset = _section(data, "dataset")
@@ -111,6 +114,12 @@ def _project_model(data: dict[str, Any], config: TrainConfig | None) -> None:
             from .training_rules import trains_conv_adapters
 
             no_conv = not trains_conv_adapters(conv_context)
+        _project_adapter_rules(data, inherits_full_rank=(
+            adapter.get("rank") == "full" and (
+                no_conv or (adapter.get("layer_types") == "linear_conv"
+                            and "conv_rank" in adapter and adapter["conv_rank"] is None)
+            )
+        ))
         # Per-layer algorithm overrides inherit these global parameters.
         if "algo" in adapter and ("rules" in adapter or config is not None):
             algorithms = {adapter["algo"]}
@@ -160,8 +169,31 @@ def _project_model(data: dict[str, Any], config: TrainConfig | None) -> None:
     _only_for(training, model, "family", {"anima"}, lr_fields[3:])
 
 
+def _project_adapter_rules(data: dict[str, Any], *, inherits_full_rank: bool) -> None:
+    adapter = _section(data, "adapter")
+    for rule in adapter.get("rules", []):
+        if not isinstance(rule, dict):
+            continue
+        algorithm = rule.get("algo") or adapter.get("algo")
+        if algorithm == "none":
+            _drop(rule, ("rank", "alpha", "factor", "lr", "dropout", "rank_dropout"))
+        elif algorithm == "full":
+            _drop(rule, ("alpha", "factor", "dropout", "rank_dropout"))
+            # The adapter builder rejects the full-rank sentinel before dispatch.
+            if rule.get("rank") != "full":
+                rule.pop("rank", None)
+        elif algorithm == "lokr" and (
+            rule.get("rank") == "full" or rule.get("rank") is None and inherits_full_rank
+        ):
+            _drop(rule, ("alpha", "rank_dropout"))
+        elif algorithm in {"lora", "loha", "ortho", "tlora"}:
+            rule.pop("factor", None)
+
+
 def _project_optimizer(data: dict[str, Any]) -> None:
     optimizer, training = _section(data, "optimizer"), _section(data, "training")
+    if optimizer.get("weight_decay") == 0:
+        optimizer.pop("exclude_bias_norm_from_weight_decay", None)
     if isinstance(optimizer.get("type"), str):
         key = optimizer_key(optimizer["type"])
         _drop(optimizer, _OPTIMIZER_FIELDS - set(optimizer_specific_fields(key)))
@@ -420,10 +452,13 @@ def _restore_resume_contract(original: dict[str, Any], data: dict[str, Any]) -> 
             source_defaults = default_sources[index] if index < len(default_sources) else {}
             _restore_nondefaults(selected, new_source, source_defaults)
     contracts = {}
+    adapter = _section(original, "adapter")
+    if "rules" in adapter and _section(original, "training").get("mode") != "full":
+        contracts["adapter"] = {"rules": adapter["rules"]}
     if "scheduler" in original:
         contracts["scheduler"] = original["scheduler"]
     optimizer = _section(original, "optimizer")
-    keys = {"betas", "eps", "weight_decay", "args"}
+    keys = {"betas", "eps", "weight_decay", "args", "exclude_bias_norm_from_weight_decay"}
     if isinstance(optimizer.get("type"), str):
         keys.update(optimizer_specific_fields(optimizer["type"]))
     if optimizer:
@@ -483,4 +518,56 @@ def project_config_for_export(
         _restore_resume_contract(original, data)
     if omit_default_nulls:
         _omit_default_null_fields(data)
+    for key in TrainConfig.model_fields:
+        if data.get(key) == {}:
+            data.pop(key)
+    return data
+
+
+def project_config_for_storage(config: Mapping[str, Any], *, partial: bool = False) -> dict[str, Any]:
+    """Save applicable supplied values without expanding defaults into a draft.
+
+    Partial presets inherit missing selectors from their destination. A complete
+    recipe uses schema defaults for those selectors. Exact recovery keeps its
+    original recipe because inactive values can still participate in its identity.
+    """
+    from .intervals import normalize_legacy_intervals
+    from .io import deep_merge
+
+    raw = deepcopy(dict(config))
+    if _section(raw, "checkpoint").get("resume"):
+        return raw
+    raw = normalize_legacy_intervals(raw)
+    try:
+        if partial:
+            return project_config_for_export(raw, omit_default_nulls=False)
+
+        context = deep_merge(TrainConfig().to_dict(), deepcopy(raw))
+        for section in ("dataset", "validation"):
+            for source in _section(context, section).get("sources", []):
+                if isinstance(source, dict):
+                    defaults = DatasetSourceConfig.model_construct().model_dump(mode="json")
+                    source.update(deep_merge(defaults, source))
+                    if isinstance(source.get("caption"), dict):
+                        source["caption"] = deep_merge(CaptionConfig().model_dump(mode="json"), source["caption"])
+        projected = project_config_for_export(context, preserve_resume_identity=False, omit_default_nulls=True)
+    except (TypeError, ValueError):
+        # Keep malformed drafts available for the normal field-error response.
+        try:
+            TrainConfig.model_validate(raw)
+        except ValidationError:
+            return raw
+        raise
+
+    def supplied(value: Any, active: Any) -> Any:
+        if isinstance(value, dict) and isinstance(active, dict):
+            return {key: supplied(item, active[key]) for key, item in value.items() if key in active}
+        if isinstance(value, list) and isinstance(active, list):
+            return [supplied(item, active[index]) for index, item in enumerate(value)]
+        return deepcopy(value)
+
+    data = supplied(raw, projected)
+    for key in TrainConfig.model_fields:
+        if data.get(key) == {}:
+            data.pop(key)
     return data

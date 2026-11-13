@@ -243,7 +243,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [importError, setImportError] = React.useState('');
   const [savingNavigation, setSavingNavigation] = React.useState(false);
   const navigationPendingRef = React.useRef(false);
+  // Autosave compares the submitted draft. Dataset refresh merges against what the server stored.
   const lastSavedRef = React.useRef('');
+  const storedConfigRef = React.useRef<Record<string, any>>({});
   const submittedConfigRef = React.useRef<string | null>(null);
   const saveQueueRef = React.useRef<Promise<unknown>>(Promise.resolve());
   const draftRef = React.useRef({ projectId, versionId, config, loaded, archived });
@@ -268,8 +270,9 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       lastSaveError.current = '';
     }
     try {
-      await apiClient.put(versionConfigUrl(owner, version), draft, { silent: true });
-      refreshSavedFamily(owner, version, draft);
+      const stored = await apiClient.put<Record<string, any>>(versionConfigUrl(owner, version), draft, { silent: true });
+      storedConfigRef.current = stored;
+      refreshSavedFamily(owner, version, stored);
       if (current()) setDraftSaveState('idle');
     } catch (err) {
       if (current()) {
@@ -409,6 +412,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
       setDefaults(nextDefaults);
       initialConfigRef.current = JSON.stringify(next);
       lastSavedRef.current = JSON.stringify(next);
+      storedConfigRef.current = draft;
       const saved = projectId ? readTrainingDraft(trainingDraftKey(projectId, versionId)) : null;
       let restored: Record<string, any> = saved ? restoreDatasetDraft(next, saved.base, saved.draft) : next;
       // Move drafts from the retired model page into the same version's training draft.
@@ -481,7 +485,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setValidatedConfig('');
     setReferenceConfig('');
     setValidating(true);
-    const base = JSON.parse(lastSavedRef.current || '{}');
+    const base = fillDefaultModels(mergeTrainingDefaults(defaults, storedConfigRef.current, schema), registeredModelsRef.current);
+    const savedDraft = JSON.parse(lastSavedRef.current || '{}');
     const savingAtStart = submittedConfigRef.current !== null;
     const request = Promise.all([
       apiClient.get<Record<string, any>>(versionConfigUrl(projectId, versionId), {signal:controller.signal, silent:true}),
@@ -495,7 +500,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         const next = fillDefaultModels(mergeTrainingDefaults(defaults, remote, schema), registeredModelsRef.current);
         // An in-flight save may have reached the server after this GET snapshot.
         // Keep its acknowledged baseline so the merged dataset changes are saved again.
-        if (!savingAtStart) lastSavedRef.current = JSON.stringify(next);
+        if (!savingAtStart) {
+          storedConfigRef.current = remote;
+          lastSavedRef.current = JSON.stringify(restoreDatasetDraft(next, base, savedDraft));
+        }
         setDatasets(nextDatasets);
         setConfig(previous => restoreDatasetDraft(next, base, previous));
         datasetRefreshBlocked.current = false;
@@ -685,7 +693,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setImportError('');
     try {
       const next = await apiClient.post<Record<string, any>>('/config/import', { text: importText, format: 'toml' }, { silent: true });
-      setConfig(fillDefaultModels(normalizeLegacyIntervals(next), registeredModels));
+      setConfig(fillDefaultModels(mergeTrainingDefaults(defaults, next, schema), registeredModels));
       setImportOpen(false);
     } catch (err: unknown) { setImportError(formatApiError(err)); }
     finally { setImporting(false); }

@@ -53,7 +53,7 @@ export default function ConfigInspection({config,onApply,onChange,onClose,valida
   return <Dialog title={text('参数检查','Parameter check')} wide onClose={onClose}>
     <div className="config-inspection">
       {error ? <p role="alert">{error}<button type="button" className="ui-btn ui-btn-sm" onClick={()=>setAttempt(value=>value+1)}>{text('重试','Retry')}</button></p> : !current ? <LoadingNote className="config-inspection-loading" label={text('正在检查参数…','Checking parameters…')}/> : <>
-        {current.fields.length ? <><p>{text('选择要移除的参数。暂不使用的参数可以保留，方便以后切换配置。','Select fields to remove. Inactive fields can be kept for future configuration changes.')}</p>
+        {current.fields.length ? <><p>{text('选择要移除的参数。','Select fields to remove.')}</p>
           <div className="config-inspection-list">{current.fields.map(field=>{const label=configFieldLabel(field.loc,field.loc,text('zh','en')==='en');return <label className="config-inspection-field" key={fieldKey(field)}>
             <input type="checkbox" checked={selected.has(fieldKey(field))} aria-label={text(`移除 ${field.loc}`,`Remove ${field.loc}`)} onChange={event=>setSelected(previous=>{const next=new Set(previous);if(event.target.checked)next.add(fieldKey(field));else next.delete(fieldKey(field));return next;})}/>
             <span>{label!==field.loc && <strong>{label}</strong>}<code>{field.loc}</code><small>{field.kind==='unknown'?text('当前版本不识别','Not recognized by this version'):text('当前条件下不使用','Inactive in this configuration')}</small><pre>{JSON.stringify(field.value,null,2)}</pre></span>

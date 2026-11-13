@@ -516,8 +516,10 @@ class VersionManager:
                 final / "cache",
             ):
                 (staging / directory.relative_to(final)).mkdir(parents=True, exist_ok=True)
+            from ypuddin.config.export import project_config_for_storage
+
             (staging / "config.json").write_text(
-                json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8"
+                json.dumps(project_config_for_storage(config), indent=2, ensure_ascii=False), encoding="utf-8"
             )
             staging.rename(final)
             promoted = True
