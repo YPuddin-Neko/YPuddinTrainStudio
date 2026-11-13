@@ -44,6 +44,12 @@ PPSF_FIELDS = (
 )
 AUTOMAGIC_FIELDS = ("beta2", "min_lr", "max_lr", "lr_bump", "clip_threshold")
 MUON_FIELDS = ("momentum", "nesterov", "ns_steps", "aux_lr_ratio")
+EMOSENS_FIELDS = ("stopcoef", "use_shadow", "notify")
+
+
+def emosens_initial_scale(family: str = "anima", mode: str = "adapter") -> float:
+    """Upstream v3.9.3 recommendations for U-Net and Transformer training."""
+    return (0.1 if mode == "full" else 1.0) if family == "sdxl" else (0.01 if mode == "full" else 0.1)
 
 
 def optimizer_key(name: str) -> str:
@@ -54,6 +60,7 @@ def optimizer_key(name: str) -> str:
         "prodigyplus.prodigy_plus_schedulefree.prodigyplusschedulefree": "prodigy_plus_sf",
         "ypuddin.optim.automagic.automagic": "automagic",
         "ypuddin.optim.muon.muon": "muon",
+        "ypuddin.optim.emosens.emosens": "emosens",
         "schedulefree.adamwschedulefree": "adamw_sf",
         "schedulefree.adamw_schedulefree.adamwschedulefree": "adamw_sf",
     }
@@ -66,6 +73,7 @@ def optimizer_specific_fields(name: str) -> tuple[str, ...]:
         "prodigy_plus_sf": PPSF_FIELDS,
         "automagic": AUTOMAGIC_FIELDS,
         "muon": MUON_FIELDS,
+        "emosens": EMOSENS_FIELDS,
     }.get(optimizer_key(name), ())
 
 
@@ -148,7 +156,28 @@ def optimizer_capabilities() -> dict[str, Any]:
         {k: _KAHAN_REASON if k == "optimizer.kahan" else auto_reason for k in _schedule_free()["fixed"]}
     )
     auto["defaults"] = {"optimizer.eps": 1e-30, "optimizer.grad_clip_norm": 0}
+    emo = _adaptive()
+    del emo["fixed"]["optimizer.lr"]
+    del emo["reason"]["optimizer.lr"]
+    emo["fixed"].update(_schedule_free()["fixed"])
+    emo["fixed"]["optimizer.cpu_offload"] = False
+    emo_reason = _reason(
+        "EmoSens 根据损失历史生成统一步长，学习率用于设置初始尺度，不使用外部调度或预热。",
+        "EmoSens generates a shared step size from loss history. Learning rate sets its initial scale; external scheduling and warmup are disabled.",
+    )
+    emo["reason"].update({k: emo_reason for k in _schedule_free()["fixed"] if k.startswith("scheduler.")})
+    emo["reason"]["optimizer.kahan"] = _KAHAN_REASON
+    emo["reason"]["optimizer.cpu_offload"] = _reason("EmoSens 不支持优化器 CPU 卸载。", "EmoSens does not support optimizer CPU offload.")
+    emo["defaults"] = {"optimizer.lr": 0.1, "optimizer.betas": [0.9, 0.995], "optimizer.eps": 1e-8, "optimizer.weight_decay": 0.01}
+    emo["context_defaults"] = [
+        {"when": "model.family == 'sdxl' && training.mode == 'adapter'", "defaults": {"optimizer.lr": 1.0}},
+        {"when": "model.family == 'sdxl' && training.mode == 'full'", "defaults": {"optimizer.lr": 0.1}},
+        {"when": "model.family != 'sdxl' && training.mode == 'full'", "defaults": {"optimizer.lr": 0.01}},
+    ]
+    emo["aliases"] = ["ypuddin.optim.emosens.EmoSens"]
+    emo["typed_fields"] = list(EMOSENS_FIELDS)
     return {
+        "emosens": emo,
         "muon": {
             "fixed": {"optimizer.kahan": False, "optimizer.cpu_offload": False},
             "reason": {

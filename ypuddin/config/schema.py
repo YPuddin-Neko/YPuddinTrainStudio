@@ -795,6 +795,7 @@ class OptimizerConfig(_Strict):
                     "adamw_sf",
                     "automagic",
                     "muon",
+                    "emosens",
                 ],
             }
         },
@@ -818,7 +819,7 @@ class OptimizerConfig(_Strict):
             "optimizer",
             advanced=True,
             order=30,
-            show_when="optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came','muon']",
+            show_when="optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came','muon','emosens']",
         ),
     )
     eps: float | None = F(
@@ -829,7 +830,7 @@ class OptimizerConfig(_Strict):
             "optimizer",
             advanced=True,
             order=40,
-            show_when="optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic','muon']",
+            show_when="optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic','muon','emosens']",
         ),
     )
     args: dict[str, Any] = F(
@@ -1090,6 +1091,20 @@ class OptimizerConfig(_Strict):
         ui_=ui("optimizer", advanced=True, order=390, show_when="optimizer.type == 'automagic'"),
     )
 
+    stopcoef: float = F(
+        0.04, ge=0, allow_inf_nan=False,
+        help="EmoSens 稳定状态提示的损失阈值，默认 0.04；同时满足内部状态条件时提示，不会自动结束训练。",
+        ui_=ui("optimizer", advanced=True, order=400, show_when="optimizer.type == 'emosens'"),
+    )
+    use_shadow: bool = F(
+        False, help="启用 EmoSens 影子权重混合，默认关闭；额外保存一份 FP32 权重，并在损失变化满足条件时参与更新。",
+        ui_=ui("optimizer", advanced=True, order=410, control="switch", show_when="optimizer.type == 'emosens'"),
+    )
+    notify: bool = F(
+        True, help="EmoSens 达到稳定状态提示条件时写入日志，默认开启；关闭不改变参数更新。",
+        ui_=ui("optimizer", advanced=True, order=420, control="switch", show_when="optimizer.type == 'emosens'"),
+    )
+
     @field_validator("fused_backward")
     @classmethod
     def _fused_backward_supported(cls, value: bool) -> bool:
@@ -1123,6 +1138,7 @@ class OptimizerConfig(_Strict):
             "adamw_sf",
             "automagic",
             "muon",
+            "emosens",
         }
         if key in known:
             data["type"] = key
@@ -1151,9 +1167,10 @@ class OptimizerConfig(_Strict):
             "adamw_sf",
             "came",
             "muon",
+            "emosens",
         }:
             migrated.add("betas")
-        if key in {"adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic", "muon"}:
+        if key in {"adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic", "muon", "emosens"}:
             migrated.add("eps")
         for name in migrated & args.keys():
             legacy = args.pop(name)
@@ -1196,6 +1213,11 @@ class OptimizerConfig(_Strict):
     @model_validator(mode="after")
     def _optimizer_combinations(self) -> OptimizerConfig:
         key = optimizer_key(self.type)
+        if key == "emosens":
+            if self.kahan or self.cpu_offload:
+                raise ValueError("EmoSens uses FP32 optimizer state; disable Kahan and optimizer CPU offload")
+            if self.args:
+                raise ValueError("EmoSens does not support extra optimizer.args: " + ", ".join(sorted(self.args)))
         if key == "muon":
             if self.kahan:
                 raise ValueError("Muon preserves low-precision updates with FP32 master weights; disable Kahan")
@@ -1209,7 +1231,7 @@ class OptimizerConfig(_Strict):
             raise ValueError("Schedule-Free weight averaging requires beta1 > 0")
         if self.kahan and (key in {"prodigy_plus_sf", "adamw_sf", "automagic"} or "schedulefree" in key):
             raise ValueError("kahan cannot be combined with a schedule-free or Automagic optimizer")
-        if key in {"prodigy", "prodigy_plus_sf", "automagic"} and self.group_lr:
+        if key in {"prodigy", "prodigy_plus_sf", "automagic", "emosens"} and self.group_lr:
             raise ValueError("optimizer.group_lr is managed automatically; clear manual group learning rates")
         if key != "prodigy_plus_sf" and self.eps is None:
             raise ValueError("optimizer.eps may be null only for PPSF Adam-atan2")
@@ -1872,6 +1894,23 @@ class TrainConfig(_Strict):
     sampling: SamplingConfig = F(default_factory=SamplingConfig)
     validation: ValidationConfig = F(default_factory=ValidationConfig)
     logging: LoggingConfig = F(default_factory=LoggingConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _emosens_scale_default(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or not isinstance(value.get("optimizer"), dict):
+            return value
+        optimizer = value["optimizer"]
+        if optimizer_key(str(optimizer.get("type", "adamw"))) != "emosens":
+            return value
+        if "lr" in optimizer or (isinstance(optimizer.get("args"), dict) and "lr" in optimizer["args"]):
+            return value
+        from .optimizer_rules import emosens_initial_scale
+
+        model, training = value.get("model", {}), value.get("training", {})
+        family = model.get("family", "anima") if isinstance(model, dict) else getattr(model, "family", "anima")
+        mode = training.get("mode", "adapter") if isinstance(training, dict) else getattr(training, "mode", "adapter")
+        return {**value, "optimizer": {**optimizer, "lr": emosens_initial_scale(family, mode)}}
 
     @model_validator(mode="after")
     def _cross(self, info: ValidationInfo) -> TrainConfig:

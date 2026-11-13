@@ -87,7 +87,10 @@ export function applyTrainingPreset(current: Record<string, any>, preset: Record
   const type = reusable.optimizer?.type;
   const normalizedType = typeof type === 'string' ? normalizeOptimizerConfig(schema, { optimizer: { type } }).optimizer.type : undefined;
   const changedOptimizer = normalizedType !== undefined && normalizedType !== current.optimizer?.type;
-  const values = changedOptimizer ? normalizeOptimizerConfig(schema, reusable) : reusable;
+  const presetConfig = reusable.model && modelFamily ? { ...reusable, model: { ...reusable.model, family: modelFamily } } : reusable;
+  const values = changedOptimizer
+    ? normalizeOptimizerConfig(schema, presetConfig, current)
+    : reusable;
   // An algorithm named by the preset starts from its own defaults before explicit values are applied.
   const base = changedOptimizer
     ? selectOptimizer(schema, schema ? current : { ...current, optimizer: {} }, normalizedType, { optimizer: values.optimizer })

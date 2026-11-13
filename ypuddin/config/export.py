@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from .optimizer_rules import (
     AUTOMAGIC_FIELDS,
+    EMOSENS_FIELDS,
     MUON_FIELDS,
     PPSF_FIELDS,
     PRODIGY_FIELDS,
@@ -23,7 +24,7 @@ from .schema import ModelConfig, TrainConfig
 NATIVE_INACTIVE_BUCKET_FIELDS = frozenset({
     "resolutions", "aspect_ratio_limit", "area_tolerance", "bucket_step", "bucket_no_upscale",
 })
-_OPTIMIZER_FIELDS = set(PRODIGY_FIELDS + PPSF_FIELDS + AUTOMAGIC_FIELDS + MUON_FIELDS)
+_OPTIMIZER_FIELDS = set(PRODIGY_FIELDS + PPSF_FIELDS + AUTOMAGIC_FIELDS + MUON_FIELDS + EMOSENS_FIELDS)
 _BANK_SAMPLING_FIELDS = {
     "enabled", "sampler", "scheduler", "noise", "cfg", "guidance", "shift",
     "er_sde_order", "er_sde_s_noise",
@@ -164,9 +165,9 @@ def _project_optimizer(data: dict[str, Any]) -> None:
     if isinstance(optimizer.get("type"), str):
         key = optimizer_key(optimizer["type"])
         _drop(optimizer, _OPTIMIZER_FIELDS - set(optimizer_specific_fields(key)))
-        if key not in {"adamw", "adam", "adamw8bit", "lion", "lion8bit", "prodigy", "prodigy_plus_sf", "adamw_sf", "came", "muon"}:
+        if key not in {"adamw", "adam", "adamw8bit", "lion", "lion8bit", "prodigy", "prodigy_plus_sf", "adamw_sf", "came", "muon", "emosens"}:
             optimizer.pop("betas", None)
-        if key not in {"adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic", "muon"}:
+        if key not in {"adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic", "muon", "emosens"}:
             optimizer.pop("eps", None)
         if key != "adamw":
             optimizer.pop("cpu_offload", None)
@@ -186,7 +187,7 @@ def _project_optimizer(data: dict[str, Any]) -> None:
             if "decouple" not in args and args.get("weight_decay", 0) == 0:
                 optimizer.pop("decouple", None)
         # Partial recipes keep legacy arguments until schema migration resolves precedence.
-        if key in {"adamw_sf", "automagic"} or (
+        if key in {"adamw_sf", "automagic", "emosens"} or (
             key == "prodigy_plus_sf" and optimizer.get("use_schedulefree") is True
             and "use_schedulefree" not in _section(optimizer, "args")
         ):

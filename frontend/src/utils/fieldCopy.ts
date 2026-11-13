@@ -143,6 +143,7 @@ export const FIELD_HINTS: Record<string, Copy> = {
   'optimizer.max_lr': ['自适应学习率的最大值。', 'Highest adaptive learning rate.'],
   'optimizer.lr_bump': ['每次调整学习率的幅度。', 'Size of each learning-rate adjustment.'],
   'optimizer.clip_threshold': ['限制单次更新的幅度，默认 1。', 'Caps the size of each update; default 1.'],
+  'optimizer.stopcoef': ['稳定提示使用的损失阈值，默认 0.04。', 'Loss threshold for the stability notification. Default 0.04.'],
 
   'scheduler.type': ['学习率随训练步数变化的方式。', 'How the learning rate changes over training steps.'],
   'scheduler.warmup_steps': ['开头逐步升高学习率；设为 0 关闭，0 到 1 之间表示比例。', 'Ramp up at the start; set to 0 to disable. Values between 0 and 1 are fractions.'],

@@ -33,6 +33,7 @@ _BUILTIN: dict[str, str] = {
     "adamw_sf": "schedulefree.AdamWScheduleFree",
     "automagic": "ypuddin.optim.automagic.Automagic",
     "muon": "ypuddin.optim.muon.Muon",
+    "emosens": "ypuddin.optim.emosens.EmoSens",
 }
 
 SCHEDULE_FREE = {"prodigy_plus_sf", "adamw_sf"}
@@ -95,13 +96,14 @@ def build_optimizer(cfg: OptimizerConfig, param_groups: list[dict[str, Any]]) ->
         "adamw_sf",
         "came",
         "muon",
+        "emosens",
     ):
         kwargs["betas"] = tuple(cfg.betas)
     if key == "came":
         # The shared beta control has two values; CAME additionally requires
         # its confidence-statistic decay (the upstream default is 0.9999).
         kwargs["betas"] = (*cfg.betas, 0.9999)
-    if key in ("adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic", "muon"):
+    if key in ("adamw", "adam", "adamw8bit", "adamw_sf", "prodigy", "prodigy_plus_sf", "automagic", "muon", "emosens"):
         kwargs["eps"] = cfg.eps
     if key == "adafactor":
         kwargs.update({"scale_parameter": False, "relative_step": False, "warmup_init": False})
@@ -160,7 +162,7 @@ def is_schedule_free(cfg: OptimizerConfig) -> bool:
 
 def manages_learning_rate(cfg: OptimizerConfig) -> bool:
     """Whether the optimizer must run without an external LR scheduler."""
-    return optimizer_key(cfg.type) == "automagic" or is_schedule_free(cfg)
+    return optimizer_key(cfg.type) in {"automagic", "emosens"} or is_schedule_free(cfg)
 
 
 def optimizer_rate_snapshot(optimizer: Optimizer) -> list[dict[str, Any]]:
@@ -182,7 +184,7 @@ def optimizer_learning_rates(
     factor; Prodigy includes bias correction when enabled.
     """
     key = optimizer_key(cfg.type)
-    if key == "automagic":
+    if key in {"automagic", "emosens"}:
         rates = optimizer.get_learning_rates()
     else:
         rates = []

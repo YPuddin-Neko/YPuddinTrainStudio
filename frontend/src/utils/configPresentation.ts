@@ -85,6 +85,7 @@ const labels: Record<string, string> = {
   'optimizer.beta2': '梯度大小平滑（β2）', 'optimizer.min_lr': '自适应学习率下限',
   'optimizer.max_lr': '自适应学习率上限', 'optimizer.lr_bump': '学习率调整增量',
   'optimizer.clip_threshold': '更新幅度保护阈值',
+  'optimizer.stopcoef': '稳定提示阈值', 'optimizer.use_shadow': '影子权重混合', 'optimizer.notify': '记录稳定提示',
   'scheduler.type': '学习率调度', 'scheduler.warmup_steps': '预热步数 / 比例', 'scheduler.min_lr_ratio': '最低学习率比例',
   'scheduler.num_cycles': '调度周期数', 'scheduler.power': '多项式幂', 'scheduler.decay_steps': '衰减步数',
   'memory.base_precision': '底模存储精度', 'memory.blocks_to_swap': '换出到 CPU 的层数',
@@ -178,6 +179,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
       stochastic_rounding: 'Stochastic low-precision rounding', weight_decay_by_lr: 'Scale decay with the learning rate', use_schedulefree: 'Schedule-Free weight averaging',
       use_speed: 'SPEED step estimation', use_cautious: 'Cautious direction filtering', use_grams: 'Grams direction adjustment', use_adopt: 'ADOPT updates', use_orthograd: 'OrthoGrad directions', use_focus: 'FOCUS updates',
       beta2: 'Gradient-size smoothing (β2)', min_lr: 'Adaptive learning-rate minimum', max_lr: 'Adaptive learning-rate maximum', lr_bump: 'Learning-rate increment', clip_threshold: 'Normalized update clipping threshold',
+      stopcoef: 'Stability notification threshold', use_shadow: 'Shadow weight mixing', notify: 'Log stability notification',
     };
     return optimizerLabels[path.slice(10)] || fallback;
   }
@@ -214,6 +216,9 @@ const optimizerEnglishHelp: Record<string, string> = {
   beta2: 'Smooths the gradient-size estimate. Default: 0.999. Higher values use longer history and react more slowly to changes.',
   min_lr: 'Lower bound for per-element adaptive learning rates. Default: 0.0000001; must not exceed the upper bound.',
   max_lr: 'Upper bound for per-element adaptive learning rates. Default: 0.001; limits the adaptive rate.',
+  stopcoef: 'Loss threshold for the stability notification, along with the optimizer’s stability criteria. The default is 0.04. Training continues after the notification.',
+  use_shadow: 'Keeps an extra FP32 copy of the weights and mixes it into updates when the loss meets the optimizer’s criteria. Off by default.',
+  notify: 'Writes a log message when the optimizer reaches its stability criteria. On by default. Weight updates continue either way.',
   lr_bump: 'Increment added to or subtracted from the adaptive learning rate. Larger increments change the rate more rapidly; usually keep the default.',
   clip_threshold: 'Clips normalized updates inside Automagic. Default: 1. This is separate from external gradient clipping.',
 };
@@ -239,9 +244,15 @@ export function schedulerTypeHelp(english = false, options?: string[]) {
 /** Explain what a choice changes before introducing the implementation term. */
 export function configFieldHelp(path: string, fallback: string | undefined, english = false, optimizerType?: string, scheduleFree = false) {
   if (path === 'optimizer.lr' && optimizerType === 'muon') return MUON_LEARNING_RATE_HELP[english ? 1 : 0];
-  if (path === 'optimizer.args' && optimizerType === 'muon') return english
-    ? 'Muon uses its dedicated parameter controls. Resolve conflicting imported values or remove unsupported arguments.'
-    : 'Muon 使用专用参数控件。导入配置中的冲突项或不支持的参数，需要修改或移除。';
+  if (path === 'optimizer.lr' && optimizerType === 'emosens') return english
+    ? 'Sets the initial scale. EmoSens uses training loss to adjust the learning rate shared by all groups. SDXL defaults to 1 for adapters and 0.1 for full fine-tuning. Other model families default to 0.1 for adapters and 0.01 for full fine-tuning.'
+    : '设置初始尺度。EmoSens 根据训练损失调整各组共用的实际学习率。SDXL 的适配器训练和全量微调默认值分别为 1 和 0.1，其他模型系列分别为 0.1 和 0.01。';
+  if (path === 'optimizer.args' && (optimizerType === 'muon' || optimizerType === 'emosens')) {
+    const name = configOptionLabel('optimizer.type', optimizerType, english);
+    return english
+      ? `${name} uses dedicated parameter controls. Correct conflicting imported values or remove unsupported arguments.`
+      : `${name} 使用专用参数控件。请修正导入的冲突值，或移除不支持的附加参数。`;
+  }
   if (path === 'scheduler.type') return schedulerTypeHelp(english);
   if (path === 'optimizer.betas' && optimizerType === 'muon') return english
     ? 'Applies only to auxiliary AdamW updates: β1 smooths the update direction and β2 smooths the estimate of gradient size. Defaults: 0.9 and 0.99. The Muon branch uses its separate momentum setting.'
@@ -297,7 +308,7 @@ export function configFieldHelp(path: string, fallback: string | undefined, engl
 }
 
 export function configFieldHint(path: string, english = false, optimizerType?: string, scheduleFree = false, dataset?: {resolution_mode?:string;native_overflow?:string;crop_anchor?:string}) {
-  if (path === 'optimizer.args' && optimizerType === 'muon') return english
+  if (path === 'optimizer.args' && (optimizerType === 'muon' || optimizerType === 'emosens')) return english
     ? 'Resolve conflicting values or remove unsupported arguments.'
     : '请调整冲突值或移除不支持的参数。';
   const cropHints: Record<string,[string,string]> = {
@@ -312,6 +323,9 @@ export function configFieldHint(path: string, english = false, optimizerType?: s
     bottom_right:['保留右下方，从左侧和上方裁掉多余部分。','Keep the bottom right; trim excess from the left and top.'],
   };
   const dynamic: Record<string, [string, string]> = {
+    'optimizer.lr': optimizerType === 'emosens'
+      ? ['设置初始尺度。训练中的实际学习率由 EmoSens 调整。', 'Sets the initial scale. EmoSens adjusts the learning rate during training.']
+      : FIELD_HINTS['optimizer.lr'],
     'dataset.crop_anchor': cropHints[dataset?.crop_anchor || 'center'],
     'dataset.resolution_mode': dataset?.resolution_mode === 'native'
       ? dataset.native_overflow === 'error'
@@ -398,7 +412,7 @@ export function configOptionLabel(path: string, option: string, english = false,
     'sampling.adapter_merge_dtype': { auto:['自动（跟随底模）', 'Auto (follow base model)'], bf16:['BF16', 'BF16'], fp16:['FP16', 'FP16'], fp32:['FP32', 'FP32'] },
     'sampling.noise': { comfyui:['ComfyUI', 'ComfyUI'], a1111:['A1111 WebUI', 'A1111 WebUI'] },
     'sampling.scheduler': { uniform:['均匀', 'Uniform'], simple:['简单', 'Simple'], sgm_uniform:['SGM 均匀', 'SGM Uniform'], normal:['常规', 'Normal'] },
-    'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free'],muon:['Muon','Muon']},
+    'optimizer.type': {adamw:['AdamW','AdamW'],adam:['Adam','Adam'],sgd:['SGD','SGD'],adamw8bit:['AdamW 8-bit','AdamW 8-bit'],lion:['Lion','Lion'],lion8bit:['Lion 8-bit','Lion 8-bit'],prodigy:['Prodigy','Prodigy'],prodigy_plus_sf:['Prodigy Plus Schedule-Free','Prodigy Plus Schedule-Free'],automagic:['Automagic','Automagic'],adafactor:['Adafactor','Adafactor'],came:['CAME','CAME'],adamw_sf:['AdamW Schedule-Free','AdamW Schedule-Free'],muon:['Muon','Muon'],emosens:['EmoSens','EmoSens']},
     'dataset.native_batch_mode': { physical: ['真实合批', 'Physical'], area: ['按面积拆微批', 'Area'] },
     'dataset.native_max_pixels_mode': {auto: ['自动分辨率优先', 'Auto, resolution first'], auto_vram: ['自动显存优先', 'Auto, VRAM first'], custom: ['自定义', 'Custom']},
     'dataset.resolution_mode': { bucket: ['按设定分辨率训练', 'Bucket'], native: ['按原图尺寸训练', 'Native'] },
@@ -452,17 +466,17 @@ export function presentConfigIssues(errors: ValidationIssue[], english = false):
     const location = (Array.isArray(error.loc) ? error.loc.map(String).join('.') : String(error.loc || '')).replace(/^body\./, '').replace(/^config\./, '');
     const leading = detail.match(/^([a-z_]+(?:\.[a-z_0-9]+)+):\s*/);
     const embedded = leading?.[1] ?? detail.match(/\b(model\.[a-z_]+)\b/)?.[1];
-    const unknownMuonArgs = detail.match(/^Muon does not support extra optimizer\.args: (.+)$/);
+    const unknownOptimizerArgs = detail.match(/^(Muon|EmoSens) does not support extra optimizer\.args: (.+)$/);
     const conflictingArg = detail.match(/^optimizer\.([a-z_]+) conflicts with optimizer\.args\.\1; keep one value in the dedicated field$/);
     const invalidArgs = detail === 'optimizer.args must be an object of named optimizer parameters';
-    const argumentIssue = (!location || location === 'optimizer' || location === 'optimizer.args') && !!(unknownMuonArgs || conflictingArg || invalidArgs);
+    const argumentIssue = (!location || location === 'optimizer' || location === 'optimizer.args') && !!(unknownOptimizerArgs || conflictingArg || invalidArgs);
     const path = argumentIssue ? 'optimizer.args' : embedded && (!location || location === embedded.split('.')[0]) ? embedded : location;
     const label = configFieldLabel(path, path || (english ? 'Configuration' : '配置'), english);
     const type = typeof error.type === 'string' ? error.type : undefined;
     const ctx = error.ctx && typeof error.ctx === 'object' ? error.ctx as Record<string, unknown> : undefined;
     let message = describeValidation(error, { label, percent: PERCENTAGE_FIELDS.includes(path), english }) ?? detail;
-    if (argumentIssue) message = unknownMuonArgs
-      ? english ? `Muon does not support these extra arguments: ${unknownMuonArgs[1]}. Remove them to continue.` : `Muon 不支持这些附加参数：${unknownMuonArgs[1]}，请移除。`
+    if (argumentIssue) message = unknownOptimizerArgs
+      ? english ? `${unknownOptimizerArgs[1]} does not support these extra arguments: ${unknownOptimizerArgs[2]}. Remove them to continue.` : `${unknownOptimizerArgs[1]} 不支持这些附加参数：${unknownOptimizerArgs[2]}，请移除。`
       : conflictingArg
         ? english ? `Extra argument ${conflictingArg[1]} conflicts with its dedicated field. Correct or remove the extra value.` : `附加参数 ${conflictingArg[1]} 与专用字段冲突，请修正或移除附加值。`
         : english ? 'Extra arguments must be a named-parameter object. Remove the invalid value.' : '附加参数必须是键值对象，请移除无效值。';

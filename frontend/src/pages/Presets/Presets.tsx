@@ -106,7 +106,7 @@ function ImagePresets() {
         for (let i = 2; list.data?.some(item => item.name.toLocaleLowerCase() === name.toLocaleLowerCase()); i += 1) name = `${base}-${i}`;
       }
       const existing = preset && !copy && !newDraft;
-      const merged = mergeConfig(defaults, normalizeOptimizerConfig(schema.data, normalizeLegacyIntervals(preservePresetDoraMode(preset?.config || {}))));
+      const merged = mergeConfig(defaults, normalizeOptimizerConfig(schema.data, normalizeLegacyIntervals(preservePresetDoraMode(preset?.config || {})), defaults));
       // Model files come only from the preset itself, never from family defaults.
       const presetModel = (preset?.config?.model || {}) as Record<string, unknown>;
       merged.model = { ...merged.model, ...Object.fromEntries(PRESET_MODEL_FIELDS.map(field => [field, presetModel[field] || null])) };

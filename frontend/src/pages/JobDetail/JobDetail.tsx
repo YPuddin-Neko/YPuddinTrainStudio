@@ -133,7 +133,8 @@ function learningRateHelp(groups: string[], algo: unknown, optimizer: unknown, t
   if (has('text_encoder_2')) lines.push(text('text_encoder_2：第二个文本编码器。', 'text_encoder_2: the second text encoder.'));
   const key = typeof optimizer === 'string' ? optimizer.toLowerCase() : '';
   const adaptive = key.includes('prodigy') ? text('Prodigy 会自动调整学习率，这里是调整后的实际值。', 'Prodigy adjusts these rates itself; these are the rates it uses.')
-    : key.includes('automagic') ? text('Automagic 会逐个参数调整学习率，这里是平均值。', 'Automagic adjusts the rate of each parameter; these are the means.') : '';
+    : key.includes('automagic') ? text('Automagic 会逐个参数调整学习率，这里是平均值。', 'Automagic adjusts the rate of each parameter; these are the means.')
+    : key === 'emosens' ? text('EmoSens 根据训练损失调整学习率，这里显示所有参数组共用的实际值。', 'EmoSens adjusts the learning rate based on training loss. This is the rate used by all parameter groups.') : '';
   if (!lines.length && !adaptive) return undefined;
   return [lines.length ? text('每个参数组当前的学习率：', 'The current learning rate of each parameter group:') : '', ...lines, adaptive].filter(Boolean).join('\n');
 }
@@ -589,7 +590,7 @@ export default function JobDetail() {
   const optimizer = imageTraining && typeof configuredOptimizer === 'string' ? configuredOptimizer.trim().toLowerCase() : '';
   const optimizerLabel = optimizer && configOptionLabel('optimizer.type', optimizer, true);
   const configuredScheduler = configSnapshot?.scheduler?.type;
-  const scheduler = typeof configuredScheduler === 'string' ? configuredScheduler.trim() : '';
+  const scheduler = optimizer !== 'emosens' && typeof configuredScheduler === 'string' ? configuredScheduler.trim() : '';
   const schedulerLabel = scheduler && configOptionLabel('scheduler.type', scheduler, true);
   const shortScheduler = scheduler === 'cosine' ? 'Cos' : schedulerLabel;
   const doraLabel = configSnapshot?.adapter?.dora === true || doraRate != null ? 'DoRA' : '';

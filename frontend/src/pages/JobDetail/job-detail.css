@@ -85,6 +85,7 @@
 .job-optimizer-badge[data-optimizer=adamw_sf]{--optimizer-tone:#4744b3}
 .job-optimizer-badge[data-optimizer=automagic]{--optimizer-tone:#bb2150}
 .job-optimizer-badge[data-optimizer=muon]{--optimizer-tone:#527717}
+.job-optimizer-badge[data-optimizer=emosens]{--optimizer-tone:#70472a}
 .job-optimizer-viewport{display:block;overflow:hidden;scrollbar-width:none;overscroll-behavior-x:contain}
 .job-optimizer-viewport:focus{overflow-x:auto}
 .job-optimizer-text{display:block;width:max-content}

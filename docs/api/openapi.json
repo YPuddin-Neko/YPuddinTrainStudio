@@ -26492,7 +26492,8 @@
                 "came",
                 "adamw_sf",
                 "automagic",
-                "muon"
+                "muon",
+                "emosens"
               ],
               "order": 0
             }
@@ -26541,7 +26542,7 @@
               "advanced": true,
               "group": "optimizer",
               "order": 30,
-              "show_when": "optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came','muon']"
+              "show_when": "optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came','muon','emosens']"
             }
           },
           "eps": {
@@ -26561,7 +26562,7 @@
               "advanced": true,
               "group": "optimizer",
               "order": 40,
-              "show_when": "optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic','muon']"
+              "show_when": "optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic','muon','emosens']"
             }
           },
           "args": {
@@ -27105,6 +27106,45 @@
               "group": "optimizer",
               "order": 390,
               "show_when": "optimizer.type == 'automagic'"
+            }
+          },
+          "stopcoef": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Stopcoef",
+            "description": "EmoSens 稳定状态提示的损失阈值，默认 0.04；同时满足内部状态条件时提示，不会自动结束训练。",
+            "default": 0.04,
+            "x-ui": {
+              "advanced": true,
+              "group": "optimizer",
+              "order": 400,
+              "show_when": "optimizer.type == 'emosens'"
+            }
+          },
+          "use_shadow": {
+            "type": "boolean",
+            "title": "Use Shadow",
+            "description": "启用 EmoSens 影子权重混合，默认关闭；额外保存一份 FP32 权重，并在损失变化满足条件时参与更新。",
+            "default": false,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "optimizer",
+              "order": 410,
+              "show_when": "optimizer.type == 'emosens'"
+            }
+          },
+          "notify": {
+            "type": "boolean",
+            "title": "Notify",
+            "description": "EmoSens 达到稳定状态提示条件时写入日志，默认开启；关闭不改变参数更新。",
+            "default": true,
+            "x-ui": {
+              "advanced": true,
+              "control": "switch",
+              "group": "optimizer",
+              "order": 420,
+              "show_when": "optimizer.type == 'emosens'"
             }
           }
         },

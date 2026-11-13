@@ -833,13 +833,12 @@ def _merge_preset_config(base: dict[str, Any], fragment: dict[str, Any]) -> dict
     previous = base.get("optimizer")
     if (
         isinstance(optimizer, dict) and isinstance(optimizer.get("type"), str)
-        and optimizer_key(optimizer["type"]) == "muon"
-        and not (isinstance(previous, dict) and optimizer_key(str(previous.get("type", ""))) == "muon")
+        and optimizer_key(optimizer["type"]) in {"muon", "emosens"}
+        and not (isinstance(previous, dict) and optimizer_key(str(previous.get("type", ""))) == optimizer_key(optimizer["type"]))
     ):
-        # Let Muon's validator supply missing defaults and migrate explicit args.
-        # Values from the previous optimizer must not become explicit Muon values.
+        # Let the selected optimizer supply missing defaults and migrate explicit args.
         previous = dict(previous) if isinstance(previous, dict) else {}
-        for path in optimizer_policy("muon").get("defaults", {}):
+        for path in optimizer_policy(optimizer["type"]).get("defaults", {}):
             previous.pop(path.removeprefix("optimizer."), None)
         previous.pop("args", None)
         base = {**base, "optimizer": previous}

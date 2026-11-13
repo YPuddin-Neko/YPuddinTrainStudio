@@ -61,7 +61,7 @@ export default function PresetImportDialog({ schema, onClose, onImport }: { sche
         const family = typeof model?.family === 'string' ? model.family : 'anima';
         const defaults = reusableTrainingPreset(await apiClient.get<Record<string, any>>('/config/defaults', { params: { family }, silent: true }));
         for (const field of PRESET_MODEL_FIELDS) if (defaults.model) delete defaults.model[field];
-        configText = JSON.stringify(mergeConfig(defaults, normalizeOptimizerConfig(schema, normalizeLegacyIntervals(preservePresetDoraMode(config)))));
+        configText = JSON.stringify(mergeConfig(defaults, normalizeOptimizerConfig(schema, normalizeLegacyIntervals(preservePresetDoraMode(config)), defaults)));
       }
       const config = await apiClient.post<Record<string, any>>('/config/import', { text: configText, format: isJson ? 'json' : 'toml', kind: 'preset' }, { silent: true });
       if (await onImport({ name, description, config })) onClose();

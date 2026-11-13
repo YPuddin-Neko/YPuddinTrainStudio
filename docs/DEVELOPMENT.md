@@ -81,4 +81,4 @@ python scripts/package_source.py /path/to/YPuddinTrainStudio-source.zip
 
 ## 第三方代码
 
-第三方源码、资源和依赖来源记录在所在目录的说明及许可证文件中：模型后端在 `ypuddin/models/` 各系列目录及其 `vendor/`、`assets/` 的 `NOTICE.md`，Automagic 优化器在 `ypuddin/optim/NOTICE.md`，ER-SDE 采样器在 `ypuddin/sampling/ER_SDE_PROVENANCE.md` 与 `ER_SDE_LICENSE.txt`。修改这些模块时保留来源与许可声明，避免将运行权重纳入源码包。
+第三方源码、资源和依赖来源记录在所在目录的说明及许可证文件中：模型后端在 `ypuddin/models/` 各系列目录及其 `vendor/`、`assets/` 的 `NOTICE.md`，Automagic 优化器在 `ypuddin/optim/NOTICE.md`，EmoSens 在 `ypuddin/optim/EMOSENS_NOTICE.md` 与 `EMOSENS_LICENSE.txt`，ER-SDE 采样器在 `ypuddin/sampling/ER_SDE_PROVENANCE.md` 与 `ER_SDE_LICENSE.txt`。修改这些模块时保留来源与许可声明，避免将运行权重纳入源码包。

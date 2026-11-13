@@ -7963,6 +7963,24 @@ export interface components {
              * @default 1
              */
             clip_threshold: number;
+            /**
+             * Stopcoef
+             * @description EmoSens 稳定状态提示的损失阈值，默认 0.04；同时满足内部状态条件时提示，不会自动结束训练。
+             * @default 0.04
+             */
+            stopcoef: number;
+            /**
+             * Use Shadow
+             * @description 启用 EmoSens 影子权重混合，默认关闭；额外保存一份 FP32 权重，并在损失变化满足条件时参与更新。
+             * @default false
+             */
+            use_shadow: boolean;
+            /**
+             * Notify
+             * @description EmoSens 达到稳定状态提示条件时写入日志，默认开启；关闭不改变参数更新。
+             * @default true
+             */
+            notify: boolean;
         };
         /** OutputBinding */
         OutputBinding: {

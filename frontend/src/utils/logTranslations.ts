@@ -136,6 +136,8 @@ const RULES: Rule[] = [
   [/^injected adapters into (\d+) layers \(([^)]*)\): ([\d,]+) trainable parameters$/, m => `已注入适配器：${m[1]} 层（${adapterKinds(m[2])}），可训练参数 ${m[3]} 个`],
   [/^injected adapters: \{'layers': (\d+), 'trainable_params': (\d+)/, m => `已注入适配器：${m[1]} 层，可训练参数 ${Number(m[2]).toLocaleString('en-US')} 个`],
   [/^optimizer (\S+): (\d+) parameter groups, learning rates (.+), weight decay (\S+)$/, m => `优化器 ${m[1]}：${m[2]} 个参数组，学习率 ${m[3]}，权重衰减 ${m[4]}`],
+  [/^optimizer (\S+): (\d+) parameter groups, initial scale (\S+), weight decay (\S+)$/, m => `优化器 ${m[1]}：${m[2]} 个参数组，初始尺度 ${m[3]}，权重衰减 ${m[4]}`],
+  [/^EmoSens: stability threshold reached \(loss EMA (\S+)\); training continues$/, m => `EmoSens 达到稳定提示条件（损失滑动平均 ${m[1]}），训练继续`],
   [/^scheduler managed by optimizer: warmup (\S+), (\d+) total steps$/, m => `学习率由优化器自行调度：预热 ${m[1]}，共 ${m[2]} 步`],
   [/^scheduler (\S+): warmup (\S+), (\d+) total steps$/, m => `学习率调度 ${m[1]}：预热 ${m[2]}，共 ${m[3]} 步`],
   [/^timestep sampling (resolution_sqrt|Resolution-adjusted Shift|uniform|Uniform|logit_normal|Logit-normal|shift|Fixed Shift)(?: \| reference (\d+) tokens(?:\/image)? \((auto|manual)\) \| base [sS]hift (\S+)| \| Shift (\S+))?(?: \| (?:last training target (\d+) tokens\/image|last training batch (\d+) target tokens)(?: \| (?:applied Shift|baseline Shift|batch shift) (\S+))?)?(?: \| InfoNoise (enabled \(baseline distribution\)|warmup|active|collecting|fallback)(?: \| ([a-z_ ]+))?)?$/, timestepSamplingMessage],

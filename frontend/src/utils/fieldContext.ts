@@ -415,6 +415,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
           came: ['在 Adafactor 的基础上加入置信度修正，省显存且更稳定。', 'Adafactor with a confidence correction; low memory and more stable.'],
           adamw_sf: ['不需要学习率调度器的 AdamW。', 'AdamW that needs no learning-rate schedule.'],
           automagic: ['为每个参数自动调节学习率，显存占用低。', 'Adjusts the learning rate of every parameter automatically; low memory use.'],
+          emosens: ['根据训练损失调整所有参数组共用的学习率，无需单独设置调度或预热。', 'Uses training loss to adjust the learning rate shared by all parameter groups, with no external schedule or warmup.'],
         }),
       ]);
     case 'dataset.num_workers':

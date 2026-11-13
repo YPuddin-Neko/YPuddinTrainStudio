@@ -2686,7 +2686,8 @@
               "came",
               "adamw_sf",
               "automagic",
-              "muon"
+              "muon",
+              "emosens"
             ],
             "order": 0
           }
@@ -2735,7 +2736,7 @@
             "advanced": true,
             "group": "optimizer",
             "order": 30,
-            "show_when": "optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came','muon']"
+            "show_when": "optimizer.type in ['adamw','adam','adamw8bit','lion','lion8bit','prodigy','prodigy_plus_sf','adamw_sf','came','muon','emosens']"
           }
         },
         "eps": {
@@ -2755,7 +2756,7 @@
             "advanced": true,
             "group": "optimizer",
             "order": 40,
-            "show_when": "optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic','muon']"
+            "show_when": "optimizer.type in ['adamw','adam','adamw8bit','adamw_sf','prodigy','prodigy_plus_sf','automagic','muon','emosens']"
           }
         },
         "args": {
@@ -3301,6 +3302,45 @@
             "group": "optimizer",
             "order": 390,
             "show_when": "optimizer.type == 'automagic'"
+          }
+        },
+        "stopcoef": {
+          "default": 0.04,
+          "description": "EmoSens 稳定状态提示的损失阈值，默认 0.04；同时满足内部状态条件时提示，不会自动结束训练。",
+          "minimum": 0,
+          "title": "Stopcoef",
+          "type": "number",
+          "x-ui": {
+            "advanced": true,
+            "group": "optimizer",
+            "order": 400,
+            "show_when": "optimizer.type == 'emosens'"
+          }
+        },
+        "use_shadow": {
+          "default": false,
+          "description": "启用 EmoSens 影子权重混合，默认关闭；额外保存一份 FP32 权重，并在损失变化满足条件时参与更新。",
+          "title": "Use Shadow",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "optimizer",
+            "order": 410,
+            "show_when": "optimizer.type == 'emosens'"
+          }
+        },
+        "notify": {
+          "default": true,
+          "description": "EmoSens 达到稳定状态提示条件时写入日志，默认开启；关闭不改变参数更新。",
+          "title": "Notify",
+          "type": "boolean",
+          "x-ui": {
+            "advanced": true,
+            "control": "switch",
+            "group": "optimizer",
+            "order": 420,
+            "show_when": "optimizer.type == 'emosens'"
           }
         }
       },
@@ -4446,6 +4486,89 @@
   "title": "TrainConfig",
   "type": "object",
   "x-optimizer-capabilities": {
+    "emosens": {
+      "fixed": {
+        "optimizer.group_lr": {},
+        "adapter.lr_scale": {},
+        "scheduler.type": "constant",
+        "scheduler.warmup_steps": 0,
+        "scheduler.min_lr_ratio": 0,
+        "optimizer.kahan": false,
+        "optimizer.cpu_offload": false
+      },
+      "reason": {
+        "optimizer.group_lr": {
+          "zh": "当前优化器统一管理步长，不叠加手动分组学习率或倍率。",
+          "en": "This optimizer manages step sizes without manual group learning rates or multipliers."
+        },
+        "adapter.lr_scale": {
+          "zh": "当前优化器统一管理步长，不叠加手动分组学习率或倍率。",
+          "en": "This optimizer manages step sizes without manual group learning rates or multipliers."
+        },
+        "adapter.rules[].lr": {
+          "zh": "当前优化器统一管理步长，不叠加手动分组学习率或倍率。",
+          "en": "This optimizer manages step sizes without manual group learning rates or multipliers."
+        },
+        "scheduler.type": {
+          "zh": "EmoSens 根据损失历史生成统一步长，学习率用于设置初始尺度，不使用外部调度或预热。",
+          "en": "EmoSens generates a shared step size from loss history. Learning rate sets its initial scale; external scheduling and warmup are disabled."
+        },
+        "scheduler.warmup_steps": {
+          "zh": "EmoSens 根据损失历史生成统一步长，学习率用于设置初始尺度，不使用外部调度或预热。",
+          "en": "EmoSens generates a shared step size from loss history. Learning rate sets its initial scale; external scheduling and warmup are disabled."
+        },
+        "scheduler.min_lr_ratio": {
+          "zh": "EmoSens 根据损失历史生成统一步长，学习率用于设置初始尺度，不使用外部调度或预热。",
+          "en": "EmoSens generates a shared step size from loss history. Learning rate sets its initial scale; external scheduling and warmup are disabled."
+        },
+        "optimizer.kahan": {
+          "zh": "当前优化器已有自己的状态与精度处理，不支持叠加此补偿。",
+          "en": "This optimizer manages its own states and precision; the additional Kahan wrapper is unsupported."
+        },
+        "optimizer.cpu_offload": {
+          "zh": "EmoSens 不支持优化器 CPU 卸载。",
+          "en": "EmoSens does not support optimizer CPU offload."
+        }
+      },
+      "defaults": {
+        "optimizer.lr": 0.1,
+        "optimizer.betas": [
+          0.9,
+          0.995
+        ],
+        "optimizer.eps": 1e-08,
+        "optimizer.weight_decay": 0.01
+      },
+      "conditional": [],
+      "context_defaults": [
+        {
+          "when": "model.family == 'sdxl' && training.mode == 'adapter'",
+          "defaults": {
+            "optimizer.lr": 1.0
+          }
+        },
+        {
+          "when": "model.family == 'sdxl' && training.mode == 'full'",
+          "defaults": {
+            "optimizer.lr": 0.1
+          }
+        },
+        {
+          "when": "model.family != 'sdxl' && training.mode == 'full'",
+          "defaults": {
+            "optimizer.lr": 0.01
+          }
+        }
+      ],
+      "aliases": [
+        "ypuddin.optim.emosens.EmoSens"
+      ],
+      "typed_fields": [
+        "stopcoef",
+        "use_shadow",
+        "notify"
+      ]
+    },
     "muon": {
       "fixed": {
         "optimizer.kahan": false,

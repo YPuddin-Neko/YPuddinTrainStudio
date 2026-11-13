@@ -987,7 +987,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (type !== undefined && type !== value.optimizer?.type) {
       optimizerEdits.current.set(value.optimizer?.type ?? 'adamw', value);
       const previous = optimizerEdits.current.get(type);
-      next = previous ? restoreOptimizerSelection(schema, next, previous) : selectOptimizer(schema, next, type);
+      next = previous ? restoreOptimizerSelection(schema, { ...next, optimizer: value.optimizer }, previous) : selectOptimizer(schema, next, type);
     }
     const normalized = normalizeOptimizerConfig(schema, normalizeLegacyIntervals(next));
     lastEmittedConfig.current = normalized;
@@ -1117,8 +1117,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const lockedSwitch = switchLock(fullPathKey, value, family, english);
     const computeManaged: {value: unknown; label?: string; reason: string; tag?: string} | null = layerLock ?? lockedSwitch ?? trainingComputeManagedField(activeComputePolicy, fullPathKey, english);
     const fieldValue = computeManaged ? computeManaged.value : getNestedValue(value, path) !== undefined ? getNestedValue(value, path) : prop.default;
-    const muonArgs = fullPathKey === 'optimizer.args' && value.optimizer?.type === 'muon';
-    if (muonArgs && fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue) && Object.keys(fieldValue).length === 0) return null;
+    const dedicatedOptimizerArgs = fullPathKey === 'optimizer.args' && ['muon', 'emosens'].includes(value.optimizer?.type);
+    if (dedicatedOptimizerArgs && fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue) && Object.keys(fieldValue).length === 0) return null;
     const groupName = ui.group || (parentPath.length > 0 ? parentPath[0] : 'default');
     const compactField = compact || groupName === 'adapter';
     const percentage = PERCENTAGE_FIELDS.includes(fullPathKey);
@@ -1127,7 +1127,8 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const numericMax = ui.max ?? prop.maximum ?? prop.exclusiveMaximum;
     const optimizerReason = parentPath[0] === 'scheduler' ? undefined : optimizerManagedReason(schema, value, fullPathKey, english);
     const managedReason = computeManaged?.reason || trainingManagedReason(value, fullPathKey, english) || optimizerReason;
-    if (optimizerReason && ['optimizer.kahan', 'optimizer.group_lr', 'adapter.lr_scale'].includes(fullPathKey)) return null;
+    if (optimizerReason && (['optimizer.kahan', 'optimizer.group_lr', 'adapter.lr_scale'].includes(fullPathKey)
+      || (fullPathKey === 'optimizer.cpu_offload' && value.optimizer?.type === 'emosens')) && !errorItem) return null;
     // Only what this model and machine use: an unused setting shows only while it is still set, with the reason.
     const unusedReason = computeManaged ? undefined : unusedSettingReason(fullPathKey, fieldContext);
     if (unusedReason && hideUnusedSetting(fullPathKey, fieldValue, fieldContext)) return null;
@@ -1146,6 +1147,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       }
       if (fullPathKey === 'adapter.algo' && value.training?.task === 'slider' && option !== 'lora') {
         return { value: option, label: `${label} (${english ? 'slider training uses LoRA' : '滑块训练使用 LoRA'})`, displayLabel: label, disabled: true };
+      }
+      if ((fullPathKey === 'optimizer.type' && option === 'emosens' && value.loop?.distributed_strategy === 'fsdp')
+        || (fullPathKey === 'loop.distributed_strategy' && option === 'fsdp' && value.optimizer?.type === 'emosens')) {
+        const note = english ? 'EmoSens uses single-device training or DDP' : 'EmoSens 支持单设备训练或 DDP';
+        return { value: option, label: `${label} (${note})`, displayLabel: label, disabled: true };
       }
       if (trainingMode && supportedOptions && !supportedOptions.includes(option)) {
         const note = option === 'full'
@@ -1293,12 +1299,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       prop.additionalProperties &&
       !prop.properties
     ) {
-      control = muonArgs && (!fieldValue || typeof fieldValue !== 'object' || Array.isArray(fieldValue)) ? (
+      control = dedicatedOptimizerArgs && (!fieldValue || typeof fieldValue !== 'object' || Array.isArray(fieldValue)) ? (
         <button type="button" className="ui-btn ui-btn-sm" aria-label={english ? 'Remove invalid arguments' : '移除无效参数'} onClick={() => onChange(setNestedValue(value, path, {}))}>{english ? 'Remove invalid arguments' : '移除无效参数'}</button>
       ) : (
         <KeyValueEditor
           value={fieldValue || {}}
-          allowAdd={!muonArgs}
+          allowAdd={!dedicatedOptimizerArgs}
           addLabel={({'optimizer.group_lr': english ? 'Add parameter group' : '添加参数组', 'optimizer.args': english ? 'Add argument' : '添加参数', 'adapter.lr_scale': english ? 'Add multiplier' : '添加倍率'} as Record<string, string>)[fullPathKey]}
           onChange={(val) => onChange(setNestedValue(value, path, val))}
         />

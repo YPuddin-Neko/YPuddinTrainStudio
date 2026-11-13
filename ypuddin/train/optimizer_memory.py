@@ -61,7 +61,7 @@ def optimizer_memory_breakdown(
         result["state_layout_kind"] = "cpu_offload_separate"
         return result
     supported = {"adam", "adamw", "sgd", "lion", "adamw8bit", "lion8bit", "adafactor",
-                 "came", "automagic", "prodigy", "prodigy_plus_sf", "adamw_sf", "muon"}
+                 "came", "automagic", "prodigy", "prodigy_plus_sf", "adamw_sf", "muon", "emosens"}
     if key not in supported:
         return {**result, "state_bytes": None, "step_workspace_bytes": None,
                 "state_kind": "unknown", "workspace_kind": "unknown", "unknowns": ["optimizer_class"]}
@@ -224,6 +224,20 @@ def optimizer_memory_breakdown(
                 factor_bytes = _factored_elements(shape) * wide if factored else 0
                 workspace = max(workspace, previous_live + cast + 2 * n * wide + factor_bytes + 2 * wide)
                 previous_live = 0 if first_moment else n * wide
+            elif key == "emosens":
+                if group.get("lr", cfg.lr) == 0:
+                    continue
+                roles = ["exp_avg", "exp_avg_sq"]
+                if low_precision:
+                    roles.append("master_param")
+                if cfg.use_shadow:
+                    roles.append("shadow")
+                for role in roles:
+                    state += n * 4
+                    parameter_record(role, shape, torch.float32)
+                cast = n * 4 if low_precision else 0
+                workspace = max(workspace, previous_live + cast + n * 4)
+                previous_live = cast + n * 4
             elif key == "automagic":
                 if group.get("lr", cfg.lr) == 0:
                     continue

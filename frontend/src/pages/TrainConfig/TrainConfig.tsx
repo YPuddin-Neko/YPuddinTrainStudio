@@ -61,7 +61,7 @@ function referencePlanConfig(config: Record<string, any>) {
 }
 
 function mergeTrainingDefaults(defaults: Record<string, any>, draft: Record<string, any>, schema: any) {
-  const next = mergeConfig(defaults, normalizeOptimizerConfig(schema, normalizeLegacyIntervals(draft)));
+  const next = mergeConfig(defaults, normalizeOptimizerConfig(schema, normalizeLegacyIntervals(draft), defaults));
   // Older resume recipes inherit their authenticated checkpoint's policy.
   if (draft.checkpoint?.resume) {
     next.dataset = { ...next.dataset };

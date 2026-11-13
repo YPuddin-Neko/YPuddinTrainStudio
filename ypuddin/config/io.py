@@ -133,6 +133,7 @@ _LEGACY_VALUES: dict[str, dict[str, Any]] = {
     "optimizer": {
         "cpu_offload": False, "exclude_bias_norm_from_weight_decay": False,
         "momentum": 0.95, "nesterov": True, "ns_steps": 5, "aux_lr_ratio": 0.005,
+        "stopcoef": 0.04, "use_shadow": False, "notify": True,
     },
     # Center keeps the pixel geometry of older checkpoints.
     "dataset": {"crop_anchor": "center", "native_max_pixels_mode": "custom", "native_max_pixels_resolved": None},

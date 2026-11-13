@@ -828,10 +828,13 @@ class Trainer:
         self._scheduler_contract = scheduler_recipe(cfg, self.progress.total_steps)
         validate_scheduler_instance(self._scheduler_contract, self.scheduler)
         log.info(
-            "optimizer %s: %d parameter groups, learning rates %s, weight decay %s",
+            "optimizer %s: %d parameter groups, initial scale %s, weight decay %s"
+            if optimizer_key(cfg.optimizer.type) == "emosens"
+            else "optimizer %s: %d parameter groups, learning rates %s, weight decay %s",
             type(self.optimizer).__name__,
             len(self.optimizer.param_groups),
-            ", ".join(f"{group.get('lr', 0):.2e}" for group in self.optimizer.param_groups),
+            f"{cfg.optimizer.lr:g}" if optimizer_key(cfg.optimizer.type) == "emosens"
+            else ", ".join(f"{group.get('lr', 0):.2e}" for group in self.optimizer.param_groups),
             cfg.optimizer.weight_decay,
         )
         log.info(
@@ -2693,6 +2696,8 @@ class Trainer:
         next_step = self.progress.step + 1
         will_log = next_step % cfg.loop.log_every == 0 or next_step == self.progress.total_steps
         rate_snapshot = optimizer_rate_snapshot(self.optimizer) if will_log else None
+        if optimizer_key(cfg.optimizer.type) == "emosens":
+            self.optimizer.set_loss(group_loss)
         if scaler is None:
             self.optimizer.step()
         else:

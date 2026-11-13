@@ -3,7 +3,15 @@ import { evaluateShowWhen } from '../schema/showWhen';
 type Config = Record<string, any>;
 type Reason = { zh?: string; en?: string };
 type Rules = { fixed?: Record<string, unknown>; reason?: Record<string, Reason> };
-type Capability = Rules & { aliases?: string[]; typed_fields?: string[]; defaults?: Record<string, unknown>; conditional?: Array<Rules & { when: string }> };
+type Capability = Rules & {
+  aliases?: string[];
+  typed_fields?: string[];
+  defaults?: Record<string, unknown>;
+  context_defaults?: Array<{ when: string; defaults: Record<string, unknown> }>;
+  conditional?: Array<Rules & { when: string }>;
+};
+
+const fullLearningRates = ['backbone_lr', 'text_encoder_lr', 'text_encoder_2_lr', 'llm_adapter_lr', 'self_attn_lr', 'cross_attn_lr', 'mlp_lr', 'modulation_lr'];
 
 export function configPathValue(config: Config, path: string) {
   return path.split('.').reduce((value, key) => value?.[key], config);
@@ -28,6 +36,20 @@ function optimizerSchema(schema: any, group = 'optimizer') {
 function capability(schema: any, config: Config): Capability | undefined {
   const name = config.optimizer?.type || optimizerSchema(schema)?.properties?.type?.default;
   return schema?.['x-optimizer-capabilities']?.[name];
+}
+
+function optimizerDefaults(profile: Capability | undefined, config: Config, context?: Config) {
+  const defaults = { ...profile?.defaults };
+  if (!profile?.context_defaults?.length) return defaults;
+  const effective = {
+    ...config,
+    model: { family: 'anima', ...context?.model, ...config.model },
+    training: { mode: 'adapter', ...context?.training, ...config.training },
+  };
+  for (const rule of profile.context_defaults) {
+    if (evaluateShowWhen(rule.when, effective)) Object.assign(defaults, rule.defaults);
+  }
+  return defaults;
 }
 
 function optimizerName(schema: any, name: string): string {
@@ -93,10 +115,10 @@ function normalizePartialOptimizerConfig(schema: any, source: Config): Config {
   return ratio === undefined ? next : assign(next, 'optimizer.aux_lr_ratio', ratio);
 }
 
-export function normalizeOptimizerConfig(schema: any, source: Config): Config {
+export function normalizeOptimizerConfig(schema: any, source: Config, context?: Config): Config {
   let next = normalizePartialOptimizerConfig(schema, source);
   const profile = capability(schema, next);
-  for (const [path, value] of Object.entries(profile?.defaults || {})) {
+  for (const [path, value] of Object.entries(optimizerDefaults(profile, next, context))) {
     if (configPathValue(next, path) === undefined) next = assign(next, path, value);
   }
   if (profile) {
@@ -133,7 +155,7 @@ export function selectOptimizer(schema: any, config: Config, type: string, selec
     if (name === 'type' || name === 'args' || property.default === undefined) continue;
     next = assign(next, `optimizer.${name}`, property.default);
   }
-  for (const [path, value] of Object.entries(profile?.defaults || {})) next = assign(next, path, value);
+  for (const [path, value] of Object.entries(optimizerDefaults(profile, next))) next = assign(next, path, value);
   if (supplied) next = assign(next, 'optimizer', { ...next.optimizer, ...supplied });
   return normalizeOptimizerConfig(schema, clearIncompatibleOptimizerSettings(schema, next));
 }
@@ -146,7 +168,7 @@ function clearIncompatibleOptimizerSettings(schema: any, source: Config): Config
     }
   }
   if ('optimizer.group_lr' in optimizerRules(schema, next).fixed) {
-    for (const key of ['backbone_lr', 'text_encoder_lr', 'text_encoder_2_lr', 'llm_adapter_lr', 'self_attn_lr', 'cross_attn_lr', 'mlp_lr', 'modulation_lr']) {
+    for (const key of fullLearningRates) {
       if (next.training?.[key] > 0) next = assign(next, `training.${key}`, null);
     }
   }
@@ -156,6 +178,12 @@ function clearIncompatibleOptimizerSettings(schema: any, source: Config): Config
 export function restoreOptimizerSelection(schema: any, current: Config, previous: Config): Config {
   let next: Config = {...current, optimizer: previous.optimizer};
   if (previous.scheduler) next = {...next, scheduler: previous.scheduler};
+  if (current.training?.mode === 'full' && previous.training?.mode === 'full'
+      && 'optimizer.group_lr' in optimizerRules(schema, current).fixed) {
+    for (const key of fullLearningRates) {
+      if (previous.training[key] > 0 && next.training[key] == null) next = assign(next, `training.${key}`, previous.training[key]);
+    }
+  }
   if (previous.adapter?.lr_scale !== undefined) next = assign(next, 'adapter.lr_scale', previous.adapter.lr_scale);
   if (Array.isArray(current.adapter?.rules) && Array.isArray(previous.adapter?.rules)) {
     const rates = new Map(previous.adapter.rules.map((rule: Config) => [rule.match, rule.lr]));
