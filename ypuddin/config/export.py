@@ -31,6 +31,7 @@ _BANK_SAMPLING_FIELDS = {
 }
 _MODEL_FAMILIES = frozenset(get_args(ModelConfig.model_fields["family"].annotation))
 _TILED_FAMILIES = frozenset({"anima", "krea2", "flux3", "moss_image"})
+EXECUTION_CONFIG_VERSION = 1
 
 
 def public_config_dict(config: TrainConfig) -> dict[str, Any]:
@@ -521,6 +522,18 @@ def project_config_for_export(
     for key in TrainConfig.model_fields:
         if data.get(key) == {}:
             data.pop(key)
+    return data
+
+
+def project_config_for_execution(config: TrainConfig) -> dict[str, Any]:
+    """Write an applicable recipe that reloads to the frozen execution values."""
+    original = config.to_dict()
+    data = project_config_for_export(config, preserve_resume_identity=False)
+    # Seeds, data fingerprints, scheduler state and sharded adapter contracts
+    # consume values beyond the visible controls. Keep their nondefault values;
+    # defaults omitted by the applicability projection reconstruct on load.
+    defaults = TrainConfig.model_validate(data).to_dict()
+    _restore_nondefaults(original, data, defaults)
     return data
 
 

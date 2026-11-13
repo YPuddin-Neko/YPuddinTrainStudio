@@ -470,9 +470,21 @@ def dump_toml(
     return comment + tomli_w.dumps(values)
 
 
-def write_config(config: TrainConfig, path: str | Path, *, for_export: bool = False) -> None:
+def write_config(
+    config: TrainConfig, path: str | Path, *, for_export: bool = False, for_execution: bool = False,
+) -> None:
+    if for_export and for_execution:
+        raise ValueError("select either an exported recipe or an execution snapshot")
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
+    if for_execution:
+        from .export import project_config_for_execution
+
+        data = project_config_for_execution(config)
+        text = (json.dumps(data, indent=2, ensure_ascii=False) if p.suffix.lower() == ".json"
+                else dump_toml(data, null_mode="config"))
+        p.write_text(text, encoding="utf-8")
+        return
     if p.suffix.lower() == ".json":
         from .export import project_config_for_export
 

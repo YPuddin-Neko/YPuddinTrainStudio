@@ -9,6 +9,7 @@ from ypuddin.config import TrainConfig
 from ypuddin.config.io import config_hash_variants, load_config
 
 PREVIEW_SEED_VERSION = 3
+TRAINING_SEED_VERSION = 2
 
 
 def apply_preview_seed_snapshot(config: dict, state: object) -> None:
@@ -59,12 +60,28 @@ def _legacy_preview_defaults(cfg: TrainConfig, version: int) -> None:
                 prompt.seed = None
 
 
+def _training_seed_version(extra: dict) -> int:
+    version = extra.get("training_seed_version", 1)
+    if type(version) is not int or version not in (1, TRAINING_SEED_VERSION):
+        raise ValueError("恢复点的训练种子版本无效。")
+    return version
+
+
+def training_seed_state(cfg: TrainConfig) -> dict:
+    """Record active seeds and retain validation seeds frozen by older jobs."""
+    seeds = {"loop": cfg.loop.seed}
+    if cfg.validation.enabled or cfg.validation.seed >= 0:
+        seeds["validation"] = cfg.validation.seed
+    return {"training_seed_version": TRAINING_SEED_VERSION, "training_seeds": seeds}
+
+
 def load_checkpoint_recipe(path: Path, metadata: dict, *, overrides=()) -> TrainConfig:
     """Interpret omitted fields in the checkpoint's recipe using its original defaults."""
     cfg = load_config(path, overrides=overrides)
-    version = _preview_version(metadata.get("progress", {}).get("extra", {}))
+    extra = metadata.get("progress", {}).get("extra", {})
+    version = _preview_version(extra)
     _legacy_preview_defaults(cfg, version)
-    if version < PREVIEW_SEED_VERSION:
+    if _training_seed_version(extra) == 1 and version < PREVIEW_SEED_VERSION:
         for section, default in ((cfg.loop, 42), (cfg.validation, 1234)):
             if "seed" not in section.model_fields_set:
                 section.seed = default
@@ -93,7 +110,7 @@ def _legacy_seeds(checkpoint: Path, metadata: dict, cfg: TrainConfig) -> dict[st
 
 def resolve_training_seeds(cfg: TrainConfig, *, planning: bool = False) -> TrainConfig:
     """Return a private execution recipe. A fresh estimate uses a fixed representative order."""
-    sections = ("loop", "validation")
+    sections = ("loop", "validation") if cfg.validation.enabled or cfg.validation.seed >= 0 else ("loop",)
     pending = [name for name in sections if getattr(cfg, name).seed == -1]
     if not pending and not cfg.checkpoint.resume:
         return cfg
@@ -106,8 +123,22 @@ def resolve_training_seeds(cfg: TrainConfig, *, planning: bool = False) -> Train
         meta = read_native_resume_metadata(checkpoint)
         extra = meta.get("progress", {}).get("extra", {})
         _legacy_preview_defaults(resolved, _preview_version(extra))
+        version = _training_seed_version(extra)
+        if version == 1:
+            sections = ("loop", "validation")
+        elif "training_seeds" not in extra:
+            raise ValueError("恢复点缺少训练种子记录，无法继续训练。")
+        pending = [name for name in sections if getattr(cfg, name).seed == -1]
         if "training_seeds" in extra:
             frozen = extra["training_seeds"]
+            if version == TRAINING_SEED_VERSION:
+                if not isinstance(frozen, dict):
+                    raise ValueError("恢复点的训练种子记录无效。")
+                if "validation" in frozen:
+                    sections = ("loop", "validation")
+                elif cfg.validation.enabled or cfg.validation.seed != -1:
+                    raise ValueError("validation.seed 与恢复点的记录不符，请沿用原任务的种子。")
+                pending = [name for name in sections if getattr(cfg, name).seed == -1]
             for name in sections:
                 value = frozen.get(name) if isinstance(frozen, dict) else None
                 requested = getattr(cfg, name).seed

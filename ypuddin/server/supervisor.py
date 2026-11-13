@@ -21,6 +21,7 @@ from typing import Any
 import psutil
 
 from ypuddin.config import TrainConfig, write_config
+from ypuddin.config.export import EXECUTION_CONFIG_VERSION, project_config_for_execution
 from ypuddin.config.io import absolute_paths
 from ypuddin.runtime_profiles import current_profile
 
@@ -739,6 +740,32 @@ class JobSupervisor:
     def _allocation(device: str | tuple[str, ...]) -> tuple[str, ...]:
         return (device,) if isinstance(device, str) else device
 
+    @staticmethod
+    def _image_config(job: dict[str, Any], preview_state: dict[str, Any]) -> dict[str, Any]:
+        from ypuddin.training_seeds import PREVIEW_SEED_VERSION
+
+        payload = json.loads(job["config_json"])
+        legacy_config = not json.loads(job.get("progress_json") or "{}").get("execution_config_version")
+        if preview_state["preview_seed_version"] < PREVIEW_SEED_VERSION:
+            if legacy_config:
+                payload.setdefault("loop", {}).setdefault("seed", 42)
+                payload.setdefault("validation", {}).setdefault("seed", 1234)
+            sampling = payload.setdefault("sampling", {})
+            sampling.setdefault("seed", 0 if preview_state["preview_seed_version"] == 1 else -1)
+            for prompt in sampling.get("prompts", []):
+                prompt.setdefault("seed", None)
+        if legacy_config:
+            # Historical omissions used the old defaults. New compact snapshots
+            # omit current defaults and must not receive these legacy overrides.
+            payload.setdefault("loop", {}).setdefault("deterministic", False)
+            payload.setdefault("adapter", {}).setdefault("dora_axis", "output")
+            payload.setdefault("dataset", {}).setdefault("native_batching_version", 1)
+            if payload["dataset"].get("resolution_mode") == "native":
+                payload["dataset"].setdefault(
+                    "native_batch_mode", "area" if payload["dataset"]["native_batching_version"] in {1, 3} else "physical",
+                )
+        return payload
+
     def _launch(self, job: dict[str, Any], *, device: str | tuple[str, ...] | None = None) -> None:
         from .job_processes import capture_created
 
@@ -816,28 +843,9 @@ class JobSupervisor:
             source = str(Path(__file__).resolve().parents[2])
             env["PYTHONPATH"] = os.pathsep.join(filter(None, (source, env.get("PYTHONPATH"))))
         else:
-            payload = json.loads(job["config_json"])
-            from ypuddin.training_seeds import PREVIEW_SEED_VERSION
-
             preview_state = self._job_preview_seeds(job)
+            payload = self._image_config(job, preview_state)
             env["YPUDDIN_JOB_PREVIEW_SEEDS"] = json.dumps(preview_state)
-            if preview_state["preview_seed_version"] < PREVIEW_SEED_VERSION:
-                payload.setdefault("loop", {}).setdefault("seed", 42)
-                payload.setdefault("validation", {}).setdefault("seed", 1234)
-                sampling = payload.setdefault("sampling", {})
-                sampling.setdefault("seed", 0 if preview_state["preview_seed_version"] == 1 else -1)
-                for prompt in sampling.get("prompts", []):
-                    prompt.setdefault("seed", None)
-            # New queue snapshots include the switch. Existing immutable jobs
-            # predate it and must resume with their original calculation mode.
-            payload.setdefault("loop", {}).setdefault("deterministic", False)
-            # Snapshots from before the DoRA axis option trained output rows, then the default.
-            payload.setdefault("adapter", {}).setdefault("dora_axis", "output")
-            payload.setdefault("dataset", {}).setdefault("native_batching_version", 1)
-            if payload["dataset"].get("resolution_mode") == "native":
-                payload["dataset"].setdefault(
-                    "native_batch_mode", "area" if payload["dataset"]["native_batching_version"] in {1, 3} else "physical",
-                )
             if job["type"] == "cache":
                 payload.setdefault("loop", {}).update(gpu_count=1, distributed_strategy="ddp")
             cfg = absolute_paths(TrainConfig.model_validate(payload))
@@ -847,7 +855,7 @@ class JobSupervisor:
                 )
             cfg.logging.events_path = str(event_file(job))
             cfg_path = run_dir / "job-config.toml"
-            write_config(cfg, cfg_path)
+            write_config(cfg, cfg_path, for_execution=True)
             sub = {"train": "train", "cache": "cache"}[job["type"]]
             cmd = [self.python, "-m", "ypuddin.cli", sub, str(cfg_path)]
             if count > 1:
@@ -1598,7 +1606,9 @@ class JobSupervisor:
             if job.get("samples_dir")
             else run_dir / "samples"
         )
-        cfg = json.loads(job["config_json"])
+        image_job = job["type"] in {"train", "cache"}
+        preview_state = self._job_preview_seeds(job) if image_job else None
+        cfg = self._image_config(job, preview_state) if image_job else json.loads(job["config_json"])
         objective = cfg.get("objective", {})
         if (
             job["type"] in {"train", "cache"}
@@ -1622,7 +1632,13 @@ class JobSupervisor:
         cfg["logging"]["output_dir"] = str(Path(cfg["logging"]["events_path"]).parent)
         if job["type"] in {"train", "cache"}:
             cfg["logging"]["level"] = "debug"
-        cfg.setdefault("sampling", {})["output_dir"] = str(samples_dir)
+        if image_job:
+            execution = TrainConfig.model_validate(cfg)
+            if execution.sampling.enabled or execution.sampling.output_dir is not None:
+                execution.sampling.output_dir = str(samples_dir)
+            cfg = project_config_for_execution(execution)
+        else:
+            cfg.setdefault("sampling", {})["output_dir"] = str(samples_dir)
         manifests = nullcontext()
         if job["type"] == "xyz":
             from .xyz import clone_reference_inputs
@@ -1656,7 +1672,8 @@ class JobSupervisor:
                                 "estimated_peak_mb"
                             ),
                             "estimated_host_mb": json.loads(job.get("progress_json") or "{}").get("estimated_host_mb"),
-                            **({"preview_seeds": self._job_preview_seeds(job)} if job["type"] in {"train", "cache"} else {}),
+                            **({"preview_seeds": preview_state, "execution_config_version": EXECUTION_CONFIG_VERSION}
+                               if image_job else {}),
                         }
                     ),
                     "latest_json": "{}",

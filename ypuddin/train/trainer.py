@@ -83,7 +83,7 @@ from ypuddin.optim import (
 )
 from ypuddin.runtime_compile import validate_compile_environment
 from ypuddin.runtime_profiles import current_profile
-from ypuddin.training_seeds import PREVIEW_SEED_VERSION, resolve_training_seeds
+from ypuddin.training_seeds import PREVIEW_SEED_VERSION, resolve_training_seeds, training_seed_state
 
 from .events import Emitter, NullEmitter
 from .logging import TrainingLogs, log_directory
@@ -490,7 +490,7 @@ class Trainer:
         if self.is_primary:
             self._logs = TrainingLogs(cfg, self.run_dir)
             if not cfg.checkpoint.resume:
-                write_config(cfg, self._record_dir() / "config.toml")
+                write_config(cfg, self._record_dir() / "config.toml", for_execution=True)
         self.emit(
             "run.started", config_hash=self.config_hash, device=str(self.device), run_dir=str(self.run_dir)
         )
@@ -869,7 +869,7 @@ class Trainer:
                 # A rejected same-directory legacy resume must preserve the
                 # original config that authenticates its scheduler closure.
                 preserve_native_resume_recipe(cfg, self._record_dir())
-                write_config(cfg, self._record_dir() / "config.toml")
+                write_config(cfg, self._record_dir() / "config.toml", for_execution=True)
                 if cfg.dataset.resolution_mode == "native":
                     (self._record_dir() / "data-plan.json").write_text(
                         json.dumps(self.bundle.plan.to_dict(), ensure_ascii=False, indent=2) + "\n",
@@ -883,7 +883,7 @@ class Trainer:
         self.progress.extra[DORA_STATE_KEY] = compute_contract(self.adapters)
         self.progress.extra[TRAINING_FEATURE_STATE_KEY] = deepcopy(self._training_feature_contract)
         self.progress.extra["deterministic"] = cfg.loop.deterministic
-        self.progress.extra["training_seeds"] = {"loop": cfg.loop.seed, "validation": cfg.validation.seed}
+        self.progress.extra.update(training_seed_state(cfg))
         self.progress.extra.setdefault("preview_seed_version", 1 if cfg.checkpoint.resume else PREVIEW_SEED_VERSION)
         # Checkpoints win; older states may predate the actual seeds recorded by the job.
         for key, value in self._job_preview_seed_state.items():

@@ -788,7 +788,10 @@ def plan(
             return out
     try:
         if draft:
-            for section in (cfg.loop, cfg.validation):
+            sections = [cfg.loop]
+            if cfg.validation is not None and cfg.validation.enabled:
+                sections.append(cfg.validation)
+            for section in sections:
                 if section is not None and section.seed == -1:
                     section.seed = 0
         else:

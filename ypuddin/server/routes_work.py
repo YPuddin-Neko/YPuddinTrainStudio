@@ -34,6 +34,7 @@ from pydantic import (
 from starlette.background import BackgroundTask
 
 from ypuddin.config import DatasetSourceConfig, TrainConfig, deep_merge
+from ypuddin.config.export import EXECUTION_CONFIG_VERSION, project_config_for_execution
 from ypuddin.config.io import absolute_paths
 from ypuddin.data import IndexDB, scan_sources
 
@@ -2645,7 +2646,6 @@ def _create_image_job(body: JobBody, c: ServiceContext, version: dict | None, co
         {
             "checkpoint": {"output_dir": str(output_dir), "state_dir": str(state_dir)},
             "logging": {"events_path": str(logs_dir / events_name), "output_dir": str(logs_dir), "level": "debug"},
-            "sampling": {"output_dir": str(samples_dir)},
         },
     )
     training_loop = config.get("loop", {})
@@ -2675,6 +2675,10 @@ def _create_image_job(body: JobBody, c: ServiceContext, version: dict | None, co
             code="config.invalid",
             details={"errors": validation_issues(e)},
         ) from e
+    if cfg.sampling.enabled or cfg.checkpoint.resume and cfg.sampling.output_dir is not None:
+        cfg.sampling.output_dir = str(samples_dir)
+    elif not cfg.checkpoint.resume:
+        cfg.sampling.output_dir = None
     from ypuddin.train.native_batch_contract import resolve_native_batching_config
     from ypuddin.training_seeds import PREVIEW_SEED_VERSION, resolve_training_seeds
 
@@ -2792,8 +2796,9 @@ def _create_image_job(body: JobBody, c: ServiceContext, version: dict | None, co
                 "created_at": now(),
                 "run_dir": str(run_dir),
                 "samples_dir": str(samples_dir),
-                "config_json": json.dumps(cfg.to_dict()),
+                "config_json": json.dumps(project_config_for_execution(cfg)),
                 "progress_json": json.dumps({"estimated_peak_mb": estimated_peak_mb, "estimated_host_mb": estimated_host_mb,
+                                             "execution_config_version": EXECUTION_CONFIG_VERSION,
                                              "preview_seeds": {"preview_seed_version": PREVIEW_SEED_VERSION}}),
                 "latest_json": "{}",
             },
