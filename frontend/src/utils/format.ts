@@ -53,10 +53,13 @@ export function formatPercent(p: number | null | undefined): string {
   return `${Math.round(p)}%`;
 }
 
-/** Training speed at two decimals, so at least 0.01; a slower reading keeps that floor and returns the actual value,
- * cut to three significant digits so a reading just under the floor never reads as 0.01. */
-export function formatSpeed(speed: number): { shown: string; actual: number | null } {
+/** Keep the display floor and format slower readings to match the training log's three significant digits. */
+export function formatSpeed(speed: number): { shown: string; actual: string | null } {
   if (!(speed > 0 && speed < 0.01)) return { shown: speed.toFixed(2), actual: null };
-  const scale = 10 ** (2 - Math.floor(Math.log10(speed)));
-  return { shown: '0.01', actual: Math.floor(speed * scale + 1e-9) / scale };
+  const rounded = speed.toExponential(2);
+  const [mantissa, exponent] = rounded.split('e');
+  const actual = Number(exponent) < -4
+    ? `${Number(mantissa)}e-${exponent.slice(1).padStart(2, '0')}`
+    : String(Number(rounded));
+  return { shown: '0.01', actual };
 }
