@@ -303,8 +303,6 @@ export default function JobDetail() {
   const [deleteProgress, setDeleteProgress] = React.useState({ done: 0, total: 0 });
   const deleteJobId = React.useRef(id); deleteJobId.current = id;
   React.useEffect(() => { setDeleting(null); setDeleteBusy(false); setDeleteError(''); }, [id]);
-  const [configSnapshot, setConfigSnapshot] = React.useState<any>(null);
-  const [showRawConfig, setShowRawConfig] = React.useState(false);
   const [sampleProgress, setSampleProgress] = React.useState<{ step: number; promptIndex: number; prompts: number; done: number; total: number } | null>(null);
 
   const requestedTab = params.get('tab') || '';
@@ -316,8 +314,18 @@ export default function JobDetail() {
   const samplesRequestRef = React.useRef<AbortController | null>(null);
   const [connectionRevision, setConnectionRevision] = React.useState(0);
   useEventStreamReconnect(() => setConnectionRevision(value => value + 1));
-  const projectsSnapshot = job?.type === 'train' || job?.type === 'cache';
+  const imageSnapshot = job?.type === 'train' || job?.type === 'cache';
   const queryClient = useQueryClient();
+  const frozenConfig = useQuery({
+    queryKey: ['job-frozen-config', id, connectionRevision],
+    queryFn: ({ signal }) => apiClient.get<Record<string, any>>(`/jobs/${encodeURIComponent(id!)}/config`, {
+      signal, silent: true, timeout: READ_TIMEOUT_MS,
+    }),
+    enabled: !!id,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
   const effectiveConfig = useQuery({
     queryKey: ['job-effective-config', id, connectionRevision],
     queryFn: ({ signal }) => {
@@ -326,13 +334,13 @@ export default function JobDetail() {
         params, signal, silent: true, timeout: READ_TIMEOUT_MS,
       });
     },
-    enabled: activeTab === 'config' && !!id && job?.id === id && projectsSnapshot && configSnapshot != null,
+    enabled: activeTab === 'config' && !!id && job?.id === id && imageSnapshot,
     staleTime: Infinity,
     retry: false,
   });
-  const displayConfigSnapshot = projectsSnapshot ? effectiveConfig.data : configSnapshot;
-  const hasFilteredConfig = projectsSnapshot && effectiveConfig.data !== undefined
-    && JSON.stringify(effectiveConfig.data) !== JSON.stringify(configSnapshot);
+  const configSnapshot = job?.id === id ? frozenConfig.data : undefined;
+  const displaySnapshot = job?.id === id ? (imageSnapshot ? effectiveConfig : frozenConfig) : undefined;
+  const pageError = dataError || (activeTab !== 'config' && frozenConfig.isError ? formatApiError(frozenConfig.error) : '');
   const refreshSamples = React.useCallback(async () => {
     if (!id || jobKind.current?.id === id && isTtsJob(jobKind.current)) return;
     samplesRequestRef.current?.abort();
@@ -362,7 +370,7 @@ export default function JobDetail() {
       pending.pending = false; pending.steps = []; pending.validation = [];
       setMetrics(next);
     };
-    setDataError(''); setJob(null); setMetrics(null); setSamples([]); setSamplesLoaded(false); setSelectedSample(null); setCheckpoints([]); setCheckpointsLoaded(false); setConfigSnapshot(null); setShowRawConfig(false); setSampleProgress(null);
+    setDataError(''); setJob(null); setMetrics(null); setSamples([]); setSamplesLoaded(false); setSelectedSample(null); setCheckpoints([]); setCheckpointsLoaded(false); setSampleProgress(null);
     jobKind.current = null;
     apiClient.get<VersionedJob>(`/jobs/${id}`, options).then(loaded => {
       if (controller.signal.aborted || jobRequestRef.current !== pendingJob) return;
@@ -379,7 +387,6 @@ export default function JobDetail() {
       ignoreAbort(error);
       finishMetrics({ steps: [], loss: [], loss_ema: [], lr: {}, grad_norm: [], vram_mb: [], it_s: [], validation: [] });
     });
-    apiClient.get<any>(`/jobs/${id}/config`, options).then(snapshot => { if (!controller.signal.aborted) setConfigSnapshot(snapshot); }).catch(ignoreAbort);
     return () => { controller.abort(); samplesRequestRef.current?.abort(); };
   }, [id, refreshSamples, connectionRevision]);
 
@@ -631,7 +638,7 @@ export default function JobDetail() {
         <div><dt>{text('运行 ID','Run ID')}</dt><dd><code>{job?.id || id}</code></dd></div>
         {job && isTtsJob(job) && <TtsJobLineage key={job.id} job={job}/>}
       </dl>
-      {dataError && <div className="task-error" role="alert">{dataError}</div>}
+      {pageError && <div className="task-error" role="alert">{pageError}</div>}
       {actionError && <div role="alert" className="task-error">{actionError}</div>}
       {job?.archived_at != null && <div className="job-archived" role="status"><Archive size={15} aria-hidden="true"/><span>{text('此任务已归档，不再显示在队列和项目结果中，权重和记录仍保留。', 'This job is archived: it is hidden from the queue and project results; its weights and records are kept.')}</span>
         <button type="button" className="ui-btn ui-btn-sm" disabled={restoring || !ttsAction(job, 'unarchive', text).allowed} title={ttsAction(job, 'unarchive', text).reason || undefined} onClick={() => void restore()}><ArchiveRestore size={14}/>{text('恢复到训练历史', 'Restore to History')}</button>{!ttsAction(job, 'unarchive', text).allowed && <span>{ttsAction(job, 'unarchive', text).reason}</span>}</div>}
@@ -736,29 +743,18 @@ export default function JobDetail() {
 
       {activeTab === 'config' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
-          {configSnapshot == null || job?.id !== id ? (
-            <EmptyState
-              icon={Code}
-              title={t('job.noConfig', '暂无配置快照')}
-
-            />
-          ) : (
-            <>
-              {(hasFilteredConfig || effectiveConfig.isError) && <button type="button" className="ui-btn ui-btn-sm mb-2" onClick={() => setShowRawConfig(value => !value)}>
-                {showRawConfig ? text('返回配置快照', 'Back to configuration snapshot') : text('查看原始配置', 'View raw configuration')}
-              </button>}
-              {showRawConfig || displayConfigSnapshot !== undefined ? (
-                <pre className="job-config-snapshot text-xs font-mono bg-slate-50 dark:bg-slate-900 p-4 rounded-lg overflow-x-auto">
-                  {JSON.stringify(showRawConfig ? configSnapshot : displayConfigSnapshot, null, 2)}
-                </pre>
-              ) : effectiveConfig.isError ? (
-                <div className="workspace-message error" role="alert">
-                  <span>{text('读取配置快照失败。', 'Could not load the configuration snapshot.')}{' '}{formatApiError(effectiveConfig.error)}</span>
-                  <button type="button" className="ui-btn ui-btn-sm" onClick={() => void effectiveConfig.refetch()}>{t('common.retry')}</button>
-                </div>
-              ) : <LoadingNote label={text('正在读取配置快照…', 'Loading configuration snapshot…')}/>}
-            </>
-          )}
+          {displaySnapshot?.isError ? (
+            <div className="workspace-message error" role="alert">
+              <span>{text('读取配置快照失败。', 'Could not load the configuration snapshot.')}{' '}{formatApiError(displaySnapshot.error)}</span>
+              <button type="button" className="ui-btn ui-btn-sm" disabled={displaySnapshot.isFetching} onClick={() => void displaySnapshot.refetch()}>{t('common.retry')}</button>
+            </div>
+          ) : displaySnapshot?.data != null ? (
+            <pre className="job-config-snapshot text-xs font-mono bg-slate-50 dark:bg-slate-900 p-4 rounded-lg overflow-x-auto">
+              {JSON.stringify(displaySnapshot.data, null, 2)}
+            </pre>
+          ) : (displaySnapshot?.isPending ?? !dataError) ? (
+            <LoadingNote label={text('正在读取配置快照…', 'Loading configuration snapshot…')}/>
+          ) : <EmptyState icon={Code} title={t('job.noConfig', '暂无配置快照')}/>}
         </div>
       )}
       </div>
