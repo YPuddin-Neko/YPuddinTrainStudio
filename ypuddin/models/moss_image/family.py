@@ -74,7 +74,9 @@ class MOSSImageFamily(ModelFamily):
         attention_backends=("auto", "sdpa", "flash_attn"), adapter_prefix="lora_unet",
         sampling_samplers=("euler", "euler_ancestral", "heun", "er_sde"),
         sampling_schedulers=("uniform", "moss", "simple", "normal", "sgm_uniform"),
-        objective_timestep_sampling=("moss_image", "uniform", "logit_normal", "shift", "resolution_shift", "mode", "cosmap"),
+        objective_timestep_sampling=(
+            "moss_image", "uniform", "logit_normal", "shift", "resolution_shift", "resolution_sqrt", "mode", "cosmap",
+        ),
         activation_units=42.0,
         weights=(("dit_path", "MOSS-Image Base DiT", "完整模型目录或 transformer 目录"),
                  ("text_encoder_path", "Qwen3.5 文本编码器", "完整模型内含时可留空；也可选择配套本地 text_encoder 目录"),

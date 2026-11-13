@@ -245,6 +245,9 @@ def load_dit(
 class Krea2Family(ModelFamily):
     spec = ModelSpec(
         name="krea2",
+        objective_timestep_sampling=(
+            "uniform", "logit_normal", "shift", "resolution_shift", "resolution_sqrt", "mode", "cosmap",
+        ),
         attention_backends=("auto", "sdpa", "xformers", "flash_attn", "metal_flash"),
         latent=LatentSpec(channels=16, stride=8, patch=2, fingerprint=AnimaLatent.fingerprint),
         text=TextSpec(

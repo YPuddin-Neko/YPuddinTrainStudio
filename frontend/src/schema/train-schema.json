@@ -1852,7 +1852,7 @@
             "control": "switch",
             "group": "memory",
             "order": 28,
-            "show_when": "model.family in ['anima', 'krea2', 'flux3', 'moss_image']"
+            "show_when": "model.family in ['anima', 'krea2', 'flux3', 'moss_image'] && dataset.cache_latents == true"
           }
         },
         "vae_encode_batch_size": {
@@ -2166,7 +2166,7 @@
       "properties": {
         "timestep_sampling": {
           "default": "shift",
-          "description": "训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；Anima 的 resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。",
+          "description": "训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。",
           "enum": [
             "uniform",
             "logit_normal",
@@ -2288,7 +2288,7 @@
             "control": "select",
             "group": "objective",
             "order": 31,
-            "show_when": "model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'"
+            "show_when": "objective.timestep_sampling == 'resolution_sqrt'"
           }
         },
         "resolution_reference_tokens": {
@@ -2301,7 +2301,7 @@
             "advanced": true,
             "group": "objective",
             "order": 32,
-            "show_when": "model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt' && objective.resolution_reference_mode == 'manual'"
+            "show_when": "objective.timestep_sampling == 'resolution_sqrt' && objective.resolution_reference_mode == 'manual'"
           }
         },
         "resolution_reference_tokens_resolved": {

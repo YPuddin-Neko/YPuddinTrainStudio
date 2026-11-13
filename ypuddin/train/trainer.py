@@ -353,6 +353,8 @@ class Trainer:
             status = self._timestep_status()
             if status is not None:
                 data["timestep_sampling"] = status
+        if type_ == "run.prepared":
+            self._log_timestep_sampling()
         if type_ == "warning" and data.get("message"):
             # Warnings belong in the job log as well as in the event stream.
             log.warning("%s", data["message"])
@@ -1429,21 +1431,21 @@ class Trainer:
                 or saved.get("grad_accum") != self.cfg.loop.grad_accum
                 or len(saved.get("ranks", [])) != distributed.world_size
             ):
-                raise ValueError("InfoNoise 恢复点的分布式随机状态与当前训练不一致")
+                raise ValueError("时间步采样恢复点的分布式随机状态与当前训练不一致")
             states = saved["ranks"]
         else:
             if "distributed" in rng:
-                raise ValueError("InfoNoise 分布式恢复点需要原显卡数量和分布式模式")
+                raise ValueError("时间步采样的分布式恢复点需要原显卡数量和分布式模式")
             states = [rng]
         for state in states:
             for key in ("main", "loader"):
                 value = state.get("generators", {}).get(key)
                 if not isinstance(value, Tensor):
-                    raise ValueError(f"InfoNoise 恢复点缺少 {key} 随机状态，不能精确恢复")
+                    raise ValueError(f"时间步采样恢复点缺少 {key} 随机状态，不能精确恢复")
                 try:
                     torch.Generator().set_state(value)
                 except (RuntimeError, TypeError) as exc:
-                    raise ValueError(f"InfoNoise 恢复点的 {key} 随机状态无效") from exc
+                    raise ValueError(f"时间步采样恢复点的 {key} 随机状态无效") from exc
         return candidate
 
     def _save_timestep_state(self) -> None:
@@ -1492,6 +1494,29 @@ class Trainer:
             else:
                 sampler.reject_observation()
         self._adaptive_observation = False
+
+    def _log_timestep_sampling(self, *, batch: bool = False) -> None:
+        if not self.is_primary:
+            return
+        cfg = self.cfg.objective
+        status = self._timestep_status()
+        if batch and (status is None or status["recent_num_tokens"] is None):
+            return
+        parts = [f"timestep sampling {cfg.timestep_sampling}"]
+        if cfg.timestep_sampling == "resolution_sqrt":
+            from ypuddin.config.timestep_reference import effective_reference_tokens
+
+            parts.append(f"reference {effective_reference_tokens(cfg)} tokens ({cfg.resolution_reference_mode})")
+            parts.append(f"base shift {cfg.shift:g}")
+        if batch:
+            parts.append(f"last training batch {status['recent_num_tokens']} target tokens")
+            if status["effective_baseline_shift"] is not None:
+                parts.append(f"batch shift {status['effective_baseline_shift']:.6g}")
+        if cfg.infonoise_enabled:
+            parts.append(f"InfoNoise {status['stage']}")
+            if status.get("reason") and status["reason"] != status["stage"]:
+                parts.append(str(status["reason"]))
+        log.info("%s", " | ".join(parts))
 
     def _discard_timestep_observations(self) -> None:
         sampler = getattr(self, "_adaptive_sampler", None)
@@ -2020,6 +2045,8 @@ class Trainer:
         gen = generator or self.gen
         x0 = self._latents(batch)
         tokens = self._num_tokens(x0)
+        if t_override is None and quantile_override is None and gen is self.gen and batch.get("_adaptive_observe", True):
+            self._timestep_tokens = tokens
         if quantile_override is not None:
             t_override = self.objective.sampler.icdf([quantile_override], num_tokens=tokens).expand(len(x0))
         t = t_override.to(self.device) if t_override is not None else self.objective.sample_t(
@@ -2737,6 +2764,7 @@ class Trainer:
                     f"{it_s:.3g}" if it_s else "-",
                     _duration(remaining * elapsed) if it_s else "-",
                 )
+                self._log_timestep_sampling(batch=True)
         self._step_hooks(step)
 
     def _gradient_norm_and_clip(self) -> float:

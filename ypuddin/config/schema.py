@@ -542,7 +542,7 @@ class ObjectiveConfig(_Strict):
         "uniform", "logit_normal", "shift", "resolution_shift", "resolution_sqrt", "mode", "cosmap", "moss_image"
     ] = F(
         "shift",
-        help="训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；Anima 的 resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。",
+        help="训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。",
         ui_=ui("objective", advanced=True, order=0, control="select"),
     )
     logit_mean: float = F(
@@ -597,7 +597,7 @@ class ObjectiveConfig(_Strict):
         help="自动按最终训练画布的 token 数取样本加权中位数，包含数据重复次数；手动使用指定的参考 token。",
         ui_=ui(
             "objective", advanced=True, order=31, control="select",
-            show_when="model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'",
+            show_when="objective.timestep_sampling == 'resolution_sqrt'",
         ),
     )
     resolution_reference_tokens: int = F(
@@ -605,7 +605,7 @@ class ObjectiveConfig(_Strict):
         help="基础 shift 对应的图像 token 数。Anima 的 1024×1024 图像对应 4096；训练时按实际潜空间和 patch 尺寸计算 token 数。例如 token 数为参考值的 4 倍时，基础 shift 乘以 2。",
         ui_=ui(
             "objective", advanced=True, order=32,
-            show_when="model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt' && objective.resolution_reference_mode == 'manual'",
+            show_when="objective.timestep_sampling == 'resolution_sqrt' && objective.resolution_reference_mode == 'manual'",
         ),
     )
     resolution_reference_tokens_resolved: int | None = F(
@@ -1306,7 +1306,7 @@ class MemoryConfig(_Strict):
     cache_encode_tiled: bool = F(
         False,
         help="仅在创建图像缓存时，对面积超过 2048×2048 像素的图片按 1024 像素分块编码，相邻块重叠 128 像素。小图沿用 VAE 分块设置，不影响预览解码。默认关闭。",
-        ui_=ui("memory", order=28, control="switch", advanced=True, show_when="model.family in ['anima', 'krea2', 'flux3', 'moss_image']"),
+        ui_=ui("memory", order=28, control="switch", advanced=True, show_when="model.family in ['anima', 'krea2', 'flux3', 'moss_image'] && dataset.cache_latents == true"),
     )
     vae_encode_batch_size: int = F(
         1,
@@ -1875,12 +1875,15 @@ class TrainConfig(_Strict):
 
     @model_validator(mode="after")
     def _cross(self, info: ValidationInfo) -> TrainConfig:
+        from ypuddin.config.timestep_reference import supports_resolution_reference
         from ypuddin.config.training_rules import training_errors
 
         objective = self.objective
         adaptive_resolution = objective.timestep_sampling == "resolution_sqrt"
-        if (adaptive_resolution or objective.infonoise_enabled) and self.model.family != "anima":
-            raise ValueError("按分辨率平方根修正 Shift 和 InfoNoise 仅适用于 Anima")
+        if adaptive_resolution and not supports_resolution_reference(self.model.family):
+            raise ValueError("当前模型不支持按分辨率平方根修正 Shift")
+        if objective.infonoise_enabled and self.model.family != "anima":
+            raise ValueError("InfoNoise 仅适用于 Anima")
         if adaptive_resolution or objective.infonoise_enabled:
             finite_fields = []
             if objective.timestep_sampling in {"logit_normal", "shift", "resolution_sqrt"}:

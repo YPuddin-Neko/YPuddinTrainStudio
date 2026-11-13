@@ -1,6 +1,8 @@
 import type { FamilyInfo, FamilyPreset } from '../api/types';
 import { configFieldHelp, configFieldLabel, configOptionLabel, samplingSchedulerOptions, schedulerTypeHelp } from './configPresentation';
-import { familyTaskCapabilities } from './trainingFamilies';
+import { defaultTimestepSampling, familyTaskCapabilities, supportsResolutionCorrectedShift } from './trainingFamilies';
+
+export { defaultTimestepSampling } from './trainingFamilies';
 
 /**
  * Settings that depend on the selected model and on the machine the service runs on. A setting neither uses is
@@ -63,13 +65,6 @@ export function presetHasConvolutions(preset: FamilyPreset | undefined): preset 
 /** Whether the model has convolution layers adapters can train (SDXL's UNet). */
 export function familyHasConvolutions(family: FamilyInfo | undefined): boolean {
   return !!family?.presets?.some(presetHasConvolutions);
-}
-
-/** The noise-level sampling a new configuration of this model starts with. */
-export function defaultTimestepSampling(family: FamilyInfo): string {
-  if (family.name === 'flux3') return 'logit_normal';
-  if (family.name === 'moss_image') return 'moss_image';
-  return family.objective === 'ddpm' ? 'uniform' : family.sampling?.shift == null ? 'resolution_shift' : 'shift';
 }
 
 /**
@@ -183,7 +178,7 @@ export function contextOptions(path: string, { family, config }: FieldContext, o
   }
   if (path === 'objective.timestep_sampling') {
     const selectedFamily = family?.name ?? config.model?.family;
-    return options.filter(option => (option !== 'resolution_sqrt' || selectedFamily === 'anima')
+    return options.filter(option => (option !== 'resolution_sqrt' || supportsResolutionCorrectedShift(family, config))
       && (option !== 'moss_image' || selectedFamily === 'moss_image'));
   }
   const runtime = runtimeOf(family);
@@ -452,7 +447,7 @@ export function contextHelp(path: string, context: FieldContext, options?: strin
         mode: ['同样偏向中等噪声，但两端比逻辑正态保留更多，形状由下方系数控制。', 'also favours medium noise but keeps more at both ends than logit-normal; the coefficient below sets the shape.'],
         cosmap: ['中间多、两端少，比逻辑正态平缓。', 'more in the middle, fewer at the ends, flatter than logit-normal.'],
       };
-      if (family.name !== 'anima') delete describe.resolution_sqrt;
+      if (!supportsResolutionCorrectedShift(family, config)) delete describe.resolution_sqrt;
       if (family.name === 'moss_image') describe.moss_image = ['按 MOSS-Image 的 1000 个离散时间步抽样，混合截断逻辑正态分布和 1% 均匀采样。', 'draws from MOSS-Image’s 1000 discrete timesteps, mixing a truncated logit-normal distribution with 1% uniform sampling.'];
       return join([
         text('训练时每一步随机抽一个噪声强度（t 越大噪声越多），这里决定怎么抽：', 'Each training step draws a noise level (higher t means more noise). This sets how it is drawn:'),

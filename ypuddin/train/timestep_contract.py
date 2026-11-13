@@ -1,4 +1,4 @@
-"""Strict resume identity for optional adaptive Anima timestep sampling."""
+"""Strict resume identity for resolution-aware and adaptive timestep sampling."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def recipe(cfg: TrainConfig) -> dict[str, Any] | None:
         infonoise.update({key: getattr(objective, "infonoise_" + key) for key in _INFONOISE_FIELDS})
         infonoise["fixed_gate"] = "sigma-n3"
     return {
-        "algorithm": "anima-adaptive-timestep-v1",
+        "algorithm": "anima-adaptive-timestep-v1" if cfg.model.family == "anima" else "flow-resolution-sqrt-v1",
         "family": cfg.model.family,
         "baseline": baseline,
         "infonoise": infonoise,

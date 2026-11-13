@@ -14,7 +14,7 @@ import { modelDisplayName } from '../../utils/modelDisplayName';
 import { doraAutoLabel, type DoraPrecisionReport } from '../../utils/doraPrecision';
 import { parameterGroupLabel } from '../../utils/parameterWorkflow';
 import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
-import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
+import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights, supportsResolutionCorrectedShift, trainingFamilyOptions } from '../../utils/trainingFamilies';
 import { managedValueLabel, normalizeOptimizerConfig, optimizerManagedReason, optimizerManagesSchedule, restoreOptimizerSelection, selectOptimizer } from '../../utils/optimizerCapabilities';
 import { usesOnlyFullLoKr } from '../../utils/lokrParameters';
 import NumericControl from './NumericControl';
@@ -705,8 +705,8 @@ const PAIR_NAMES: Record<string, { names: [[string, string], [string, string]]; 
   'objective.res_shift_mu': { names: [['小图', 'Small'], ['大图', 'Large']], step: '0.01' },
 };
 
-function ShiftReferenceInput({id, label, english, automatic, value, median, invalid, onChange, onModeChange}: {
-  id: string; label: string; english: boolean; automatic: boolean; value: number | string; median?: number;
+function ShiftReferenceInput({id, label, english, automatic, value, autoTokens, invalid, onChange, onModeChange}: {
+  id: string; label: string; english: boolean; automatic: boolean; value: number | string; autoTokens?: number;
   invalid: boolean; onChange: (value: number | string) => void; onModeChange: (mode: string) => void;
 }) {
   const box = React.useRef<HTMLDivElement>(null);
@@ -718,7 +718,7 @@ function ShiftReferenceInput({id, label, english, automatic, value, median, inva
     input.current?.focus();
     input.current?.select();
   }, [automatic]);
-  const amount = median?.toLocaleString(english ? 'en' : 'zh-CN');
+  const amount = autoTokens?.toLocaleString(english ? 'en' : 'zh-CN');
   return <div ref={box} className="config-native-limit">
     {!automatic && <input ref={input} id={id} aria-label={label} aria-describedby={`${id}-hint`} aria-invalid={invalid}
       type="number" min={1} step={1} value={value} onChange={event => onChange(event.target.value === '' ? '' : Number(event.target.value))}/>}
@@ -995,16 +995,26 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   };
   const lokrModeLabel = english ? 'LoKr parameter mode' : 'LoKr 参数形式';
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
-  const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { family: family?.name, prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', image_fit: 'crop', ...value.dataset } };
-  const textSlider = value.training?.task === 'slider' && value.slider?.mode !== 'image';
+  const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { family: family?.name, prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', image_fit: 'crop', cache_latents: true, ...value.dataset } };
+  const textSlider = value.training?.task === 'slider' && (value.slider?.mode ?? 'text') === 'text';
+  const textOnlyAdapter = conditionValue.training.mode === 'adapter'
+    && value.training?.train_backbone === false && value.training.train_text_encoder === true;
   const onlyFullLoKr = usesOnlyFullLoKr(value, family);
   const automaticReference = value.objective?.resolution_reference_mode === 'auto';
+  const correctedShift = supportsResolutionCorrectedShift(family, value) && value.objective?.timestep_sampling === 'resolution_sqrt';
+  const autoReferenceTokens = automaticReference && resolutionReference?.mode === 'auto'
+    ? resolutionReference.reference_tokens : resolutionReference?.weighted_median_tokens;
   const weights = modelFamilyWeights(family, english);
   const allowedAdapterAlgorithms = value.training?.task === 'slider' ? ['lora'] : familyParameterOptions(family, 'adapter.algo');
-  const hasTLoRARule = allowedAdapterAlgorithms?.includes('tlora') &&
-    Array.isArray(value.adapter?.rules) &&
-    value.adapter.rules.some((rule: { algo?: string; match?: string } | null) =>
-      rule?.algo === 'tlora' && typeof rule.match === 'string' && rule.match.trim());
+  const adapterRules = value.adapter?.rules;
+  const onlyFullAdapters = value.adapter?.algo === 'full' && Array.isArray(adapterRules)
+    && adapterRules.every((rule: { algo?: string | null } | null) => rule && typeof rule === 'object'
+      && !Array.isArray(rule) && (rule.algo == null || rule.algo === 'none' || rule.algo === 'full'));
+  const hasAdapterRule = (algo: string) => Array.isArray(adapterRules)
+    && adapterRules.some((rule: { algo?: string; match?: string } | null) =>
+      rule?.algo === algo && typeof rule.match === 'string' && rule.match.trim());
+  const hasTLoRARule = allowedAdapterAlgorithms?.includes('tlora') && hasAdapterRule('tlora');
+  const hasLoKrRule = value.adapter?.algo === 'full' && hasAdapterRule('lokr');
   const fieldContext: FieldContext = { family, config: value, english, nativeBatchingVersion: nativeBatchingVersion === undefined && preset ? value.dataset?.native_batch_mode === 'area' ? 3 : 2 : nativeBatchingVersion };
 
   const renderField = (key: string, prop: SchemaProperty, parentPath: string[] = []) => {
@@ -1013,7 +1023,6 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const trainingMode = fullPathKey === 'training.mode';
     if (fullPathKey === 'training.task') return null;
     const taskChoice = fullPathKey === 'slider.mode';
-    if (textSlider && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale', 'dataset.image_fit', 'dataset.crop_anchor'].includes(fullPathKey)) return null;
     if (parentPath[0] === 'slider' && value.training?.task !== 'slider') return null;
     const intervalRule = INTERVAL_FIELDS[fullPathKey];
     if (intervalFieldPath(fullPathKey) !== fullPathKey) return null;
@@ -1040,7 +1049,6 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (fullPathKey === 'logging.level' || fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
 
     if (onlyFullLoKr && ['adapter.alpha', 'adapter.decompose_both', 'adapter.rs_lora', 'adapter.rank_dropout'].includes(fullPathKey)) return null;
-    if (value.adapter?.algo === 'full' && ['adapter.rank', 'adapter.alpha', 'adapter.rs_lora', 'adapter.init', 'adapter.dropout', 'adapter.rank_dropout', 'adapter.conv_rank', 'adapter.conv_alpha'].includes(fullPathKey)) return null;
     if (fullPathKey === 'adapter.conv_alpha' && onlyFullLoKr) return null;
     const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' && prop['x-ui']?.group === 'training' ? {group:'model'} : {}), ...(compact && ['dataset.batch_size', 'dataset.native_batch_mode'].includes(fullPathKey) ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}), ...(fullPathKey === 'adapter.layer_types' && value.training?.mode === 'full' ? {group: compact ? 'model' : 'training'} : {}) };
     if (ui.hidden) return null;
@@ -1062,6 +1070,18 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (search.trim() && !`${fieldLabel} ${fullPathKey} ${trainingMode ? 'training.task standard slider edit LoRA full 普通 滑块 编辑 全量' : ''} ${intervalRule ? `${fullPathKey}_enabled` : ''} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs checkpoint.save_state_every_epochs_enabled epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto auto_vram custom 自动 分辨率优先 显存优先 resolution first VRAM first 自定义' : fullPathKey === 'dataset.native_batch_mode' ? 'physical area 真实合批 按面积拆微批 microbatch' : ''} ${shiftReference ? 'objective.resolution_reference_mode auto manual 自动 手动' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
     const errorItem = errors.find((e) => trainingMode && e.loc === 'training.task' || e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || intervalRule && e.loc === `${fullPathKey}_enabled` || fullPathKey === 'checkpoint.save_state_every_steps' && ['checkpoint.save_state_every_epochs', 'checkpoint.save_state_every_epochs_enabled'].includes(e.loc || '') || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode' || shiftReference && e.loc === 'objective.resolution_reference_mode');
+    if (!errorItem) {
+      if (textOnlyAdapter && ['adapter.preset', 'adapter.layer_types', 'adapter.conv_rank', 'adapter.conv_alpha'].includes(fullPathKey)) return null;
+      if (onlyFullAdapters && (
+        (fullPathKey === 'adapter.rank' && value.adapter.rank !== 'full')
+        || ['adapter.alpha', 'adapter.rs_lora', 'adapter.init', 'adapter.dropout', 'adapter.rank_dropout', 'adapter.conv_rank', 'adapter.conv_alpha'].includes(fullPathKey)
+      )) return null;
+      if (textSlider) {
+        if (['dataset.sources', 'dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale', 'dataset.image_fit', 'dataset.crop_anchor', 'dataset.flip', 'dataset.masked_loss', 'memory.cache_encode_tiled'].includes(fullPathKey)) return null;
+        if (fullPathKey === 'dataset.resolution_mode' && conditionValue.dataset.resolution_mode === 'bucket') return null;
+        if (fullPathKey === 'dataset.cache_latents' && value.sampling?.enabled === false) return null;
+      }
+    }
     if (managedSchedule && parentPath[0] === 'scheduler' && !errorItem) return null;
     const revealOutputName = versionSources && fullPathKey === 'checkpoint.name' && (editOutput === 'name' || !!errorItem || !!search.trim());
     if (versionSources && fullPathKey === 'checkpoint.name' && !revealOutputName) return null;
@@ -1072,6 +1092,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
     const incompatibleInfoNoise = infonoiseField && conditionValue.model.family !== 'anima' && !!value.objective?.infonoise_enabled;
     const sharedTLoRASetting = hasTLoRARule && parentPath[0] === 'adapter' && key.startsWith('tlora_');
+    const sharedLoKrSetting = hasLoKrRule && parentPath[0] === 'adapter' && ['factor', 'decompose_both'].includes(key);
     if (fullPathKey === 'dataset.caption.structured_mode') {
       const caption = value.dataset?.caption;
       const type = caption?.content_type ?? 'auto';
@@ -1081,9 +1102,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (!errorItem && fullPathKey === 'dataset.caption.keep_tokens' && ['anima_json', 'gbc', 'moss_layout'].includes(caption?.content_type)) return null;
     if (!errorItem && fullPathKey === 'dataset.caption.cache_variants'
         && (effectiveTextEncoding(family, value) === 'online' || !(caption?.shuffle || caption?.tag_dropout > 0 || caption?.wildcard))) return null;
-    if (shiftReference && !errorItem && (conditionValue.model.family !== 'anima' || value.objective?.timestep_sampling !== 'resolution_sqrt')) return null;
+    if (shiftReference && !errorItem && !correctedShift) return null;
     const bankParameter = textSlider && parentPath[0] === 'sampling' && ['sampler', 'scheduler', 'noise', 'cfg', 'shift', 'er_sde_order', 'er_sde_s_noise'].includes(key);
-    if (ui.show_when && !shiftReference && fullPathKey !== 'dataset.caption.structured_mode' && !sharedTLoRASetting && !incompatiblePredictionLoss && !incompatibleFamilyLoss && !incompatibleInfoNoise && !errorItem) {
+    if (ui.show_when && !shiftReference && fullPathKey !== 'dataset.caption.structured_mode' && !sharedTLoRASetting && !sharedLoKrSetting && !incompatiblePredictionLoss && !incompatibleFamilyLoss && !incompatibleInfoNoise && !errorItem) {
       try {
         const conditions = bankParameter ? {...conditionValue, sampling: {...value.sampling, enabled:true}} : conditionValue;
         if (!evaluateShowWhen(ui.show_when, conditions)) return null;
@@ -1186,7 +1207,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         onChange={next => onChange(setNestedValue(value, path, next))}/>;
     } else if (shiftReference) {
       control = <ShiftReferenceInput id={fieldId} label={fieldLabel} english={english} automatic={automaticReference}
-        value={fieldValue ?? ''} median={resolutionReference?.reference_tokens} invalid={!!errorItem}
+        value={fieldValue ?? ''} autoTokens={autoReferenceTokens} invalid={!!errorItem}
         onModeChange={mode => onChange(setNestedValue(value, ['objective', 'resolution_reference_mode'], mode))}
         onChange={next => onChange(setNestedValue(value, path, next))}/>;
     } else if (compact && fullPathKey === 'dataset.resolutions') {
@@ -1592,11 +1613,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         ? (english ? 'Images in each batch on every GPU.' : '每张显卡每批的图片数。')
       : fullPathKey === 'dataset.text_encoding' && family && !(family.text_modes || []).includes('online') ? t('textMode.autoOnly')
       : parentPath[0] === 'model' && key in MODEL_PATH_FIELDS ? modelPathHint(family?.name, key, english, preset)
-      : fullPathKey === 'objective.shift' && family?.name === 'anima' && value.objective?.timestep_sampling === 'resolution_sqrt'
+      : fullPathKey === 'objective.shift' && correctedShift
         ? (english ? 'Base shift; resolution correction adjusts it further for image size.' : '基础偏移大小；分辨率修正模式会再按图像大小调整。')
       : configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree, value.dataset);
     const compileHint = fullPathKey === 'memory.compile' ? statusHint : undefined;
-    const referenceTokens = automaticReference ? resolutionReference?.reference_tokens : fieldValue;
+    const referenceTokens = automaticReference ? autoReferenceTokens : fieldValue;
     const baseShift = value.objective?.shift ?? 3;
     const effectiveShift = shiftReference && resolutionReference && typeof referenceTokens === 'number' && referenceTokens > 0 && typeof baseShift === 'number' && baseShift > 0
       ? [resolutionReference.token_min, resolutionReference.token_max].map(tokens => (baseShift * Math.sqrt(tokens / referenceTokens)).toFixed(2)).join('–')
@@ -1697,7 +1718,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   }
 
   const captionSources = Array.isArray(value.dataset?.sources) ? value.dataset.sources : [];
-  const showCaptionFormats = captionSources.length > 0 && (!groupFilter || groupFilter.includes('caption')) && (!search || /标签|格式|caption|format|json|txt/i.test(search));
+  const showCaptionFormats = !textSlider && captionSources.length > 0 && (!groupFilter || groupFilter.includes('caption')) && (!search || /标签|格式|caption|format|json|txt/i.test(search));
   if (showCaptionFormats && !groups.caption) groups.caption = {order: 0, fields: []};
   const groupOrder = groupFilter || schema?.['x-ui-groups'] || [];
   const sortedGroups = Object.entries(groups).sort(([keyA, groupA], [keyB, groupB]) => {

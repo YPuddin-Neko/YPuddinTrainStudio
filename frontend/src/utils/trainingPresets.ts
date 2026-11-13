@@ -1,6 +1,8 @@
+import type { FamilyInfo } from '../api/types';
 import { mergeConfig } from './config';
 import { normalizeLegacyIntervals } from './intervals';
 import { normalizeOptimizerConfig, selectOptimizer } from './optimizerCapabilities';
+import { defaultTimestepSampling, supportsResolutionCorrectedShift } from './trainingFamilies';
 
 const VERSION_FIELDS = [
   ['dataset', 'sources'],
@@ -52,7 +54,7 @@ export function reusableTrainingPreset(config: Record<string, any>): Record<stri
   return result;
 }
 
-export function applyTrainingPreset(current: Record<string, any>, preset: Record<string, any>, schema?: any) {
+export function applyTrainingPreset(current: Record<string, any>, preset: Record<string, any>, schema?: any, family?: FamilyInfo) {
   const reusable = reusableTrainingPreset(preset);
   // A preset cannot change the policy belonging to the retained recovery point.
   if (current.checkpoint?.resume && reusable.dataset) {
@@ -62,25 +64,21 @@ export function applyTrainingPreset(current: Record<string, any>, preset: Record
   }
   // Missing opt-ins in older recipes must not inherit an enabled adaptive run.
   reusable.objective = { ...reusable.objective };
+  const modelFamily = current.model?.family ?? preset.model?.family;
   if (!Object.prototype.hasOwnProperty.call(reusable.objective, 'infonoise_enabled')) reusable.objective.infonoise_enabled = false;
+  if (modelFamily && modelFamily !== 'anima') reusable.objective.infonoise_enabled = false;
+  if (modelFamily && reusable.objective.timestep_sampling === 'resolution_sqrt'
+    && !supportsResolutionCorrectedShift(family, current.model?.family ? current : preset)) {
+    delete reusable.objective.timestep_sampling;
+  }
+  if (reusable.objective.timestep_sampling === 'moss_image' && modelFamily !== 'moss_image') delete reusable.objective.timestep_sampling;
   if (!Object.prototype.hasOwnProperty.call(reusable.objective, 'timestep_sampling') && current.objective?.timestep_sampling === 'resolution_sqrt') {
-    reusable.objective.timestep_sampling = 'shift';
+    reusable.objective.timestep_sampling = defaultTimestepSampling(family, modelFamily);
   }
   if (reusable.objective.timestep_sampling === 'resolution_sqrt') reusable.objective.resolution_reference_mode ??= 'manual';
-  if (current.model?.family && current.model.family !== 'anima') {
-    reusable.objective.infonoise_enabled = false;
-    if (reusable.objective.timestep_sampling === 'resolution_sqrt') {
-      // Applying another family's recipe cannot opt the current model into Anima-only sampling.
-      delete reusable.objective.timestep_sampling;
-    }
-    if (current.objective?.timestep_sampling === 'resolution_sqrt' && (!Object.prototype.hasOwnProperty.call(preset.objective || {}, 'timestep_sampling') || preset.objective?.timestep_sampling === 'resolution_sqrt')) {
-      reusable.objective.timestep_sampling = current.model.family === 'moss_image' ? 'moss_image' : current.model.family === 'flux3' ? 'logit_normal' : current.model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(current.model.family) ? 'resolution_shift' : 'shift';
-    }
-  }
-  if (current.model?.family !== 'moss_image' && reusable.objective.timestep_sampling === 'moss_image') delete reusable.objective.timestep_sampling;
-  if (current.model?.family && current.model.family !== 'moss_image' && current.objective?.timestep_sampling === 'moss_image'
+  if (modelFamily && modelFamily !== 'moss_image' && current.objective?.timestep_sampling === 'moss_image'
     && !Object.prototype.hasOwnProperty.call(reusable.objective, 'timestep_sampling')) {
-    reusable.objective.timestep_sampling = current.model.family === 'flux3' ? 'logit_normal' : current.model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(current.model.family) ? 'resolution_shift' : 'shift';
+    reusable.objective.timestep_sampling = defaultTimestepSampling(family, modelFamily);
   }
   // Model files only fit the family they were chosen for.
   if (reusable.model && (!current.model?.family || reusable.model.family !== current.model.family)) {

@@ -88,6 +88,9 @@ def text_ids(embeds):
 class Flux2Family(ModelFamily):
     spec = ModelSpec(
         name="flux2",
+        objective_timestep_sampling=(
+            "uniform", "logit_normal", "shift", "resolution_shift", "resolution_sqrt", "mode", "cosmap",
+        ),
         attention_backends=("auto", "sdpa", "xformers", "flash_attn", "metal_flash"),
         label="FLUX.2 Klein 4B / 9B",
         latent=LatentSpec(128, 16, 1, "flux2-vae-mode-fp32-patch2-bn-v1"),

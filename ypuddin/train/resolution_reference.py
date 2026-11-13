@@ -1,4 +1,4 @@
-"""Derive and freeze Anima's reference tokens from the final training canvases."""
+"""Derive and freeze reference tokens from each family's final training canvases."""
 
 from __future__ import annotations
 
@@ -10,14 +10,16 @@ from pathlib import Path
 from typing import Any
 
 from ypuddin.config import TrainConfig
+from ypuddin.config.timestep_reference import supports_resolution_reference
 from ypuddin.data.dataset import DataConfigError
+from ypuddin.models import get_family
 
 
 def automatic_reference(cfg: TrainConfig) -> bool:
     return (
-        cfg.model.family == "anima"
-        and cfg.objective.timestep_sampling == "resolution_sqrt"
+        cfg.objective.timestep_sampling == "resolution_sqrt"
         and cfg.objective.resolution_reference_mode == "auto"
+        and supports_resolution_reference(cfg.model.family)
     )
 
 
@@ -32,12 +34,13 @@ def clear_resolution_reference(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def reference_summary(cfg: TrainConfig, counts: Mapping[tuple[int, int], int]) -> dict[str, Any] | None:
-    if cfg.model.family != "anima" or cfg.objective.timestep_sampling != "resolution_sqrt":
+    if cfg.objective.timestep_sampling != "resolution_sqrt" or not supports_resolution_reference(cfg.model.family):
         return None
+    align = get_family(cfg.model.family).spec.latent.align
     tokens: Counter[int] = Counter()
     for (width, height), count in counts.items():
         if count > 0:
-            value = (width // 16) * (height // 16)
+            value = (width // align) * (height // align)
             if value <= 0:
                 raise DataConfigError("dataset", "训练画布不能生成有效的图像 token。")
             tokens[value] += count

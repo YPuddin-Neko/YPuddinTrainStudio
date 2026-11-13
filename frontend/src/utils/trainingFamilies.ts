@@ -97,3 +97,20 @@ export function familyParameterOptions(family: FamilyInfo | undefined, path: str
   const options = key ? family?.[key] : trainingKey ? family?.training_capabilities?.[trainingKey] : undefined;
   return Array.isArray(options) ? options.filter(option => typeof option === 'string' || typeof option === 'number').map(String) : undefined;
 }
+
+export function supportsResolutionCorrectedShift(family: FamilyInfo | undefined, config: Record<string, any>): boolean {
+  const name = family?.name ?? config.model?.family;
+  return !inactiveTrainingReason(config) && (
+    familyParameterOptions(family, 'objective.timestep_sampling')?.includes('resolution_sqrt')
+    ?? ['anima', 'krea2', 'flux2', 'flux3', 'moss_image'].includes(name)
+  );
+}
+
+/** The noise-level sampling a new configuration of this model starts with. */
+export function defaultTimestepSampling(family?: FamilyInfo, name = family?.name): string {
+  if (name === 'flux3') return 'logit_normal';
+  if (name === 'moss_image') return 'moss_image';
+  if (name === 'sdxl' || family?.objective === 'ddpm') return 'uniform';
+  if (family) return family.sampling?.shift == null ? 'resolution_shift' : 'shift';
+  return ['krea2', 'flux2'].includes(name ?? '') ? 'resolution_shift' : 'shift';
+}

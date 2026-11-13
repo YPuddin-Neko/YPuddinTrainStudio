@@ -28,6 +28,8 @@ _BANK_SAMPLING_FIELDS = {
     "enabled", "sampler", "scheduler", "noise", "cfg", "guidance", "shift",
     "er_sde_order", "er_sde_s_noise",
 }
+_MODEL_FAMILIES = frozenset(get_args(ModelConfig.model_fields["family"].annotation))
+_TILED_FAMILIES = frozenset({"anima", "krea2", "flux3", "moss_image"})
 
 
 def public_config_dict(config: TrainConfig) -> dict[str, Any]:
@@ -79,7 +81,17 @@ def _project_model(data: dict[str, Any], config: TrainConfig | None) -> None:
     ):
         _only_for(model, model, "family", families, fields)
     _only_for(memory, model, "family", {"anima", "krea2"}, ("vae_attention_chunking", "no_half_vae"))
-    _only_for(memory, model, "family", {"anima", "krea2", "flux3", "moss_image"}, ("vae_tiling", "cache_encode_tiled"))
+    _only_for(memory, model, "family", _TILED_FAMILIES, ("vae_tiling", "cache_encode_tiled"))
+    dataset = _section(data, "dataset")
+    if dataset.get("cache_latents") is False:
+        memory.pop("cache_encode_tiled", None)
+    if training.get("train_text_encoder") is False and (
+        dataset.get("text_encoding") == "cached" or (
+            dataset.get("text_encoding") == "auto" and model.get("family") in _MODEL_FAMILIES
+            and not _online_text(dataset, training, model)
+        )
+    ):
+        memory.pop("offload_text_encoder", None)
     if training.get("mode") == "full":
         data.pop("adapter", None)
         memory.pop("blocks_to_swap", None)
@@ -126,6 +138,19 @@ def _project_model(data: dict[str, Any], config: TrainConfig | None) -> None:
         _only_for(adapter, adapter, "dora_compute_mode", {"comfyui"}, ("dora_merge_dtype",))
         if no_conv:
             _drop(adapter, ("conv_rank", "conv_alpha"))
+        if (
+            training.get("mode") == "adapter" and adapter.get("algo") == "full"
+            and isinstance(adapter.get("rules"), list)
+            and all(isinstance(rule, dict) and rule.get("algo") in (None, "none", "full")
+                    for rule in adapter["rules"])
+        ):
+            _drop(adapter, ("alpha", "factor", "decompose_both", "rs_lora", "init", "dropout", "rank_dropout",
+                            "tlora_min_rank", "tlora_power", "tlora_ortho", "conv_rank", "conv_alpha"))
+            if adapter.get("rank") != "full":
+                adapter.pop("rank", None)
+        if (training.get("mode") == "adapter" and training.get("train_backbone") is False
+                and training.get("train_text_encoder") is True):
+            _drop(adapter, ("preset", "layer_types"))
     lr_fields = ("backbone_lr", "text_encoder_lr", "text_encoder_2_lr", "llm_adapter_lr", "self_attn_lr", "cross_attn_lr", "mlp_lr", "modulation_lr")
     _only_for(training, training, "mode", {"full"}, (*lr_fields, "resume_weights"))
     _only_for(training, training, "train_backbone", {True}, ("backbone_lr", *lr_fields[3:]))
@@ -156,6 +181,10 @@ def _project_optimizer(data: dict[str, Any]) -> None:
             ):
                 if selector in optimizer and optimizer[selector] == inactive and not ({selector, field} & args.keys()):
                     optimizer.pop(field, None)
+        if key == "prodigy" and optimizer.get("weight_decay") == 0:
+            args = _section(optimizer, "args")
+            if "decouple" not in args and args.get("weight_decay", 0) == 0:
+                optimizer.pop("decouple", None)
         # Partial recipes keep legacy arguments until schema migration resolves precedence.
         if key in {"adamw_sf", "automagic"} or (
             key == "prodigy_plus_sf" and optimizer.get("use_schedulefree") is True
@@ -198,7 +227,9 @@ def _project_objective(data: dict[str, Any]) -> None:
     _only_for(objective, objective, "loss", {"huber", "pseudo_huber"}, ("huber_c",))
     if objective.get("multires_noise_iterations") == 0:
         objective.pop("multires_noise_discount", None)
-    if objective.get("infonoise_enabled") is False:
+    if model.get("family") in _MODEL_FAMILIES - {"anima"}:
+        _drop(objective, [key for key in objective if key.startswith("infonoise_")])
+    elif objective.get("infonoise_enabled") is False:
         _drop(objective, [key for key in objective if key.startswith("infonoise_") and key != "infonoise_enabled"])
     _only_for(objective, model, "family", {"sdxl"}, ("scale_v_pred_loss_like_noise_pred", "v_pred_like_loss", "debiased_estimation_loss"))
     _only_for(objective, model, "prediction_type", {"v_prediction"}, ("scale_v_pred_loss_like_noise_pred",))
@@ -270,10 +301,17 @@ def _project_optional(data: dict[str, Any]) -> None:
     _only_for(sampling, sampling, "sampler", {"er_sde"}, ("er_sde_order", "er_sde_s_noise"))
     _only_for(sampling, sampling, "noise", {"comfyui"}, ("adapter_merge_dtype",))
     _only_for(sampling, training, "mode", {"adapter"}, ("adapter_merge_dtype",))
+    if _section(data, "model").get("family") in _MODEL_FAMILIES - {"flux"}:
+        sampling.pop("guidance", None)
+    if _section(data, "model").get("family") == "sdxl" and sampling.get("shift") == 1:
+        sampling.pop("shift")
     validation = _section(data, "validation")
     if validation.get("enabled") is False:
         _drop(validation, set(validation) - {"enabled"})
     loop, checkpoint = _section(data, "loop"), _section(data, "checkpoint")
+    if loop.get("gpu_count") == 1 and loop.get("distributed_strategy") == "ddp":
+        loop.pop("distributed_strategy")
+    _section(data, "logging").pop("level", None)
     if loop.get("ema") is False:
         loop.pop("ema_decay", None)
     if checkpoint.get("save_training_metadata") is False:
@@ -285,6 +323,16 @@ def _project_optional(data: dict[str, Any]) -> None:
 
 
 def _project_fixed_controls(data: dict[str, Any]) -> None:
+    if (_section(data, "training").get("task") == "slider"
+            and _section(data, "slider").get("mode") == "text"):
+        dataset = _section(data, "dataset")
+        _drop(dataset, ("sources", "resolutions", "aspect_ratio_limit", "area_tolerance", "bucket_step",
+                        "bucket_no_upscale", "image_fit", "crop_anchor", "flip", "masked_loss"))
+        if dataset.get("resolution_mode") == "bucket":
+            dataset.pop("resolution_mode")
+        if _section(data, "sampling").get("enabled") is False:
+            dataset.pop("cache_latents", None)
+        _section(data, "memory").pop("cache_encode_tiled", None)
     optimizer = _section(data, "optimizer")
     if optimizer.get("fused_backward") is False:
         optimizer.pop("fused_backward")
@@ -302,14 +350,24 @@ def _project_fixed_controls(data: dict[str, Any]) -> None:
         ):
             adapter.pop("lr_scale")
     family = _section(data, "model").get("family")
-    if family in get_args(ModelConfig.model_fields["family"].annotation):
+    if family in _MODEL_FAMILIES:
         from .training_rules import training_capabilities
 
-        if training_capabilities(family)["max_reference_images"]:
-            return
-        for prompt in _section(data, "sampling").get("prompts", []):
-            if isinstance(prompt, dict) and prompt.get("reference_images") == []:
-                prompt.pop("reference_images")
+        if not training_capabilities(family)["max_reference_images"]:
+            for prompt in _section(data, "sampling").get("prompts", []):
+                if isinstance(prompt, dict) and prompt.get("reference_images") == []:
+                    prompt.pop("reference_images")
+        captions = [_section(_section(data, "dataset"), "caption")]
+        for section in ("dataset", "validation"):
+            captions.extend(_section(source, "caption") for source in _section(data, section).get("sources", [])
+                            if isinstance(source, dict))
+        for caption in captions:
+            content_type = caption.get("content_type", "auto")
+            if caption.get("structured_mode") == "native" and (
+                content_type in {"text", "anima_json"}
+                or family != "moss_image" and content_type == "auto"
+            ):
+                caption.pop("structured_mode")
 
 
 def _restore_nondefaults(original: Any, projected: Any, defaults: Any) -> None:
@@ -369,6 +427,14 @@ def _restore_resume_contract(original: dict[str, Any], data: dict[str, Any]) -> 
         keys.update(optimizer_specific_fields(optimizer["type"]))
     if optimizer:
         contracts["optimizer"] = {key: optimizer[key] for key in keys if key in optimizer}
+    memory = _section(original, "memory")
+    if _section(original, "model").get("family") in _TILED_FAMILIES and "cache_encode_tiled" in memory:
+        contracts["memory"] = {"cache_encode_tiled": memory["cache_encode_tiled"]}
+    if (_section(original, "training").get("task") == "slider"
+            and _section(original, "slider").get("mode") == "text"):
+        sampling = _section(original, "sampling")
+        if "guidance" in sampling:
+            contracts["sampling"] = {"guidance": sampling["guidance"]}
     _restore_nondefaults(contracts, data, defaults)
 
 

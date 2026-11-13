@@ -87,6 +87,9 @@ def pack_inputs(x_t, t, cond, dtype, *, reference_latents=None) -> Packed:
 class Flux3Family(ModelFamily):
     spec = ModelSpec(
         name="flux3", label="FLUX.3 Klein 5.5B", architecture="flux3-image-klein-base",
+        objective_timestep_sampling=(
+            "uniform", "logit_normal", "shift", "resolution_shift", "resolution_sqrt", "mode", "cosmap",
+        ),
         latent=LatentSpec(128, 16, 1, "flux3-base-vae-mean-fp32-patch2-bn-v1"),
         text=TextSpec(4096, "flux3-qwen3vl-8layers-pad80-bf16-v1", pad_floor=False,
                       encoder_params=4_400_000_000),

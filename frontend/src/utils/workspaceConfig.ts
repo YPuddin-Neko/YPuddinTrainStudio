@@ -1,5 +1,5 @@
 import type { ModelAsset, FamilyInfo, DatasetInfo } from '../api/types';
-import { familyParameterOptions, inactiveTrainingReason, modelAssetUnsupportedReason } from './trainingFamilies';
+import { defaultTimestepSampling, familyParameterOptions, inactiveTrainingReason, modelAssetUnsupportedReason, supportsResolutionCorrectedShift } from './trainingFamilies';
 
 /** Windows paths are case-insensitive; preserve case for POSIX server paths. */
 export function normalizeDatasetPath(path: string) {
@@ -84,7 +84,6 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
   if (family.name !== 'anima') {
     for (const key of ['llm_adapter_lr','self_attn_lr','cross_attn_lr','mlp_lr','modulation_lr']) next.training[key] = null;
     next.objective.infonoise_enabled = false;
-    if (next.objective.timestep_sampling === 'resolution_sqrt') next.objective.timestep_sampling = family.objective === 'ddpm' ? 'uniform' : family.sampling.shift == null ? 'resolution_shift' : 'shift';
   }
   if (family.name === 'flux2') {
     next.sampling.steps = null; next.sampling.cfg = null; next.sampling.guidance = null;
@@ -118,6 +117,14 @@ export function changeModelFamily(config: Record<string, any>, family: FamilyInf
       next.objective.shift = family.sampling.shift ?? 3;
     }
     next.objective.res_shift_tokens = [256, family.name === 'krea2' ? 6400 : 4096];
+  }
+  if (config.objective?.timestep_sampling === 'resolution_sqrt') {
+    if (supportsResolutionCorrectedShift(family, next)) {
+      next.objective.timestep_sampling = 'resolution_sqrt';
+      next.objective.shift = config.objective.shift ?? next.objective.shift;
+    } else {
+      next.objective.timestep_sampling = defaultTimestepSampling(family);
+    }
   }
   if (family.objective === 'ddpm') {
     next.sampling.shift = 1;

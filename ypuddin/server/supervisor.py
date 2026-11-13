@@ -1601,12 +1601,16 @@ class JobSupervisor:
         cfg = json.loads(job["config_json"])
         objective = cfg.get("objective", {})
         if (
-            job["type"] in {"train", "cache"} and cfg.get("model", {}).get("family") == "anima"
+            job["type"] in {"train", "cache"}
             and objective.get("timestep_sampling") == "resolution_sqrt"
             and objective.get("resolution_reference_mode") == "auto"
         ):
+            from ypuddin.config.timestep_reference import supports_resolution_reference
+
             reference = objective.get("resolution_reference_tokens_resolved")
-            if type(reference) is not int or reference <= 0:
+            if supports_resolution_reference(cfg.get("model", {}).get("family", "anima")) and (
+                type(reference) is not int or reference <= 0
+            ):
                 raise ValueError("原任务缺少有效的自动参考 token，无法重试；请重新创建训练任务。")
         checkpoint = cfg.setdefault("checkpoint", {})
         products = Path(checkpoint.get("output_dir") or job["run_dir"])

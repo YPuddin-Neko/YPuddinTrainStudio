@@ -5,6 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 
+def supports_resolution_reference(family: str) -> bool:
+    from ypuddin.models import get_family
+
+    spec = get_family(family).spec
+    return not spec.retired_reason and "resolution_sqrt" in spec.objective_timestep_sampling
+
+
 def effective_reference_tokens(objective: Any) -> int:
     if (
         objective.timestep_sampling == "resolution_sqrt"

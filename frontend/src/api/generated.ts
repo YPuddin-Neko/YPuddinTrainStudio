@@ -7448,7 +7448,7 @@ export interface components {
         ObjectiveConfig: {
             /**
              * Timestep Sampling
-             * @description 训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；Anima 的 resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。
+             * @description 训练噪声强度分布，t 越大噪声越多。shift 在 logit-normal 抽样后应用固定偏移；uniform 均匀抽样。resolution_shift 按 token 数线性计算 mu 后取 exp(mu)；resolution_sqrt 将基础 shift 乘以 token 数与参考值之比的平方根。预览图使用独立的噪声调度设置。
              * @default shift
              * @enum {string}
              */

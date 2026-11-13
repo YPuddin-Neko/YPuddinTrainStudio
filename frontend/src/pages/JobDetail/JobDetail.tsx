@@ -32,7 +32,6 @@ import ResumePointList from './ResumePointList';
 import Dialog from '../../components/Dialog';
 import JobStepper from './JobStepper';
 import MetricValue from './MetricValue';
-import TimestepSamplingStatus from './TimestepSamplingStatus';
 import { SlidingIndicator } from '../../components/motion';
 import { prefersReducedMotion, useEnterAnimation } from '../../utils/motion';
 import TopbarBreadcrumb from '../../components/TopbarBreadcrumb';
@@ -657,8 +656,6 @@ export default function JobDetail() {
 
         {job && isTtsJob(job) && job.progress?.phase && <p className="queue-status-note" role="status">{text('训练阶段', 'Training phase')} · {['completed', 'failed', 'cancelled', 'interrupted'].includes(job.status) ? t(`queue.status.${job.status}`) : t(`phase.${job.progress.phase}`, t('job.phaseInProgress'))}</p>}
         {job && !isTtsJob(job) && <JobStepper status={job.status} phase={job.progress?.phase || ''} progress={job.progress}/>}
-        {job?.id === id && job?.type === 'train' && <TimestepSamplingStatus status={job.latest.timestep_sampling} jobStatus={job.status}
-          configured={configSnapshot?.model?.family === 'anima' && (configSnapshot?.objective?.infonoise_enabled === true || configSnapshot?.objective?.timestep_sampling === 'resolution_sqrt')}/>}
 
         {/* 采样预览进度（job.sample_progress SSE） */}
         {sampleProgress && (

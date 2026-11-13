@@ -15,7 +15,7 @@ import { normalizeOptimizerConfig, optimizerManagesSchedule } from '../../utils/
 import { applyTrainingPreset, reusableTrainingPreset } from '../../utils/trainingPresets';
 import { formatApiError } from '../../utils/errors';
 import { fillDefaultModels, changeModelFamily, matchingTrainingDatasets } from '../../utils/workspaceConfig';
-import { inactiveTrainingReason } from '../../utils/trainingFamilies';
+import { defaultTimestepSampling, inactiveTrainingReason, supportsResolutionCorrectedShift } from '../../utils/trainingFamilies';
 import { currentTrainingComputePolicy } from '../../utils/trainingComputePolicy';
 import { doraConfirmationMessages, readDoraPrecisionReport, type DoraPrecisionReport } from '../../utils/doraPrecision';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -50,7 +50,13 @@ class DatasetListUnavailable extends Error {}
 const isConfigObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
 function referencePlanConfig(config: Record<string, any>) {
-  return JSON.stringify({...config, objective: {...config.objective, shift: undefined}});
+  const objective: Record<string, unknown> = {...config.objective, shift: undefined};
+  // A fresh plan's image tokens do not depend on the reference mode or manual value.
+  if (!config.checkpoint?.resume) {
+    delete objective.resolution_reference_mode;
+    delete objective.resolution_reference_tokens;
+  }
+  return JSON.stringify({...config, objective});
 }
 
 function mergeTrainingDefaults(defaults: Record<string, any>, draft: Record<string, any>, schema: any) {
@@ -414,19 +420,15 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
             if (!saved || JSON.stringify(saved.base.model) === JSON.stringify(saved.draft.model)) {
               restored = { ...restored, model: { ...next.model, ...model } };
               if (model.family !== next.model?.family) {
-                restored = { ...restored, adapter: { ...restored.adapter, preset: familyByName(familiesRef.current, model.family)?.default_preset ?? restored.adapter?.preset }, dataset: { ...restored.dataset, text_encoding: 'auto' } };
-                if (model.family !== 'anima') {
-                  const objective = { ...restored.objective, infonoise_enabled: false };
-                  if (objective.timestep_sampling === 'resolution_sqrt') {
-                    objective.timestep_sampling = model.family === 'moss_image' ? 'moss_image' : model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(model.family) ? 'resolution_shift' : 'shift';
-                    if (model.family === 'moss_image') objective.shift = 1;
-                  }
-                  restored = { ...restored, objective };
+                const targetFamily = familyByName(familiesRef.current, model.family);
+                const objective = { ...restored.objective };
+                if (model.family !== 'anima') objective.infonoise_enabled = false;
+                if ((objective.timestep_sampling === 'resolution_sqrt' && !supportsResolutionCorrectedShift(targetFamily, restored))
+                  || (objective.timestep_sampling === 'moss_image' && model.family !== 'moss_image')) {
+                  objective.timestep_sampling = defaultTimestepSampling(targetFamily, model.family);
+                  if (model.family === 'moss_image') objective.shift = 1;
                 }
-                if (model.family !== 'moss_image' && restored.objective?.timestep_sampling === 'moss_image') {
-                  const timestepSampling = model.family === 'flux3' ? 'logit_normal' : model.family === 'sdxl' ? 'uniform' : ['krea2', 'flux2'].includes(model.family) ? 'resolution_shift' : 'shift';
-                  restored = { ...restored, objective: { ...restored.objective, timestep_sampling: timestepSampling } };
-                }
+                restored = { ...restored, objective, adapter: { ...restored.adapter, preset: targetFamily?.default_preset ?? restored.adapter?.preset }, dataset: { ...restored.dataset, text_encoding: 'auto' } };
               }
             }
             const key = trainingDraftKey(projectId, versionId);
@@ -637,7 +639,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     if (inactiveTrainingReason(config) || inactiveTrainingReason(preset.config)) return;
     if (presetFamily(preset) && presetFamily(preset) !== config.model?.family) return;
     setError('');
-    setConfig((prev) => fillDefaultModels(applyTrainingPreset(prev, preset.config, schema), registeredModels));
+    setConfig((prev) => fillDefaultModels(applyTrainingPreset(prev, preset.config, schema, familyByName(families, prev.model?.family)), registeredModels));
     setPendingPreset(null);
   };
 
