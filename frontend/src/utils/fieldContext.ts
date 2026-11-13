@@ -199,7 +199,7 @@ const join = (lines: Lines) => lines.filter(Boolean).join('\n');
 function nativeBatchingHelp(path: string, { config, english, nativeBatchingVersion }: FieldContext): string | undefined {
   if (config.dataset?.resolution_mode !== 'native' || !['dataset.batch_size', 'loop.grad_accum', 'dataset.native_max_pixels', 'dataset.native_batch_mode'].includes(path)) return undefined;
   const text = (zh: string, en: string) => english ? en : zh;
-  const areaMemoryHelp = text('按面积拆微批可节省显存。单次实际图片数受图像面积上限限制，可能少于填写的批量大小（BZ）；面积受限时，增大 BZ 主要增加分次计算，不一定增加同时计算的图片数或峰值显存。', 'Area microbatches can save GPU memory. The image area limit may keep the images processed together below the entered batch size (BZ). Once that limit is reached, a larger BZ mainly adds separate model runs; it may not increase the images processed together or peak GPU memory.');
+  const areaMemoryHelp = text('按面积拆微批可节省显存。单次实际图片数受图像面积上限限制，可能少于填写的批量大小（BS）；面积受限时，增大 BS 主要增加分次计算，不一定增加同时计算的图片数或峰值显存。', 'Area microbatches can save GPU memory. The image area limit may keep the images processed together below the entered batch size (BS). Once that limit is reached, a larger BS mainly adds separate model runs; it may not increase the images processed together or peak GPU memory.');
   if (path === 'dataset.native_batch_mode') {
     if (!config.checkpoint?.resume) return undefined;
     if (nativeBatchingVersion === 1) return join([text('沿用恢复点的批次方式。\n同一逻辑批内不同尺寸的图片分开计算；相同尺寸也按图像面积上限拆分，并按实际图片数汇总梯度。', 'Continues with the batch mode saved in the recovery point.\nDifferent sizes within one logical batch run separately; same-size images are also split by the image area limit. Gradients are combined according to the actual image counts.'), areaMemoryHelp]);
