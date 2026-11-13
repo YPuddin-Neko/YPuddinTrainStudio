@@ -2,7 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { GitBranch, Plus, Settings2, GitCompare, FolderOpen, Loader2, Copy, AlertCircle, Archive } from 'lucide-react';
+import { GitBranch, Plus, Settings2, GitCompare, FolderOpen, Loader2, Copy, AlertCircle } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import type { FamilyInfo } from '../../api/types';
 import { ttsApi, type TtsConfigResponse, type TtsEngine } from '../../api/tts';
@@ -286,7 +286,6 @@ function WorkspaceHeader({ project, versionId, versions, current, active, refres
         <button type="button" className="ui-btn ui-btn-icon" onClick={() => void begin('paths')} disabled={!current || busy} title={text('查看本版本目录', 'View version folders')} aria-label={text('查看本版本目录', 'View version folders')}><FolderOpen size={14}/></button>
         {current && (ownerArchived || current.archived) ? <ProjectCardMenu workspace scope="version" name={current.name} archived busy={busy || !!deletingVersionId || current.deletion?.state === 'deleting'} onArchive={() => void archive()} onDelete={() => { setError(''); setDeleting(current); }} parentArchiveUrl={ownerArchived ? archiveUrl('projects', project.id) : undefined}/> : <button type="button" className="ui-btn ui-btn-icon" onClick={() => void begin('edit')} disabled={!current || current.status === 'copying' || busy || ownerArchived} title={ownerArchivedReason || text('版本设置', 'Version settings')} aria-label={text('版本设置', 'Version settings')}><Settings2 size={14}/></button>}
       </div>
-      <Link className="project-sidebar-archived" to={archiveUrl('versions', project.id)}><Archive size={12}/>{text('归档版本', 'Archived versions')}</Link>
     </>}
     <ProjectWorkflow projectId={project.id} versionId={selectedId} projectType={project.project_type} active={workflowActive ? active : undefined} sidebar/>
   </section>;
