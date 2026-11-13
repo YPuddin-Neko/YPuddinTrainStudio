@@ -147,6 +147,8 @@ _LEGACY_VALUES: dict[str, dict[str, Any]] = {
         "v_pred_like_loss": 0.0,
         "debiased_estimation_loss": False,
         "resolution_reference_tokens": 4096,
+        "resolution_reference_mode": "manual",
+        "resolution_reference_tokens_resolved": None,
         "infonoise_enabled": False,
         "infonoise_bins": 16,
         "infonoise_warmup_steps": 8,
@@ -245,6 +247,16 @@ def _fingerprint(
 ) -> dict[str, Any]:
     """The hashed form: legacy settings at their legacy value are left out, except ``kept`` ones."""
     data = project_legacy_intervals(config.to_dict() if isinstance(config, TrainConfig) else config)
+    objective = data.get("objective")
+    if isinstance(objective, Mapping):
+        objective = dict(objective)
+        if objective.get("timestep_sampling") == "resolution_sqrt" and objective.get("resolution_reference_mode") == "auto":
+            # Automatic runs consume the frozen value, not the editor's manual draft.
+            objective.pop("resolution_reference_tokens", None)
+        else:
+            objective.pop("resolution_reference_tokens_resolved", None)
+            objective.pop("resolution_reference_mode", None)
+        data["objective"] = objective
     task = data.get("training", {}).get("task", "standard")
     slider_mode = data.get("slider", {}).get("mode", "text")
     text_slider = task == "slider" and slider_mode == "text"

@@ -4409,6 +4409,11 @@ export interface components {
              * @enum {string}
              */
             kind: "config" | "preset";
+            /**
+             * Editor Defaults
+             * @default false
+             */
+            editor_defaults: boolean;
         };
         /** ConfigImportBody */
         ConfigImportBody: {
@@ -7491,11 +7496,23 @@ export interface components {
              */
             shift: number;
             /**
+             * Resolution Reference Mode
+             * @description 自动按最终训练画布的 token 数取样本加权中位数，包含数据重复次数；手动使用指定的参考 token。
+             * @default manual
+             * @enum {string}
+             */
+            resolution_reference_mode: "manual" | "auto";
+            /**
              * Resolution Reference Tokens
              * @description 基础 shift 对应的图像 token 数。Anima 的 1024×1024 图像对应 4096；训练时按实际潜空间和 patch 尺寸计算 token 数。例如 token 数为参考值的 4 倍时，基础 shift 乘以 2。
              * @default 4096
              */
             resolution_reference_tokens: number;
+            /**
+             * Resolution Reference Tokens Resolved
+             * @description 任务启动时确定的自动参考 token，恢复训练时沿用原值。
+             */
+            resolution_reference_tokens_resolved?: number | null;
             /**
              * Mode Scale
              * @description mode 训练时间步分布的形状系数，默认 1.29；仅在选择 mode 时生效。通常保持默认，并通过时间步诊断观察实际抽样分布。
@@ -8134,6 +8151,7 @@ export interface components {
             dora?: components["schemas"]["PlanDora"] | null;
             /** Source Balance */
             source_balance?: components["schemas"]["PlanSourceBalance"][] | null;
+            resolution_reference?: components["schemas"]["PlanResolutionReference"] | null;
             /**
              * Images
              * @default 0
@@ -8552,6 +8570,30 @@ export interface components {
             };
             /** Groups */
             groups?: components["schemas"]["PlanParameterGroup"][];
+        } & {
+            [key: string]: unknown;
+        };
+        /** PlanResolutionReference */
+        PlanResolutionReference: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "manual" | "auto";
+            /** Training Items */
+            training_items: number;
+            /** Token Min */
+            token_min: number;
+            /** Token Max */
+            token_max: number;
+            /** Weighted Median Tokens */
+            weighted_median_tokens: number;
+            /** Reference Tokens */
+            reference_tokens: number;
+            /** Effective Shift Min */
+            effective_shift_min: number;
+            /** Effective Shift Max */
+            effective_shift_max: number;
         } & {
             [key: string]: unknown;
         };

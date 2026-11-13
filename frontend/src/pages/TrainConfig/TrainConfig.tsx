@@ -11,7 +11,7 @@ import { Job, Plan, Preset, ModelAsset, DatasetInfo } from '../../api/types';
 import { useFamilies, familyByName } from '../../api/hooks/useFamilies';
 import { mergeConfig } from '../../utils/config';
 import { intervalFieldPath, normalizeLegacyIntervals } from '../../utils/intervals';
-import { normalizeOptimizerConfig } from '../../utils/optimizerCapabilities';
+import { normalizeOptimizerConfig, optimizerManagesSchedule } from '../../utils/optimizerCapabilities';
 import { applyTrainingPreset, reusableTrainingPreset } from '../../utils/trainingPresets';
 import { formatApiError } from '../../utils/errors';
 import { fillDefaultModels, changeModelFamily, matchingTrainingDatasets } from '../../utils/workspaceConfig';
@@ -48,6 +48,10 @@ const trainingDraftKey = (projectId: string, versionId?: string) => `training-dr
 // Unsaved edits wait for the dataset list: saving them first could drop dataset changes made elsewhere.
 class DatasetListUnavailable extends Error {}
 const isConfigObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+
+function referencePlanConfig(config: Record<string, any>) {
+  return JSON.stringify({...config, objective: {...config.objective, shift: undefined}});
+}
 
 function mergeTrainingDefaults(defaults: Record<string, any>, draft: Record<string, any>, schema: any) {
   const next = mergeConfig(defaults, normalizeOptimizerConfig(schema, normalizeLegacyIntervals(draft)));
@@ -112,7 +116,7 @@ function clearSavedTrainingDraft(key: string, encoded: string) {
 
 function rememberTrainingDraft(key: string, config: Record<string, unknown>, base: string) {
   try {
-    if (JSON.stringify(config) === base) clearSavedTrainingDraft(key, base);
+    if (JSON.stringify(config) === base) sessionStorage.removeItem(key);
     else if (base) sessionStorage.setItem(key, JSON.stringify({ version: 1, base: JSON.parse(base), draft: config }));
   } catch { /* The existing save and beforeunload guards still protect the draft. */ }
 }
@@ -186,6 +190,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const [showAdvanced, setShowAdvanced] = React.useState(false);
   const [presets, setPresets] = React.useState<Preset[]>([]);
   const [validatedConfig, setValidatedConfig] = React.useState('');
+  const [referenceConfig, setReferenceConfig] = React.useState('');
   const [validatedGpuDevices, setValidatedGpuDevices] = React.useState('');
   const [plan, setPlan] = React.useState<Plan | null>(null);
   const [planError, setPlanError] = React.useState('');
@@ -378,6 +383,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setDatasetRefreshError('');
     setLeaveBlocked(false);
     setLoaded(false);
+    setReferenceConfig('');
     setOutputBinding(null);
     setError('');
     setSavedAt(null);
@@ -470,6 +476,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setDatasetRefreshing(true);
     setDatasetRefreshError('');
     setValidatedConfig('');
+    setReferenceConfig('');
     setValidating(true);
     const base = JSON.parse(lastSavedRef.current || '{}');
     const savingAtStart = submittedConfigRef.current !== null;
@@ -615,11 +622,12 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         });
         setPlan(nextPlan);
         setValidatedConfig(JSON.stringify(config));
+        setReferenceConfig(nextPlan.resolution_reference ? referencePlanConfig(config) : '');
         setValidatedGpuDevices(JSON.stringify(gpuDevices));
         setValidationErrors([...validation.errors, ...(nextPlan.errors || [])].filter((item, index, all) => all.findIndex((x) => x.loc === item.loc && x.msg === item.msg) === index));
         setValidating(false);
       }).catch((err) => {
-        if (!controller.signal.aborted) { const message=formatApiError(err); planErrorRef.current=message; setPlanError(message); setValidatedConfig(''); setError(message); setValidating(false); }
+        if (!controller.signal.aborted) { const message=formatApiError(err); planErrorRef.current=message; setPlanError(message); setValidatedConfig(''); setReferenceConfig(''); setError(message); setValidating(false); }
       });
     }, 500);
     return () => { controller.abort(); clearTimeout(timer); };
@@ -735,6 +743,8 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
   const inactiveReason = inactiveTrainingReason(config, english);
   const gpuPlanCurrent = validatedGpuDevices === JSON.stringify(gpuDevices);
   const checked = loaded && !validating && !datasetRefreshing && !datasetRefreshError && gpuPlanCurrent && validatedConfig === JSON.stringify(config) && plan !== null;
+  const resolutionReference = loaded && gpuPlanCurrent && !datasetRefreshing && !datasetRefreshError && referenceConfig
+    && referenceConfig === referencePlanConfig(config) ? plan?.resolution_reference : undefined;
   const computePolicy = currentTrainingComputePolicy(plan?.compute_policy, config, validatedConfig, validating || !gpuPlanCurrent || datasetRefreshing || !!datasetRefreshError);
   const doraPrecision = checked ? readDoraPrecisionReport(plan?.dora) : null;
   const nativeBatchingMarker = checked && !planError ? plan?.native?.batching_version : null;
@@ -762,7 +772,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     setActiveTab(issue.tab); setSearch(''); setShowAdvanced(true); setIssuesOpen(false); setRevealVersion(value => value + 1);
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const issuePath = issue.path === 'training.task' ? 'training.mode' : intervalFieldPath(issue.path);
-      let path = issuePath === 'checkpoint.save_state_every_epochs' ? 'checkpoint.save_state_every_steps' : issuePath === 'dataset.native_max_pixels_mode' ? 'dataset.native_max_pixels' : issuePath;
+      let path = issuePath === 'checkpoint.save_state_every_epochs' ? 'checkpoint.save_state_every_steps' : issuePath === 'dataset.native_max_pixels_mode' ? 'dataset.native_max_pixels' : issuePath === 'objective.resolution_reference_mode' ? 'objective.resolution_reference_tokens' : issuePath;
       let target = document.getElementById(`field-${path}`);
       while (!target && path.includes('.')) { path = path.slice(0, path.lastIndexOf('.')); target = document.getElementById(`field-${path}`); }
       target?.scrollIntoView?.({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
@@ -847,14 +857,14 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
 
     </div>
     <div className="parameter-workspace-body">
-      <ParameterSections rootRef={parameterScrollRef} tab={activeTab} group={tabParams.get('group') || undefined} onTabChange={(tab, group) => {setActiveTab(tab, group);setSearch('');}} issues={issues} checked={checked} planChecked={planChecked} hasTrainingMode={!!schema?.properties?.training} fullTraining={config.training?.mode === 'full'} sliderTraining={config.training?.task === 'slider'} onRevealAdvanced={() => setShowAdvanced(true)}/>
+      <ParameterSections rootRef={parameterScrollRef} tab={activeTab} group={tabParams.get('group') || undefined} onTabChange={(tab, group) => {setActiveTab(tab, group);setSearch('');}} issues={issues} checked={checked} planChecked={planChecked} hasTrainingMode={!!schema?.properties?.training} fullTraining={config.training?.mode === 'full'} sliderTraining={config.training?.task === 'slider'} optimizerSchedules={optimizerManagesSchedule(schema, config)} onRevealAdvanced={() => setShowAdvanced(true)}/>
       <div className="training-editor parameter-scroll-region" ref={parameterScrollRef}>
         <div id="training-parameters" role="region" aria-label={search ? text('训练参数搜索结果', 'Training parameter search results') : text('训练参数内容', 'Training parameter fields')}>
           {search && <p className="section-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
           {!search && activeTab === 'data' && <div className="config-context-card"><div><strong><Database size={14}/>{text('训练数据与遮罩', 'Dataset and masks')}</strong></div><div className="context-actions"><Link to={`${dataUrl}&data_step=datasets`} className="ui-btn ui-btn-sm">{text('添加数据', 'Add dataset')}</Link><Link to={`${dataUrl}&data_step=captions${sourceQuery}`} className="ui-btn ui-btn-sm">{text('标签编辑', 'Caption editor')}</Link><Link to={`${dataUrl}&data_step=preprocess${sourceQuery}`} className="ui-btn ui-btn-sm"><Brush size={13}/>{text('数据集预处理', 'Preprocessing')}</Link></div>{config.dataset?.masked_loss && <p className="mask-context-note">{text('遮罩已启用：白色参与训练，黑色忽略。未制作遮罩且没有 alpha 通道的图片仍按整张图训练。', 'Masking enabled: white trains, black is ignored. Images without a mask or alpha still train the full image.')}</p>}</div>}
 
 
-          {!loaded ? <LoadingNote block label={text('正在读取训练参数…', 'Loading training parameters…')}/> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} nativeAreaEstimate={nativeAreaEstimate} nativeBatchingVersion={nativeBatchingVersion} doraPrecision={doraPrecision} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} notices={(plan?.warnings || []).flatMap(warning => { const advice = presentValueAdvice(warning, english); return advice ? [{ loc: advice.loc, msg: advice.inline, fix: advice.fix }] : []; })} family={familyByName(families, config?.model?.family)} families={families} />}
+          {!loaded ? <LoadingNote block label={text('正在读取训练参数…', 'Loading training parameters…')}/> : <SchemaForm projectId={projectId} versionId={versionId} key={revealVersion} compact readOnly={!!inactiveReason} schema={orderedSchema} value={config} computePolicy={computePolicy} nativeAreaEstimate={nativeAreaEstimate} resolutionReference={resolutionReference} nativeBatchingVersion={nativeBatchingVersion} doraPrecision={doraPrecision} sourceRoles={sourceRoles} outputBinding={outputBinding} versionSources={!!projectId} onChange={handleConfigChange} showAdvanced={showAdvanced || !!search} search={search} onClearSearch={clearSearch} errors={issues.map(issue => ({loc:issue.path,msg:issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message}))} notices={(plan?.warnings || []).flatMap(warning => { const advice = presentValueAdvice(warning, english); return advice ? [{ loc: advice.loc, msg: advice.inline, fix: advice.fix }] : []; })} family={familyByName(families, config?.model?.family)} families={families} />}
         </div>
       </div>
       <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="ui-btn ui-btn-quiet inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector textSlider={config.training?.task === 'slider' && config.slider?.mode !== 'image'} paired={config.training?.task === 'edit' || config.training?.task === 'slider' && config.slider?.mode === 'image'} familyName={config.model?.family} plan={plan} planCurrent={checked} loading={validating || datasetRefreshing} dataset={config.dataset} onField={path => { setInspectorOpen(false); goToIssue({ path, label: '', message: '', detail: '', tab: configTabForPath(path) }); }} error={planError} onRetry={()=>datasetRefreshError ? refreshDatasetConfiguration() : setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>

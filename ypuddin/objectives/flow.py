@@ -15,6 +15,7 @@ import torch
 from torch import Tensor
 
 from ypuddin.config import ObjectiveConfig
+from ypuddin.config.timestep_reference import effective_reference_tokens
 
 from .noise import random_normal_like, sample_training_noise
 
@@ -79,7 +80,7 @@ class TimestepSampler:
             t = mobius_shift(t, resolution_shift_value(num_tokens or 1024, lo_tok, hi_tok, lo_mu, hi_mu))
         elif mode == "resolution_sqrt":
             t = mobius_shift(
-                t, resolution_sqrt_shift(num_tokens, self.cfg.shift, self.cfg.resolution_reference_tokens)
+                t, resolution_sqrt_shift(num_tokens, self.cfg.shift, effective_reference_tokens(self.cfg))
             )
         lo, hi = self.cfg.t_min, self.cfg.t_max
         return t.clamp(max(lo, 1e-5), min(hi, 1 - 1e-5))

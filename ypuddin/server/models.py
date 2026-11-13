@@ -562,6 +562,17 @@ class PlanDora(_Out):
     confirmation_message: str | None = None
 
 
+class PlanResolutionReference(_Out):
+    mode: Literal["manual", "auto"]
+    training_items: int
+    token_min: int
+    token_max: int
+    weighted_median_tokens: int
+    reference_tokens: int
+    effective_shift_min: float
+    effective_shift_max: float
+
+
 class Plan(_Out):
     concept_samples: int | None = None
     ok: bool
@@ -570,6 +581,7 @@ class Plan(_Out):
     compute_policy: dict[str, Any] | None = None
     dora: PlanDora | None = None
     source_balance: list[PlanSourceBalance] | None = None
+    resolution_reference: PlanResolutionReference | None = None
     images: int = 0
     items: int = 0
     captioned: int = 0

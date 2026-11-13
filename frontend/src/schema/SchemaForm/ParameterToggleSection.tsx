@@ -18,7 +18,7 @@ export default function ParameterToggleSection({ id, title, description, checked
   keepHelpEnabled?: boolean;
 }) {
   const toggle = <div data-testid={fieldPath ? `field-${fieldPath}` : undefined} data-field-path={fieldPath}>
-    <Switch id={switchPosition === 'start' ? `${id}-switch` : undefined} aria-label={switchLabel || title} aria-describedby={description ? `${id}-description` : undefined} aria-controls={`${id}-settings`}
+    <Switch id={switchPosition === 'start' ? `${id}-switch` : undefined} aria-label={switchLabel || title} aria-describedby={description ? `${id}-description` : undefined} aria-controls={children ? `${id}-settings` : undefined}
       checked={checked} disabled={disabled} onCheckedChange={onCheckedChange}/>
   </div>;
   return <section className="parameter-toggle-layout" data-enabled={checked} data-switch-position={switchPosition === 'start' ? 'start' : undefined} aria-labelledby={`${id}-title`}>
@@ -33,9 +33,9 @@ export default function ParameterToggleSection({ id, title, description, checked
       </div>
       {switchPosition === 'end' && toggle}
     </header>
-    <fieldset id={`${id}-settings`} disabled={disabled || (!parametersEnabled && !keepHelpEnabled)}
+    {children && <fieldset id={`${id}-settings`} disabled={disabled || (!parametersEnabled && !keepHelpEnabled)}
       data-disabled={(keepHelpEnabled && !parametersEnabled) || undefined} className="parameter-toggle-body">
       {children}
-    </fieldset>
+    </fieldset>}
   </section>;
 }

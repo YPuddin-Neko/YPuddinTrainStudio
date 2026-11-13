@@ -16,6 +16,8 @@ from typing import Any
 import torch
 from torch import Tensor
 
+from ypuddin.config.timestep_reference import effective_reference_tokens
+
 
 class AdaptiveTimestepSampler:
     """A binned mixture with optimizer-transaction statistics.
@@ -50,6 +52,8 @@ class AdaptiveTimestepSampler:
     def __init__(self, cfg: Any, device: torch.device | str = "cpu"):
         self.device = torch.device(device)
         values = {name: getattr(cfg, name) for name in self._FIELDS}
+        if cfg.timestep_sampling == "resolution_sqrt":
+            values["resolution_reference_tokens"] = effective_reference_tokens(cfg)
         self.cfg = cfg = SimpleNamespace(**values)
         self.recipe = dict(values)
         if cfg.timestep_sampling != "resolution_sqrt":

@@ -17448,6 +17448,11 @@
             ],
             "title": "Kind",
             "default": "config"
+          },
+          "editor_defaults": {
+            "type": "boolean",
+            "title": "Editor Defaults",
+            "default": false
           }
         },
         "type": "object",
@@ -26064,6 +26069,23 @@
               "show_when": "objective.timestep_sampling in ['shift','resolution_sqrt']"
             }
           },
+          "resolution_reference_mode": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "auto"
+            ],
+            "title": "Resolution Reference Mode",
+            "description": "自动按最终训练画布的 token 数取样本加权中位数，包含数据重复次数；手动使用指定的参考 token。",
+            "default": "manual",
+            "x-ui": {
+              "advanced": true,
+              "control": "select",
+              "group": "objective",
+              "order": 31,
+              "show_when": "model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'"
+            }
+          },
           "resolution_reference_tokens": {
             "type": "integer",
             "exclusiveMinimum": 0.0,
@@ -26074,7 +26096,23 @@
               "advanced": true,
               "group": "objective",
               "order": 32,
-              "show_when": "model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'"
+              "show_when": "model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt' && objective.resolution_reference_mode == 'manual'"
+            }
+          },
+          "resolution_reference_tokens_resolved": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Reference Tokens Resolved",
+            "description": "任务启动时确定的自动参考 token，恢复训练时沿用原值。",
+            "x-ui": {
+              "hidden": true
             }
           },
           "mode_scale": {
@@ -27659,6 +27697,16 @@
             ],
             "title": "Source Balance"
           },
+          "resolution_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanResolutionReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "images": {
             "type": "integer",
             "title": "Images",
@@ -28655,6 +28703,59 @@
         "type": "object",
         "title": "PlanParams",
         "description": "Empty (all zeros) when the family cannot build a meta backbone for the config."
+      },
+      "PlanResolutionReference": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "auto"
+            ],
+            "title": "Mode"
+          },
+          "training_items": {
+            "type": "integer",
+            "title": "Training Items"
+          },
+          "token_min": {
+            "type": "integer",
+            "title": "Token Min"
+          },
+          "token_max": {
+            "type": "integer",
+            "title": "Token Max"
+          },
+          "weighted_median_tokens": {
+            "type": "integer",
+            "title": "Weighted Median Tokens"
+          },
+          "reference_tokens": {
+            "type": "integer",
+            "title": "Reference Tokens"
+          },
+          "effective_shift_min": {
+            "type": "number",
+            "title": "Effective Shift Min"
+          },
+          "effective_shift_max": {
+            "type": "number",
+            "title": "Effective Shift Max"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "mode",
+          "training_items",
+          "token_min",
+          "token_max",
+          "weighted_median_tokens",
+          "reference_tokens",
+          "effective_shift_min",
+          "effective_shift_max"
+        ],
+        "title": "PlanResolutionReference"
       },
       "PlanSourceBalance": {
         "properties": {

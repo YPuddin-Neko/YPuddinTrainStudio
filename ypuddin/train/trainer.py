@@ -244,6 +244,7 @@ class Trainer:
         # DistributedTrainer already resolved or restored the area collectively.
         if not hasattr(self, "distributed"):
             self.cfg = resolve_native_vram_config(self.cfg, device=self.device)
+            self.cfg = self._resolve_resolution_reference(self.cfg)
         cfg = self.cfg
         self._training_feature_contract = training_feature_contract(cfg)
         self.compute_runtime: dict[str, Any] | None = None
@@ -290,6 +291,36 @@ class Trainer:
         self._timestep_recipe = timestep_recipe(cfg)
 
     # ----------------------------------------------------------------- setup
+    def _resolve_resolution_reference(self, cfg: TrainConfig) -> TrainConfig:
+        from .resolution_reference import automatic_reference, resolve_resolution_reference_config
+
+        if (
+            not automatic_reference(cfg) or cfg.checkpoint.resume
+            or cfg.objective.resolution_reference_tokens_resolved is not None
+        ):
+            return resolve_resolution_reference_config(cfg)
+        latent = get_family(cfg.model.family).spec.latent
+        if cfg.training.task == "slider" and cfg.slider.mode == "text":
+            side = cfg.slider.resolution // latent.align * latent.align
+            counts = {(side, side): cfg.slider.samples_per_epoch}
+        else:
+            from ypuddin.data.dataset import prepare_data_layout
+            from ypuddin.data.index import IndexDB
+
+            cache_root = (Path(cfg.dataset.cache_dir) if cfg.dataset.cache_dir
+                          else Path(cfg.checkpoint.output_dir) / "cache")
+            index = IndexDB(cache_root / "index.sqlite")
+            try:
+                layout = prepare_data_layout(cfg, latent, index_db=index)
+            finally:
+                index.close()
+            counts: dict[tuple[int, int], int] = {}
+            for item in layout.items:
+                key = (item.bucket.width, item.bucket.height)
+                counts[key] = counts.get(key, 0) + 1
+            self._prepared_data_layout = layout
+        return resolve_resolution_reference_config(cfg, counts=counts)
+
     @staticmethod
     def _pick_device() -> torch.device:
         if current_profile().endswith("-cpu"):
@@ -526,7 +557,9 @@ class Trainer:
                 replace(self.family.spec.latent, fingerprint=self.loaded.latent.fingerprint),
                 cache_root=cache_root,
                 progress=lambda k, d, t: self.emit("cache.progress", kind=k, done=d, total=t),
+                prepared_layout=getattr(self, "_prepared_data_layout", None),
             )
+            self._prepared_data_layout = None
         self.emit("data.plan", **self.bundle.plan.to_dict())
         if self.is_primary and not cfg.checkpoint.resume and cfg.dataset.resolution_mode == "native":
             (self._record_dir() / "data-plan.json").write_text(
@@ -1441,10 +1474,11 @@ class Trainer:
             effective_baseline_shift=None,
         )
         if cfg.timestep_sampling == "resolution_sqrt" and tokens is not None:
+            from ypuddin.config.timestep_reference import effective_reference_tokens
             from ypuddin.objectives.flow import resolution_sqrt_shift
 
             status["effective_baseline_shift"] = resolution_sqrt_shift(
-                tokens, cfg.shift, cfg.resolution_reference_tokens
+                tokens, cfg.shift, effective_reference_tokens(cfg)
             )
         elif cfg.timestep_sampling in {"uniform", "logit_normal", "shift"}:
             status["effective_baseline_shift"] = cfg.shift if cfg.timestep_sampling == "shift" else 1.0

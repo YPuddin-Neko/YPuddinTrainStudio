@@ -525,6 +525,7 @@ class ConfigExportBody(BaseModel):
     config: dict[str, Any]
     format: Literal["toml", "json"] = "toml"
     kind: Literal["config", "preset"] = "config"
+    editor_defaults: bool = False
 
 
 class ConfigText(BaseModel):
@@ -571,13 +572,18 @@ def config_import(body: ConfigImportBody) -> Any:
 def config_export(body: ConfigExportBody) -> dict[str, str]:
     from ypuddin.config.export import project_config_for_export
     from ypuddin.train.native_resolution import clear_native_vram_resolution
+    from ypuddin.train.resolution_reference import clear_resolution_reference
 
     raw = body.config
     checkpoint = raw.get("checkpoint")
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         raw = clear_native_vram_resolution(raw)
+        raw = clear_resolution_reference(raw)
     cfg = _validated_or_error(raw, preset=body.kind == "preset")
-    exported = project_config_for_export(raw if body.kind == "preset" else cfg)
+    exported = project_config_for_export(
+        raw if body.kind == "preset" else cfg,
+        omit_default_nulls=True if body.kind == "preset" and body.editor_defaults else None,
+    )
     return {
         "text": dump_toml(exported, null_mode="preset" if body.kind == "preset" else "config")
         if body.format == "toml"
@@ -661,10 +667,12 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
     # plan keeps full validation errors while previewing independently valid data fields.
     cfg = _scoped_config(body, c)
     from ypuddin.train.native_resolution import clear_native_vram_resolution
+    from ypuddin.train.resolution_reference import clear_resolution_reference
 
     checkpoint = cfg.get("checkpoint")
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         cfg = clear_native_vram_resolution(cfg)
+        cfg = clear_resolution_reference(cfg)
         if isinstance(cfg.get("dataset"), dict) and cfg["dataset"].get("resolution_mode") == "native":
             cfg = {**cfg, "dataset": {
                 **cfg["dataset"],
@@ -769,6 +777,8 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
         # The error supersedes the note that memory may be tight.
         result["warnings"] = [item for item in result["warnings"] if item.get("code") != "vram.tight"]
         result["ok"] = False
+    if not result["ok"]:
+        result["resolution_reference"] = None
     return result
 
 
@@ -856,12 +866,17 @@ def _write_preset(name: str, body: PresetBody, c: ServiceContext, *, create: boo
             details={"errors": [{"loc": "model.family", "msg": "family must be a string"}]},
         )
     from ypuddin.train.native_resolution import clear_native_vram_resolution
+    from ypuddin.train.resolution_reference import clear_resolution_reference
 
-    fragment = normalize_legacy_intervals(clear_native_vram_resolution(preserve_legacy_dora(body.config)))
+    fragment = normalize_legacy_intervals(
+        clear_resolution_reference(clear_native_vram_resolution(preserve_legacy_dora(body.config)))
+    )
     validated = _validated_or_error(_merge_preset_config(initial_family_config(c, family), fragment), preset=True)
     from ypuddin.config.optimizer_rules import canonical_optimizer_fragment
 
-    config = canonical_optimizer_fragment(fragment, validated.to_dict())
+    config = dict(fragment)
+    if isinstance(fragment.get("optimizer"), dict):
+        config["optimizer"] = canonical_optimizer_fragment(fragment, validated.to_dict())["optimizer"]
     with _preset_lock:
         collision = next(
             (f for f in path.parent.glob("*.json") if f.stem.casefold() == name.casefold()), None
@@ -920,13 +935,17 @@ def resolve_preset(name: str, body: ConfigBody, c: ServiceContext = Depends(ctx)
     """Overlay ``body.config`` on the preset and return the fully resolved config (+ TOML)."""
     from ypuddin.config.export import public_config_dict
     from ypuddin.train.native_resolution import clear_native_vram_resolution
+    from ypuddin.train.resolution_reference import clear_resolution_reference
 
     preset = get_preset(name, c)
     raw = normalize_legacy_intervals(body.config)
     checkpoint = raw.get("checkpoint")
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         raw = clear_native_vram_resolution(raw)
-    overlay = _merge_preset_config(normalize_legacy_intervals(clear_native_vram_resolution(preset["config"])), raw)
+        raw = clear_resolution_reference(raw)
+    overlay = _merge_preset_config(normalize_legacy_intervals(
+        clear_resolution_reference(clear_native_vram_resolution(preset["config"]))
+    ), raw)
     merged = _merge_preset_config(TrainConfig().to_dict(), overlay)
     dataset, checkpoint = merged.get("dataset"), merged.get("checkpoint")
     if (

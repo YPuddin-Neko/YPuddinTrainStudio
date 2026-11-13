@@ -2564,10 +2564,15 @@ def create_job(body: JobBody, c: ServiceContext = Depends(ctx)) -> dict[str, Any
 def _create_image_job(body: JobBody, c: ServiceContext, version: dict | None, config: dict) -> dict:
     vid = version["id"] if version else None
     from ypuddin.train.native_resolution import clear_native_vram_resolution, resolve_native_vram_config
+    from ypuddin.train.resolution_reference import (
+        clear_resolution_reference,
+        resolve_resolution_reference_config,
+    )
 
     checkpoint = config.get("checkpoint")
     if not isinstance(checkpoint, dict) or not checkpoint.get("resume"):
         config = clear_native_vram_resolution(config)
+        config = clear_resolution_reference(config)
         if isinstance(config.get("dataset"), dict) and config["dataset"].get("resolution_mode") == "native":
             config = {**config, "dataset": {
                 **config["dataset"],
@@ -2735,6 +2740,7 @@ def _create_image_job(body: JobBody, c: ServiceContext, version: dict | None, co
         cfg = resolve_native_vram_config(
             cfg, device=memory_target["device"], plan_result=preflight,
         )
+        cfg = resolve_resolution_reference_config(cfg, plan_result=preflight)
     except DataConfigError as error:
         raise ApiError(
             str(error), code="config.invalid",

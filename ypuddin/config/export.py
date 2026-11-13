@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, get_args
+
+from pydantic import ValidationError
 
 from .optimizer_rules import (
     AUTOMAGIC_FIELDS,
@@ -12,9 +15,10 @@ from .optimizer_rules import (
     PPSF_FIELDS,
     PRODIGY_FIELDS,
     optimizer_key,
+    optimizer_policy,
     optimizer_specific_fields,
 )
-from .schema import TrainConfig
+from .schema import ModelConfig, TrainConfig
 
 NATIVE_INACTIVE_BUCKET_FIELDS = frozenset({
     "resolutions", "aspect_ratio_limit", "area_tolerance", "bucket_step", "bucket_no_upscale",
@@ -80,6 +84,20 @@ def _project_model(data: dict[str, Any], config: TrainConfig | None) -> None:
         data.pop("adapter", None)
         memory.pop("blocks_to_swap", None)
     else:
+        no_conv = training.get("train_backbone") is False or adapter.get("layer_types") == "linear"
+        conv_context = config
+        if (conv_context is None and training.get("mode") == "adapter"
+                and training.get("train_backbone") is True and adapter.get("layer_types") == "linear_conv"
+                and isinstance(model.get("family"), str) and isinstance(adapter.get("preset"), str)):
+            conv_context = SimpleNamespace(
+                model=SimpleNamespace(family=model["family"]),
+                training=SimpleNamespace(mode="adapter", train_backbone=True),
+                adapter=SimpleNamespace(layer_types="linear_conv", preset=adapter["preset"]),
+            )
+        if not no_conv and conv_context is not None:
+            from .training_rules import trains_conv_adapters
+
+            no_conv = not trains_conv_adapters(conv_context)
         # Per-layer algorithm overrides inherit these global parameters.
         if "algo" in adapter and ("rules" in adapter or config is not None):
             algorithms = {adapter["algo"]}
@@ -88,16 +106,26 @@ def _project_model(data: dict[str, Any], config: TrainConfig | None) -> None:
                 _drop(adapter, ("factor", "decompose_both"))
             if "tlora" not in algorithms:
                 _drop(adapter, ("tlora_min_rank", "tlora_power", "tlora_ortho"))
+        if (
+            training.get("mode") == "adapter"
+            and adapter.get("algo") == "lokr" and adapter.get("rank") == "full"
+            and isinstance(adapter.get("rules"), list)
+            and all(isinstance(rule, dict) and (
+                rule.get("algo") == "none" or (
+                    (rule.get("algo") or "lokr") == "lokr" and rule.get("rank") in (None, "full")
+                )
+            ) for rule in adapter["rules"])
+            and (no_conv or (adapter.get("layer_types") == "linear_conv"
+                             and "conv_rank" in adapter and adapter["conv_rank"] is None))
+        ):
+            # Both backbone and text adapters inherit full factors here.
+            # Their exported tensor alpha is 1; numeric-rank overrides need these values.
+            _drop(adapter, ("decompose_both", "rs_lora", "alpha", "rank_dropout", "conv_alpha"))
         if adapter.get("dora") is False:
             _drop(adapter, ("dora_axis", "dora_compute_mode", "dora_merge_dtype"))
         _only_for(adapter, adapter, "dora_compute_mode", {"comfyui"}, ("dora_merge_dtype",))
-        if training.get("train_backbone") is False or adapter.get("layer_types") == "linear":
+        if no_conv:
             _drop(adapter, ("conv_rank", "conv_alpha"))
-        elif config is not None:
-            from .training_rules import trains_conv_adapters
-
-            if not trains_conv_adapters(config):
-                _drop(adapter, ("conv_rank", "conv_alpha"))
     lr_fields = ("backbone_lr", "text_encoder_lr", "text_encoder_2_lr", "llm_adapter_lr", "self_attn_lr", "cross_attn_lr", "mlp_lr", "modulation_lr")
     _only_for(training, training, "mode", {"full"}, (*lr_fields, "resume_weights"))
     _only_for(training, training, "train_backbone", {True}, ("backbone_lr", *lr_fields[3:]))
@@ -117,6 +145,17 @@ def _project_optimizer(data: dict[str, Any]) -> None:
             optimizer.pop("eps", None)
         if key != "adamw":
             optimizer.pop("cpu_offload", None)
+        if key == "prodigy_plus_sf":
+            args = _section(optimizer, "args")
+            for selector, inactive, field in (
+                ("use_schedulefree", False, "schedulefree_c"),
+                ("split_groups", False, "split_groups_mean"),
+                ("factored", False, "factored_fp32"),
+                ("weight_decay", 0, "weight_decay_by_lr"),
+                ("use_speed", True, "d_limiter"),
+            ):
+                if selector in optimizer and optimizer[selector] == inactive and not ({selector, field} & args.keys()):
+                    optimizer.pop(field, None)
         # Partial recipes keep legacy arguments until schema migration resolves precedence.
         if key in {"adamw_sf", "automagic"} or (
             key == "prodigy_plus_sf" and optimizer.get("use_schedulefree") is True
@@ -133,16 +172,28 @@ def _project_optimizer(data: dict[str, Any]) -> None:
         scheduler.pop("min_lr_ratio", None)
 
 
+def _project_resolution_reference(objective: dict[str, Any]) -> None:
+    if "timestep_sampling" not in objective:
+        return
+    if objective["timestep_sampling"] != "resolution_sqrt":
+        _drop(objective, ("resolution_reference_mode", "resolution_reference_tokens_resolved"))
+        objective.pop("resolution_reference_tokens", None)
+    elif objective.get("resolution_reference_mode") == "auto":
+        objective.pop("resolution_reference_tokens", None)
+    elif objective.get("resolution_reference_mode") == "manual":
+        objective.pop("resolution_reference_tokens_resolved", None)
+
+
 def _project_objective(data: dict[str, Any]) -> None:
     objective, model = _section(data, "objective"), _section(data, "model")
     for fields, samplers in (
         (("logit_mean", "logit_std"), {"logit_normal", "shift", "resolution_shift", "resolution_sqrt"}),
         (("shift",), {"shift", "resolution_sqrt"}),
         (("res_shift_tokens", "res_shift_mu"), {"resolution_shift"}),
-        (("resolution_reference_tokens",), {"resolution_sqrt"}),
         (("mode_scale",), {"mode"}),
     ):
         _only_for(objective, objective, "timestep_sampling", samplers, fields)
+    _project_resolution_reference(objective)
     _only_for(objective, objective, "weighting", {"snr_like", "min_snr"}, ("snr_gamma",))
     _only_for(objective, objective, "loss", {"huber", "pseudo_huber"}, ("huber_c",))
     if objective.get("multires_noise_iterations") == 0:
@@ -154,13 +205,27 @@ def _project_objective(data: dict[str, Any]) -> None:
     _only_for(objective, model, "prediction_type", {"epsilon"}, ("v_pred_like_loss",))
 
 
-def _project_caption(caption: dict[str, Any], dataset: dict[str, Any], model: dict[str, Any]) -> None:
+def _online_text(dataset: dict[str, Any], training: dict[str, Any], model: dict[str, Any]) -> bool:
+    if training.get("train_text_encoder") is True or dataset.get("text_encoding") == "online":
+        return True
+    if dataset.get("text_encoding") != "auto" or not isinstance(model.get("family"), str):
+        return False
+    from ypuddin.models import get_family
+
+    try:
+        family = get_family(model["family"])
+    except (KeyError, ImportError):
+        return False
+    return "online_text" in family.spec.capabilities
+
+
+def _project_caption(caption: dict[str, Any], model: dict[str, Any], *, online_text: bool) -> None:
     _only_for(caption, model, "family", {"sdxl"}, ("weighted",))
     if caption.get("shuffle") is False and caption.get("tag_dropout") == 0:
         caption.pop("keep_tokens", None)
         if caption.get("wildcard") is False:
             caption.pop("cache_variants", None)
-    if dataset.get("text_encoding") == "online":
+    if online_text:
         caption.pop("cache_variants", None)
     if caption.get("content_type") in {"anima_json", "gbc", "moss_layout"}:
         caption.pop("keep_tokens", None)
@@ -168,6 +233,7 @@ def _project_caption(caption: dict[str, Any], dataset: dict[str, Any], model: di
 
 def _project_dataset(data: dict[str, Any]) -> None:
     dataset, training, model = _section(data, "dataset"), _section(data, "training"), _section(data, "model")
+    online_text = _online_text(dataset, training, model)
     if dataset.get("resolution_mode") == "bucket":
         _drop(dataset, [key for key in dataset if key.startswith("native_")])
     if dataset.get("resolution_mode") == "native":
@@ -175,7 +241,7 @@ def _project_dataset(data: dict[str, Any]) -> None:
         _only_for(dataset, dataset, "native_max_pixels_mode", {"auto_vram"}, ("native_max_pixels_resolved",))
     if dataset.get("image_fit") == "pad":
         dataset.pop("crop_anchor", None)
-    _project_caption(_section(dataset, "caption"), dataset, model)
+    _project_caption(_section(dataset, "caption"), model, online_text=online_text)
     for section in ("dataset", "validation"):
         for source in _section(data, section).get("sources", []):
             if not isinstance(source, dict):
@@ -187,7 +253,7 @@ def _project_dataset(data: dict[str, Any]) -> None:
             if _section(data, "slider").get("mode") == "text":
                 source.pop("pair_path", None)
             # A source caption is its own override; global shuffle does not control it.
-            _project_caption(_section(source, "caption"), dataset, model)
+            _project_caption(_section(source, "caption"), model, online_text=online_text)
 
 
 def _project_optional(data: dict[str, Any]) -> None:
@@ -218,8 +284,36 @@ def _project_optional(data: dict[str, Any]) -> None:
                 section.pop(key.removesuffix("_enabled"), None)
 
 
+def _project_fixed_controls(data: dict[str, Any]) -> None:
+    optimizer = _section(data, "optimizer")
+    if optimizer.get("fused_backward") is False:
+        optimizer.pop("fused_backward")
+    if isinstance(optimizer.get("type"), str):
+        key = optimizer_key(optimizer["type"])
+        fixed = optimizer_policy(key, use_schedulefree=optimizer.get("use_schedulefree") is True).get("fixed", {})
+        if fixed.get("optimizer.kahan") is False and optimizer.get("kahan") is False:
+            optimizer.pop("kahan")
+        if fixed.get("optimizer.group_lr") == {} and optimizer.get("group_lr") == {}:
+            optimizer.pop("group_lr")
+        adapter = _section(data, "adapter")
+        if (
+            _section(data, "training").get("mode") == "adapter"
+            and fixed.get("adapter.lr_scale") == {} and adapter.get("lr_scale") == {}
+        ):
+            adapter.pop("lr_scale")
+    family = _section(data, "model").get("family")
+    if family in get_args(ModelConfig.model_fields["family"].annotation):
+        from .training_rules import training_capabilities
+
+        if training_capabilities(family)["max_reference_images"]:
+            return
+        for prompt in _section(data, "sampling").get("prompts", []):
+            if isinstance(prompt, dict) and prompt.get("reference_images") == []:
+                prompt.pop("reference_images")
+
+
 def _restore_nondefaults(original: Any, projected: Any, defaults: Any) -> None:
-    """Retain inactive nondefaults that still participate in old resume identities."""
+    """Retain selected contract values that schema defaults would otherwise change."""
     if isinstance(original, dict) and isinstance(projected, dict):
         defaults = defaults if isinstance(defaults, dict) else {}
         for key, value in original.items():
@@ -236,6 +330,46 @@ def _restore_nondefaults(original: Any, projected: Any, defaults: Any) -> None:
         for index, (before, after) in enumerate(zip(original, projected, strict=True)):
             default = defaults[index] if isinstance(defaults, list) and index < len(defaults) else None
             _restore_nondefaults(before, after, default)
+
+
+def _restore_resume_contract(original: dict[str, Any], data: dict[str, Any]) -> None:
+    try:
+        defaults = TrainConfig.model_validate(data).to_dict()
+    except ValidationError:
+        # A partial preset may only become valid after merging into its destination.
+        defaults = TrainConfig().to_dict()
+    for section in ("dataset", "validation"):
+        before = _section(original, section)
+        if not before:
+            continue
+        after = data.setdefault(section, {})
+        selected = ({"caption": before["caption"]} if "caption" in before else {}) if section == "dataset" else {
+            key: value for key, value in before.items() if key != "sources"
+        }
+        _restore_nondefaults(selected, after, _section(defaults, section))
+        if section == "validation":
+            for key, value in before.items():
+                if key.endswith("_enabled") and key.removesuffix("_enabled") in after:
+                    after[key] = deepcopy(value)
+        if "sources" not in after:
+            continue
+        default_sources = _section(defaults, section).get("sources", [])
+        for index, (old_source, new_source) in enumerate(zip(before.get("sources", []), after["sources"], strict=True)):
+            if not isinstance(old_source, dict) or not isinstance(new_source, dict):
+                continue
+            selected = {key: old_source[key] for key in ("caption", "prior_weight") if key in old_source}
+            source_defaults = default_sources[index] if index < len(default_sources) else {}
+            _restore_nondefaults(selected, new_source, source_defaults)
+    contracts = {}
+    if "scheduler" in original:
+        contracts["scheduler"] = original["scheduler"]
+    optimizer = _section(original, "optimizer")
+    keys = {"betas", "eps", "weight_decay", "args"}
+    if isinstance(optimizer.get("type"), str):
+        keys.update(optimizer_specific_fields(optimizer["type"]))
+    if optimizer:
+        contracts["optimizer"] = {key: optimizer[key] for key in keys if key in optimizer}
+    _restore_nondefaults(contracts, data, defaults)
 
 
 
@@ -259,7 +393,7 @@ def project_config_for_export(
     config: TrainConfig | Mapping[str, Any], *, preserve_resume_identity: bool = True,
     omit_default_nulls: bool | None = None,
 ) -> dict[str, Any]:
-    """Omit inactive settings; retain unknown preset context and old recovery identity.
+    """Omit inactive settings; retain unknown preset context and resume contracts.
 
     The effective job view opts out of identity preservation and never becomes a
     replacement for its raw execution snapshot.
@@ -270,21 +404,16 @@ def project_config_for_export(
     if omit_default_nulls is None:
         omit_default_nulls = full_config is not None
     resume = preserve_resume_identity and bool(_section(data, "checkpoint").get("resume"))
-    if resume and full_config is None:
-        if omit_default_nulls:
-            _omit_default_null_fields(data)
-        return data
     original = deepcopy(data) if resume else None
     _project_dataset(data)
     _project_objective(data)
     _project_optional(data)
     _project_optimizer(data)
     _project_model(data, full_config)
+    if full_config is not None or omit_default_nulls is True:
+        _project_fixed_controls(data)
     if original is not None:
-        # Resolve defaults in the selected branch: managed optimizers, for example,
-        # restore a constant scheduler rather than the generic scheduler default.
-        restored = TrainConfig.model_validate(data).to_dict()
-        _restore_nondefaults(original, data, restored)
+        _restore_resume_contract(original, data)
     if omit_default_nulls:
         _omit_default_null_fields(data)
     return data

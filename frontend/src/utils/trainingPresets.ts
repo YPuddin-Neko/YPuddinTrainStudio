@@ -7,6 +7,7 @@ const VERSION_FIELDS = [
   ['dataset', 'cache_dir'],
   ['dataset', 'native_max_pixels_resolved'],
   ['dataset', 'native_batching_version'],
+  ['objective', 'resolution_reference_tokens_resolved'],
   ['validation', 'sources'],
   ['checkpoint', 'output_dir'],
   ['checkpoint', 'resume'],
@@ -65,6 +66,7 @@ export function applyTrainingPreset(current: Record<string, any>, preset: Record
   if (!Object.prototype.hasOwnProperty.call(reusable.objective, 'timestep_sampling') && current.objective?.timestep_sampling === 'resolution_sqrt') {
     reusable.objective.timestep_sampling = 'shift';
   }
+  if (reusable.objective.timestep_sampling === 'resolution_sqrt') reusable.objective.resolution_reference_mode ??= 'manual';
   if (current.model?.family && current.model.family !== 'anima') {
     reusable.objective.infonoise_enabled = false;
     if (reusable.objective.timestep_sampling === 'resolution_sqrt') {

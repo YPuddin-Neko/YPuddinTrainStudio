@@ -1,13 +1,13 @@
 import { adapterLayerTypesLock, applySwitchLocks, selectTrainingComponents, switchLock, trainingManagedReason } from '../../utils/trainingSelection';
 import { confirmedTrainingComputePolicy, trainingComputeManagedField, trainingComputePolicyHint } from '../../utils/trainingComputePolicy';
-import { captionOptionReason, contextHelp, contextOptions, hideUnusedSetting, missingSwitchPackage, presetHasConvolutions, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
+import { captionOptionReason, contextHelp, contextOptions, effectiveTextEncoding, hideUnusedSetting, missingSwitchPackage, presetHasConvolutions, unusedSettingReason, type FieldContext } from '../../utils/fieldContext';
 import React from 'react';
 import { evaluateShowWhen } from '../showWhen';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, ChevronDown, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
 import { PathInput, PathPickerModal } from '../../components/PathBrowser';
 import { apiClient } from '../../api/client';
-import { FamilyInfo, ModelAsset } from '../../api/types';
+import { FamilyInfo, ModelAsset, Plan } from '../../api/types';
 import { configFieldHelp, configFieldHint, configFieldLabel, configOptionLabel, configPresetLabel, PERCENTAGE_FIELDS } from '../../utils/configPresentation';
 import { modelPathHint } from '../../utils/fieldCopy';
 import { modelDisplayName } from '../../utils/modelDisplayName';
@@ -15,7 +15,8 @@ import { doraAutoLabel, type DoraPrecisionReport } from '../../utils/doraPrecisi
 import { parameterGroupLabel } from '../../utils/parameterWorkflow';
 import { MODEL_PATH_FIELDS } from '../../utils/workspaceConfig';
 import { familyParameterOptions, modelAssetUnsupportedReason, modelFamilyWeights, trainingFamilyOptions } from '../../utils/trainingFamilies';
-import { managedValueLabel, normalizeOptimizerConfig, optimizerManagedReason, restoreOptimizerSelection, selectOptimizer } from '../../utils/optimizerCapabilities';
+import { managedValueLabel, normalizeOptimizerConfig, optimizerManagedReason, optimizerManagesSchedule, restoreOptimizerSelection, selectOptimizer } from '../../utils/optimizerCapabilities';
+import { usesOnlyFullLoKr } from '../../utils/lokrParameters';
 import NumericControl from './NumericControl';
 import DecimalNumberInput from './DecimalNumberInput';
 import { scientificText } from '../../utils/numberText';
@@ -127,6 +128,7 @@ interface SchemaFormProps {
   /** Effective policy returned for this exact draft by the server plan. */
   computePolicy?: unknown;
   nativeAreaEstimate?: NativeAreaEstimate;
+  resolutionReference?: Plan['resolution_reference'];
   /** Confirmed policy for this draft; presets without a supplied policy describe new tasks. */
   nativeBatchingVersion?: 1 | 2 | 3 | null;
   /** Precision resolved by the server for this exact draft; absent while stale or unchecked. */
@@ -703,6 +705,35 @@ const PAIR_NAMES: Record<string, { names: [[string, string], [string, string]]; 
   'objective.res_shift_mu': { names: [['小图', 'Small'], ['大图', 'Large']], step: '0.01' },
 };
 
+function ShiftReferenceInput({id, label, english, automatic, value, median, invalid, onChange, onModeChange}: {
+  id: string; label: string; english: boolean; automatic: boolean; value: number | string; median?: number;
+  invalid: boolean; onChange: (value: number | string) => void; onModeChange: (mode: string) => void;
+}) {
+  const box = React.useRef<HTMLDivElement>(null);
+  const input = React.useRef<HTMLInputElement>(null);
+  const focusManual = React.useRef(false);
+  React.useLayoutEffect(() => {
+    if (automatic || !focusManual.current) return;
+    focusManual.current = false;
+    input.current?.focus();
+    input.current?.select();
+  }, [automatic]);
+  const amount = median?.toLocaleString(english ? 'en' : 'zh-CN');
+  return <div ref={box} className="config-native-limit">
+    {!automatic && <input ref={input} id={id} aria-label={label} aria-describedby={`${id}-hint`} aria-invalid={invalid}
+      type="number" min={1} step={1} value={value} onChange={event => onChange(event.target.value === '' ? '' : Number(event.target.value))}/>}
+    <StudioSelect id={automatic ? id : `${id}-mode`} anchorRef={box}
+      aria-label={automatic ? label : english ? 'Shift reference mode' : 'Shift 参考 token 数模式'}
+      aria-describedby={`${id}-hint`} aria-invalid={invalid}
+      className={automatic ? undefined : 'config-native-limit-toggle'} value={automatic ? 'auto' : 'manual'}
+      options={[
+        {value:'auto', label:english ? `Auto (${amount ?? 'pending'})` : `自动（${amount ?? '待计算'}）`},
+        {value:'manual', label:english ? 'Manual' : '手动'},
+      ]}
+      onValueChange={mode => { focusManual.current = automatic && mode === 'manual'; onModeChange(mode); }}/>
+  </div>;
+}
+
 function NativePixelLimit({value, mode, estimate, english, label, onChange, onModeChange, invalid, unavailableReason}: {
   value: number | string; mode: 'auto' | 'auto_vram' | 'custom'; estimate?: NativeAreaEstimate; english: boolean; label: string; unavailableReason?: string;
   onChange: (next: number | string) => void; onModeChange: (next: string, custom: number) => void; invalid: boolean;
@@ -901,6 +932,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   versionSources = false,
   computePolicy,
   nativeAreaEstimate,
+  resolutionReference,
   nativeBatchingVersion,
   doraPrecision,
   preset = false,
@@ -931,6 +963,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   }, [readOnly, sourceValue, family, onValueChange]);
 
   const scheduleFree = value.optimizer?.type === 'adamw_sf' || (value.optimizer?.type === 'prodigy_plus_sf' && value.optimizer?.use_schedulefree !== false);
+  const managedSchedule = optimizerManagesSchedule(schema, value);
   const [editCaptionOverrides, setEditCaptionOverrides] = React.useState(false);
   const [editOutput, setEditOutput] = React.useState<'name' | 'path' | null>(null);
   const lastLowRank = React.useRef<number | null>(null);
@@ -954,7 +987,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     if (type !== undefined && type !== value.optimizer?.type) {
       optimizerEdits.current.set(value.optimizer?.type ?? 'adamw', value);
       const previous = optimizerEdits.current.get(type);
-      next = previous ? restoreOptimizerSelection(schema, next, previous) : selectOptimizer(schema, next, type, { previous: value });
+      next = previous ? restoreOptimizerSelection(schema, next, previous) : selectOptimizer(schema, next, type);
     }
     const normalized = normalizeOptimizerConfig(schema, normalizeLegacyIntervals(next));
     lastEmittedConfig.current = normalized;
@@ -962,7 +995,10 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
   };
   const lokrModeLabel = english ? 'LoKr parameter mode' : 'LoKr 参数形式';
   const groups: Record<string, { order: number; fields: React.ReactNode[] }> = {};
-  const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', image_fit: 'crop', ...value.dataset } };
+  const conditionValue = { ...value, training: {mode:'adapter', ...value.training}, model: { family: family?.name, prediction_type: 'epsilon', ...value.model }, dataset: { resolution_mode: 'bucket', image_fit: 'crop', ...value.dataset } };
+  const textSlider = value.training?.task === 'slider' && value.slider?.mode !== 'image';
+  const onlyFullLoKr = usesOnlyFullLoKr(value, family);
+  const automaticReference = value.objective?.resolution_reference_mode === 'auto';
   const weights = modelFamilyWeights(family, english);
   const allowedAdapterAlgorithms = value.training?.task === 'slider' ? ['lora'] : familyParameterOptions(family, 'adapter.algo');
   const hasTLoRARule = allowedAdapterAlgorithms?.includes('tlora') &&
@@ -977,12 +1013,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const trainingMode = fullPathKey === 'training.mode';
     if (fullPathKey === 'training.task') return null;
     const taskChoice = fullPathKey === 'slider.mode';
-    const textSlider = value.training?.task === 'slider' && value.slider?.mode !== 'image';
     if (textSlider && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale', 'dataset.image_fit', 'dataset.crop_anchor'].includes(fullPathKey)) return null;
     if (parentPath[0] === 'slider' && value.training?.task !== 'slider') return null;
     const intervalRule = INTERVAL_FIELDS[fullPathKey];
     if (intervalFieldPath(fullPathKey) !== fullPathKey) return null;
-    if (['checkpoint.save_state_every_epochs', 'dataset.native_max_pixels_mode'].includes(fullPathKey)) return null;
+    if (['checkpoint.save_state_every_epochs', 'dataset.native_max_pixels_mode', 'objective.resolution_reference_mode', 'objective.resolution_reference_tokens_resolved'].includes(fullPathKey)) return null;
     if (['checkpoint.output_dir', 'checkpoint.state_dir', 'sampling.output_dir', 'logging.output_dir', 'logging.events_path', 'dataset.cache_dir'].includes(fullPathKey)) return null;
     const lokrRank = fullPathKey === 'adapter.rank' && value.adapter?.algo === 'lokr';
     const weightMeta = parentPath[0] === 'model' ? weights.find(weight => weight.field === key) : undefined;
@@ -1004,12 +1039,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     // Preserve legacy logging settings in the draft without exposing their controls.
     if (fullPathKey === 'logging.level' || fullPathKey === 'logging.wandb' || fullPathKey.startsWith('logging.wandb.')) return null;
 
-    // Settings the selected adapter form ignores: full LoKr factors fix the scale, and
-    // full target-layer weights take no rank, scale, initialization or dropout.
-    if (value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && ['adapter.alpha', 'adapter.decompose_both', 'adapter.rs_lora'].includes(fullPathKey)) return null;
+    if (onlyFullLoKr && ['adapter.alpha', 'adapter.decompose_both', 'adapter.rs_lora', 'adapter.rank_dropout'].includes(fullPathKey)) return null;
     if (value.adapter?.algo === 'full' && ['adapter.rank', 'adapter.alpha', 'adapter.rs_lora', 'adapter.init', 'adapter.dropout', 'adapter.rank_dropout', 'adapter.conv_rank', 'adapter.conv_alpha'].includes(fullPathKey)) return null;
-    // Convolutions that follow a full LoKr rank take its fixed scale too.
-    if (fullPathKey === 'adapter.conv_alpha' && value.adapter?.algo === 'lokr' && value.adapter?.rank === 'full' && value.adapter?.conv_rank == null) return null;
+    if (fullPathKey === 'adapter.conv_alpha' && onlyFullLoKr) return null;
     const ui = { ...(prop['x-ui'] || {}), ...(compact && parentPath[0] === 'training' && prop['x-ui']?.group === 'training' ? {group:'model'} : {}), ...(compact && ['dataset.batch_size', 'dataset.native_batch_mode'].includes(fullPathKey) ? {group:'loop'} : {}), ...(fullPathKey === 'model.attention' ? {group:'memory',advanced:false} : {}), ...(fullPathKey === 'loop.gpu_count' ? {group:'loop',advanced:false} : {}), ...(fullPathKey === 'adapter.layer_types' && value.training?.mode === 'full' ? {group: compact ? 'model' : 'training'} : {}) };
     if (ui.hidden) return null;
     if (conditionValue.dataset.resolution_mode === 'native' && ['dataset.resolutions', 'dataset.aspect_ratio_limit', 'dataset.area_tolerance', 'dataset.bucket_step', 'dataset.bucket_no_upscale'].includes(fullPathKey)) return null;
@@ -1025,17 +1057,18 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const fieldLabel = weightMeta?.label || backboneLabel || (fullPathKey === 'training.text_encoder_lr' && family?.name === 'sdxl' ? (english ? 'CLIP-L learning rate' : 'CLIP-L 学习率') : undefined) || (fullPathKey === 'objective.snr_gamma' && value.objective?.weighting === 'min_snr' ? 'Min-SNR Gamma' : configFieldLabel(fullPathKey, t(`fields.${key}`, prop.title || key), english));
     const fieldId = `config-${fullPathKey}`;
     const currentGroup = ui.group || parentPath[0] || 'default';
+    const shiftReference = fullPathKey === 'objective.resolution_reference_tokens';
     if (groupFilter && !groupFilter.includes(currentGroup) && !(compact && parentPath[0] === 'training' && groupFilter.includes('training'))) return null;
-    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${trainingMode ? 'training.task standard slider edit LoRA full 普通 滑块 编辑 全量' : ''} ${intervalRule ? `${fullPathKey}_enabled` : ''} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs checkpoint.save_state_every_epochs_enabled epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto auto_vram custom 自动 分辨率优先 显存优先 resolution first VRAM first 自定义' : fullPathKey === 'dataset.native_batch_mode' ? 'physical area 真实合批 按面积拆微批 microbatch' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
+    if (search.trim() && !`${fieldLabel} ${fullPathKey} ${trainingMode ? 'training.task standard slider edit LoRA full 普通 滑块 编辑 全量' : ''} ${intervalRule ? `${fullPathKey}_enabled` : ''} ${fullPathKey === 'checkpoint.save_state_every_steps' ? 'checkpoint.save_state_every_epochs checkpoint.save_state_every_epochs_enabled epoch 轮' : fullPathKey === 'dataset.native_max_pixels' ? 'dataset.native_max_pixels_mode auto auto_vram custom 自动 分辨率优先 显存优先 resolution first VRAM first 自定义' : fullPathKey === 'dataset.native_batch_mode' ? 'physical area 真实合批 按面积拆微批 microbatch' : ''} ${shiftReference ? 'objective.resolution_reference_mode auto manual 自动 手动' : ''} ${prop.description || ''} ${lokrRank ? lokrModeLabel : ''}`.toLowerCase().includes(search.trim().toLowerCase())) return null;
 
-    const errorItem = errors.find((e) => trainingMode && e.loc === 'training.task' || e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || intervalRule && e.loc === `${fullPathKey}_enabled` || fullPathKey === 'checkpoint.save_state_every_steps' && ['checkpoint.save_state_every_epochs', 'checkpoint.save_state_every_epochs_enabled'].includes(e.loc || '') || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode');
+    const errorItem = errors.find((e) => trainingMode && e.loc === 'training.task' || e.loc === fullPathKey || e.loc?.startsWith(`${fullPathKey}.`) || intervalRule && e.loc === `${fullPathKey}_enabled` || fullPathKey === 'checkpoint.save_state_every_steps' && ['checkpoint.save_state_every_epochs', 'checkpoint.save_state_every_epochs_enabled'].includes(e.loc || '') || fullPathKey === 'dataset.native_max_pixels' && e.loc === 'dataset.native_max_pixels_mode' || shiftReference && e.loc === 'objective.resolution_reference_mode');
+    if (managedSchedule && parentPath[0] === 'scheduler' && !errorItem) return null;
     const revealOutputName = versionSources && fullPathKey === 'checkpoint.name' && (editOutput === 'name' || !!errorItem || !!search.trim());
     if (versionSources && fullPathKey === 'checkpoint.name' && !revealOutputName) return null;
     const captionOverride = fullPathKey.startsWith('dataset.caption.') && captionOverrideKeys.includes(key);
     const optionalAdvanced = ui.advanced;
     const infonoiseField = fullPathKey.startsWith('objective.infonoise_');
-    const adaptiveIssue = !!errorItem && (infonoiseField || fullPathKey === 'objective.resolution_reference_tokens');
-    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !revealOutputName && !adaptiveIssue) return null;
+    if ((optionalAdvanced || captionOverride) && !showAdvanced && !(captionOverride && editCaptionOverrides) && !revealOutputName && !errorItem) return null;
     const incompatiblePredictionLoss = (fullPathKey === 'objective.scale_v_pred_loss_like_noise_pred' && value.objective?.scale_v_pred_loss_like_noise_pred && conditionValue.model.prediction_type !== 'v_prediction') || (fullPathKey === 'objective.v_pred_like_loss' && value.objective?.v_pred_like_loss > 0 && conditionValue.model.prediction_type !== 'epsilon');
     const incompatibleInfoNoise = infonoiseField && conditionValue.model.family !== 'anima' && !!value.objective?.infonoise_enabled;
     const sharedTLoRASetting = hasTLoRARule && parentPath[0] === 'adapter' && key.startsWith('tlora_');
@@ -1044,16 +1077,16 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       const type = caption?.content_type ?? 'auto';
       if ((caption?.structured_mode ?? 'native') === 'native' && !['gbc', 'moss_layout'].includes(type) && !errorItem) return null;
     }
-    if (ui.show_when && fullPathKey !== 'dataset.caption.structured_mode' && !sharedTLoRASetting && !incompatiblePredictionLoss && !incompatibleFamilyLoss && !incompatibleInfoNoise && !adaptiveIssue) {
+    const caption = value.dataset?.caption;
+    if (!errorItem && fullPathKey === 'dataset.caption.keep_tokens' && ['anima_json', 'gbc', 'moss_layout'].includes(caption?.content_type)) return null;
+    if (!errorItem && fullPathKey === 'dataset.caption.cache_variants'
+        && (effectiveTextEncoding(family, value) === 'online' || !(caption?.shuffle || caption?.tag_dropout > 0 || caption?.wildcard))) return null;
+    if (shiftReference && !errorItem && (conditionValue.model.family !== 'anima' || value.objective?.timestep_sampling !== 'resolution_sqrt')) return null;
+    const bankParameter = textSlider && parentPath[0] === 'sampling' && ['sampler', 'scheduler', 'noise', 'cfg', 'shift', 'er_sde_order', 'er_sde_s_noise'].includes(key);
+    if (ui.show_when && !shiftReference && fullPathKey !== 'dataset.caption.structured_mode' && !sharedTLoRASetting && !incompatiblePredictionLoss && !incompatibleFamilyLoss && !incompatibleInfoNoise && !errorItem) {
       try {
-        const previewConditions = fullPathKey === 'loop.ema_decay'
-          ? {...conditionValue,loop:{...value.loop,ema:true}}
-          : fullPathKey === 'dataset.caption.keep_tokens'
-            ? {...conditionValue,dataset:{...conditionValue.dataset,caption:{...value.dataset?.caption,shuffle:true}}}
-            : infonoiseField
-              ? {...conditionValue,objective:{...value.objective,infonoise_enabled:true}}
-              : conditionValue;
-        if (!evaluateShowWhen(ui.show_when, previewConditions)) return null;
+        const conditions = bankParameter ? {...conditionValue, sampling: {...value.sampling, enabled:true}} : conditionValue;
+        if (!evaluateShowWhen(ui.show_when, conditions)) return null;
       } catch (err) {
         console.error(`[SchemaForm] Failed to evaluate show_when for ${fullPathKey}: "${ui.show_when}"`, err);
         // On evaluation error, default to showing the field
@@ -1071,8 +1104,9 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
     const numericMin = ui.min ?? prop.minimum ?? prop.exclusiveMinimum;
     const numericStep = ui.step ?? (prop.type === 'integer' ? 1 : 0.01);
     const numericMax = ui.max ?? prop.maximum ?? prop.exclusiveMaximum;
-    const managedReason = computeManaged?.reason || trainingManagedReason(value, fullPathKey, english) || optimizerManagedReason(schema, value, fullPathKey, english);
-    if (optimizerManagedReason(schema, value, fullPathKey, english) && ['optimizer.kahan', 'optimizer.group_lr', 'adapter.lr_scale', 'scheduler.warmup_steps'].includes(fullPathKey)) return null;
+    const optimizerReason = parentPath[0] === 'scheduler' ? undefined : optimizerManagedReason(schema, value, fullPathKey, english);
+    const managedReason = computeManaged?.reason || trainingManagedReason(value, fullPathKey, english) || optimizerReason;
+    if (optimizerReason && ['optimizer.kahan', 'optimizer.group_lr', 'adapter.lr_scale'].includes(fullPathKey)) return null;
     // Only what this model and machine use: an unused setting shows only while it is still set, with the reason.
     const unusedReason = computeManaged ? undefined : unusedSettingReason(fullPathKey, fieldContext);
     if (unusedReason && hideUnusedSetting(fullPathKey, fieldValue, fieldContext)) return null;
@@ -1149,6 +1183,11 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         unavailableReason={family?.runtime_backend === 'cpu' ? (english ? 'CPU training has no GPU memory budget.' : 'CPU 训练无法按显存计算面积上限。') : value.training?.train_text_encoder ? (english ? 'VRAM-first sizing is unavailable while training text encoders.' : '训练文本编码器时不能使用自动显存优先。') : nativeAreaEstimate?.vramError || undefined}
         mode={value.dataset?.native_max_pixels_mode === 'auto_vram' ? 'auto_vram' : value.dataset?.native_max_pixels_mode === 'auto' ? 'auto' : 'custom'} estimate={nativeAreaEstimate}
         onModeChange={(next, custom) => onChange(setNestedValue(value, ['dataset'], {...value.dataset, native_max_pixels_mode: next, native_max_pixels: custom}))}
+        onChange={next => onChange(setNestedValue(value, path, next))}/>;
+    } else if (shiftReference) {
+      control = <ShiftReferenceInput id={fieldId} label={fieldLabel} english={english} automatic={automaticReference}
+        value={fieldValue ?? ''} median={resolutionReference?.reference_tokens} invalid={!!errorItem}
+        onModeChange={mode => onChange(setNestedValue(value, ['objective', 'resolution_reference_mode'], mode))}
         onChange={next => onChange(setNestedValue(value, path, next))}/>;
     } else if (compact && fullPathKey === 'dataset.resolutions') {
       control = <ResolutionInput label={fieldLabel} value={fieldValue} onChange={next => onChange(setNestedValue(value, path, next))} />;
@@ -1557,7 +1596,12 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
         ? (english ? 'Base shift; resolution correction adjusts it further for image size.' : '基础偏移大小；分辨率修正模式会再按图像大小调整。')
       : configFieldHint(fullPathKey, english, value.optimizer?.type, scheduleFree, value.dataset);
     const compileHint = fullPathKey === 'memory.compile' ? statusHint : undefined;
-    const hint = compileHint ? undefined : statusHint || describedHint;
+    const referenceTokens = automaticReference ? resolutionReference?.reference_tokens : fieldValue;
+    const baseShift = value.objective?.shift ?? 3;
+    const effectiveShift = shiftReference && resolutionReference && typeof referenceTokens === 'number' && referenceTokens > 0 && typeof baseShift === 'number' && baseShift > 0
+      ? [resolutionReference.token_min, resolutionReference.token_max].map(tokens => (baseShift * Math.sqrt(tokens / referenceTokens)).toFixed(2)).join('–')
+      : undefined;
+    const hint = compileHint ? undefined : effectiveShift ? (english ? `Effective Shift ${effectiveShift}` : `实际 Shift ${effectiveShift}`) : statusHint || describedHint;
     const helpContent = [compileHint, help].filter(Boolean).join('\n\n');
     const duplicateHelp = !!helpContent && !!hint && helpContent.replace(/\s+/g, ' ').trim() === hint.replace(/\s+/g, ' ').trim();
     const helpButton = helpContent && !duplicateHelp ? <ConfigHelp label={`${fieldLabel} ${english ? 'help' : '说明'}`}>{helpContent}</ConfigHelp> : null;
@@ -1615,7 +1659,7 @@ export const SchemaForm: React.FC<SchemaFormProps> = ({
       groups[groupName].fields.push(<div key="adapter.parameter_mode" id={fieldValue === 'full' ? 'field-adapter.rank' : 'field-adapter.parameter_mode'} data-testid="field-adapter.parameter_mode" data-field-path="adapter.parameter_mode" className={`config-field${fieldValue === 'full' && errorItem ? ' config-field-invalid' : ''}`}>
         <div className="config-field-heading">
           <label htmlFor={modeId}>{lokrModeLabel}</label>
-          <span className="config-field-reference"><ConfigFieldKey title={fullPathKey}>adapter.rank</ConfigFieldKey><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full retains the complete LoKr factor matrices; it does not fine-tune the whole model and does not use Alpha.\nLow rank decomposes the factors using Rank and Alpha.' : 'Full 保留 LoKr 完整因子矩阵，不是全量微调，也不使用 Alpha。\n低秩模式通过 Rank 和 Alpha 设置因子分解与缩放。'}</ConfigHelp></span>
+          <span className="config-field-reference"><ConfigFieldKey title={fullPathKey}>adapter.rank</ConfigFieldKey><ConfigHelp label={`${lokrModeLabel} ${english ? 'help' : '说明'}`}>{english ? 'Full uses complete LoKr factors with scale fixed at 1. Low rank decomposes the factors and uses Rank and Alpha to set the scale.' : 'Full 使用完整的 LoKr 因子矩阵，缩放固定为 1。低秩模式分解因子矩阵，并使用 Rank 和 Alpha 设置缩放。'}</ConfigHelp></span>
         </div>
         <div className="config-field-control"><StudioSelect id={modeId} aria-label={lokrModeLabel} disabled={readOnly} value={fieldValue === 'full' ? 'full' : 'low_rank'}
           aria-invalid={fieldValue === 'full' && !!errorItem}

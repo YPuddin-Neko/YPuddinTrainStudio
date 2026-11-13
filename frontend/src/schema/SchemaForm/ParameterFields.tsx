@@ -126,8 +126,9 @@ export default function ParameterFields({ group, fields, english, renderToggleSe
   const render = ({ item, content }: typeof visible[number]) => {
     const revealed = new Set((item.afterToggles ?? []).map(fullPath));
     const togglePath=group==='loop' && item.key==='ema' ? 'loop.ema' : group==='caption' && item.key==='ordering' ? 'dataset.caption.shuffle' : group==='objective' && item.key==='infonoise' ? 'objective.infonoise_enabled' : undefined;
-    return togglePath && renderToggleSection
-      ? <div key={item.key} className={`config-field-section config-${group}-${item.key}`}>{renderToggleSection(togglePath,<FieldSection fields={content.filter(field=>path(field)!==togglePath)}/>)}</div>
+    const children = togglePath ? content.filter(field => path(field) !== togglePath) : [];
+    return togglePath && renderToggleSection && content.some(field => path(field) === togglePath)
+      ? <div key={item.key} className={`config-field-section config-${group}-${item.key}`}>{renderToggleSection(togglePath, children.length ? <FieldSection fields={children}/> : null)}</div>
       : <FieldSection key={item.key} fields={content.filter(field => !revealed.has(path(field)))} after={content.filter(field => revealed.has(path(field)))}
         title={titled ? item.title?.[english ? 1 : 0] : undefined} className={`config-${group}-${item.key}`} togglesFirst={item.togglesFirst} inlineToggles={item.inlineToggles}/>;
   };

@@ -196,6 +196,7 @@ class DistributedTrainer(Trainer):
 
         from .native_batch_contract import resolve_native_batching_config
         from .native_resolution import resolve_distributed_native_vram_config
+        from .resolution_reference import automatic_reference
 
         self.distributed = context
         self.is_primary = context.rank == 0
@@ -204,6 +205,8 @@ class DistributedTrainer(Trainer):
         cfg = resolve_distributed_native_vram_config(
             cfg, device=context.device, rank=context.rank, world_size=context.world_size,
         )
+        if automatic_reference(cfg):
+            cfg = self._primary_call(self._resolve_resolution_reference, cfg)
         self._checkpoint_rng = None
         super().__init__(cfg, device=context.device, emitter=emitter if self.is_primary else NullEmitter())
 

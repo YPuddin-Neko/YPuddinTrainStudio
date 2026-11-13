@@ -79,6 +79,10 @@ export function optimizerRules(schema: any, config: Config): Required<Rules> {
   return result;
 }
 
+export function optimizerManagesSchedule(schema: any, config: Config) {
+  return 'scheduler.type' in optimizerRules(schema, normalizeOptimizerConfig(schema, config)).fixed;
+}
+
 function normalizePartialOptimizerConfig(schema: any, source: Config): Config {
   const type = source.optimizer?.type;
   const name = typeof type === 'string' ? optimizerName(schema, type) : type;
@@ -102,6 +106,8 @@ export function normalizeOptimizerConfig(schema: any, source: Config): Config {
   }
   const rules = optimizerRules(schema, next);
   for (const [path, value] of Object.entries(rules.fixed)) {
+    // The server applies fixed scheduling to execution. The editor keeps the external schedule draft.
+    if (path.startsWith('scheduler.')) continue;
     if (JSON.stringify(configPathValue(next, path)) !== JSON.stringify(value)) next = assign(next, path, value);
   }
   if ('optimizer.group_lr' in rules.fixed && Array.isArray(next.adapter?.rules)) {
@@ -114,7 +120,7 @@ export function normalizeOptimizerConfig(schema: any, source: Config): Config {
 }
 
 /** Explicit algorithm changes start with that algorithm's defaults. Saved values are restored by the editor. */
-export function selectOptimizer(schema: any, config: Config, type: string, selection: { previous?: Config; optimizer?: Config } = {}): Config {
+export function selectOptimizer(schema: any, config: Config, type: string, selection: { optimizer?: Config } = {}): Config {
   let next = assign(config, 'optimizer.type', type);
   const profile = capability(schema, next);
   const properties = optimizerSchema(schema)?.properties || {};
@@ -129,14 +135,6 @@ export function selectOptimizer(schema: any, config: Config, type: string, selec
   }
   for (const [path, value] of Object.entries(profile?.defaults || {})) next = assign(next, path, value);
   if (supplied) next = assign(next, 'optimizer', { ...next.optimizer, ...supplied });
-  // Release the previous algorithm's scheduler locks when the new one uses external scheduling.
-  const nextRules = optimizerRules(schema, next);
-  for (const path of Object.keys(optimizerRules(schema, selection.previous || config).fixed)) {
-    if (!path.startsWith('scheduler.') || path in nextRules.fixed || path in (profile?.defaults || {})) continue;
-    const field = path.slice('scheduler.'.length);
-    const fallback = optimizerSchema(schema, 'scheduler')?.properties?.[field]?.default;
-    if (fallback !== undefined) next = assign(next, path, fallback);
-  }
   return normalizeOptimizerConfig(schema, clearIncompatibleOptimizerSettings(schema, next));
 }
 

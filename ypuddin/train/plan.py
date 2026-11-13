@@ -748,6 +748,7 @@ def plan(
         "compute_policy": None,
         "source_balance": None,
         "dora": None,
+        "resolution_reference": None,
     }
     draft = False
     memory_issue = None
@@ -806,6 +807,11 @@ def plan(
             from .native_resolution import resolve_native_vram_config
 
             cfg = resolve_native_vram_config(cfg, device=device or "cpu")
+        if not draft and cfg.checkpoint.resume:
+            from .resolution_reference import automatic_reference, resolve_resolution_reference_config
+
+            if automatic_reference(cfg):
+                cfg = resolve_resolution_reference_config(cfg)
     except (OSError, ValueError, TypeError, AttributeError, EOFError, RuntimeError) as error:
         issue = {"loc": "checkpoint.resume", "msg": str(error)}
         out["errors"].append(issue)
@@ -2193,5 +2199,16 @@ def plan(
             }
             if not any(error["loc"] == issue["loc"] for error in out["errors"]):
                 out["errors"].append(issue)
+    if not out["errors"]:
+        from .resolution_reference import reference_summary
+
+        final_counts: dict[tuple[int, int], int] = {}
+        for bucket in out.get("buckets", []):
+            shape = (bucket["w"], bucket["h"])
+            final_counts[shape] = final_counts.get(shape, 0) + bucket["items"]
+        try:
+            out["resolution_reference"] = reference_summary(cfg, final_counts)
+        except DataConfigError as error:
+            out["errors"].append({"loc": error.loc, "msg": str(error)})
     out["ok"] = not out["errors"]
     return out

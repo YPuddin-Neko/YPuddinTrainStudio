@@ -832,18 +832,21 @@ def build_data(
     *,
     cache_root: str | Path,
     progress: Callable[[str, int, int], None] | None = None,
+    prepared_layout: DataLayout | None = None,
 ) -> DataBundle:
     ds = cfg.dataset
-    index_db = IndexDB(Path(cache_root) / "index.sqlite")
-    try:
-        layout = prepare_data_layout(
-            cfg,
-            latent_spec,
-            index_db=index_db,
-            progress=progress,
-        )
-    finally:
-        index_db.close()
+    layout = prepared_layout
+    if layout is None:
+        index_db = IndexDB(Path(cache_root) / "index.sqlite")
+        try:
+            layout = prepare_data_layout(
+                cfg,
+                latent_spec,
+                index_db=index_db,
+                progress=progress,
+            )
+        finally:
+            index_db.close()
     records, items, bm = layout.records, layout.items, layout.bucket_manager
     cache = LatentCache(Path(cache_root) / "latents") if ds.cache_latents else None
     train = TrainDataset(

@@ -3,6 +3,7 @@ import { useBlocker, useSearchParams, type Location } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Plus, Save, Search, Trash2, X, ChevronRight, ChevronDown, Upload, Download } from 'lucide-react';
 import { apiClient } from '../../api/client';
+import type { components } from '../../api/generated';
 import type { Preset } from '../../api/types';
 import { useFamilies } from '../../api/hooks/useFamilies';
 import Dialog from '../../components/Dialog';
@@ -11,7 +12,7 @@ import { SchemaForm, type ValidationError } from '../../schema/SchemaForm/Schema
 import { OPAQUE_CONFIG_ISSUE, presentConfigIssues, type ConfigTab, type ConfigIssue } from '../../utils/configPresentation';
 import { mergeConfig } from '../../utils/config';
 import { normalizeLegacyIntervals } from '../../utils/intervals';
-import { normalizeOptimizerConfig } from '../../utils/optimizerCapabilities';
+import { normalizeOptimizerConfig, optimizerManagesSchedule } from '../../utils/optimizerCapabilities';
 import { formatApiError } from '../../utils/errors';
 import { presetEditorSchema, presetPayload, presetFamily } from '../../utils/presetEditor';
 import { PRESET_MODEL_FIELDS, preservePresetDoraMode, reusableTrainingPreset } from '../../utils/trainingPresets';
@@ -136,7 +137,8 @@ function ImagePresets() {
     exportRequest.current = controller;
     setExporting(true); setError('');
     try {
-      const result = await apiClient.post<{ text: string }>('/config/export', { config: body.config, format: 'json', kind: 'preset' }, { silent: true, signal: controller.signal });
+      const request: components['schemas']['ConfigExportBody'] = { config: body.config, format: 'json', kind: 'preset', editor_defaults: true };
+      const result = await apiClient.post<components['schemas']['ConfigText']>('/config/export', request, { silent: true, signal: controller.signal });
       if (exportRequest.current !== controller || controller.signal.aborted) return;
       const exported = { ...body, config: JSON.parse(result.text) };
       const filename = body.name.replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 128) || 'preset';
@@ -215,7 +217,7 @@ function ImagePresets() {
   const goToIssue = (issue: ConfigIssue) => {
     setTab(issue.tab); setSearch(''); setAdvanced(true); setRevealVersion(version => version + 1);
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      let path = issue.path === 'training.task' ? 'training.mode' : issue.path;
+      let path = issue.path === 'training.task' ? 'training.mode' : issue.path === 'objective.resolution_reference_mode' ? 'objective.resolution_reference_tokens' : issue.path;
       let field = document.getElementById(`field-${path}`);
       while (!field && path.includes('.')) { path = path.slice(0, path.lastIndexOf('.')); field = document.getElementById(`field-${path}`); }
       field?.scrollIntoView?.({ block: 'center', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
@@ -265,7 +267,7 @@ function ImagePresets() {
         <ParameterModeToggle advanced={advanced} onChange={setAdvanced}/>
       </div>
       <div className="parameter-workspace-body">
-      <ParameterSections rootRef={parameterScrollRef} tab={tab} onTabChange={tab => {setTab(tab);setSearch('');}} issues={issues} preset hasTrainingMode={!!editorSchema?.properties?.training} fullTraining={draft.config.training?.mode === 'full'} sliderTraining={draft.config.training?.task === 'slider'} onRevealAdvanced={() => setAdvanced(true)}/>
+      <ParameterSections rootRef={parameterScrollRef} tab={tab} onTabChange={tab => {setTab(tab);setSearch('');}} issues={issues} preset hasTrainingMode={!!editorSchema?.properties?.training} fullTraining={draft.config.training?.mode === 'full'} sliderTraining={draft.config.training?.task === 'slider'} optimizerSchedules={optimizerManagesSchedule(editorSchema, draft.config)} onRevealAdvanced={() => setAdvanced(true)}/>
       <div className="parameter-scroll-region" ref={parameterScrollRef}>
       {search && <p className="presets-search-context">{text('搜索所有分区，包含高级参数', 'Searching every section, including advanced parameters')}</p>}
       {editorSchema && <div ref={parameterContent} id="preset-parameters" className="presets-schema" role="region" aria-label={search ? text('预设参数搜索结果', 'Preset parameter search results') : text('预设参数内容', 'Preset parameter fields')}><SchemaForm key={revealVersion} preset readOnly={busy || !!inactiveReason} schema={editorSchema} value={draft.config} onChange={config=>{setDraft({...draft,config});setErrors([]);}} compact showAdvanced={advanced || !!search} search={search} onClearSearch={clearSearch} family={family} families={families.data} errors={issues.map(issue => ({ loc: issue.path, msg: issue.message === OPAQUE_CONFIG_ISSUE ? '' : issue.message }))}/></div>}

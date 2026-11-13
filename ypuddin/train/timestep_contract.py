@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ypuddin.config import TrainConfig
+from ypuddin.config.timestep_reference import effective_reference_tokens
 
 STATE_KEY = "adaptive_timestep"
 _INFONOISE_FIELDS = (
@@ -30,7 +31,9 @@ def recipe(cfg: TrainConfig) -> dict[str, Any] | None:
     if mode in {"shift", "resolution_sqrt"}:
         baseline["shift"] = objective.shift
     if mode == "resolution_sqrt":
-        baseline["resolution_reference_tokens"] = objective.resolution_reference_tokens
+        baseline["resolution_reference_tokens"] = effective_reference_tokens(objective)
+        if objective.resolution_reference_mode == "auto":
+            baseline["resolution_reference_mode"] = "auto"
     infonoise = {"enabled": objective.infonoise_enabled}
     if objective.infonoise_enabled:
         infonoise.update({key: getattr(objective, "infonoise_" + key) for key in _INFONOISE_FIELDS})

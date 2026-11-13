@@ -2274,6 +2274,23 @@
             "show_when": "objective.timestep_sampling in ['shift','resolution_sqrt']"
           }
         },
+        "resolution_reference_mode": {
+          "default": "manual",
+          "description": "自动按最终训练画布的 token 数取样本加权中位数，包含数据重复次数；手动使用指定的参考 token。",
+          "enum": [
+            "manual",
+            "auto"
+          ],
+          "title": "Resolution Reference Mode",
+          "type": "string",
+          "x-ui": {
+            "advanced": true,
+            "control": "select",
+            "group": "objective",
+            "order": 31,
+            "show_when": "model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'"
+          }
+        },
         "resolution_reference_tokens": {
           "default": 4096,
           "description": "基础 shift 对应的图像 token 数。Anima 的 1024×1024 图像对应 4096；训练时按实际潜空间和 patch 尺寸计算 token 数。例如 token 数为参考值的 4 倍时，基础 shift 乘以 2。",
@@ -2284,7 +2301,24 @@
             "advanced": true,
             "group": "objective",
             "order": 32,
-            "show_when": "model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'"
+            "show_when": "model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt' && objective.resolution_reference_mode == 'manual'"
+          }
+        },
+        "resolution_reference_tokens_resolved": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "任务启动时确定的自动参考 token，恢复训练时沿用原值。",
+          "title": "Resolution Reference Tokens Resolved",
+          "x-ui": {
+            "hidden": true
           }
         },
         "mode_scale": {

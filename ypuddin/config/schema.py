@@ -592,13 +592,26 @@ class ObjectiveConfig(_Strict):
         help="训练时间步的基础偏移。固定 shift 模式直接使用此值；resolution_sqrt 再乘以 token 数与参考值之比的平方根。最终偏移 s 大于 1 时推向高噪声，公式为 t'=s·t/(1+(s-1)·t)。预览另有采样 shift。",
         ui_=ui("objective", advanced=True, order=30, show_when="objective.timestep_sampling in ['shift','resolution_sqrt']"),
     )
+    resolution_reference_mode: Literal["manual", "auto"] = F(
+        "manual",
+        help="自动按最终训练画布的 token 数取样本加权中位数，包含数据重复次数；手动使用指定的参考 token。",
+        ui_=ui(
+            "objective", advanced=True, order=31, control="select",
+            show_when="model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'",
+        ),
+    )
     resolution_reference_tokens: int = F(
         4096, gt=0,
         help="基础 shift 对应的图像 token 数。Anima 的 1024×1024 图像对应 4096；训练时按实际潜空间和 patch 尺寸计算 token 数。例如 token 数为参考值的 4 倍时，基础 shift 乘以 2。",
         ui_=ui(
             "objective", advanced=True, order=32,
-            show_when="model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt'",
+            show_when="model.family == 'anima' && objective.timestep_sampling == 'resolution_sqrt' && objective.resolution_reference_mode == 'manual'",
         ),
+    )
+    resolution_reference_tokens_resolved: int | None = F(
+        None, gt=0,
+        help="任务启动时确定的自动参考 token，恢复训练时沿用原值。",
+        ui_={"x-ui": {"hidden": True}},
     )
     mode_scale: float = F(
         1.29,

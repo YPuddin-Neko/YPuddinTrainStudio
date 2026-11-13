@@ -14,6 +14,7 @@ import { decimalText } from '../../utils/numberText';
 import { formatApiError } from '../../utils/errors';
 import { mergeConfig } from '../../utils/config';
 import { configOptionLabel } from '../../utils/configPresentation';
+import { usesOnlyFullLoKr } from '../../utils/lokrParameters';
 import { artifactKindLabel, focusJob, mergeJobEvent, shortTime } from '../../utils/jobs';
 import { modelConfigUrl, projectUrl, type ProjectVersion, type VersionedProject } from '../../utils/projectVersions';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -164,12 +165,13 @@ export default function ProjectOverview({ project, version, versionId, config: s
     ...(config.training?.task && config.training.task !== 'standard' ? [[text('训练方式', 'Training mode'), configOptionLabel('training.task', config.training.task, english)] as [string, React.ReactNode]] : []),
     [text('算法', 'Algorithm'), full ? text('全量微调', 'Full fine-tuning') : config.adapter?.algo ? configOptionLabel('adapter.algo', String(config.adapter.algo), english) : '—'],
     full ? [text('训练组件', 'Trained parts'), [config.training?.train_backbone && 'UNet / DiT', config.training?.train_text_encoder && text('文本编码器', 'Text encoder')].filter(Boolean).join(' + ') || '—']
-      : ['Rank / Alpha', config.adapter?.rank != null ? `${config.adapter.rank} / ${config.adapter.alpha ?? '—'}` : '—'],
+      : usesOnlyFullLoKr(config, families.data?.find(family => family.name === config.model?.family)) ? ['Rank', 'Full']
+        : ['Rank / Alpha', config.adapter?.rank != null ? `${config.adapter.rank} / ${config.adapter.alpha ?? '—'}` : '—'],
     [text('学习率', 'Learning rate'), learningRate],
     [text('优化器', 'Optimizer'), config.optimizer?.type ? configOptionLabel('optimizer.type', String(config.optimizer.type), true) : '—'],
     [text('批量大小', 'Batch size'), config.dataset?.batch_size != null ? `${config.dataset.batch_size}${number(config.loop?.grad_accum) && config.loop.grad_accum > 1 ? ` × ${config.loop.grad_accum}` : ''}` : '—'],
     [text('训练长度', 'Length'), [epochs !== null && text(`${epochs} 轮`, `${epochs} epochs`), maxSteps !== null && text(`最多 ${maxSteps} 步`, `≤ ${maxSteps} steps`)].filter(Boolean).join(' · ') || (defaultsQuery.isSuccess ? text('未设置', 'Not set') : '—')],
-    [text('分辨率', 'Resolution'), resolutions.length ? resolutions.join(' / ') : '—'],
+    [text('分辨率', 'Resolution'), config.dataset?.resolution_mode === 'native' ? text('原生分辨率', 'Native resolution') : resolutions.length ? resolutions.join(' / ') : '—'],
     [text('混合精度', 'Precision'), config.loop?.mixed_precision ? configOptionLabel('loop.mixed_precision', String(config.loop.mixed_precision), true) : '—'],
   ];
   const counts = !stats.ready ? <LoadingNote label={text('正在读取数据统计…', 'Reading dataset statistics…')}/>
