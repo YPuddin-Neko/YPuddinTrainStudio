@@ -2746,12 +2746,13 @@ def _create_image_job(body: JobBody, c: ServiceContext, version: dict | None, co
     estimated_peak_mb = admission_estimate(memory, cache_only=body.type == "cache")
     estimated_host_mb = memory.get("host_memory_mb_estimate") if body.type == "train" else None
 
-    if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
+    check_memory = c.db.get_kv("queue.settings", {}).get("memory_admission", True)
+    if body.type != "train" and check_memory and (
         shortfall := capacity_shortfall(estimated_peak_mb, selected or devices, cfg.loop.gpu_count)
     ):
         preflight["errors"].append(shortfall_error(shortfall))
         preflight["ok"] = False
-    if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
+    if check_memory and (
         issue := host_memory_error(estimated_host_mb, psutil.virtual_memory().available / 2**20)
     ):
         preflight["errors"].append(issue)

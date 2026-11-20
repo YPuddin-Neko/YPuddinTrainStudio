@@ -9,6 +9,7 @@ from typing import Any
 
 HEADROOM = 0.95
 IDLE_SHARE = 0.97
+NEAR_CAPACITY_SHARE = 0.90
 
 
 @lru_cache(maxsize=1)

@@ -1,4 +1,6 @@
+import type { Plan } from '../api/types';
 import { FIELD_HELP, FIELD_HINTS, MUON_LEARNING_RATE_HELP } from './fieldCopy';
+import { formatBytesMB } from './format';
 import { describeValidation, type ValidationIssue } from './validationMessages';
 
 
@@ -481,8 +483,8 @@ export function presentConfigIssues(errors: ValidationIssue[], english = false):
         ? english ? `Extra argument ${conflictingArg[1]} conflicts with its dedicated field. Correct or remove the extra value.` : `附加参数 ${conflictingArg[1]} 与专用字段冲突，请修正或移除附加值。`
         : english ? 'Extra arguments must be a named-parameter object. Remove the invalid value.' : '附加参数必须是键值对象，请移除无效值。';
     else if (memory) message = english
-      ? `Estimated peak memory ${memory[1]} exceeds ${memory[2]} (${memory[3]}), so training cannot start. Turn on gradient checkpointing, reduce the batch size or lower the training size.`
-      : `预计显存峰值 ${memory[1]}，超过 ${memory[2]} 的 ${memory[3]} 容量，无法开始训练。开启梯度检查点、减小批量大小或降低训练尺寸都能减少显存占用。`;
+      ? `Estimated peak GPU memory is ${memory[1]}. ${memory[2]} has ${memory[3]} in total. Check the available GPU memory budget.`
+      : `预计显存峰值 ${memory[1]}，${memory[2]} 的显存总量为 ${memory[3]}。请检查可用显存预算。`;
     else if (message === detail && !english) {
       if (/is required for/i.test(detail)) message = `请填写或选择${label}`;
       else if (/not found|does not exist|file is missing/i.test(detail)) message = '找不到指定文件，请检查训练机上的路径';
@@ -501,7 +503,7 @@ export function presentConfigIssues(errors: ValidationIssue[], english = false):
   return issues.filter((issue, index) => issues.findIndex(item => item.path === issue.path && item.detail === issue.detail) === index);
 }
 
-type ValueAdvice = { code: string; msg: string; loc?: string | null; step?: number | null; values?: number[] | null; suggestion?: number | number[] | null };
+type ValueAdvice = Plan['warnings'][number];
 const ADVICE_FIELDS: Record<string, [string, string]> = {
   'dataset.resolutions': ['训练分辨率', 'Training resolution'],
   'dataset.native_max_side': ['最长边上限', 'Longest side limit'],
@@ -540,15 +542,30 @@ export function presentValueAdvice(warning: ValueAdvice, english = false): { loc
 export function presentPlanWarning(code: string, fallback: string, english = false, warning?: ValueAdvice) {
   const advice = warning && presentValueAdvice(warning, english);
   if (advice) return advice.msg;
+  if (code === 'vram.tight') {
+    const peak = warning?.estimate_mb;
+    const budget = warning?.budget_mb;
+    if (peak != null && budget != null && peak > budget) {
+      const estimate = formatBytesMB(peak);
+      const available = formatBytesMB(budget);
+      const difference = peak - budget;
+      const excess = formatBytesMB(difference);
+      const sameAmount = estimate === available;
+      if (english) {
+        const estimatedPeak = sameAmount ? 'The estimated peak' : `The estimated peak of ${estimate}`;
+        return `${estimatedPeak} exceeds the available GPU memory budget of ${available} by ${difference < 1 ? 'less than 1 MB' : excess}.`;
+      }
+      const excessMessage = difference < 1 ? '超出不足 1 MB' : `超出 ${excess}`;
+      return sameAmount ? `可用显存预算 ${available}，预计${excessMessage}。`
+        : `预计显存峰值 ${estimate}，高于可用显存预算 ${available}（${excessMessage}）。`;
+    }
+    return english ? 'GPU memory may be tight.' : '预计显存余量可能不足。';
+  }
   if (english) return fallback;
   if (code === 'images.padding') {
     const count = fallback.match(/^(\d+) images/)?.[1];
     const share = fallback.match(/\(([\d.]+%) of training/)?.[1];
     return `${count ? `${count} 张` : '部分'}图片通过填充保留完整画面${share ? `，填充占训练画布的 ${share}` : ''}。填充区不直接计入损失，但模型仍能看到；原生尺寸或更宽的长宽比分桶可减少填充。`;
-  }
-  if (code === 'vram.tight') {
-    const amounts = fallback.match(/estimated peak ([\d.]+) MB vs ([\d.]+) MB available/);
-    return amounts ? `预计峰值显存 ${amounts[1]} MB，设备可用容量 ${amounts[2]} MB，显存余量可能不足。` : '预计显存余量可能不足，请调整分辨率、批量或显存设置。';
   }
   return ({
     'device.mps_fp32': 'Apple GPU 使用 FP32 训练，不启用混合精度。',

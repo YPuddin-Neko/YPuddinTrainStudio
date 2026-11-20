@@ -4472,6 +4472,14 @@ export interface components {
             code: string;
             /** Msg */
             msg: string;
+            /** Device */
+            device?: string | null;
+            /** Estimate Mb */
+            estimate_mb?: number | null;
+            /** Budget Mb */
+            budget_mb?: number | null;
+            /** Capacity Mb */
+            capacity_mb?: number | null;
             /** Loc */
             loc?: string | null;
             /** Step */

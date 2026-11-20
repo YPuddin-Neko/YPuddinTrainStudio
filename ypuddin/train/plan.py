@@ -34,7 +34,7 @@ from .advice import value_advice
 from .evaluation_memory import evaluation_snapshot_memory
 from .evaluation_plan import evaluation_mode_stages, evaluation_operations, project_evaluation_stages
 from .gradient_memory import gradient_workspace_bytes
-from .memory_budget import HEADROOM
+from .memory_budget import HEADROOM, NEAR_CAPACITY_SHARE
 from .metal_compute import resolve_metal_attention_runtime, validate_metal_attention_resume
 from .native_vram import NativeVramGeometry, maximum_fitting_pixels
 from .optimizer_memory import optimizer_memory_breakdown
@@ -2105,7 +2105,7 @@ def plan(
                     "effective_dtype": effective_dtype,
                     "suggestions": [],
                 }
-                tight = gpu_total_mb * 0.9 if gpu_total_mb and not cfg.training.train_text_encoder else None
+                tight = gpu_total_mb * NEAR_CAPACITY_SHARE if gpu_total_mb and not cfg.training.train_text_encoder else None
                 if tight:
                     # Each fix only where it lowers the phase that is over the budget.
                     for phase in (image_encoding, preview_decoding):

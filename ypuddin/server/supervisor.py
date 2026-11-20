@@ -461,6 +461,31 @@ class JobSupervisor:
                 self._set_status(nxt["id"], "failed", error=str(exc), finished_at=now())
         return backlog
 
+    @staticmethod
+    def _by_free_memory(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return sorted(devices, key=lambda gpu: gpu.get("mem_free_mb") or 0, reverse=True)
+
+    def _device_owners(self) -> dict[str, str]:
+        return {
+            device: job_id
+            for job_id, allocation in self._devices.copy().items()
+            for device in self._allocation(allocation)
+        }
+
+    def planned_training_devices(
+        self, inventory: list[dict[str, Any]], count: int, requested: list[str],
+    ) -> list[dict[str, Any]]:
+        if requested:
+            devices = [gpu for gpu in inventory if gpu["device"] in requested]
+        else:
+            owners = self._device_owners()
+            idle = [
+                gpu for gpu in inventory
+                if gpu["device"] not in owners and (count == 1 or gpu["device"].startswith("cuda:"))
+            ]
+            devices = self._by_free_memory(idle)[:count]
+        return devices if len(devices) == count else []
+
     def _choose_device(
         self, job: dict[str, Any], *, check_memory: bool = True
     ) -> str | tuple[str, ...] | None:
@@ -501,11 +526,7 @@ class JobSupervisor:
             return None
         if not inventory:
             return "cpu"
-        owners = {
-            device: job_id
-            for job_id, allocation in self._devices.items()
-            for device in self._allocation(allocation)
-        }
+        owners = self._device_owners()
         estimate = estimates.get("estimated_peak_mb") or 0
         candidates = [
             gpu
@@ -513,17 +534,18 @@ class JobSupervisor:
             if (not requested or gpu["device"] in requested)
             and (count == 1 or gpu["device"].startswith("cuda:"))
         ]
-        if check_memory and (shortfall := capacity_shortfall(estimate, candidates, count)):
+        check_vram = check_memory and job["type"] != "train"
+        if check_vram and (shortfall := capacity_shortfall(estimate, candidates, count)):
             # Waiting cannot help: even an idle device is too small for this run.
             self._publish_admission(job, error=shortfall_reason(shortfall))
             return None
         selected, busy, short = [], [], []
-        for gpu in sorted(candidates, key=lambda g: g.get("mem_free_mb") or 0, reverse=True):
+        for gpu in self._by_free_memory(candidates):
             device = gpu["device"]
             if device in owners:
                 busy.append(device)
                 continue  # exclusive accelerator ownership; max_concurrent is an upper bound
-            if check_memory and not fits_now(estimate, gpu):
+            if check_vram and not fits_now(estimate, gpu):
                 short.append(device)
                 continue
             selected.append(device)

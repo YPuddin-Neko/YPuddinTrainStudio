@@ -5,7 +5,7 @@ import type { Plan } from '../../api/types';
 import { useWorkspaceText } from '../../utils/workspaceText';
 import { formatBytesMB, formatParams } from '../../utils/format';
 import SourceBalance from './SourceBalance';
-import {configOptionLabel, OPAQUE_CONFIG_ISSUE, presentConfigIssues} from '../../utils/configPresentation';
+import {configOptionLabel, OPAQUE_CONFIG_ISSUE, presentConfigIssues, presentPlanWarning} from '../../utils/configPresentation';
 import ConfigHelp from '../../components/ConfigHelp';
 import { SlidingIndicator } from '../../components/motion';
 import BucketGeometry from './BucketGeometry';
@@ -166,17 +166,17 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
   const batchesPerEpoch = native ? native.logical_batches : buckets.reduce((sum, bucket) => sum + (bucket.batches ?? 0), 0);
   const stepSource = !plan?.steps_per_epoch ? '' : gpus > 1 && distributed ? text(`每卡 ${distributed.batches_per_rank} 批`, `${distributed.batches_per_rank} batches per GPU`) : batchesPerEpoch ? text(`${batchesPerEpoch} 批`, `${batchesPerEpoch} batches`) : '';
   const totalSource = !plan?.total_steps || !plan.steps_per_epoch ? '' : plan.epochs && plan.total_steps === plan.epochs * plan.steps_per_epoch ? text(`${plan.epochs} 轮`, `${plan.epochs} epochs`) : text('按最大步数', 'max steps');
+  const vramWarning = plan?.warnings?.find(item => item.code === 'vram.tight');
+  const memorySuggestions = vramWarning ? memoryFixes(plan?.memory, nativeMode, text) : [];
   const devicePeak = plan?.memory?.peak_mb_estimate ?? null;
-  const peak = plan?.memory?.capacity_peak_mb_estimate === undefined
+  const planPeak = plan?.memory?.capacity_peak_mb_estimate === undefined
     ? devicePeak : plan.memory.capacity_peak_mb_estimate;
-  const capacity = plan?.memory?.gpu_total_mb ?? null;
-  const budget = plan?.memory?.gpu_memory_budget_mb ?? (capacity ? capacity * 0.95 : null);
+  const peak = vramWarning?.estimate_mb ?? planPeak;
+  const capacity = vramWarning?.estimate_mb != null ? vramWarning.capacity_mb ?? null : plan?.memory?.gpu_total_mb ?? null;
   const memoryIssue = peak == null && plan?.memory?.unavailable_issue
     ? presentConfigIssues([plan.memory.unavailable_issue], text('zh', 'en') === 'en')[0] : null;
   const memoryIssueDetail = memoryIssue?.message === OPAQUE_CONFIG_ISSUE ? memoryIssue.detail : memoryIssue?.message;
-  const overCapacity = peak != null && !!capacity && budget != null && peak > budget;
-  const tightMemory = !overCapacity && peak != null && !!capacity && budget != null && peak > budget * 0.95;
-  const memoryBlocked = overCapacity && !!plan?.errors?.some(item => item.loc === 'memory');
+  const overCapacity = peak != null && capacity != null && peak > capacity;
   // The VAE's phases are listed beside the training peak when they set the peak or come close to the card.
   const trainingPeak = plan?.memory?.training_peak_mb_estimate ?? null;
   const { image_encoding: encoding, preview_decoding: decoding } = vaeMemory(plan?.memory);
@@ -275,7 +275,7 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
           <dd>{formatBytesMB(plan.memory.cpu_optimizer_mb)}</dd>
         </div></dl>}
         {!!plan?.memory?.host_memory_mb_estimate && <dl className="estimate-list"><div><dt>{text('主机内存需求', 'Host memory needed')}<ConfigHelp label={text('主机内存需求说明', 'Host memory requirement help')}>{text('所有训练进程的 CPU 优化器、更新临时峰值与 CPU EMA 合计内存；不含系统、数据缓存和模型加载。', 'Combined memory for CPU optimizers, temporary update peaks and CPU EMA across all training processes. Excludes the operating system, data caches and model loading.')}</ConfigHelp></dt><dd>{formatBytesMB(plan.memory.host_memory_mb_estimate)}</dd></div></dl>}
-        <div className={`estimate-memory${overCapacity ? ' is-over' : tightMemory ? ' is-tight' : ''}`}>
+        <div className={`estimate-memory${vramWarning ? overCapacity ? ' is-over' : ' is-tight' : ''}`}>
           <div><span>{gpus > 1 ? text('每卡显存峰值估算', 'Estimated peak per GPU') : text('显存峰值估算', 'Estimated peak memory')}</span><strong>{memoryIssue
             ? <button type="button" className="ui-link" title={memoryIssueDetail} onClick={() => onField && memoryIssue.path ? onField(memoryIssue.path) : onIssues?.()}>{text(`检查${memoryIssue.label}`, `Check ${memoryIssue.label}`)}</button>
             : <>{formatBytesMB(peak)}{capacity ? <small> / {formatBytesMB(capacity)}</small> : null}</>}</strong></div>
@@ -285,14 +285,14 @@ export default function BucketInspector({ plan, planCurrent = true, loading, onD
           <div><dt>{text('训练峰值', 'Training peak')}</dt><dd>{formatBytesMB(trainingPeak)}</dd></div>
           {vaePhases.map(row => <div key={row.key}><dt>{row.label}<ConfigHelp label={text(`${row.label}说明`, `${row.label} help`)}>{row.help.filter(Boolean).join('\n')}</ConfigHelp></dt><dd>{formatBytesMB(row.phase.peak_mb_estimate)}</dd></div>)}
         </dl>}
-        {overCapacity && capacity && peak != null && <div className="estimate-alert" role="alert">
-          <strong>{memoryBlocked ? text('超过可用显存预算，无法开始训练', 'Exceeds the available GPU memory budget; training cannot start') : text('超过可用显存预算', 'Exceeds the available GPU memory budget')}</strong>
-          <p>{memoryBlocked
-            ? text(`预计峰值比单卡可用预算多 ${formatBytesMB(peak - (budget ?? capacity * 0.95))}（当前可用预算 ${formatBytesMB(budget)}）。可以这样减少显存占用：`, `The estimate exceeds the per-GPU budget by ${formatBytesMB(peak - (budget ?? capacity * 0.95))} (current available budget ${formatBytesMB(budget)}). Reduce memory with:`)
-            : text('启动前显存检查已在任务队列的调度设置中关闭，训练可能因显存不足而失败。', 'The pre-launch memory check is off in the queue settings, so training may fail for lack of memory.')}</p>
-          <ul>{memoryFixes(plan?.memory, nativeMode, text).map(fix => <li key={fix.path}>{onField ? <button type="button" className="ui-link" onClick={() => onField(fix.path)}>{fix.label}</button> : fix.label}</li>)}</ul>
+        {vramWarning && <div className="estimate-alert" role="alert">
+          <strong>{presentPlanWarning(vramWarning.code, vramWarning.msg, text('zh', 'en') === 'en', vramWarning)}</strong>
+          <p>{text('显存不足时，可能无法开始训练。', 'Training may fail to start if there isn’t enough GPU memory.')}</p>
+          {memorySuggestions.length > 0 && <>
+            <h4 className="estimate-advice-heading">{text('建议优化训练参数', 'Suggested training settings')}</h4>
+            <ul>{memorySuggestions.map(fix => <li key={fix.path}>{onField ? <button type="button" className="ui-link" onClick={() => onField(fix.path)}>{fix.label}</button> : fix.label}</li>)}</ul>
+          </>}
         </div>}
-        {tightMemory && <p className="estimate-note">{text('显存余量不足 10%，训练中可能因显存不足失败。', 'Less than 10% memory headroom; training may run out of memory.')}</p>}
       </div>
     </div>
   </section>;

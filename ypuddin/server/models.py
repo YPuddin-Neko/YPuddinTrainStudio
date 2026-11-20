@@ -315,6 +315,10 @@ class ConfigError(_Out):
 class ConfigWarning(_Out):
     code: str
     msg: str
+    device: str | None = None
+    estimate_mb: float | None = None
+    budget_mb: float | None = None
+    capacity_mb: float | None = None
     # Field-level advice: the field, the grid its value is rounded to, the values off
     # that grid, and a replacement used exactly as written.
     loc: str | None = None

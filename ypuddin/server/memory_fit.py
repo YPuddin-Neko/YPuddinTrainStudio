@@ -1,16 +1,16 @@
-"""Whether a run's estimated peak memory fits the machine's accelerators.
-
-The planner's peak is a heuristic, so admission keeps 5% headroom. A run that
-exceeds even an idle device's capacity can never start, and must say so instead
-of waiting in the queue.
-"""
+"""Image training VRAM advisories and accelerator admission checks for other jobs."""
 
 from __future__ import annotations
 
 import math
 from typing import Any
 
-from ypuddin.train.memory_budget import HEADROOM, available_memory_budget, device_capacity
+from ypuddin.train.memory_budget import (
+    HEADROOM,
+    NEAR_CAPACITY_SHARE,
+    available_memory_budget,
+    device_capacity,
+)
 from ypuddin.train.memory_budget import host_memory_error as host_memory_error
 
 
@@ -45,6 +45,21 @@ def gb(mb: float) -> str:
 
 def device_label(device: str) -> str:
     return f"GPU {device.split(':', 1)[1]}" if device.startswith("cuda:") else device.upper()
+
+
+def training_vram_warning(estimate: float | None, devices: list[dict[str, Any]]) -> dict[str, Any] | None:
+    budgets = [(budget, gpu) for gpu in devices if (budget := available_memory_budget(gpu)) is not None]
+    if estimate is None or not budgets:
+        return None
+    budget, gpu = min(budgets, key=lambda pair: pair[0])
+    capacity = device_capacity(gpu)
+    if estimate <= budget and (capacity is None or estimate <= capacity * NEAR_CAPACITY_SHARE):
+        return None
+    return {
+        "code": "vram.tight",
+        "msg": f"estimated peak {estimate:.0f} MB, {device_label(gpu['device'])} budget {budget:.0f} MB",
+        "device": gpu["device"], "estimate_mb": estimate, "budget_mb": budget, "capacity_mb": capacity,
+    }
 
 
 def capacity_shortfall(

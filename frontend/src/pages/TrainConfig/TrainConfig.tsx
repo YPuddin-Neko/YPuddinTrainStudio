@@ -765,7 +765,10 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     : plan?.native ? {state: 'ready', maxPixels: plan.native.auto_max_pixels, vramMaxPixels: plan.native.auto_vram_max_pixels, vramError: plan.native.auto_vram_error}
       : {state: 'unavailable'};
   const planChecked = checked && (plan?.ok === true || plan?.params != null);
-  const ready = !inactiveReason && (!versions.enabled || versions.current?.status === 'ready') && checked && plan?.ok === true && issues.length === 0;
+  const ready = !inactiveReason && (!versions.enabled || versions.current?.status === 'ready') && checked && gpuValid && plan?.ok === true && issues.length === 0;
+  const planWarnings = plan?.warnings || [];
+  const otherPlanWarnings = planWarnings.filter(warning => warning.code !== 'vram.tight');
+  const estimateLabel = planWarnings.length === otherPlanWarnings.length ? text('执行估算', 'Estimates') : text('执行估算 · 显存提示', 'Estimates · GPU memory');
   React.useEffect(() => {
     if (!ready || doraConfirmation?.config !== JSON.stringify(config)) setDoraConfirmation(null);
   }, [ready, config, doraConfirmation]);
@@ -816,7 +819,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
     <div className="training-launch-bar training-header-actions" role="group" aria-label={text('训练启动操作', 'Training launch controls')} id="training-launch" ref={launchBarRef}>
       {issuesOpen && issues.length > 0 && <section className="readiness-panel" aria-label={text('训练前检查', 'Preflight checks')}><div className="readiness-heading"><h2>{text('完成以下配置即可启动训练', 'Complete these settings to start training')}</h2><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" onClick={() => setIssuesOpen(false)}>{text('收起', 'Collapse')}</button></div>{issues.map((issue,index) => <div className="readiness-item" key={`${issue.path}-${index}`}><button aria-label={issue.path === 'memory' ? text('查看显存估算与解决办法', 'Review the memory estimate and fixes') : text(`配置${issue.label}`, `Configure ${issue.label}`)} onClick={() => goToIssue(issue)}><span>{issue.label}</span><span>{issue.message}</span><ChevronRight size={14}/></button>{issue.message === OPAQUE_CONFIG_ISSUE && <details><summary>{text('错误详情', 'Error details')}</summary><code>{issue.detail}</code></details>}</div>)}</section>}
       <div className="launch-status" role="status">{validating ? <><Loader2 size={15} className="animate-spin"/><span>{text('正在检查配置…', 'Checking configuration…')}</span></> : ready ? <><CheckCircle2 size={16} className="text-emerald-500"/><span>{text('可以开始训练', 'Ready to train')}</span></> : <button onClick={() => setIssuesOpen(value => !value)} className="readiness-toggle"><AlertCircle size={16}/><span>{issues.length ? text(`${issues.length} 项待配置`, `${issues.length} settings to complete`) : text('尚未通过检查', 'Checks incomplete')}</span><ChevronRight size={14}/></button>}</div>
-      <button type="button" className="ui-btn launch-plan-toggle" aria-label={text('训练估算与分桶', 'Estimates and buckets')} aria-expanded={inspectorOpen} aria-controls="training-plan-panel" onClick={() => setInspectorOpen(open => !open)}><BarChart3 size={15}/><span>{text('执行估算', 'Estimates')}</span><ChevronDown size={14}/></button>
+      <button type="button" className="ui-btn launch-plan-toggle" aria-label={text('训练估算与分桶', 'Estimates and buckets')} aria-expanded={inspectorOpen} aria-controls="training-plan-panel" onClick={() => setInspectorOpen(open => !open)}><BarChart3 size={15}/><span>{estimateLabel}</span><ChevronDown size={14}/></button>
       <GpuDevicePicker compact training label={text('训练显卡', 'Training GPUs')} value={gpuDevices} count={gpuCount} deviceState={queueDevices}
         disabled={!loaded || !!inactiveReason || isEnqueuing || savingNavigation} onChange={devices => {setGpuDevices(devices);setGpuSelectionNotice('');}}/>
       <input className="launch-name" aria-label={t('train.jobName')} placeholder={text('任务名称（可选）', 'Job name (optional)')} value={jobName} onChange={event => setJobName(event.target.value)}/>
@@ -885,7 +888,7 @@ function TrainConfigContent({ projectId, versionId }: { projectId?: string; vers
         </div>
       </div>
       <aside id="training-plan-panel" className={`training-inspector ${inspectorOpen ? 'is-open' : ''}`} aria-label={text('训练计划', 'Training plan')}><button type="button" className="ui-btn ui-btn-quiet inspector-return" onClick={() => setInspectorOpen(false)}>{text('返回参数', 'Back to parameters')}</button><BucketInspector textSlider={config.training?.task === 'slider' && config.slider?.mode !== 'image'} paired={config.training?.task === 'edit' || config.training?.task === 'slider' && config.slider?.mode === 'image'} familyName={config.model?.family} plan={plan} planCurrent={checked} loading={validating || datasetRefreshing} dataset={config.dataset} onField={path => { setInspectorOpen(false); goToIssue({ path, label: '', message: '', detail: '', tab: configTabForPath(path) }); }} error={planError} onRetry={()=>datasetRefreshError ? refreshDatasetConfiguration() : setAuxiliaryReload(value=>value+1)} hasSources={!!config.dataset?.sources?.length} indexed={indexedStats || undefined} onIssues={() => setIssuesOpen(true)} onData={() => {setActiveTab('data');setSearch('');setInspectorOpen(false);}}/>
-        {!!plan?.warnings?.length && <details className="plan-notes"><summary><AlertCircle size={13}/>{text('配置提示', 'Configuration notes')} · {plan.warnings.length}</summary><ul>{plan.warnings.map((warning,index) => <li key={index}>{presentPlanWarning(warning.code,warning.msg,english,warning)}</li>)}</ul></details>}
+        {otherPlanWarnings.length > 0 && <details className="plan-notes"><summary><AlertCircle size={13}/>{text('配置提示', 'Configuration notes')} · {otherPlanWarnings.length}</summary><ul>{otherPlanWarnings.map((warning,index) => <li key={index}>{presentPlanWarning(warning.code,warning.msg,english,warning)}</li>)}</ul></details>}
       </aside>
     </div>
 

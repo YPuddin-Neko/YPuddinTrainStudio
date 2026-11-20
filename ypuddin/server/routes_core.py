@@ -756,7 +756,7 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
         validate_model=lambda family, model: _plan_model_errors(family, model, c),
         **planning_memory(selected),
     )
-    from .memory_fit import admission_estimate, capacity_shortfall, host_memory_error, shortfall_error
+    from .memory_fit import admission_estimate, host_memory_error, training_vram_warning
     from .supervisor import training_device_error
 
     count = (result.get("distributed") or {}).get("world_size", 1)
@@ -771,14 +771,11 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
     ):
         result["errors"].append(issue)
         result["ok"] = False
-    # Starting would only wait forever, so the plan names the shortfall while it can still be fixed.
-    if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
-        shortfall := capacity_shortfall(admission_estimate(result.get("memory") or {}), selected, count)
-    ):
-        result["errors"].append(shortfall_error(shortfall))
-        # The error supersedes the note that memory may be tight.
-        result["warnings"] = [item for item in result["warnings"] if item.get("code") != "vram.tight"]
-        result["ok"] = False
+    estimate = admission_estimate(result.get("memory") or {})
+    devices = c.supervisor.planned_training_devices(gpus, requested_count, body.gpu_devices)
+    result["warnings"] = [item for item in result["warnings"] if item.get("code") != "vram.tight"]
+    if warning := training_vram_warning(estimate, devices):
+        result["warnings"].append(warning)
     if not result["ok"]:
         result["resolution_reference"] = None
     return result
