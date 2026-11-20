@@ -51,7 +51,7 @@ export default function DatasetImportProgress({ operation, actions }: { operatio
       : waitingForProcessing ? text('文件已上传，正在等待导入结果', 'Files uploaded; waiting for the import result')
       : unavailable ? text('暂时无法读取进度，正在等待导入结果', 'Progress is unavailable; waiting for the import result')
         : snapshot ? text(...phaseLabels[snapshot.phase])
-          : operation.mode === 'upload' ? text('等待训练服务接收文件', 'Waiting for the training service to receive files') : text('读取来源目录', 'Reading the source folder');
+          : operation.mode === 'upload' ? text('等待训练服务接收文件', 'Waiting for the training service to receive files') : text('读取导入来源', 'Reading the import source');
   const measured = snapshot && !terminalSnapshot && !unavailable && !waitingForProcessing;
   const hasBytes = measured && (snapshot.phase === 'receiving' || snapshot.bytes_done > 0 || (snapshot.bytes_total ?? 0) > 0);
   const done = measured ? hasBytes ? snapshot.bytes_done : snapshot.files_done : null;

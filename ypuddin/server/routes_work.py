@@ -40,7 +40,7 @@ from ypuddin.data import IndexDB, scan_sources
 
 from . import models as m
 from .context import ServiceContext
-from .dataset_uploads import UploadBatch, read_upload, staged_upload
+from .dataset_uploads import UploadBatch, read_upload, server_zip, staged_upload
 from .db import new_id, now
 from .environment import maintenance_reason
 from .errors import ApiError, NotFound
@@ -1498,10 +1498,18 @@ def list_datasets(
     ]
 
 
+def _imported_datasets(c: ServiceContext, ids: list[str], background_tasks: BackgroundTasks) -> dict[str, Any]:
+    datasets = []
+    for did in ids:
+        background_tasks.add_task(_index_dataset, c, did)
+        datasets.append(_dataset_row(c, _get_dataset(c, did)))
+    return {**datasets[0], "datasets": datasets}
+
+
 @router.post(
     "/projects/{pid}/datasets",
     status_code=201,
-    response_model=m.DatasetInfo,
+    response_model=m.DatasetUploadInfo,
     response_model_exclude_unset=True,
 )
 def add_dataset(
@@ -1515,9 +1523,17 @@ def add_dataset(
     c.require_project_type(pid, "image")
     with c.import_admission(), c.import_progress.track(pid, progress_id, "validating") as progress:
         version = c.resolve_version(pid, version_id or body.version_id)
-        did = c.versions.import_directory(pid, version["id"], body, progress=progress)
-    background_tasks.add_task(_index_dataset, c, did)
-    return _dataset_row(c, c.db.fetchone("SELECT * FROM datasets WHERE id=?", (did,)))
+        path = Path(body.path).expanduser()
+        with server_zip(c, path) as archive:
+            if archive is None:
+                ids = [c.versions.import_directory(pid, version["id"], body, progress=progress)]
+            else:
+                _validate_caption_extension(body.caption_ext)
+                batch = UploadBatch(
+                    files=[archive], name=path.stem, **body.model_dump(exclude={"path", "version_id"})
+                )
+                ids = _register_upload(c, pid, batch, version["id"], progress)
+    return _imported_datasets(c, ids, background_tasks)
 
 
 @router.get("/projects/{pid}/datasets/import-progress/{progress_id}", response_model=m.DatasetImportProgress)
@@ -1568,11 +1584,7 @@ async def upload_dataset(
         version = await run_in_threadpool(assert_version_writable, c, pid, version_id, data=True)
         async with read_upload(request, progress) as batch:
             ids = await run_in_threadpool(_register_upload, c, pid, batch, version["id"], progress)
-    datasets = []
-    for did in ids:
-        background_tasks.add_task(_index_dataset, c, did)
-        datasets.append(_dataset_row(c, _get_dataset(c, did)))
-    return {**datasets[0], "datasets": datasets}
+    return _imported_datasets(c, ids, background_tasks)
 
 
 def _get_dataset(c: ServiceContext, did: str) -> dict[str, Any]:

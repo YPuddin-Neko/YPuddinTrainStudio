@@ -3395,7 +3395,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatasetInfo"
+                  "$ref": "#/components/schemas/DatasetUploadInfo"
                 }
               }
             }

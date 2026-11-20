@@ -141,9 +141,9 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
   };
   const locked = busy || reading || uploading;
   React.useEffect(()=>{onBusyChange?.(locked || siteBusy);return()=>onBusyChange?.(false);},[locked,siteBusy,onBusyChange]);
-  const folderName = mode === 'path' ? path.replace(/\\/g,'/').split('/').filter(Boolean).pop() : files[0]?.relativePath.split('/').slice(0,-1)[0];
-  const autoName = files.length === 1 && files[0].relativePath.toLowerCase().endsWith('.zip') ? files[0].file.name.replace(/\.zip$/i, '') : folderName || '';
-  const detectedRepeats = folderName?.match(/^([1-9]\d{0,5})[_-]/)?.[1];
+  const sourceName = mode === 'path' ? path.trim().split(/[\\/]/).filter(Boolean).pop() : files[0]?.relativePath.split('/').slice(0,-1)[0];
+  const autoName = files.length === 1 && files[0].relativePath.toLowerCase().endsWith('.zip') ? files[0].file.name.replace(/\.zip$/i, '') : sourceName || '';
+  const detectedRepeats = sourceName?.match(/^([1-9]\d{0,5})[_-]/)?.[1];
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (mode === 'site' || locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())) return;
@@ -250,8 +250,10 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
         {files.length > 50 && <p className="project-import-limit">{text(`仅预览前 50 项，全部 ${files.length} 个文件都会导入。`, `Showing the first 50 entries; all ${files.length} files will be imported.`)}</p>}
       </div>}
     </> : <div className="project-import-location">
-      <p>{text('选择运行训练服务的电脑上的目录。浏览器所在电脑的文件，请使用“上传文件或文件夹”。', 'Choose a folder on the computer running the training service. For files on this browser’s computer, use Upload files or folders.')}</p>
-      <fieldset disabled={locked} role="group" aria-label={text('训练图片文件夹路径', 'Training image folder path')}><PathInput value={path} onChange={value => { setPath(value); resetProgress(); setCreated([]); }} placeholder={text('例如 D:\\训练素材\\角色图', 'For example D:\\training-data\\character')}/></fieldset>
+      <p>{text('选择运行训练服务的电脑上的图片目录或 ZIP 压缩包。', 'Choose an image folder or ZIP archive on the computer running the training service.')}</p>
+      <fieldset disabled={locked}>
+        <PathInput value={path} ariaLabel={text('图片目录或 ZIP 路径', 'Image folder or ZIP path')} onChange={value => { setPath(value); resetProgress(); setCreated([]); }} placeholder={text('例如 D:\\训练素材\\角色图.zip', 'For example D:\\training-data\\character.zip')}/>
+      </fieldset>
     </div>}
     <div className="project-import-configuration">
       {!targetDataset && <details className="project-import-options"><summary>{text('导入选项', 'Import options')}</summary>
@@ -260,7 +262,9 @@ function ProjectDataImportForm({ projectId, versionId, onImported, defaultIsReg 
           <label className="project-import-field project-import-caption">{text('标签格式', 'Caption format')}<CaptionFormatSelect value={captionExt} onChange={setCaptionExt} disabled={locked} formats={captionFormats}/></label>
           <div className="project-import-field project-import-repeats"><div className="project-import-field-label"><label htmlFor={repeatsId}>{text('每张图片重复次数', 'Repeats per image')}</label><ConfigHelp label={text('重复次数说明','Repeats help')}>{text('每轮使用每张图片的次数，默认 1 次。次数越高，这组图片的训练占比越大；5_character 这样的目录名可自动识别为 5 次。','Times each image is used per epoch, default 1. More repeats increase this dataset’s share; a folder named 5_character suggests 5 repeats.')}</ConfigHelp></div><input id={repeatsId} className={inputClass} type="number" min="1" step="1" required value={repeats} onChange={event => setRepeats(Number(event.target.value))} disabled={locked}/></div>
         </div>
-        {detectedRepeats && Number(detectedRepeats)!==repeats && <button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={()=>setRepeats(Number(detectedRepeats))}>{text(`目录名检测到重复 ${detectedRepeats} 次，应用`, `Folder name suggests ${detectedRepeats} repeats — apply`)}</button>}
+        {detectedRepeats && Number(detectedRepeats)!==repeats && <button type="button" className="ui-btn ui-btn-sm" disabled={locked} onClick={()=>setRepeats(Number(detectedRepeats))}>{mode === 'path'
+          ? text(`按名称应用 ${detectedRepeats} 次重复`, `Name suggests ${detectedRepeats} repeats — apply`)
+          : text(`目录名检测到重复 ${detectedRepeats} 次，应用`, `Folder name suggests ${detectedRepeats} repeats — apply`)}</button>}
         {isReg && <div className="project-import-reg-options"><label className="project-import-field project-import-prompt">{text('类别提示词', 'Class prompt')}<input className={inputClass} disabled={locked} value={classPrompt} onChange={event => setClassPrompt(event.target.value)}/></label><label className="project-import-field project-import-prior">{text('正则损失权重', 'Regularization loss weight')}<input className={inputClass} type="number" min="0" step="0.1" disabled={locked} value={priorWeight} onChange={event => setPriorWeight(Number(event.target.value))}/></label></div>}
       </details>}
       <button type="submit" disabled={locked || !Number.isInteger(repeats) || repeats < 1 || (mode === 'upload' ? files.length === 0 : !path.trim())} className="ui-btn ui-btn-primary project-import-submit">{(busy || uploading) && <Loader2 size={14} className="animate-spin"/>}{busy || uploading ? text('正在导入…', 'Importing…') : targetDataset ? text('添加到此数据集', 'Add to this dataset') : text('导入当前版本', 'Import into this version')}</button>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import os
 import re
 import shutil
 import stat
@@ -12,7 +13,7 @@ import warnings
 import zipfile
 import zlib
 from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import BinaryIO
@@ -24,7 +25,7 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 
 from ypuddin.data.index import IMAGE_EXTS
 
-from .errors import ApiError
+from .errors import ApiError, NotFound
 from .import_progress import ImportProgress
 
 MAX_UPLOAD_BYTES = 2 * 1024**3
@@ -92,6 +93,41 @@ class UploadBatch:
     class_prompt: str | None = None
     caption_ext: str = "auto"
     folder_name: str = ""
+
+
+@contextmanager
+def server_zip(c, path: Path) -> Iterator[UploadFile | None]:
+    """Open a server-side ZIP for extraction. Directory imports receive no archive."""
+    from .versions import reference_lease
+
+    if path.suffix.lower() != ".zip":
+        yield None
+        return
+    with ExitStack() as resources:
+        archive = None
+        try:
+            source = path.resolve()
+            if not c.is_allowed(source):
+                raise ApiError("source is outside allowed roots", code="fs.forbidden", status=403)
+            before = source.stat()
+            if stat.S_ISREG(before.st_mode):
+                resources.enter_context(reference_lease(c, source))
+                flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+                descriptor = os.open(source, flags)
+                stream = resources.enter_context(os.fdopen(descriptor, "rb"))
+                opened = os.fstat(descriptor)
+                if not os.path.samestat(before, opened) or not c.is_allowed(source):
+                    raise ApiError("ZIP 文件路径已变化，请重新选择。", code="upload.conflict", status=409)
+                if opened.st_size > MAX_UPLOAD_BYTES:
+                    raise ApiError("ZIP 文件超过 2 GiB。", code="upload.too_large", status=413)
+                archive = UploadFile(stream, filename=path.name, size=opened.st_size)
+            elif not stat.S_ISDIR(before.st_mode):
+                raise ApiError("请选择普通 ZIP 文件。", code="upload.file_type")
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise NotFound("找不到指定的 ZIP 文件。", code="fs.not_found") from exc
+        except PermissionError as exc:
+            raise ApiError("没有权限读取该 ZIP 文件。", code="fs.forbidden", status=403) from exc
+        yield archive
 
 
 @asynccontextmanager

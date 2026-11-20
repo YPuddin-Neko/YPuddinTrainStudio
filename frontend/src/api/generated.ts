@@ -16124,7 +16124,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DatasetInfo"];
+                    "application/json": components["schemas"]["DatasetUploadInfo"];
                 };
             };
             /** @description Validation Error */
