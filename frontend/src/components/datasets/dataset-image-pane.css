@@ -24,7 +24,6 @@
 .dataset-image-card.is-compact .dataset-image-caption { padding:4px 2px; }
 .dataset-pane-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:180px; height:100%; padding:24px; font-size:13px; text-align:center; color:var(--studio-dim); }
 .dataset-pane-empty strong { color:var(--studio-text); font-weight:500; }
-.dataset-pane-loading { position:sticky; bottom:0; display:flex; justify-content:center; padding:8px; background:var(--studio-panel); color:var(--studio-dim); font-size:12px; }
 .dataset-pane-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; border-top:1px solid var(--studio-line); padding:4px 8px 4px 12px; color:var(--studio-dim); font-size:12px; }
 
 /* Curation: candidates on the left flow into the training set on the right. */
@@ -35,6 +34,7 @@
 .dataset-curation-search { display:flex; align-items:center; gap:8px; flex:1 1 240px; max-width:420px; height:var(--control-h,32px); padding:0 4px 0 10px; border:1px solid var(--studio-line); border-radius:var(--control-radius,6px); background:var(--studio-panel); color:var(--studio-dim); }
 .dataset-curation-search:focus-within { outline:2px solid var(--studio-accent); outline-offset:1px; }
 .dataset-curation-search input { flex:1; width:0; min-width:0; padding:0; border:0; background:transparent; color:var(--studio-text); font-size:13px; outline:none; }
+.dataset-curation .dataset-curation-search > input:focus-visible { outline:none; box-shadow:none; }
 .dataset-curation-search input::-webkit-search-cancel-button { display:none; }
 .dataset-thumbnail-size { display:flex; align-items:center; gap:8px; margin-left:auto; font-size:12px; color:var(--studio-dim); }
 .dataset-thumbnail-size input { width:88px; height:28px; accent-color:var(--studio-accent); }

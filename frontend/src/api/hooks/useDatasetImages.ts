@@ -25,7 +25,7 @@ export function useDatasetImages(
   const [page, setPage] = React.useState(1);
   const [q, setQ] = React.useState('');
   const [sort, setSort] = React.useState<ImageSort>('filename');
-  const [loading, setLoading] = React.useState(false);
+  const [{ loading, replacing }, setRequestState] = React.useState({ loading: false, replacing: false });
   const [error, setError] = React.useState<string | null>(null);
   const request = React.useRef<AbortController | null>(null);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -40,7 +40,7 @@ export function useDatasetImages(
       if (!append) replacementPending.current = true;
       request.current?.abort();
       const controller = new AbortController(); request.current = controller;
-      setLoading(true);
+      setRequestState({ loading: true, replacing: !append });
       setError(null);
       try {
         const resp = await apiClient.get<DatasetImagesPage>(`/datasets/${datasetId}/images`, {
@@ -48,7 +48,17 @@ export function useDatasetImages(
           params: { page: p, page_size: pageSize, q: query || undefined, membership, sort },
         });
         if (controller.signal.aborted) return;
-        if (!append) replacementPending.current = false;
+        if (!append) {
+          replacementPending.current = false;
+          if (membership !== 'all') {
+            const paths = new Set(resp.items.map(item => item.rel_path));
+            setSelected(previous => {
+              if (!previous.size) return previous;
+              const next = new Set([...previous].filter(path => paths.has(path)));
+              return next.size === previous.size ? previous : next;
+            });
+          }
+        }
         setTotal(resp.total);
         setPage(resp.page);
         setItems(prev => {
@@ -59,7 +69,7 @@ export function useDatasetImages(
       } catch (e: any) {
         if (!controller.signal.aborted) setError(e?.message || 'failed to load images');
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) setRequestState({ loading: false, replacing: replacementPending.current });
       }
     },
     [datasetId, pageSize, membership, sort]
@@ -77,7 +87,7 @@ export function useDatasetImages(
       const lastPage = Math.ceil(count / pageSize);
       // Only a partly loaded last row needs the rest of its page; a fully loaded list stays as it is.
       if (count % pageSize && count < loaded.current.total) void fetchPage(lastPage, q, true);
-      else { setPage(lastPage); setLoading(false); }
+      else { setPage(lastPage); setRequestState({ loading: false, replacing: false }); }
     } else {
       if (!resizing) setItems([]);
       setPage(1);
@@ -136,6 +146,7 @@ export function useDatasetImages(
     sort,
     setSort,
     loading: loading || !ready,
+    replacing,
     error,
     selected,
     toggleSelect,

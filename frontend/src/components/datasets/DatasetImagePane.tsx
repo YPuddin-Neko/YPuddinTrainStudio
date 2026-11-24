@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft, ArrowRight, Brush, CheckSquare, Image as ImageIcon, SearchX, Square } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { apiUrl } from '../../api/client';
 import { useDatasetImages } from '../../api/hooks/useDatasetImages';
 import { useWorkspaceText } from '../../utils/workspaceText';
@@ -26,6 +27,7 @@ const GAP = 8;
 
 export default function DatasetImagePane({ datasetId, images, training, all = false, previewOnly = false, count, canEdit, busy, minWidth, arriving, onMove, onOpen }: Props) {
   const text = useWorkspaceText();
+  const { t } = useTranslation();
   const title = all ? text('全部图片', 'All images') : training ? text('参与训练', 'In training') : text('暂不训练', 'Not in training');
   const grid = React.useRef<HTMLDivElement>(null);
   const anchor = React.useRef<string | null>(null);
@@ -44,6 +46,7 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
   const loadingRows = Math.max(1, Math.ceil((viewport.height - GAP) / rowHeight));
   const placeholderCount = Math.min(knownCount ?? Infinity, cols * loadingRows);
   const empty = !images.error && images.items.length === 0 && (!images.loading || knownCount === 0);
+  const hasLoadedItems = images.items.length > 0;
 
   React.useLayoutEffect(() => {
     const element = grid.current;
@@ -77,12 +80,14 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
     } else images.toggleSelect(path);
     anchor.current = path;
   };
-  const moveDisabled = !canEdit || busy || images.loading || !images.selected.size;
+  const cardsLocked = busy || (!all && images.replacing);
+  const selectionDisabled = !canEdit || cardsLocked || !hasLoadedItems || (all && images.loading);
+  const moveDisabled = selectionDisabled || !images.selected.size;
 
   return <section className={`dataset-image-pane${all ? '' : training ? ' is-training' : ' is-held-out'}`} aria-label={title}>
     <header className="dataset-pane-heading">
       <h2>{title} <AnimatedCount className="dataset-pane-count" value={images.q ? `${images.total} / ${knownCount ?? '—'}` : knownCount ?? '—'}/></h2>
-      <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" onClick={images.selected.size ? images.clearSelection : images.selectAll} disabled={!canEdit || busy || images.loading || !images.items.length}>
+      <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" onClick={images.selected.size ? images.clearSelection : images.selectAll} disabled={selectionDisabled}>
         {images.selected.size ? text(`取消选择 (${images.selected.size})`, `Clear (${images.selected.size})`) : images.hasMore ? text('全选已加载', 'Select loaded') : text('全选', 'Select all')}
       </button>
       {!all && (training
@@ -94,7 +99,7 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
       setViewport(previous => ({ ...previous, top: element.scrollTop }));
       if (element.scrollTop + element.clientHeight >= element.scrollHeight - rowHeight * 2) images.loadMore();
     }}>
-      {firstLoad && <div className="dataset-pane-skeleton" role="status" aria-label={text('正在加载图片…', 'Loading images…')} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: GAP }}>
+      {firstLoad && <div className="dataset-pane-skeleton" role="status" aria-label={t('common.loading')} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: GAP }}>
         {Array.from({ length: placeholderCount }, (_, index) => <div key={index} className="dataset-pane-skeleton-card" style={{ height: rowHeight - GAP }}><div className="ui-skeleton"/><div className="ui-skeleton"/></div>)}
       </div>}
       {images.items.length > 0 && <div style={{ height: rows * rowHeight + GAP, position: 'relative' }}>
@@ -105,7 +110,7 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
               <button type="button" className="dataset-image-pick" aria-label={`${canEdit && !previewOnly ? text('编辑标签', 'Edit caption') : text('查看图片与标签', 'View image and caption')}: ${img.rel_path}`} onClick={() => onOpen(img.hash, img.rel_path)}>
                 <LazyImage src={apiUrl(`/datasets/${datasetId}/images/${img.hash}/thumb?size=256`)} alt={img.rel_path} loading="lazy" decoding="async" draggable={false}/>
               </button>
-              {canEdit && <button type="button" className="dataset-image-check" aria-label={`${text('选择图片','Select image')}: ${img.rel_path}`} aria-pressed={selected} disabled={busy} onClick={event => select(img.rel_path,event)}>{selected ? <CheckSquare size={18}/> : <Square size={18}/>}</button>}
+              {canEdit && <button type="button" className="dataset-image-check" aria-label={`${text('选择图片','Select image')}: ${img.rel_path}`} aria-pressed={selected} disabled={cardsLocked} onClick={event => select(img.rel_path,event)}>{selected ? <CheckSquare size={18}/> : <Square size={18}/>}</button>}
               <div className="dataset-image-caption">
                 <strong title={img.rel_path}>{img.rel_path}</strong>
                 {!previewOnly && <span title={[img.caption, img.pairing_error, ...(img.reference_paths || []), img.pair_path].filter(Boolean).join('\n')}>{img.has_mask && <Brush size={12} aria-label={text('已有遮罩', 'Mask saved')}/>} {img.width} × {img.height}{img.pairing_error ? ` · ${text('配对失败', 'Pairing failed')}` : img.reference_paths?.length ? ` · ${text('参考图已配对', 'Reference matched')}` : img.pair_path ? ` · ${text('负端已配对', 'Negative matched')}` : ''}{img.caption ? ` · ${img.caption}` : ''}</span>}
@@ -120,8 +125,10 @@ export default function DatasetImagePane({ datasetId, images, training, all = fa
         <strong>{images.q ? text('没有匹配的图片', 'No matching images') : all ? text('这个目录还没有图片', 'This folder has no images yet') : training ? text('还没有参与训练的图片', 'No images in training') : text('没有暂不训练的图片', 'No held-out images')}</strong>
         {!images.q && !all && <p>{training ? text('从左侧选择图片，再加入训练。', 'Select images on the left and add them to training.') : text('移出训练的图片会保留在这里。', 'Images removed from training stay here.')}</p>}
       </div>}
-      {images.loading && images.items.length > 0 && <LoadingNote className="dataset-pane-loading" label={text('正在加载图片…', 'Loading images…')}/>}
     </div>
-    {images.hasMore && <footer className="dataset-pane-footer"><span>{text(`已加载 ${images.items.length} / ${images.total}`, `${images.items.length} / ${images.total} loaded`)}</span><button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" disabled={images.loading} onClick={images.loadMore}>{text('加载更多', 'Load more')}</button></footer>}
+    {hasLoadedItems && images.hasMore && <footer className="dataset-pane-footer">
+      {images.loading && !images.replacing ? <LoadingNote label={t('common.loading')}/> : <span>{text(`已加载 ${images.items.length} / ${images.total}`, `${images.items.length} / ${images.total} loaded`)}</span>}
+      <button type="button" className="ui-btn ui-btn-quiet ui-btn-sm" disabled={images.loading} onClick={images.loadMore}>{text('加载更多', 'Load more')}</button>
+    </footer>}
   </section>;
 }

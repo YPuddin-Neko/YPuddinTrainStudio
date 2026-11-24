@@ -60,7 +60,7 @@ function CurationWorkspace({ datasetId, selector, readOnly, onChanged }: { datas
   const canEdit = !readOnly && info.isSuccess;
   const move = async (included: boolean) => {
     const source = included ? held : training;
-    if (!canEdit || moving || !source.selected.size) return;
+    if (!canEdit || moving || source.replacing || !source.selected.size) return;
     const paths = [...source.selected];
     setMoving(true); setError('');
     try {
