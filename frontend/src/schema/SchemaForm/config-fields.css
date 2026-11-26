@@ -70,6 +70,10 @@
 .compact-schema .config-field-heading > label::-webkit-scrollbar { display:none; }
 .compact-schema .config-field-reference { min-width:30px; }
 .compact-schema .config-field-reference > .config-help-trigger { margin-left:0; }
+.compact-schema [data-field-path="optimizer.stopcoef"] > .config-field-heading { flex-wrap:wrap; height:auto; row-gap:3px; }
+.compact-schema [data-field-path="optimizer.stopcoef"] > .config-field-heading > label { max-width:100%; white-space:normal; overflow:visible; }
+.compact-schema [data-field-path="optimizer.stopcoef"] .config-field-reference { max-width:100%; }
+.compact-schema [data-field-path="optimizer.stopcoef"] .config-field-key { white-space:normal; overflow-wrap:anywhere; }
 .compact-schema .config-field-label-note { font-size: 12px; font-weight: 400; color: var(--studio-dim); }
 .compact-schema .config-field > .config-field-control { min-width: 0; align-self: stretch; }
 .compact-schema .config-field > .config-field-footer { min-width: 0; padding-bottom: 16px; }

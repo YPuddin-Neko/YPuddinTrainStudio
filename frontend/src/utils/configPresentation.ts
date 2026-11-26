@@ -87,7 +87,7 @@ const labels: Record<string, string> = {
   'optimizer.beta2': '梯度大小平滑（β2）', 'optimizer.min_lr': '自适应学习率下限',
   'optimizer.max_lr': '自适应学习率上限', 'optimizer.lr_bump': '学习率调整增量',
   'optimizer.clip_threshold': '更新幅度保护阈值',
-  'optimizer.stopcoef': '稳定提示阈值', 'optimizer.use_shadow': '影子权重混合', 'optimizer.notify': '记录稳定提示',
+  'optimizer.stopcoef': '稳定提示阈值 [EmoSens]', 'optimizer.use_shadow': '影子权重混合', 'optimizer.notify': '记录稳定提示',
   'scheduler.type': '学习率调度', 'scheduler.warmup_steps': '预热步数 / 比例', 'scheduler.min_lr_ratio': '最低学习率比例',
   'scheduler.num_cycles': '调度周期数', 'scheduler.power': '多项式幂', 'scheduler.decay_steps': '衰减步数',
   'memory.base_precision': '底模存储精度', 'memory.blocks_to_swap': '换出到 CPU 的层数',
@@ -181,7 +181,7 @@ export function configFieldLabel(path: string, fallback: string, english = false
       stochastic_rounding: 'Stochastic low-precision rounding', weight_decay_by_lr: 'Scale decay with the learning rate', use_schedulefree: 'Schedule-Free weight averaging',
       use_speed: 'SPEED step estimation', use_cautious: 'Cautious direction filtering', use_grams: 'Grams direction adjustment', use_adopt: 'ADOPT updates', use_orthograd: 'OrthoGrad directions', use_focus: 'FOCUS updates',
       beta2: 'Gradient-size smoothing (β2)', min_lr: 'Adaptive learning-rate minimum', max_lr: 'Adaptive learning-rate maximum', lr_bump: 'Learning-rate increment', clip_threshold: 'Normalized update clipping threshold',
-      stopcoef: 'Stability notification threshold', use_shadow: 'Shadow weight mixing', notify: 'Log stability notification',
+      stopcoef: 'Stability notification threshold [EmoSens]', use_shadow: 'Shadow weight mixing', notify: 'Log stability notification',
     };
     return optimizerLabels[path.slice(10)] || fallback;
   }
