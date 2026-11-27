@@ -62,6 +62,32 @@ def training_vram_warning(estimate: float | None, devices: list[dict[str, Any]])
     }
 
 
+def waiting_training_vram_warning(
+    estimate: float | None, inventory: list[dict[str, Any]], count: int,
+) -> dict[str, Any] | None:
+    """Warn if even the largest eligible set cannot fit the per-device estimate."""
+    candidates = [gpu for gpu in inventory if count == 1 or gpu["device"].startswith("cuda:")]
+    if estimate is None or len(candidates) < count:
+        return None
+
+    def physical_total(gpu: dict[str, Any]) -> float:
+        total = gpu.get("mem_total_mb")
+        # An unknown physical total could fit, even if a working-set limit is known.
+        return total if type(total) in (int, float) and math.isfinite(total) and total > 0 else math.inf
+
+    candidates.sort(key=physical_total, reverse=True)
+    limiting = candidates[count - 1]
+    capacity = physical_total(limiting)
+    if estimate <= capacity:
+        return None
+    label = device_label(limiting["device"])
+    return {
+        "code": "vram.tight",
+        "msg": f"estimated peak {estimate:.0f} MB exceeds {label} capacity {capacity:.0f} MB",
+        "device": limiting["device"], "estimate_mb": estimate, "capacity_mb": capacity, "budget_mb": None,
+    }
+
+
 def capacity_shortfall(
     estimate_mb: float | None, devices: list[dict[str, Any]], count: int = 1
 ) -> dict[str, Any] | None:

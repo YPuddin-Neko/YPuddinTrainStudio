@@ -545,19 +545,22 @@ export function presentPlanWarning(code: string, fallback: string, english = fal
   if (code === 'vram.tight') {
     const peak = warning?.estimate_mb;
     const budget = warning?.budget_mb;
-    if (peak != null && budget != null && peak > budget) {
+    const limit = budget ?? warning?.capacity_mb;
+    if (peak != null && limit != null && peak > limit) {
       const estimate = formatBytesMB(peak);
-      const available = formatBytesMB(budget);
-      const difference = peak - budget;
+      const available = formatBytesMB(limit);
+      const difference = peak - limit;
       const excess = formatBytesMB(difference);
       const sameAmount = estimate === available;
       if (english) {
         const estimatedPeak = sameAmount ? 'The estimated peak' : `The estimated peak of ${estimate}`;
-        return `${estimatedPeak} exceeds the available GPU memory budget of ${available} by ${difference < 1 ? 'less than 1 MB' : excess}.`;
+        const limitName = budget == null ? 'the GPU memory capacity' : 'the available GPU memory budget';
+        return `${estimatedPeak} exceeds ${limitName} of ${available} by ${difference < 1 ? 'less than 1 MB' : excess}.`;
       }
+      const limitName = budget == null ? '显存总容量' : '可用显存预算';
       const excessMessage = difference < 1 ? '超出不足 1 MB' : `超出 ${excess}`;
-      return sameAmount ? `可用显存预算 ${available}，预计${excessMessage}。`
-        : `预计显存峰值 ${estimate}，高于可用显存预算 ${available}（${excessMessage}）。`;
+      return sameAmount ? `${limitName} ${available}，预计${excessMessage}。`
+        : `预计显存峰值 ${estimate}，高于${limitName} ${available}（${excessMessage}）。`;
     }
     return english ? 'GPU memory may be tight.' : '预计显存余量可能不足。';
   }

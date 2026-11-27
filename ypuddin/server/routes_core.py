@@ -756,15 +756,21 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
         validate_model=lambda family, model: _plan_model_errors(family, model, c),
         **planning_memory(selected),
     )
-    from .memory_fit import admission_estimate, host_memory_error, training_vram_warning
+    from .memory_fit import (
+        admission_estimate,
+        host_memory_error,
+        training_vram_warning,
+        waiting_training_vram_warning,
+    )
     from .supervisor import training_device_error
 
     count = (result.get("distributed") or {}).get("world_size", 1)
     if gpu_error:
         result["errors"].append({"loc": "gpu_devices", "msg": gpu_error})
         result["ok"] = False
-    if error := training_device_error(count, gpus):
-        result["errors"].append({"loc": "loop.gpu_count", "msg": error})
+    device_error = training_device_error(count, gpus)
+    if device_error:
+        result["errors"].append({"loc": "loop.gpu_count", "msg": device_error})
         result["ok"] = False
     if c.db.get_kv("queue.settings", {}).get("memory_admission", True) and (
         issue := host_memory_error((result.get("memory") or {}).get("host_memory_mb_estimate"), psutil.virtual_memory().available / 2**20)
@@ -774,7 +780,10 @@ def config_plan(body: ConfigBody, c: ServiceContext = Depends(ctx)) -> dict[str,
     estimate = admission_estimate(result.get("memory") or {})
     devices = c.supervisor.planned_training_devices(gpus, requested_count, body.gpu_devices)
     result["warnings"] = [item for item in result["warnings"] if item.get("code") != "vram.tight"]
-    if warning := training_vram_warning(estimate, devices):
+    warning = training_vram_warning(estimate, devices)
+    if not devices and not body.gpu_devices and not device_error:
+        warning = waiting_training_vram_warning(estimate, gpus, requested_count)
+    if warning:
         result["warnings"].append(warning)
     if not result["ok"]:
         result["resolution_reference"] = None
